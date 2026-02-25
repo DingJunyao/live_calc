@@ -22,35 +22,42 @@ async def create_product_record(
     current_user = Depends(get_current_user)
 ):
     """创建商品记录"""
-    # 获取当天汇率
-    exchange_rate = 1.0  # TODO: 从汇率服务获取
+    try:
+        # 获取当天汇率
+        exchange_rate = 1.0  # TODO: 从汇率服务获取
 
-    # 单位转换
-    standard_quantity, standard_unit = convert_to_standard(
-        record.original_quantity,
-        record.original_unit
-    )
+        # 单位转换
+        standard_quantity, standard_unit = convert_to_standard(
+            record.original_quantity,
+            record.original_unit
+        )
 
-    # 创建记录
-    db_record = ProductRecord(
-        user_id=current_user.id,
-        product_name=record.product_name,
-        location_id=record.location_id,
-        price=record.price,
-        currency=record.currency,
-        original_quantity=record.original_quantity,
-        original_unit=record.original_unit,
-        standard_quantity=standard_quantity,
-        standard_unit=standard_unit,
-        record_type=record.record_type,
-        exchange_rate=exchange_rate,
-        notes=record.notes
-    )
-    db.add(db_record)
-    db.commit()
-    db.refresh(db_record)
+        # 创建记录
+        db_record = ProductRecord(
+            user_id=current_user.id,
+            product_name=record.product_name,
+            location_id=record.location_id,
+            price=record.price,
+            currency=record.currency,
+            original_quantity=record.original_quantity,
+            original_unit=record.original_unit,
+            standard_quantity=standard_quantity,
+            standard_unit=standard_unit,
+            record_type=record.record_type,
+            exchange_rate=exchange_rate,
+            notes=record.notes
+        )
+        db.add(db_record)
+        db.commit()
+        db.refresh(db_record)
 
-    return db_record
+        return db_record
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建记录失败: {str(e)}"
+        )
 
 
 @router.get("/", response_model=List[ProductRecordResponse])
