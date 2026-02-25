@@ -13,11 +13,11 @@ class Settings(BaseSettings):
     # 应用配置
     app_name: str = "生计"
     app_url: str = "http://localhost:8000"
-    secret_key: str = "your-secret-key-here"
+    secret_key: str  # 必须从环境变量设置，无默认值
     debug: bool = True
 
     # JWT 配置
-    jwt_secret_key: str = "your-jwt-secret-key"
+    jwt_secret_key: str  # 必须从环境变量设置，无默认值
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 7
 
