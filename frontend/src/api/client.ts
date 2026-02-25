@@ -21,7 +21,7 @@ class ApiClient {
     method: string,
     path: string,
     data?: any
-  ): Promise {
+  ): Promise<T> {
     const headers: HeadersInit = {
       'Content-Type': 'application/json'
     }
@@ -33,7 +33,11 @@ class ApiClient {
     const options: RequestInit = {
       method,
       headers
-    body: JSON.stringify(data)
+    }
+
+    // 只在请求方法需要 body 时才添加
+    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      options.body = JSON.stringify(data)
     }
 
     try {
