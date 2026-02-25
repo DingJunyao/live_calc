@@ -29,19 +29,19 @@ export const useUserStore = defineStore('user', {
 
   actions: {
     setUser(user: User): void {
-      state.user = user
-      state.token = user.token || ''
+      this.user = user
+      this.token = user.token || ''
     },
 
     setToken(token: string): void {
-      state.token = token
+      this.token = token
       localStorage.setItem('token', token)
       api.setToken(token)
     },
 
     clearUser(): void {
-      state.user = null
-      state.token = null
+      this.user = null
+      this.token = null
       localStorage.removeItem('token')
       api.clearToken()
     },
@@ -53,17 +53,12 @@ export const useUserStore = defineStore('user', {
           { username, password_hash }
         )
 
-        this.setUser({
-          id: 1, // Mock user ID from backend
-          username,
-          email: 'test@example.com',
-          phone: null,
-          is_admin: false,
-          email_verified: false
-        })
-
+        // 设置 token
         this.setToken(response.access_token)
-        api.setToken(response.access_token)
+
+        // 获取用户信息
+        const user = await api.get<User>('/auth/me')
+        this.setUser(user)
       } catch (error) {
         console.error('Login failed:', error)
         throw error
@@ -74,18 +69,12 @@ export const useUserStore = defineStore('user', {
       try {
         const response = await api.post<{ access_token: string, refresh_token: string }>('/auth/register', userData)
 
-        const user: {
-          id: 1,
-          username: userData.username,
-          email: userData.email,
-          phone: userData.phone || null,
-          is_admin: false,
-          email_verified: false
-        }
-
-        this.setUser(user)
+        // 设置 token
         this.setToken(response.access_token)
-        api.setToken(response.access_token)
+
+        // 获取用户信息
+        const user = await api.get<User>('/auth/me')
+        this.setUser(user)
       } catch (error) {
         console.error('Register failed:', error)
         throw error
