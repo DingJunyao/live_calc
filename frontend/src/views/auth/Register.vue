@@ -3,6 +3,10 @@
     <div class="register-card">
       <h1>注册</h1>
 
+      <div v-if="errorMessage" class="error-message">
+        {{ errorMessage }}
+      </div>
+
       <form @submit.prevent="handleRegister">
         <div class="form-group">
           <label for="username">用户名</label>
@@ -12,6 +16,8 @@
             type="text"
             required
             placeholder="3-50个字符"
+            minlength="3"
+            maxlength="50"
           />
         </div>
 
@@ -33,7 +39,9 @@
             v-model="formData.phone"
             type="tel"
             placeholder="请输入手机号"
+            pattern="^1[3-9]\d{9}$"
           />
+          <small>格式: 11位手机号，如 13812345678</small>
         </div>
 
         <div class="form-group">
@@ -43,7 +51,8 @@
             v-model="formData.password"
             type="password"
             required
-            placeholder="请输入密码"
+            placeholder="至少6个字符"
+            minlength="6"
           />
         </div>
 
@@ -86,6 +95,7 @@ const formData = ref({
   invite_code: ''
 })
 const loading = ref(false)
+const errorMessage = ref('')
 const requireInviteCode = ref(false)
 
 // 使用 Web Crypto API 进行 SHA256 哈希
@@ -97,18 +107,57 @@ async function sha256(message: string): Promise<string> {
   return hashHex
 }
 
+function validateForm(): boolean {
+  errorMessage.value = ''
+
+  if (!formData.value.username || formData.value.username.trim().length < 3) {
+    errorMessage.value = '用户名至少需要 3 个字符'
+    return false
+  }
+
+  if (formData.value.username.length > 50) {
+    errorMessage.value = '用户名最多 50 个字符'
+    return false
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!formData.value.email || !emailRegex.test(formData.value.email)) {
+    errorMessage.value = '请输入有效的邮箱地址'
+    return false
+  }
+
+  if (formData.value.phone && !/^1[3-9]\d{9}$/.test(formData.value.phone)) {
+    errorMessage.value = '请输入有效的手机号'
+    return false
+  }
+
+  if (!formData.value.password || formData.value.password.length < 6) {
+    errorMessage.value = '密码至少需要 6 个字符'
+    return false
+  }
+
+  return true
+}
+
 onMounted(async () => {
   // 检查是否需要邀请码
+  // 注意：此端点可能需要在后端实现
   try {
     const config = await fetch('/api/v1/config').then(r => r.json())
-    requireInviteCode.value = config.registration_require_invite_code
+    requireInviteCode.value = config.registration_require_invite_code || false
   } catch (error) {
-    // 忽略错误
+    // 忽略错误，默认不需要邀请码
+    requireInviteCode.value = false
   }
 })
 
 async function handleRegister() {
+  if (!validateForm()) {
+    return
+  }
+
   loading.value = true
+  errorMessage.value = ''
   try {
     const password_hash = await sha256(formData.value.password)
 
@@ -118,7 +167,7 @@ async function handleRegister() {
     })
     router.push('/')
   } catch (error: any) {
-    alert(error.message || '注册失败')
+    errorMessage.value = error.message || '注册失败'
   } finally {
     loading.value = false
   }
@@ -147,6 +196,22 @@ async function handleRegister() {
   font-size: 1.5rem;
   color: #333;
   margin-bottom: 1.5rem;
+}
+
+.error-message {
+  background-color: #fee;
+  color: #c33;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  border: 1px solid #fcc;
+}
+
+.form-group small {
+  display: block;
+  font-size: 0.75rem;
+  color: #999;
+  margin-top: 0.25rem;
 }
 
 .form-group {

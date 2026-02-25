@@ -4,6 +4,10 @@
       <h1>生计</h1>
       <h2>生活成本计算器</h2>
 
+      <div v-if="errorMessage" class="error-message">
+        {{ errorMessage }}
+      </div>
+
       <form @submit.prevent="handleLogin">
         <div class="form-group">
           <label for="username">用户名</label>
@@ -13,6 +17,7 @@
             type="text"
             required
             placeholder="请输入用户名"
+            minlength="3"
           />
         </div>
 
@@ -24,6 +29,7 @@
             type="password"
             required
             placeholder="请输入密码"
+            minlength="6"
           />
         </div>
 
@@ -52,6 +58,7 @@ const formData = ref({
   password: ''
 })
 const loading = ref(false)
+const errorMessage = ref('')
 
 // 使用 Web Crypto API 进行 SHA256 哈希
 async function sha256(message: string): Promise<string> {
@@ -62,8 +69,29 @@ async function sha256(message: string): Promise<string> {
   return hashHex
 }
 
+function validateForm(): boolean {
+  errorMessage.value = ''
+
+  if (!formData.value.username || formData.value.username.trim().length < 3) {
+    errorMessage.value = '用户名至少需要 3 个字符'
+    return false
+  }
+
+  if (!formData.value.password || formData.value.password.length < 6) {
+    errorMessage.value = '密码至少需要 6 个字符'
+    return false
+  }
+
+  return true
+}
+
 async function handleLogin() {
+  if (!validateForm()) {
+    return
+  }
+
   loading.value = true
+  errorMessage.value = ''
   try {
     // SHA256 加密密码
     const password_hash = await sha256(formData.value.password)
@@ -71,7 +99,7 @@ async function handleLogin() {
     await userStore.login(formData.value.username, password_hash)
     router.push('/')
   } catch (error: any) {
-    alert(error.message || '登录失败')
+    errorMessage.value = error.message || '登录失败'
   } finally {
     loading.value = false
   }
@@ -106,6 +134,15 @@ async function handleLogin() {
   font-size: 1rem;
   color: #666;
   margin-bottom: 2rem;
+}
+
+.error-message {
+  background-color: #fee;
+  color: #c33;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  border: 1px solid #fcc;
 }
 
 .form-group {
