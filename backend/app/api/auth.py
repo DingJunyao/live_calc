@@ -56,7 +56,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         username=user_data.username,
         email=user_data.email,
         phone=user_data.phone,
-        password_hash=get_password_hash(user_data.password_hash[:72]),  # 截断以符合bcrypt限制
+        password_hash=get_password_hash(user_data.password_hash),  # 密码长度已在 get_password_hash 中处理
         is_admin=is_first_user
     )
     db.add(user)
@@ -86,7 +86,7 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
 
     # 验证密码（前端已 SHA256，这里再 bcrypt）
     from app.core.security import verify_password
-    if not verify_password(user_data.password_hash[:72], user.password_hash):
+    if not verify_password(user_data.password_hash, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误"
