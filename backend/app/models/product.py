@@ -22,7 +22,7 @@ class ProductRecord(Base):
     original_unit = Column(String(20), nullable=False)
     standard_quantity = Column(Numeric(10, 3), nullable=False)
     standard_unit = Column(String(20), default="g")
-    record_type = Column(String(20), default=RecordType.PURCHASE.value)
+    record_type = Column(String(20), default=RecordType.PURCHASE)
     exchange_rate = Column(Numeric(10, 6), default=1.0)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
     notes = Column(String(500), nullable=True)
