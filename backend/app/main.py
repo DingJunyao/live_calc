@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth
+from app.api import auth, products
 from app.core.database import Base, engine
 
 # 创建数据库表
@@ -24,6 +24,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
+app.include_router(products.router, prefix="/api/v1/products", tags=["商品"])
 
 
 @app.get("/")
