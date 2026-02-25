@@ -1,0 +1,24 @@
+# 生计 - 生活成本计算器
+# 生产环境依赖
+
+fastapi>=0.109.0,<0.110.0
+uvicorn[standard]>=0.27.0,<0.28.0
+sqlalchemy>=2.0.25,<2.1.0
+alembic>=1.13.0,<1.14.0
+pydantic>=2.5.0,<3.0.0
+pydantic-settings>=2.1.0,<3.0.0
+python-jose[cryptography]>=3.3.0,<4.0.0
+passlib[bcrypt]>=1.7.4,<2.0.0
+python-multipart>=0.0.6,<0.1.0
+apscheduler>=3.10.4,<4.0.0
+httpx>=0.26.0,<0.27.0
+
+# 数据库驱动（根据需要选择）
+# PostgreSQL
+psycopg2-binary>=2.9.9,<3.0.0
+# MySQL
+pymysql>=1.1.0,<2.0.0
+
+# 可选依赖
+# celery[redis]>=5.3.6,<6.0.0
+# redis[hiredis]>=5.0.1,<6.0.0
