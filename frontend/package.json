@@ -1,0 +1,37 @@
+{
+  "name": "live-calc-frontend",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5",
+    "pinia": "^2.1.7",
+    "axios": "^1.6.5",
+    "leaflet": "^1.9.4",
+    "@vueuse/core": "^10.7.2",
+    "chart.js": "^4.4.1",
+    "vue-chartjs": "^5.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.3",
+    "@vue/test-utils": "^2.4.3",
+    "vite": "^5.0.11",
+    "vite-plugin-pwa": "^0.17.4",
+    "vitest": "^1.2.1",
+    "eslint": "^8.56.0",
+    "eslint-plugin-vue": "^9.19.2",
+    "prettier": "^3.2.4",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.5",
+    "@types/leaflet": "^1.9.8"
+  }
+}
