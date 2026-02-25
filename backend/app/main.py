@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, products, locations, nutrition, recipes
+from app.api import auth, products, locations, nutrition, recipes, reports
 from app.core.database import Base, engine
 
 # 创建数据库表
@@ -28,6 +28,7 @@ app.include_router(products.router, prefix="/api/v1/products", tags=["商品"])
 app.include_router(locations.router, prefix="/api/v1/locations", tags=["地点"])
 app.include_router(nutrition.router, prefix="/api/v1/nutrition", tags=["营养"])
 app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["菜谱"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["报告"])
 
 
 @app.get("/")
