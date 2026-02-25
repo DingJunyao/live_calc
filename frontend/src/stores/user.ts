@@ -1,19 +1,27 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import type { User as UserType } from '../types/user'
 import { api } from '../api/client'
+import router from '../router'
+
+interface User {
+  id: number
+  username: string
+  email: string
+  phone: string | null
+  is_admin: boolean
+  email_verified: boolean
+  token?: string
+}
 
 interface UserState {
   user: User | null
   token: string | null
-  isLoggedIn: computed(() => !!state.user.value)
 }
 
 export const useUserStore = defineStore('user', {
-  state: (): UserState {
+  state: (): UserState => ({
     user: null,
     token: localStorage.getItem('token')
-  },
+  }),
 
   getters: {
     isLoggedIn: (state): boolean => !!state.user
