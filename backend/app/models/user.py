@@ -22,3 +22,4 @@ class User(Base):
     product_records = relationship("ProductRecord", back_populates="user")
     locations = relationship("Location", back_populates="user")
     favorite_locations = relationship("FavoriteLocation", back_populates="user")
+    recipes = relationship("Recipe", back_populates="user")
