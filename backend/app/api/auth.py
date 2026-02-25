@@ -10,10 +10,24 @@ from app.core.security import (
     validate_token_type
 )
 from app.models.user import User
-from app.schemas.auth import UserRegister, UserLogin, TokenResponse, UserResponse
+from app.schemas.auth import (
+    UserRegister,
+    UserLogin,
+    TokenResponse,
+    UserResponse,
+    ConfigResponse
+)
 
 router = APIRouter()
 security = HTTPBearer()
+
+
+@router.get("/config", response_model=ConfigResponse)
+async def get_config():
+    """获取注册配置"""
+    return ConfigResponse(
+        registration_require_invite_code=True
+    )
 
 
 @router.post("/register", response_model=TokenResponse)

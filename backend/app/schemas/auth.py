@@ -1,5 +1,10 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
+from app.config import settings
+
+
+class ConfigResponse(BaseModel):
+    registration_require_invite_code: bool = settings.registration_require_invite_code
 
 
 class UserRegister(BaseModel):
