@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer
 from app.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -53,3 +55,53 @@ def validate_token_type(token: str, expected_type: str = "access") -> bool:
     if not payload:
         return False
     return payload.get("type") == expected_type
+
+
+# FastAPI 依赖注入
+security = HTTPBearer()
+
+
+async def get_current_user(credentials: HTTPBearer = Depends(security)):
+    """获取当前登录用户（依赖注入）"""
+    token = credentials.credentials
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未授权"
+        )
+
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的令牌"
+        )
+
+    # 验证令牌类型必须是 access
+    if not validate_token_type(token, "access"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的令牌类型"
+        )
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的令牌"
+        )
+
+    from app.core.database import get_db
+    from app.models.user import User
+
+    db = next(get_db())
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    db.close()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    return user

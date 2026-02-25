@@ -13,3 +13,6 @@ black>=24.1.1,<25.0.0
 isort>=5.13.2,<6.0.0
 flake8>=7.0.0,<8.0.0
 mypy>=1.8.0,<2.0.0
+
+# email validation (required by pydantic[email])
+email-validator>=2.1.0,<3.0.0
