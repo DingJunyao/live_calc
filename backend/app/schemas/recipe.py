@@ -25,6 +25,7 @@ class RecipeCreate(BaseModel):
     total_time_minutes: Optional[int] = None
     difficulty: Optional[str] = "simple"
     servings: int = 1
+    tips: Optional[List[str]] = None
 
 
 class RecipeResponse(BaseModel):
