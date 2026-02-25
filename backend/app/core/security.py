@@ -45,3 +45,11 @@ def decode_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+
+def validate_token_type(token: str, expected_type: str = "access") -> bool:
+    """验证令牌类型"""
+    payload = decode_token(token)
+    if not payload:
+        return False
+    return payload.get("type") == expected_type

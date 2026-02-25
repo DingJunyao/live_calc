@@ -6,7 +6,8 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    get_password_hash
+    get_password_hash,
+    validate_token_type
 )
 from app.models.user import User
 from app.schemas.auth import UserRegister, UserLogin, TokenResponse, UserResponse
@@ -87,6 +88,42 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
     )
 
 
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(
+    credentials: HTTPBearer = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """刷新访问令牌"""
+    token = credentials.credentials
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未授权"
+        )
+
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的刷新令牌"
+        )
+
+    user_id = payload.get("sub")
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    # 创建新的访问令牌
+    access_token = create_access_token(data={"sub": str(user.id)})
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=token  # 返回同一个 refresh token
+    )
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(
     credentials: HTTPBearer = Depends(security),
@@ -99,6 +136,13 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="未授权"
+        )
+
+    # 验证令牌类型必须是 access
+    if not validate_token_type(token, "access"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的令牌类型"
         )
 
     # 解码 token
