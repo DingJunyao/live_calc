@@ -1,3 +1,7 @@
+# macOS
+.DS_Store
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -31,5 +35,12 @@ dmypy.json
 .env
 .venv
 *.log
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Application directories
 data/
 logs/
