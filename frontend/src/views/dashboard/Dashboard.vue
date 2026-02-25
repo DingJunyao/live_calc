@@ -5,7 +5,11 @@
       <button @click="handleLogout" class="btn-logout">退出</button>
     </header>
 
-    <div class="stats-grid">
+    <div v-if="loading" class="loading">
+      加载中...
+    </div>
+
+    <div v-else class="stats-grid">
       <div class="stat-card">
         <h3>本月支出</h3>
         <p class="stat-value">¥{{ monthlyExpense.toFixed(2) }}</p>
@@ -63,6 +67,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { api } from '@/api/client'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -72,6 +77,7 @@ const monthlyExpense = ref(0)
 const recordCount = ref(0)
 const recipeCount = ref(0)
 const recentRecords = ref<any[]>([])
+const loading = ref(false)
 
 onMounted(async () => {
   if (!user.value) {
@@ -83,18 +89,53 @@ onMounted(async () => {
 })
 
 async function loadDashboardData() {
-  // Mock data for now - will be replaced with real API calls
-  monthlyExpense.value = 1250.50
-  recordCount.value = 42
-  recipeCount.value = 15
-  recentRecords.value = [
-    {
-      id: 1,
-      product_name: '有机鸡蛋',
-      price: '12.50',
-      recorded_at: '2024-01-15T10:30:00'
+  loading.value = true
+  try {
+    // 获取本月支出统计
+    const today = new Date()
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+    const startDate = firstDay.toISOString().split('T')[0]
+    const endDate = today.toISOString().split('T')[0]
+
+    try {
+      const expenseReport = await api.get<any>(
+        `/reports/expense?start_date=${startDate}&end_date=${endDate}`
+      )
+      monthlyExpense.value = expenseReport.total_expense || 0
+    } catch (error) {
+      console.error('Failed to load expense report:', error)
+      monthlyExpense.value = 0
     }
-  ]
+
+    // 获取记录数量
+    try {
+      const productsResponse = await api.get<{ total: number, items: any[] }>('/products/?limit=1')
+      recordCount.value = productsResponse.total || 0
+    } catch (error) {
+      console.error('Failed to load record count:', error)
+      recordCount.value = 0
+    }
+
+    // 获取菜谱数量
+    try {
+      const recipesResponse = await api.get<{ total: number, items: any[] }>('/recipes/?limit=1')
+      recipeCount.value = recipesResponse.total || 0
+    } catch (error) {
+      console.error('Failed to load recipe count:', error)
+      recipeCount.value = 0
+    }
+
+    // 获取最近记录
+    try {
+      const recentData = await api.get<{ items: any[] }>('/products/?limit=10')
+      recentRecords.value = recentData.items || []
+    } catch (error) {
+      console.error('Failed to load recent records:', error)
+      recentRecords.value = []
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
 function formatDate(dateString: string) {
@@ -104,6 +145,7 @@ function formatDate(dateString: string) {
 
 function handleLogout() {
   userStore.logout()
+  router.push('/login')
 }
 </script>
 
@@ -127,10 +169,22 @@ function handleLogout() {
 .btn-logout {
   padding: 0.5rem 1rem;
   background: #f5f5f5;
-  color: white;
-  border: none;
+  color: #333;
+  border: 1px solid #ddd;
   border-radius: 0.5rem;
   cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-logout:hover {
+  background: #e0e0e0;
+}
+
+.loading {
+  text-align: center;
+  padding: 4rem;
+  color: #666;
+  font-size: 1.125rem;
 }
 
 .stats-grid {
