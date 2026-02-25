@@ -93,14 +93,44 @@ async def get_current_user(
     db: Session = Depends(get_db)
 ):
     """获取当前用户信息"""
-    # 从 HTTPBearer 解析 token 实际在 decode_token 中完成
-    # 这里简化处理，生产环境应该使用依赖注入
-    # 暂时返回 mock 数据，需要完善
+    # 获取 token
+    token = credentials.credentials
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未授权"
+        )
+
+    # 解码 token
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的令牌"
+        )
+
+    # 获取用户 ID
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的令牌"
+        )
+
+    # 查询用户
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    # 返回用户信息
     return UserResponse(
-        id=1,
-        username="test",
-        email="test@example.com",
-        phone=None,
-        is_admin=False,
-        email_verified=False
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        phone=user.phone,
+        is_admin=user.is_admin,
+        email_verified=user.email_verified
     )
