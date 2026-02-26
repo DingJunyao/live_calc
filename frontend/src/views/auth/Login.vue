@@ -49,6 +49,8 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import SHA256 from 'crypto-js/sha256'
+import Hex from 'crypto-js/enc-hex'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -60,13 +62,10 @@ const formData = ref({
 const loading = ref(false)
 const errorMessage = ref('')
 
-// 使用 Web Crypto API 进行 SHA256 哈希
-async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-  return hashHex
+function preparePassword(password: string): string {
+  // 使用 crypto-js 进行 SHA256 哈希
+  const hash = SHA256(password)
+  return hash.toString(Hex)
 }
 
 function validateForm(): boolean {
@@ -93,8 +92,8 @@ async function handleLogin() {
   loading.value = true
   errorMessage.value = ''
   try {
-    // SHA256 加密密码
-    const password_hash = await sha256(formData.value.password)
+    // 对密码进行 SHA256 哈希
+    const password_hash = preparePassword(formData.value.password)
 
     await userStore.login(formData.value.username, password_hash)
     router.push('/')

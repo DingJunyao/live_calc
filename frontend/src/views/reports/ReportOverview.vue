@@ -1,6 +1,14 @@
 <template>
   <div class="report-overview">
     <header class="page-header">
+      <div class="nav-buttons">
+        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
+          <i class="mdi mdi-arrow-left"></i>
+        </button>
+        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
+          <i class="mdi mdi-home"></i>
+        </button>
+      </div>
       <h1>报告统计</h1>
     </header>
 
@@ -12,7 +20,7 @@
         <div class="stats">
           <div class="stat-item">
             <h3>总支出</h3>
-            <p>¥{{ totalExpense.toFixed(2) }}</p>
+            <p>¥{{ typeof totalExpense.value === 'number' ? totalExpense.value.toFixed(2) : '0.00' }}</p>
           </div>
         </div>
       </div>
@@ -59,15 +67,21 @@ async function loadReports() {
     const expenseReport = await api.get<any>(
       `/reports/expense?start_date=${startDate}&end_date=${endDate}`
     )
-    totalExpense.value = expenseReport.total_expense || 0
+    totalExpense.value = (expenseReport && typeof expenseReport.total_expense !== 'undefined' && expenseReport.total_expense !== null)
+      ? Number(expenseReport.total_expense) || 0
+      : 0
 
     // 获取记录数
     const productsResponse = await api.get<{ total: number }>('/products/?limit=1')
-    productCount.value = productsResponse.total || 0
+    productCount.value = (productsResponse && typeof productsResponse.total !== 'undefined' && productsResponse.total !== null)
+      ? Number(productsResponse.total) || 0
+      : 0
 
     // 获取菜谱数
     const recipesResponse = await api.get<{ total: number }>('/recipes/?limit=1')
-    recipeCount.value = recipesResponse.total || 0
+    recipeCount.value = (recipesResponse && typeof recipesResponse.total !== 'undefined' && recipesResponse.total !== null)
+      ? Number(recipesResponse.total) || 0
+      : 0
   } catch (error) {
     console.error('Failed to load reports:', error)
   } finally {
@@ -86,6 +100,30 @@ async function loadReports() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2rem;
+}
+
+.nav-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-square {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0;
+}
+
+.btn-square:hover {
+  background: #e0e0e0;
 }
 
 .page-header h1 {

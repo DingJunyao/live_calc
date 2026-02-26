@@ -1,26 +1,26 @@
+import bcrypt
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from app.config import settings
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码"""
     # 确保密码不超过 72 字节以满足 bcrypt 要求
-    truncated_password = plain_password[:72] if len(plain_password) > 72 else plain_password
-    return pwd_context.verify(truncated_password, hashed_password)
+    truncated_password = plain_password[:72].encode('utf-8') if len(plain_password) > 72 else plain_password.encode('utf-8')
+    return bcrypt.checkpw(truncated_password, hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password)
 
 
 def get_password_hash(password: str) -> str:
     """获取密码哈希"""
     # 确保密码不超过 72 字节以满足 bcrypt 要求
-    truncated_password = password[:72] if len(password) > 72 else password
-    return pwd_context.hash(truncated_password)
+    truncated_password = password[:72].encode('utf-8') if len(password) > 72 else password.encode('utf-8')
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(truncated_password, salt)
+    return hashed.decode('utf-8')
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
