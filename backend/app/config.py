@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # JWT 配置
     jwt_secret_key: str = "dev-jwt-secret-change-in-production"  # 开发环境默认值，生产环境必须修改
-    jwt_access_token_expire_minutes: int = 15
+    jwt_access_token_expire_minutes: int = 10080  # 7天 (7 * 24 * 60 分钟)
     jwt_refresh_token_expire_days: int = 7
 
     # 注册配置

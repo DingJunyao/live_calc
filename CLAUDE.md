@@ -121,10 +121,6 @@ live_calc/
 - 功能开发在特性分支进行
 - 通过 Pull Request 进行代码审查
 
-## 部署说明
-
-详见 [DEPLOYMENT.md](DEPLOYMENT.md) 和 [QUICKSTART.md](QUICKSTART.md)
-
 ## 环境变量
 
 ### 后端
@@ -135,3 +131,71 @@ live_calc/
 
 ### 前端
 - `VITE_API_URL` - 后端 API 地址（默认为 `/api/v1`）
+
+## 开发情况
+
+本项目为 monorepo 项目，包含前端和后端。
+
+### 前端
+
+技术栈：TypeScrpt + Vue + Vite
+
+目录：`frontend`，所有前端相关操作均在此目录下进行。
+
+开发 URL：`http://localhost:5173`
+
+通常会打开浏览器调试。如有需要，可以使用 Chrome 开发者工具 MCP 查看页面情况，操作页面。由于一般情况下已经打开了页面，所以不要使用 Playwright。开发者在 Windows 下使用 Edge 浏览器，在 Linux 下使用 Chromium 浏览器。
+
+响应式设计。开发时要兼顾不同地图引擎和桌面、移动端的体验。
+
+目前需要考虑的地图引擎如下：
+
+- 高德地图
+- 百度地图（分为 GL 版本和 Legacy 版本，前者常用，后者只在一些特殊场景下使用）
+- 腾讯地图
+- Leaflet：目前支持高德地图、百度地图、腾讯地图、天地图、OpenStreetMap。
+
+### 后端
+
+技术栈：Python + FastAPI
+
+目录：`backend`，所有后端相关操作均在此目录下进行，并且使用虚拟环境。
+
+虚拟环境：先找 `conda` 下的 `live_calc` 环境，没有则使用 `.venv` 下的环境。
+
+### 数据库
+
+数据库：`backend/.env` 文件中指定。一般情况下为 `backend/data/livecalc.db`。
+
+数据库操作优先使用相应的 MCP。
+
+开发过程中不要自行修改数据库，除非开发者明确允许此操作。
+
+表结构需要变动时，除了维护 alembic 外，还需要提供对应的 SQL 脚本，包括一下数据库引擎的版本：
+
+- SQLite
+- MySQL
+- PostgreSQL（未启用 PostGIS 支持）
+- PostgreSQL（启用 PostGIS 支持）（如与 PostGIS 无关，则不需要此项）
+
+### 测试
+
+所有操作均需确保无语法层面上的报错，构建、编译通过。
+
+不要在对话中启动服务，因为我已经启动了自动重载的前端、后端服务。
+
+### 记录要点
+
+当某项开发工作完成、告一段落或有关键性进展时，需要自动记录要点。用户要求记录要点时，也要记录。
+
+要点按照以下的索引记录。
+
+注意：为了节约 token，即便用户要求记录到 CLAUDE.md，也要按照下面的索引记录。
+
+## 项目索引
+
+本项目文档已模块化拆分，按需加载以提高性能。详细信息请查看 `./cc` 目录下的对应文件。
+
+所有与 Claude Code 相关的文档，都放在 `./cc` 目录下。并且，在这里描述文档内容，以便索引。
+
+如：部署说明：详见 [DEPLOYMENT.md](cc/DEPLOYMENT.md) 和 [QUICKSTART.md](cc/QUICKSTART.md)
