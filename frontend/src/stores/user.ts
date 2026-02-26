@@ -20,7 +20,7 @@ interface UserState {
 export const useUserStore = defineStore('user', {
   state: (): UserState => ({
     user: null,
-    token: localStorage.getItem('token')
+    token: localStorage.getItem('token') || null
   }),
 
   getters: {
@@ -28,9 +28,31 @@ export const useUserStore = defineStore('user', {
   },
 
   actions: {
+    async initializeUserFromStorage(): Promise<boolean> {
+      const storedToken = localStorage.getItem('token')
+      if (storedToken) {
+        try {
+          // 设置 API 客户端的令牌
+          api.setToken(storedToken)
+
+          // 尝试获取用户信息来验证令牌有效性
+          const user = await api.get<User>('/auth/me')
+          this.setUser(user)
+          this.setToken(storedToken)
+          return true
+        } catch (error) {
+          console.error('Failed to initialize user from stored token:', error)
+          // 如果令牌无效，清除它
+          this.clearUser()
+          return false
+        }
+      }
+      return false
+    },
+
     setUser(user: User): void {
       this.user = user
-      this.token = user.token || ''
+      this.token = user.token || this.token || ''
     },
 
     setToken(token: string): void {

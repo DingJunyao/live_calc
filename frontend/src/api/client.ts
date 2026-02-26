@@ -20,30 +20,47 @@ class ApiClient {
   private async request<T>(
     method: string,
     path: string,
-    data?: any
+    data?: any,
+    options: { isFormData?: boolean } = {}
   ): Promise<T> {
     const headers: HeadersInit = {
-      'Content-Type': 'application/json'
+      'Content-Type': options.isFormData ? 'multipart/form-data' : 'application/json'
     }
 
-    if (this.token) {
+    if (this.token && (!options.isFormData || method !== 'GET')) {
       headers['Authorization'] = `Bearer ${this.token}`
     }
 
-    const options: RequestInit = {
+    const reqOptions: RequestInit = {
       method,
-      headers
+      headers: options.isFormData ? {} : headers // multipart/form-data的headers由浏览器自动设置
     }
 
     // 只在请求方法需要 body 时才添加
-    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      options.body = JSON.stringify(data)
+    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH') && !options.isFormData) {
+      reqOptions.body = JSON.stringify(data)
+    } else if (options.isFormData && data instanceof FormData) {
+      reqOptions.body = data
+      // 当使用FormData时，不要设置Content-Type头部，让浏览器自动设置
+      // 但仍需要添加 Authorization 头
+      if (this.token) {
+        reqOptions.headers = {
+          'Authorization': `Bearer ${this.token}`
+        }
+      }
     }
 
     try {
-      const response = await fetch(`${this.baseURL}${path}`, options)
+      const response = await fetch(`${this.baseURL}${path}`, reqOptions)
 
       if (!response.ok) {
+        if (response.status === 401) {
+          // 未授权，令牌可能已过期，清理用户信息并跳转到登录页
+          localStorage.removeItem('token');
+          window.location.href = '/login';
+          return Promise.reject(new Error('未授权，请重新登录'));
+        }
+
         const error = await response.json()
         throw new Error(error.detail || '请求失败')
       }
@@ -51,24 +68,35 @@ class ApiClient {
       return await response.json()
     } catch (error) {
       console.error('API request failed:', error)
+
+      // 检查是否是认证相关的错误
+      if (error instanceof TypeError || (error instanceof Error && error.message.includes('未授权'))) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+
       throw error
     }
   }
 
-  async get<T>(path: string): Promise {
+  async get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path)
   }
 
-  async post<T>(path: string, data?: any): Promise {
+  async post<T>(path: string, data?: any): Promise<T> {
     return this.request<T>('POST', path, data)
   }
 
-  async put<T>(path: string, data?: any): Promise {
+  async put<T>(path: string, data?: any): Promise<T> {
     return this.request<T>('PUT', path, data)
   }
 
   async delete<T>(path: string): Promise<T> {
     return this.request<T>('DELETE', path)
+  }
+
+  async upload<T>(path: string, formData: FormData): Promise<T> {
+    return this.request<T>('POST', path, formData, { isFormData: true })
   }
 }
 

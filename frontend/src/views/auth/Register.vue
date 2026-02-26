@@ -83,6 +83,9 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { api } from '@/api/client'
+import SHA256 from 'crypto-js/sha256'
+import Hex from 'crypto-js/enc-hex'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -98,13 +101,10 @@ const loading = ref(false)
 const errorMessage = ref('')
 const requireInviteCode = ref(false)
 
-// 使用 Web Crypto API 进行 SHA256 哈希
-async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-  return hashHex
+function preparePassword(password: string): string {
+  // 使用 crypto-js 进行 SHA256 哈希
+  const hash = SHA256(password)
+  return hash.toString(Hex)
 }
 
 function validateForm(): boolean {
@@ -141,9 +141,8 @@ function validateForm(): boolean {
 
 onMounted(async () => {
   // 检查是否需要邀请码
-  // 注意：此端点可能需要在后端实现
   try {
-    const config = await fetch('/api/v1/config').then(r => r.json())
+    const config = await api.get('/auth/config')
     requireInviteCode.value = config.registration_require_invite_code || false
   } catch (error) {
     // 忽略错误，默认不需要邀请码
@@ -159,7 +158,8 @@ async function handleRegister() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const password_hash = await sha256(formData.value.password)
+    // 对密码进行 SHA256 哈希
+    const password_hash = preparePassword(formData.value.password)
 
     await userStore.register({
       ...formData.value,

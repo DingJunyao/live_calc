@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, Field as PydanticField
 from typing import Optional, List
-from datetime import date
+from datetime import datetime  # 修改为 datetime 而不是 date
 
 
 class LocationCreate(BaseModel):
@@ -16,7 +16,7 @@ class LocationResponse(BaseModel):
     address: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
-    created_at: date
+    created_at: datetime  # 修改为 datetime 类型
 
     class Config:
         from_attributes = True
@@ -35,7 +35,7 @@ class FavoriteLocationResponse(BaseModel):
     type: str
     latitude: float
     longitude: float
-    created_at: date
+    created_at: datetime  # 修改为 datetime 类型
 
     class Config:
         from_attributes = True
