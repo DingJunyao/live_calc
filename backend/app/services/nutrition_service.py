@@ -59,8 +59,7 @@ async def match_ingredient(
     ).first()
 
     if ingredient and ingredient.aliases:
-        aliases = json.loads(ingredient.aliases)
-        for alias_name in aliases:
+        for alias_name in ingredient.aliases:
             matches.extend(await search_nutrition(alias_name, db=db))
 
     # 2. 未匹配则关键词模糊搜索
@@ -122,7 +121,7 @@ async def correct_mapping(
         ingredient = Ingredient(
             name=ingredient_name,
             nutrition_id=nutrition_id,
-            aliases=json.dumps([ingredient_name])
+            aliases=[ingredient_name]
         )
         db.add(ingredient)
         db.flush()
@@ -136,10 +135,11 @@ async def correct_mapping(
 
         # 更新映射
         ingredient.nutrition_id = nutrition_id
-        aliases = json.loads(ingredient.aliases) if ingredient.aliases else []
+        # 更新别名
+        aliases = ingredient.aliases or []
         if ingredient_name not in aliases:
-            aliases.append(ingredient_name)
-        ingredient.aliases = json.dumps(aliases)
+            aliases = list(aliases) + [ingredient_name]
+            ingredient.aliases = aliases
         db.flush()
 
     # 创建或更新映射

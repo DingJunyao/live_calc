@@ -101,7 +101,7 @@ onMounted(async () => {
 async function loadRecipes() {
   loading.value = true
   try {
-    const data = await api.get<any[]>('/recipes/')
+    const data = await api.get<any[]>('/recipes')
     recipes.value = data || []
   } catch (error) {
     console.error('Failed to load recipes:', error)
@@ -112,7 +112,7 @@ async function loadRecipes() {
 
 async function addRecipe() {
   try {
-    await api.post('/recipes/', newRecipe.value)
+    await api.post('/recipes', newRecipe.value)
     showAddModal.value = false
     // 重置表单
     newRecipe.value = {

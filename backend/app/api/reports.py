@@ -17,7 +17,7 @@ from app.models.expense import Expense
 router = APIRouter()
 
 
-@router.post("/expenses/", response_model=ExpenseResponse)
+@router.post("/expenses", response_model=ExpenseResponse)
 async def create_expense(
     expense: ExpenseCreate,
     db: Session = Depends(get_db),
@@ -42,7 +42,7 @@ async def create_expense(
         raise HTTPException(status_code=500, detail=f"创建费用记录失败: {str(e)}")
 
 
-@router.get("/expenses/", response_model=List[ExpenseResponse])
+@router.get("/expenses", response_model=List[ExpenseResponse])
 async def get_expenses(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,

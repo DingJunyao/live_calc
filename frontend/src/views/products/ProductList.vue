@@ -10,9 +10,12 @@
         </button>
       </div>
       <h1>商品记录</h1>
-      <button @click="showAddModal = true" class="btn-square add-btn" title="添加记录">
-        <i class="mdi mdi-plus"></i>
-      </button>
+      <div class="action-buttons">
+        <router-link to="/ingredients" class="btn-secondary" style="margin-right: 1rem;">管理原料</router-link>
+        <button @click="showAddModal = true" class="btn-square add-btn" title="添加记录">
+          <i class="mdi mdi-plus"></i>
+        </button>
+      </div>
     </header>
 
     <div v-if="loading" class="loading">加载中...</div>
@@ -85,7 +88,7 @@ onMounted(async () => {
 async function loadProducts() {
   loading.value = true
   try {
-    const data = await api.get<any[]>('/products/')
+    const data = await api.get<any[]>('/products')
     products.value = data || []
   } catch (error) {
     console.error('Failed to load products:', error)
@@ -96,7 +99,7 @@ async function loadProducts() {
 
 async function addProduct() {
   try {
-    await api.post('/products/', newProduct.value)
+    await api.post('/products', newProduct.value)
     showAddModal.value = false
     // 重置表单
     newProduct.value = {

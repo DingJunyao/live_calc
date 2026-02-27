@@ -20,7 +20,7 @@ import tempfile
 router = APIRouter()
 
 
-@router.post("/", response_model=RecipeResponse)
+@router.post("", response_model=RecipeResponse)
 async def create_recipe(
     recipe: RecipeCreate,
     db: Session = Depends(get_db),
@@ -66,7 +66,7 @@ async def create_recipe(
         raise HTTPException(status_code=500, detail=f"创建菜谱失败: {str(e)}")
 
 
-@router.get("/", response_model=List[RecipeResponse])
+@router.get("", response_model=List[RecipeResponse])
 async def get_recipes(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
