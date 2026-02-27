@@ -24,6 +24,11 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/products/ProductList.vue').then(m => m.default)
   },
   {
+    path: '/ingredients',
+    name: 'ingredients',
+    component: () => import('@/views/products/IngredientList.vue').then(m => m.default)
+  },
+  {
     path: '/recipes',
     name: 'recipes',
     component: () => import('@/views/recipes/RecipeList.vue').then(m => m.default)

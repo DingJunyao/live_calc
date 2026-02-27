@@ -36,4 +36,4 @@ class RecipeIngredient(Base):
 
     # 关系
     recipe = relationship("Recipe", back_populates="ingredients")
-    ingredient = relationship("Ingredient")
+    ingredient = relationship("app.models.nutrition.Ingredient", back_populates="recipe_ingredients", lazy="select")

@@ -15,7 +15,7 @@ from app.utils.unit_converter import convert_to_standard
 router = APIRouter()
 
 
-@router.post("/", response_model=ProductRecordResponse)
+@router.post("", response_model=ProductRecordResponse)
 async def create_product_record(
     record: ProductRecordCreate,
     db: Session = Depends(get_db),
@@ -60,7 +60,7 @@ async def create_product_record(
         )
 
 
-@router.get("/", response_model=List[ProductRecordResponse])
+@router.get("", response_model=List[ProductRecordResponse])
 async def get_product_records(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),

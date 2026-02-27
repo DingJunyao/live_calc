@@ -15,6 +15,10 @@
           <i class="mdi mdi-clipboard-text mdi-24px icon"></i>
           <span>商品</span>
         </router-link>
+        <router-link to="/ingredients" class="action-card">
+          <i class="mdi mdi-food mdi-24px icon"></i>
+          <span>原料</span>
+        </router-link>
         <router-link to="/recipes" class="action-card">
           <i class="mdi mdi-food mdi-24px icon"></i>
           <span>菜谱</span>
@@ -117,7 +121,7 @@ async function loadDashboardData() {
 
     // 获取记录数量
     try {
-      const productsResponse = await api.get<any[]>('/products/')
+      const productsResponse = await api.get<any[]>('/products')
       recordCount.value = productsResponse.length || 0
     } catch (error) {
       console.error('Failed to load record count:', error)
@@ -126,7 +130,7 @@ async function loadDashboardData() {
 
     // 获取菜谱数量
     try {
-      const recipesResponse = await api.get<any[]>('/recipes/')
+      const recipesResponse = await api.get<any[]>('/recipes')
       recipeCount.value = recipesResponse.length || 0
     } catch (error) {
       console.error('Failed to load recipe count:', error)
@@ -135,7 +139,7 @@ async function loadDashboardData() {
 
     // 获取最近记录
     try {
-      const recentData = await api.get<any[]>('/products/?limit=10')
+      const recentData = await api.get<any[]>('/products?limit=10')
       recentRecords.value = recentData || []
     } catch (error) {
       console.error('Failed to load recent records:', error)
