@@ -85,7 +85,7 @@ onMounted(async () => {
 async function loadLocations() {
   loading.value = true
   try {
-    const data = await api.get<any[]>('/locations/')
+    const data = await api.get<any[]>('/locations')
     locations.value = data || []
   } catch (error) {
     console.error('Failed to load locations:', error)
@@ -96,7 +96,7 @@ async function loadLocations() {
 
 async function addLocation() {
   try {
-    await api.post('/locations/', newLocation.value)
+    await api.post('/locations', newLocation.value)
     showAddModal.value = false
     // 重置表单
     newLocation.value = {

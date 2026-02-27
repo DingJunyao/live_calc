@@ -27,7 +27,8 @@ class ApiClient {
       'Content-Type': options.isFormData ? 'multipart/form-data' : 'application/json'
     }
 
-    if (this.token && (!options.isFormData || method !== 'GET')) {
+    // 添加认证头，除非是form data的GET请求（GET请求不应该有body）
+    if (this.token && !(options.isFormData && method === 'GET')) {
       headers['Authorization'] = `Bearer ${this.token}`
     }
 

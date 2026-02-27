@@ -12,7 +12,7 @@ import datetime
 router = APIRouter()
 
 
-@router.post("/", response_model=InviteCodeResponse)
+@router.post("", response_model=InviteCodeResponse)
 async def create_invite_code(
     invite_code_data: InviteCodeCreate,
     db: Session = Depends(get_db),
@@ -47,7 +47,7 @@ async def create_invite_code(
     return invite_code
 
 
-@router.get("/", response_model=list[InviteCodeResponse])
+@router.get("", response_model=list[InviteCodeResponse])
 async def get_invite_codes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)

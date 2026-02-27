@@ -18,7 +18,7 @@ from app.services.map_service import calculate_route
 router = APIRouter()
 
 
-@router.post("/", response_model=LocationResponse)
+@router.post("", response_model=LocationResponse)
 async def create_location(
     location: LocationCreate,
     db: Session = Depends(get_db),
@@ -51,7 +51,7 @@ async def create_location(
         )
 
 
-@router.get("/", response_model=List[LocationResponse])
+@router.get("", response_model=List[LocationResponse])
 async def get_locations(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -74,7 +74,7 @@ async def get_locations(
         )
 
 
-@router.get("/favorites/", response_model=List[FavoriteLocationResponse])
+@router.get("/favorites", response_model=List[FavoriteLocationResponse])
 async def get_favorite_locations(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -97,7 +97,7 @@ async def get_favorite_locations(
         )
 
 
-@router.post("/favorites/", response_model=FavoriteLocationResponse)
+@router.post("/favorites", response_model=FavoriteLocationResponse)
 async def create_favorite_location(
     location: FavoriteLocationCreate,
     db: Session = Depends(get_db),
