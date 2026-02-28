@@ -4,7 +4,7 @@
     <div class="add-buttons">
       <router-link to="/products/new" class="add-btn">
         <span class="btn-icon">📝</span>
-        <span>添加商品</span>
+        <span>添加价格</span>
       </router-link>
       <router-link to="/locations/new" class="add-btn">
         <span class="btn-icon">📍</span>

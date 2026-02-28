@@ -9,9 +9,8 @@
           <i class="mdi mdi-home"></i>
         </button>
       </div>
-      <h1>商品记录</h1>
+      <h1>价格记录</h1>
       <div class="action-buttons">
-        <router-link to="/ingredients" class="btn-secondary" style="margin-right: 1rem;">管理原料</router-link>
         <button @click="showAddModal = true" class="btn-square add-btn" title="添加记录">
           <i class="mdi mdi-plus"></i>
         </button>
@@ -21,7 +20,7 @@
     <div v-if="loading" class="loading">加载中...</div>
 
     <div v-else-if="products.length === 0" class="empty-state">
-      暂无商品记录
+      暂无价格记录
     </div>
 
     <div v-else class="product-grid">
@@ -36,14 +35,34 @@
       </div>
     </div>
 
-    <!-- 添加商品记录模态框 -->
+    <!-- 添加价格记录模态框 -->
     <div v-if="showAddModal" class="modal-overlay" @click="showAddModal = false">
       <div class="modal-content" @click.stop>
-        <h2>添加商品记录</h2>
+        <h2>添加价格记录</h2>
         <form @submit.prevent="addProduct">
           <div class="form-group">
-            <label for="productName">商品名称:</label>
-            <input v-model="newProduct.product_name" type="text" id="productName" required />
+            <label for="productName">原料:</label>
+            <div class="autocomplete-container">
+              <input
+                v-model="newProduct.product_name"
+                type="text"
+                id="productName"
+                required
+                @input="onProductNameInput"
+                @focus="showSuggestions = true"
+                @keydown="handleKeydown"
+              />
+              <ul v-if="showSuggestions && filteredSuggestions.length > 0" class="suggestions-list">
+                <li
+                  v-for="(suggestion, index) in filteredSuggestions"
+                  :key="suggestion.id"
+                  :class="{ 'suggestion-selected': index === selectedIndex }"
+                  @click="selectSuggestion(suggestion)"
+                >
+                  {{ suggestion.name }}
+                </li>
+              </ul>
+            </div>
           </div>
           <div class="form-group">
             <label for="price">价格:</label>
@@ -71,6 +90,12 @@
 import { ref, onMounted } from 'vue'
 import { api } from '@/api/client'
 
+// 自动补全相关
+interface Suggestion {
+  id: number
+  name: string
+}
+
 const products = ref<any[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
@@ -81,8 +106,18 @@ const newProduct = ref({
   unit: ''
 })
 
+// 自动补全功能
+const allIngredients = ref<Suggestion[]>([])
+const filteredSuggestions = ref<Suggestion[]>([])
+const showSuggestions = ref(false)
+const selectedIndex = ref(-1)
+
+// 搜索防抖
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
+
 onMounted(async () => {
   await loadProducts()
+  await loadAllIngredients()
 })
 
 async function loadProducts() {
@@ -112,13 +147,71 @@ async function addProduct() {
     await loadProducts()
   } catch (error) {
     console.error('Failed to add product:', error)
-    alert('添加商品记录失败，请重试')
+    alert('添加价格记录失败，请重试')
   }
 }
 
 function formatDate(dateString: string) {
   const date = new Date(dateString)
   return date.toLocaleDateString('zh-CN')
+}
+
+async function loadAllIngredients() {
+  try {
+    const response = await api.get('/ingredients')
+    allIngredients.value = response.map((ing: any) => ({ id: ing.id, name: ing.name }))
+  } catch (error) {
+    console.error('Failed to load ingredients:', error)
+  }
+}
+
+function onProductNameInput() {
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
+  }
+  searchTimeout = setTimeout(() => {
+    filterSuggestions()
+  }, 300)
+}
+
+function filterSuggestions() {
+  if (!newProduct.value.product_name.trim()) {
+    filteredSuggestions.value = []
+    showSuggestions.value = false
+    return
+  }
+
+  const searchTerm = newProduct.value.product_name.toLowerCase()
+  filteredSuggestions.value = allIngredients.value
+    .filter(ing =>
+      ing.name.toLowerCase().includes(searchTerm)
+    )
+    .slice(0, 10) // 只显示前10个匹配项
+
+  showSuggestions.value = filteredSuggestions.value.length > 0
+  selectedIndex.value = -1
+}
+
+function selectSuggestion(suggestion: Suggestion) {
+  newProduct.value.product_name = suggestion.name
+  showSuggestions.value = false
+  selectedIndex.value = -1
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    selectedIndex.value = Math.min(selectedIndex.value + 1, filteredSuggestions.value.length - 1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    selectedIndex.value = Math.max(selectedIndex.value - 1, -1)
+  } else if (event.key === 'Enter' && selectedIndex.value >= 0) {
+    event.preventDefault()
+    selectSuggestion(filteredSuggestions.value[selectedIndex.value])
+  } else if (event.key === 'Escape') {
+    showSuggestions.value = false
+    selectedIndex.value = -1
+  }
 }
 </script>
 
@@ -288,5 +381,43 @@ function formatDate(dateString: string) {
   gap: 1rem;
   justify-content: flex-end;
   margin-top: 1.5rem;
+}
+
+.autocomplete-container {
+  position: relative;
+  width: 100%;
+}
+
+.suggestions-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 0.5rem 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.suggestions-list li {
+  padding: 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.suggestions-list li:last-child {
+  border-bottom: none;
+}
+
+.suggestions-list li:hover,
+.suggestion-selected {
+  background-color: #f5f5f5;
 }
 </style>

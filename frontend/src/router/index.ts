@@ -34,6 +34,21 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/recipes/RecipeList.vue').then(m => m.default)
   },
   {
+    path: '/recipes/:id',
+    name: 'recipe-detail',
+    component: () => import('@/views/recipes/RecipeDetail.vue').then(m => m.default)
+  },
+  {
+    path: '/recipes/:id/edit',
+    name: 'recipe-form',
+    component: () => import('@/views/recipes/RecipeForm.vue').then(m => m.default)
+  },
+  {
+    path: '/recipes/new',
+    name: 'recipe-form',
+    component: () => import('@/views/recipes/RecipeForm.vue').then(m => m.default)
+  },
+  {
     path: '/locations',
     name: 'locations',
     component: () => import('@/views/locations/LocationMap.vue').then(m => m.default)

@@ -11,6 +11,7 @@ class Recipe(Base):
     name = Column(String(200), nullable=False)
     source = Column(String(100))
     user_id = Column(Integer, ForeignKey("users.id"))
+    category = Column(String(50))  # 菜谱分类：荤菜、素菜、水产、主食、汤与粥、早餐、甜品、调料、半成品、小食
     tags = Column(JSON)
     cooking_steps = Column(JSON)
     total_time_minutes = Column(Integer)
@@ -31,7 +32,7 @@ class RecipeIngredient(Base):
     id = Column(Integer, primary_key=True, index=True)
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
-    quantity = Column(String(50), nullable=False)
+    quantity = Column(String(50))  # 改为可空，允许没有数量的原料
     unit = Column(String(20))
 
     # 关系

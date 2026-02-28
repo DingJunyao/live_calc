@@ -12,13 +12,14 @@ class CookingStep(BaseModel):
 
 class RecipeIngredientCreate(BaseModel):
     ingredient_name: str
-    quantity: str
+    quantity: Optional[str] = None
     unit: Optional[str] = None
 
 
 class RecipeCreate(BaseModel):
     name: str = Field(..., max_length=200)
     source: str = "custom"
+    category: Optional[str] = None  # 菜谱分类
     tags: Optional[List[str]] = []
     cooking_steps: List[CookingStep]
     ingredients: List[RecipeIngredientCreate]
@@ -32,6 +33,7 @@ class RecipeResponse(BaseModel):
     id: int
     name: str
     source: str
+    category: Optional[str]
     tags: Optional[List[str]]
     cooking_steps: Optional[List[CookingStep]]
     total_time_minutes: Optional[int]
@@ -48,7 +50,7 @@ class RecipeResponse(BaseModel):
 class RecipeIngredientDetail(BaseModel):
     ingredient_id: int
     name: str
-    quantity: str
+    quantity: Optional[str]
     unit: Optional[str]
     nutrition_info: Optional[dict]
 

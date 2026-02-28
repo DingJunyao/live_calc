@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from app.config import settings
 
@@ -17,6 +17,14 @@ class UserRegister(BaseModel):
     phone: Optional[str] = Field(None, pattern=r"^1[3-9]\d{9}$")
     password_hash: str  # 前端已 SHA256 加密
     invite_code: Optional[str] = None
+
+    @field_validator('phone', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        """空字符串转为 None，避免验证失败"""
+        if v == '' or v is None:
+            return None
+        return v
 
 
 class UserLogin(BaseModel):

@@ -10,7 +10,8 @@ from app.schemas.recipe import (
     RecipeResponse,
     RecipeDetailResponse,
     RecipeCostResponse,
-    RecipeNutritionResponse
+    RecipeNutritionResponse,
+    RecipeIngredientDetail
 )
 from app.services.recipe_service import calculate_recipe_cost, calculate_recipe_nutrition
 from app.services.recipe_import_service import RecipeImportService
@@ -31,6 +32,7 @@ async def create_recipe(
         db_recipe = Recipe(
             name=recipe.name,
             source=recipe.source,
+            category=recipe.category,
             user_id=current_user.id,
             tags=recipe.tags,
             cooking_steps=[s.model_dump() for s in recipe.cooking_steps],
@@ -107,37 +109,56 @@ async def get_recipe_detail(
 ):
     """获取菜谱详情"""
     try:
+        # 查询当前用户的菜谱或公共导入的菜谱
         recipe = db.query(Recipe).filter(
             Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id
+            (Recipe.user_id == current_user.id) | (Recipe.source.isnot(None))
         ).first()
+
+        # 如果没有找到，尝试只通过 source 查询（公共菜谱）
+        if not recipe:
+            recipe = db.query(Recipe).filter(
+                Recipe.id == recipe_id,
+                Recipe.source.isnot(None)
+            ).first()
+
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
-        ingredients_detail = []
-        for recipe_ingredient in recipe.ingredients:
-            ingredient = recipe_ingredient.ingredient
-            ingredients_detail.append({
-                "ingredient_id": ingredient.id,
-                "name": ingredient.name,
-                "quantity": recipe_ingredient.quantity,
-                "unit": recipe_ingredient.unit
-            })
+        # 单独查询原料和食材信息
+        recipe_ingredients = db.query(RecipeIngredient).filter(
+            RecipeIngredient.recipe_id == recipe_id
+        ).all()
 
-        return {
-            "id": recipe.id,
-            "name": recipe.name,
-            "source": recipe.source,
-            "tags": recipe.tags,
-            "cooking_steps": recipe.cooking_steps,
-            "total_time_minutes": recipe.total_time_minutes,
-            "difficulty": recipe.difficulty,
-            "servings": recipe.servings,
-            "tips": recipe.tips,
-            "created_at": recipe.created_at,
-            "updated_at": recipe.updated_at,
-            "ingredients": ingredients_detail
-        }
+        # 获取原料详情，处理可能的空关联
+        ingredients_detail = []
+        for ri in recipe_ingredients:
+            ingredient = db.query(Ingredient).filter(Ingredient.id == ri.ingredient_id).first()
+            if ingredient is None:
+                continue
+            ingredients_detail.append(RecipeIngredientDetail(
+                ingredient_id=ingredient.id,
+                name=ingredient.name,
+                quantity=ri.quantity or "",
+                unit=ri.unit,
+                nutrition_info=None
+            ))
+
+        return RecipeDetailResponse(
+            id=recipe.id,
+            name=recipe.name,
+            source=recipe.source,
+            category=recipe.category,
+            tags=recipe.tags or [],
+            cooking_steps=recipe.cooking_steps or [],
+            total_time_minutes=recipe.total_time_minutes,
+            difficulty=recipe.difficulty,
+            servings=recipe.servings,
+            tips=recipe.tips,
+            created_at=recipe.created_at,
+            updated_at=recipe.updated_at,
+            ingredients=ingredients_detail
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取菜谱详情失败: {str(e)}")
 

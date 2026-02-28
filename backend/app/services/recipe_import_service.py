@@ -52,6 +52,20 @@ class RecipeImportService:
                         try:
                             recipe_data = self._parse_recipe_file(zip_ref, recipe_file)
                             if recipe_data:
+                                # 检查数据完整性
+                                cooking_steps = recipe_data.get('cooking_steps', [])
+                                ingredients = recipe_data.get('ingredients', [])
+
+                                if len(cooking_steps) == 0:
+                                    failed_count += 1
+                                    errors.append(f"跳过菜谱 {recipe_data.get('name', recipe_file)}：无步骤信息")
+                                    continue
+
+                                if len(ingredients) == 0:
+                                    failed_count += 1
+                                    errors.append(f"跳过菜谱 {recipe_data.get('name', recipe_file)}：无原料信息")
+                                    continue
+
                                 success = self._import_single_recipe(recipe_data)
                                 if success:
                                     imported_count += 1
@@ -59,6 +73,7 @@ class RecipeImportService:
                                     failed_count += 1
                             else:
                                 failed_count += 1
+                                errors.append(f"解析失败: {recipe_file}")
                         except Exception as e:
                             failed_count += 1
                             errors.append(f"解析文件 {recipe_file} 时出错: {str(e)}")
@@ -221,8 +236,36 @@ class RecipeImportService:
             steps = self._extract_steps_from_markdown(content)
 
             # 提取分类信息（从文件路径）
-            category = Path(file_path).parent.name.lower()
-            if category in ['aquatic', 'breakfast', 'condiment', 'dessert', 'drink', 'meat_dish', 'semi-finished', 'soup', 'staple', 'vegetable_dish']:
+            # 处理可能的嵌套目录结构，如 dishes/vegetable_dish/菜名/菜名.md
+            path_obj = Path(file_path)
+            # 获取分类目录（从路径中匹配已知的分类目录名）
+            category_mapping = {
+                'aquatic': '水产',
+                'breakfast': '早餐',
+                'condiment': '调料',
+                'dessert': '甜品',
+                'drink': '饮料',
+                'meat_dish': '荤菜',
+                'semi-finished': '半成品',
+                'soup': '汤与粥',
+                'staple': '主食',
+                'vegetable_dish': '素菜'
+            }
+
+            # 从路径中提取分类目录
+            category = None
+            for part in path_obj.parts:
+                if part.lower() in category_mapping:
+                    category = part.lower()
+                    break
+
+            # 如果没找到分类目录，尝试从父目录获取
+            if not category:
+                category = path_obj.parent.name.lower()
+
+            category_name = category_mapping.get(category, category)
+
+            if category and category in ['aquatic', 'breakfast', 'condiment', 'dessert', 'drink', 'meat_dish', 'semi-finished', 'soup', 'staple', 'vegetable_dish']:
                 tags = [category]
             else:
                 tags = []
@@ -233,6 +276,7 @@ class RecipeImportService:
                 'ingredients': ingredients,
                 'cooking_steps': steps,
                 'source': f"howtocook:{category}",
+                'category': category_name,  # 添加分类字段
                 'tags': tags,
                 'total_time_minutes': total_time_minutes,
                 'difficulty': difficulty,
@@ -253,11 +297,106 @@ class RecipeImportService:
         """
         ingredients = []
 
-        # 查找"计算"部分的内容（通常包含用量信息）
-        calc_section_match = re.search(r'## 计算\s*\n((?:- .*\n?)*?(?=\n## |\Z))', content, re.IGNORECASE)
-        if not calc_section_match:
-            # 如果找不到"计算"部分，尝试"必备原料和工具"部分
-            calc_section_match = re.search(r'## 必备原料和工具\s*\n((?:- .*\n?)*?(?=\n## |\Z))', content, re.IGNORECASE)
+        # 优先查找"计算"部分的内容（通常包含用量信息）
+        # 正则表达式：## 计算 + 换行 + 任意内容 + 下一个 ## 标题或文件末尾
+        # 使用非贪婪匹配 .+? 确保在遇到下一个 ## 时停止
+        calc_section_match = re.search(r'## 计算\s*\n(.+?)(?=\n## |$)', content, re.DOTALL | re.IGNORECASE)
+
+        if calc_section_match:
+            calc_content = calc_section_match.group(1)
+
+            # 检查是否包含表格格式
+            has_table = '|' in calc_content and '原料|数量|单位' in calc_content
+
+            if has_table:
+                # 解析表格格式
+                # 跳过表头和分隔行
+                lines = calc_content.split('\n')
+                for line in lines[2:]:  # 跳过前两行（表头和分隔行）
+                    line = line.strip()
+                    if not line.startswith('|'):
+                        continue
+
+                    # 移除首尾的 |
+                    cells = [cell.strip() for cell in line.split('|')]
+                    cells = [c for c in cells if c]  # 移除空单元格
+
+                    if len(cells) >= 3:  # 至少有原料、数量、单位三列
+                        name = cells[0]
+                        quantity = cells[1]
+                        unit = cells[2]
+
+                        # 跳过空原料名
+                        if not name or name == '原料':
+                            continue
+
+                        # 检查数量是否为数字或范围
+                        if quantity and (re.match(r'^\d+\.?\d*$', quantity) or re.match(r'^\d+-\d+$', quantity)):
+                            # 处理范围数量
+                            if '-' in quantity:
+                                parts = quantity.split('-')
+                                try:
+                                    quantity = str((int(parts[0]) + int(parts[1])) / 2)
+                                except:
+                                    quantity = quantity
+                            ingredients.append({
+                                'ingredient_name': name,
+                                'quantity': quantity,
+                                'unit': unit
+                            })
+            else:
+                # 解析列表格式
+                lines = calc_content.split('\n')
+
+                for line in lines:
+                    line = line.strip()
+                    # 跳过空行
+                    if not line:
+                        continue
+
+                    # 跳过以冒号结尾的标题行（如"每份："）
+                    if line.endswith('：') or line.endswith(':'):
+                        continue
+
+                    # 支持 -、*、+ 三种列表标记
+                    if line.startswith('- ') or line.startswith('* ') or line.startswith('+ '):
+                        ingredient_line = line[2:]  # 移除列表标记
+
+                        # 移除括号内容后检查是否为说明文字
+                        cleaned_for_check = re.sub(r'[（）].*', '', ingredient_line).strip()
+                        # 跳过一些非食材信息的行
+                        if any(skip_word in cleaned_for_check for skip_word in ['每份', '每人大约', '大约', '说明', '注意']):
+                            continue
+
+                        # 跳过单位换算说明（如 "1 汤匙 = 15ml"）
+                        if '=' in ingredient_line and '茶匙' in cleaned_for_check or '汤匙' in cleaned_for_check:
+                            continue
+
+                        # 跳过空原料名（只有冒号的情况）
+                        if ':' in ingredient_line and len(ingredient_line.split(':', 1)[0].strip()) == 0:
+                            continue
+
+                        # 处理顿号分隔的多个原料（如 "姜、蒜瓣、干辣椒"）
+                        if '、' in ingredient_line:
+                            # 分割成多个原料
+                            items = [item.strip() for item in ingredient_line.split('、')]
+                            for item in items:
+                                if item:  # 跳过空字符串
+                                    parsed_ing = self._parse_ingredient_from_line(item)
+                                    if parsed_ing:
+                                        ingredients.append(parsed_ing)
+                        else:
+                            parsed_ing = self._parse_ingredient_from_line(ingredient_line)
+                            if parsed_ing:
+                                ingredients.append(parsed_ing)
+
+            if len(ingredients) > 0:
+                # 成功从计算部分提取了原料（含数量信息），直接返回
+                return ingredients
+
+        # 如果没有在计算部分找到带数量的原料，或者根本没找到计算部分，
+        # 则尝试"必备原料和工具"部分（通常不含数量）
+        calc_section_match = re.search(r'## 必备[原料和工具]+\s*\n(.+?)(?=\n## |$)', content, re.IGNORECASE | re.DOTALL)
 
         if calc_section_match:
             calc_content = calc_section_match.group(1)
@@ -265,71 +404,137 @@ class RecipeImportService:
 
             for line in lines:
                 line = line.strip()
-                if line.startswith('- '):
-                    ingredient_line = line[2:]  # 移除"- "前缀
-                    parsed_ing = self._parse_ingredient_from_line(ingredient_line)
-                    if parsed_ing:
-                        ingredients.append(parsed_ing)
+                # 支持 -、*、+ 三种列表标记
+                if line.startswith('- ') or line.startswith('* ') or line.startswith('+ '):
+                    ingredient_line = line[2:]  # 移除列表标记
+
+                    # 处理顿号分隔的多个原料（如 "姜、蒜瓣、干辣椒"）
+                    if '、' in ingredient_line:
+                        # 分割成多个原料
+                        items = [item.strip() for item in ingredient_line.split('、')]
+                        for item in items:
+                            if item:  # 跳过空字符串
+                                parsed_ing = self._parse_ingredient_from_line(item)
+                                if parsed_ing:
+                                    ingredients.append(parsed_ing)
+                    else:
+                        parsed_ing = self._parse_ingredient_from_line(ingredient_line)
+                        if parsed_ing:
+                            ingredients.append(parsed_ing)
 
         return ingredients
 
     def _parse_ingredient_from_line(self, ingredient_line: str) -> Optional[Dict]:
         """
         从单行解析食材信息
+        支持格式：
+        - "皮蛋 2 个"
+        - "青椒 4 根（长 10-15cm）"
+        - "食用油 10-20ml"
+        - "葱"
         """
         import re
 
-        # 移除注释部分（括号内的内容）
-        clean_line = re.sub(r'\([^)]*\)', '', ingredient_line).strip()
+        # 移除 Markdown 列表标记
+        line = ingredient_line.strip().lstrip('-*+ ')
 
-        # 提取食材名称和数量信息
-        # 尝试匹配 "食材名 数量 单位" 的模式
-        # 如："土豆 2 个（每个土豆大约重 120g，共约 240g）" -> 食材名:土豆, 数量:2, 单位:个
-        match = re.match(r'^([^(]+?)\s+([\d\.]+)\s*([^\s\d\(\)]+)', clean_line)
+        # 移除注释部分（括号内的内容），但保留括号前的数量
+        clean_line = re.sub(r'（[^）]*）', '', line).strip()
+        clean_line = re.sub(r'\([^)]*\)', '', clean_line).strip()
 
+        # 移除描述性文字（逗号后的内容通常是对原料的说明）
+        # 例如："姜丝，以正常老姜切 2-3 片" -> "姜丝 2-3 片"
+        # 例如："香菜按照个人口味" -> "香菜"
+        if '，' in clean_line:
+            # 尝试找到逗号后的数字（数量）和单位
+            comma_pos = clean_line.index('，')
+            after_comma = clean_line[comma_pos + 1:]
+
+            # 如果逗号后面有数字和单位，则保留这部分
+            num_unit_match = re.search(r'(\d+\.?\d*[-\d+]*)\s*([a-zA-Z\u4e00-\u9fa5]+)', after_comma)
+            if num_unit_match:
+                # 保留逗号前的原料名和逗号后的数量单位
+                name_part = clean_line[:comma_pos].strip()
+                quantity_part = num_unit_match.group(1)
+                unit_part = num_unit_match.group(2)
+
+                # 检查原料名是否已经包含数字范围，如果是则移除（避免重复）
+                if re.search(r'\d+-\d+', name_part):
+                    # 提取原料名（移除数字范围）
+                    name_match = re.match(r'^(.+?)\s*\d+-\d+', name_part)
+                    if name_match:
+                        name_part = name_match.group(1).strip()
+
+                clean_line = f"{name_part} {quantity_part} {unit_part}"
+            else:
+                # 没有找到数量单位，只保留逗号前的部分
+                clean_line = clean_line[:comma_pos].strip()
+        elif '以' in clean_line or '按照' in clean_line or '建议' in clean_line:
+            # 移除"以"、"按照"、"建议"及其后的描述文字
+            clean_line = re.sub(r'[以按照建议].*$', '', clean_line).strip()
+
+        if not clean_line:
+            return None
+
+        # 模式0: "食材名：数量单位" 或 "食材名:数量单位" (如 "高筋面粉：400g", "牛奶: 200g", "鸡蛋：1 个")
+        match = re.match(r'^(.+?)[:：]\s*(\d+\.?\d*)\s*([a-zA-Z\u4e00-\u9fa5]+)?$', clean_line)
+        if match:
+            return {
+                'ingredient_name': match.group(1).strip(),
+                'quantity': match.group(2).strip(),
+                'unit': (match.group(3) or '').strip()
+            }
+
+        # 模式1: "食材名 数量-数量 单位" (如 "10-20ml", "干辣椒2-3 个")
+        match = re.match(r'^(.+?)\s*(\d+)-(\d+)\s*([a-zA-Z\u4e00-\u9fa5]+)?$', clean_line)
         if match:
             name = match.group(1).strip()
-            quantity = match.group(2).strip()
-            unit = match.group(3).strip()
+            quantity = str((int(match.group(2)) + int(match.group(3))) / 2)
+            unit = (match.group(4) or '').strip()
+            return {'ingredient_name': name, 'quantity': quantity, 'unit': unit}
+
+        # 模式2: "食材名 数量 单位" (如 "2 个", "10ml")
+        match = re.match(r'^(.+?)\s+(\d+\.?\d*)\s*([a-zA-Z\u4e00-\u9fa5]+)?$', clean_line)
+        if match:
             return {
-                'ingredient_name': name,
-                'quantity': quantity,
-                'unit': unit
+                'ingredient_name': match.group(1).strip(),
+                'quantity': match.group(2).strip(),
+                'unit': (match.group(3) or '').strip()
             }
-        else:
-            # 如果上述模式不匹配，尝试其他模式
-            # 例如："海盐（研磨装）" 或 "阿根廷红虾 2-3 只"
-            parts = clean_line.split()
-            if len(parts) >= 2:
-                name = parts[0]
-                # 查找数量和单位
-                quantity = ""
-                unit = ""
 
-                for part in parts[1:]:
-                    num_match = re.search(r'(\d+\.?\d*)', part)
-                    if num_match:
-                        quantity = num_match.group(1)
-
-                    # 查找单位
-                    unit_match = re.search(r'(g|kg|mg|ml|l|个|只|块|片|条|根|瓣|勺|杯|碗|克|升|毫升|斤|两|枚|段|瓣|把|棵|颗|粒|条|支|盒|袋|瓶|包|罐)', part)
-                    if unit_match:
-                        unit = unit_match.group(1)
-
-                if quantity and unit:
-                    return {
-                        'ingredient_name': name,
-                        'quantity': quantity,
-                        'unit': unit
-                    }
-
-            # 如果仍然无法解析，至少返回名称
-            name = clean_line.split()[0] if clean_line.split() else clean_line
+        # 模式3: "食材名 数量-数量" (无单位)
+        match = re.match(r'^(.+?)\s+(\d+)-(\d+)\s*$', clean_line)
+        if match:
             return {
-                'ingredient_name': name,
-                'quantity': "",
-                'unit': ""
+                'ingredient_name': match.group(1).strip(),
+                'quantity': str((int(match.group(2)) + int(match.group(3))) / 2),
+                'unit': ''
             }
+
+        # 模式4: 分割查找数量和单位
+        parts = clean_line.split()
+        if len(parts) >= 2:
+            name = parts[0]
+            remaining = ' '.join(parts[1:])
+
+            # 优先匹配 "数量-数量 单位"
+            range_match = re.search(r'(\d+)-(\d+)\s*([a-zA-Z\u4e00-\u9fa5]+)', remaining)
+            if range_match:
+                quantity = str((int(range_match.group(1)) + int(range_match.group(2))) / 2)
+                unit = range_match.group(3)
+                return {'ingredient_name': name, 'quantity': quantity, 'unit': unit}
+
+            # 匹配 "数量 单位" 或 "数量"
+            num_unit_match = re.search(r'(\d+\.?\d*)\s*([a-zA-Z\u4e00-\u9fa5]+)?', remaining)
+            if num_unit_match:
+                quantity = num_unit_match.group(1)
+                unit = num_unit_match.group(2) or ''
+                return {'ingredient_name': name, 'quantity': quantity, 'unit': unit}
+
+            return {'ingredient_name': name, 'quantity': '', 'unit': ''}
+
+        # 模式5: 只有名称
+        return {'ingredient_name': clean_line, 'quantity': '', 'unit': ''}
 
     def _extract_steps_from_markdown(self, content: str) -> List[Dict]:
         """
@@ -337,21 +542,42 @@ class RecipeImportService:
         """
         steps = []
 
-        # 查找"操作"部分的内容
-        steps_section_match = re.search(r'## 操作\s*\n((?:- .*\n?)*?(?=\n## |\Z))', content, re.IGNORECASE)
+        # 查找"操作"部分后的所有内容（直到下一个 ## 标题或文件末尾）
+        steps_section_match = re.search(r'## 操作\s*\n(.+?)(?=\n## |$)', content, re.IGNORECASE | re.DOTALL)
         if steps_section_match:
             steps_content = steps_section_match.group(1)
+
+            # 移除可能存在的附加内容部分（如 "## 附加内容"）
+            steps_content = re.sub(r'\n## [^\n].*$', '', steps_content, flags=re.DOTALL)
+
             lines = steps_content.split('\n')
 
             for idx, line in enumerate(lines):
                 line = line.strip()
+                # 支持多种列表标记：
+                # - 列表
+                # * 列表
+                # + 列表
+                # 1. 2. 3. - 数字编号
+                step_content = None
+
                 if line.startswith('- '):
-                    step_content = line[2:].strip()  # 移除"- "前缀
-                    if step_content:
-                        steps.append({
-                            'step': idx + 1,
-                            'content': step_content
-                        })
+                    step_content = line[2:].strip()  # 移除 "- "
+                elif line.startswith('* '):
+                    step_content = line[2:].strip()  # 移除 "* "
+                elif line.startswith('+ '):
+                    step_content = line[2:].strip()  # 移除 "+ "
+                else:
+                    # 匹配数字编号，如 "1. "、"10. "、"100. "
+                    num_match = re.match(r'^(\d+)\.\s*', line)
+                    if num_match:
+                        step_content = line[len(num_match.group(0)) + len(num_match.group(1)) + 1:].strip()
+
+                if step_content:
+                    steps.append({
+                        'step': idx + 1,
+                        'content': step_content
+                    })
 
         return steps
 
@@ -560,24 +786,42 @@ class RecipeImportService:
                 print(f"菜谱 {recipe_data['name']} 已存在，跳过导入")
                 return True  # 视为成功，因为已存在
 
+            # 调试输出
+            cooking_steps_data = recipe_data.get('cooking_steps', [])
+            ingredients_data = recipe_data.get('ingredients', [])
+            print(f"调试: 导入菜谱 {recipe_data['name']}, 步骤数={len(cooking_steps_data)}, 原料数={len(ingredients_data)}")
+
+            # 检查数据完整性
+            cooking_steps_data = recipe_data.get('cooking_steps', [])
+            ingredients_data = recipe_data.get('ingredients', [])
+
+            if len(cooking_steps_data) == 0:
+                print(f"跳过菜谱 {recipe_data['name']}：无步骤信息")
+                return False
+
+            if len(ingredients_data) == 0:
+                print(f"跳过菜谱 {recipe_data['name']}：无原料信息")
+                return False
+
             # 构建菜谱对象
             recipe_create = RecipeCreate(
                 name=recipe_data['name'],
                 source=recipe_data['source'],
+                category=recipe_data.get('category'),
                 tags=recipe_data.get('tags', []),
                 cooking_steps=[
                     CookingStep(
                         step=item.get('step', idx + 1),
                         content=item['content'],
                         duration_minutes=item.get('duration_minutes')
-                    ) for idx, item in enumerate(recipe_data.get('cooking_steps', []))
+                    ) for idx, item in enumerate(cooking_steps_data)
                 ],
                 ingredients=[
                     RecipeIngredientCreate(
                         ingredient_name=self._match_or_create_ingredient(item['ingredient_name']),
                         quantity=item.get('quantity', ''),
                         unit=item.get('unit', '')
-                    ) for item in recipe_data.get('ingredients', [])
+                    ) for item in ingredients_data
                 ],
                 total_time_minutes=recipe_data.get('total_time_minutes'),
                 difficulty=recipe_data.get('difficulty', 'simple'),
@@ -589,6 +833,7 @@ class RecipeImportService:
             db_recipe = Recipe(
                 name=recipe_create.name,
                 source=recipe_create.source,
+                category=recipe_create.category,
                 user_id=1,  # 使用默认用户ID，稍后可以根据需要调整
                 tags=recipe_create.tags,
                 cooking_steps=[s.model_dump() for s in recipe_create.cooking_steps],

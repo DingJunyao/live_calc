@@ -314,6 +314,10 @@ async def update_ingredient(
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
 
+        # 检查是否为导入原料且用户不是管理员
+        if ingredient.is_imported and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="导入的原料名称只能由管理员修改")
+
         if name and name != ingredient.name:
             existing = db.query(Ingredient).filter(Ingredient.name == name).first()
             if existing:
@@ -341,6 +345,7 @@ async def update_ingredient(
             "density": ingredient.density,
             "default_unit": ingredient.default_unit,
             "aliases": ingredient.aliases or [],
+            "is_imported": ingredient.is_imported,
             "created_at": ingredient.created_at
         }
     except HTTPException:
@@ -454,3 +459,72 @@ async def soft_delete_ingredient(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"软删除食材失败: {str(e)}")
+
+
+@router.post("/merge", response_model=dict)
+async def merge_ingredients(
+    source_id: int = Body(..., embed=False),
+    target_id: int = Body(..., embed=False),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """合并原料，将源原料合并到目标原料，源原料会被软删除"""
+    try:
+        # 获取源原料和目标原料
+        source_ingredient = db.query(Ingredient).filter(Ingredient.id == source_id, Ingredient.is_active == True).first()
+        target_ingredient = db.query(Ingredient).filter(Ingredient.id == target_id, Ingredient.is_active == True).first()
+
+        if not source_ingredient:
+            raise HTTPException(status_code=404, detail="源原料不存在")
+        if not target_ingredient:
+            raise HTTPException(status_code=404, detail="目标原料不存在")
+
+        # 检查权限：导入的原料只能由管理员操作
+        if source_ingredient.is_imported and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="导入的原料只能由管理员执行合并操作")
+
+        # 检查：导入原料只能合并到同样为导入的原料
+        if source_ingredient.is_imported and not target_ingredient.is_imported:
+            raise HTTPException(status_code=400, detail="导入的原料只能合并到同样为导入的原料")
+
+        # 执行合并操作
+        # 1. 更新所有引用源原料的外键
+        # 从 RecipeIngredient 表更新引用
+        from app.models.recipe import RecipeIngredient
+        recipe_ingredients = db.query(RecipeIngredient).filter(RecipeIngredient.ingredient_id == source_id).all()
+        for ri in recipe_ingredients:
+            ri.ingredient_id = target_id
+
+        # 从 IngredientNutritionMapping 表更新引用
+        from app.models.nutrition import IngredientNutritionMapping
+        mappings = db.query(IngredientNutritionMapping).filter(IngredientNutritionMapping.ingredient_id == source_id).all()
+        for mapping in mappings:
+            mapping.ingredient_id = target_id
+
+        # 从 ProductRecord 表更新引用（如果存在的话）
+        # 注意：可能需要根据实际情况调整模型引用
+        try:
+            from app.models.product import ProductRecord
+            product_records = db.query(ProductRecord).filter(ProductRecord.ingredient_id == source_id).all()
+            for pr in product_records:
+                pr.ingredient_id = target_id
+        except ImportError:
+            # ProductRecord 模型不存在或没有 ingredient_id 字段
+            pass
+
+        # 2. 软删除源原料
+        source_ingredient.is_active = False
+        source_ingredient.updated_by = current_user.id
+
+        db.commit()
+
+        return {
+            "message": f"成功将原料 '{source_ingredient.name}' 合并到 '{target_ingredient.name}'",
+            "source_id": source_id,
+            "target_id": target_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"合并原料失败: {str(e)}")
