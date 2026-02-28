@@ -16,7 +16,9 @@
       <div class="search-box">
         <input v-model="searchTerm" placeholder="搜索用户名或邮箱..." class="search-input" />
       </div>
-      <button @click="loadUsers" class="btn-refresh">刷新</button>
+      <button @click="filterUsers" class="btn-search">
+        <i class="mdi mdi-magnify"></i> 搜索
+      </button>
     </div>
 
     <div v-if="loading" class="loading">加载中...</div>
@@ -146,16 +148,19 @@ async function loadUsers() {
   }
 }
 
-const filteredUsers = computed(() => {
+const filteredUsers = ref<User[]>([])
+
+function filterUsers() {
   if (!searchTerm.value) {
-    return users.value
+    filteredUsers.value = users.value
+  } else {
+    const term = searchTerm.value.toLowerCase()
+    filteredUsers.value = users.value.filter(user =>
+      user.username.toLowerCase().includes(term) ||
+      user.email.toLowerCase().includes(term)
+    )
   }
-  const term = searchTerm.value.toLowerCase()
-  return users.value.filter(user =>
-    user.username.toLowerCase().includes(term) ||
-    user.email.toLowerCase().includes(term)
-  )
-})
+}
 
 function formatDate(dateString: string) {
   const date = new Date(dateString)

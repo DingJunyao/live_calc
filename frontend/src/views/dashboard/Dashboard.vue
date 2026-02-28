@@ -13,7 +13,7 @@
       <div class="quick-actions">
         <router-link to="/products" class="action-card">
           <i class="mdi mdi-clipboard-text mdi-24px icon"></i>
-          <span>商品</span>
+          <span>价格</span>
         </router-link>
         <router-link to="/ingredients" class="action-card">
           <i class="mdi mdi-food mdi-24px icon"></i>
