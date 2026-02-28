@@ -17,17 +17,19 @@
 
     <div class="search-filter">
       <div class="search-box">
-        <input v-model="searchTerm" @input="onSearchChange" placeholder="搜索原料名称或别名..." class="search-input" />
+        <input v-model="searchTerm" placeholder="搜索原料名称或别名..." class="search-input" />
       </div>
       <div class="filter-options">
-        <select v-model="selectedCategory" @change="onCategoryChange" class="filter-select">
+        <select v-model="selectedCategory" class="filter-select">
           <option value="">所有分类</option>
           <option v-for="category in categories" :key="category.id" :value="category.id">
             {{ category.display_name }}
           </option>
         </select>
       </div>
-      <button @click="loadIngredients" class="btn-refresh">刷新</button>
+      <button @click="loadIngredients" class="btn-search">
+        <i class="mdi mdi-magnify"></i> 搜索
+      </button>
     </div>
 
     <div v-if="loading" class="loading">加载中...</div>
@@ -40,7 +42,10 @@
     <div v-else class="ingredient-grid">
       <div v-for="ingredient in filteredIngredients" :key="ingredient.id" class="ingredient-card">
         <div class="ingredient-header">
-          <h3>{{ ingredient.name }}</h3>
+          <h3>
+            {{ ingredient.name }}
+            <span v-if="ingredient.is_imported" class="imported-badge" title="导入菜谱时顺带导入">导入</span>
+          </h3>
           <div class="ingredient-actions">
             <button @click="editIngredient(ingredient)" class="btn-edit" title="编辑">
               <i class="mdi mdi-pencil"></i>
@@ -70,6 +75,9 @@
         </div>
 
         <div class="ingredient-actions-secondary">
+          <button @click="showMergeModal(ingredient)" class="btn-action">
+            <i class="mdi mdi-merge"></i> 合并
+          </button>
           <button @click="showHierarchy(ingredient)" class="btn-action">
             <i class="mdi mdi-sitemap"></i> 层级关系
           </button>
@@ -96,7 +104,7 @@
                 type="text"
                 id="ingredientName"
                 required
-                :disabled="!!editingIngredient"
+                :disabled="isNameInputDisabled"
               />
             </div>
             <div class="form-group">
@@ -258,12 +266,51 @@
         </div>
       </div>
     </div>
+
+    <!-- 合并原料模态框 -->
+    <div v-if="showMergeModalFlag" class="modal-overlay" @click="closeMergeModal">
+      <div class="modal-content medium-modal" @click.stop>
+        <h2>合并原料 - {{ mergeSource?.name }}</h2>
+
+        <div class="merge-info">
+          <p>选择要合并到的目标原料。合并后，源原料将被软删除，所有关联数据将迁移到目标原料。</p>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" v-model="showAllIngredients" />
+            显示全部原料（默认只显示相似原料）
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="mergeTarget">目标原料:</label>
+          <select v-model="mergeTargetId" id="mergeTarget" class="select-input">
+            <option value="">请选择目标原料</option>
+            <option v-for="ing in mergeableIngredients" :key="ing.id" :value="ing.id">
+              {{ ing.name }}
+              <span v-if="ing.is_imported">(导入)</span>
+            </option>
+          </select>
+        </div>
+
+        <div v-if="mergeLoading" class="loading">处理中...</div>
+
+        <div class="form-actions">
+          <button @click="closeMergeModal" class="btn-secondary">取消</button>
+          <button @click="performMerge" class="btn-primary" :disabled="!mergeTargetId || mergeLoading">确认合并</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { api } from '@/api/client'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 interface Ingredient {
   id: number
@@ -273,6 +320,7 @@ interface Ingredient {
   density?: number
   default_unit?: string
   aliases: string[]
+  is_imported?: boolean
   created_at: string
 }
 
@@ -348,6 +396,7 @@ const showAddModal = ref(false)
 const showHierarchyModal = ref(false)
 const showAlternativesModal = ref(false)
 const showConvertModal = ref(false)
+const showMergeModalFlag = ref(false)
 const editingIngredient = ref<Ingredient | null>(null)
 const searchTerm = ref('')
 const selectedCategory = ref('')
@@ -361,10 +410,123 @@ const newIngredient = ref<NewIngredient>({
 const selectedIngredient = ref<Ingredient | null>(null)
 const hierarchyData = ref<HierarchyData | null>(null)
 const alternativesData = ref<Alternative[]>([])
+
+// 计算名称输入框是否禁用
+// 导入的原料只有管理员可以编辑名称
+const isNameInputDisabled = computed(() => {
+  if (!editingIngredient.value) return false
+  // 编辑模式下：导入原料非管理员禁用
+  if (editingIngredient.value.is_imported && !userStore.user?.is_admin) {
+    return true
+  }
+  return false
+})
 const conversionValue = ref<number | null>(null)
 const fromUnit = ref<string>('')
 const toUnit = ref<string>('')
 const conversionResult = ref<number | null>(null)
+
+// 合并功能相关
+const mergeSource = ref<Ingredient | null>(null)
+const mergeTargetId = ref<number | null>(null)
+const mergeLoading = ref(false)
+const showAllIngredients = ref(false)
+
+// 可合并的原料列表
+const mergeableIngredients = computed(() => {
+  if (!mergeSource.value) return []
+
+  let candidates = ingredients.value.filter(ing => ing.id !== mergeSource.value!.id)
+
+  // 如果不显示全部，只显示相似原料
+  if (!showAllIngredients.value) {
+    candidates = candidates.filter(ing => isSimilarName(mergeSource.value!.name, ing.name))
+  }
+
+  // 权限控制：非管理员只能合并非导入原料
+  if (!userStore.user?.is_admin) {
+    candidates = candidates.filter(ing => !ing.is_imported)
+  }
+
+  // 导入原料只能合并到同样为导入的原料
+  if (mergeSource.value.is_imported) {
+    candidates = candidates.filter(ing => ing.is_imported)
+  }
+
+  return candidates
+})
+
+// 简单的名称相似度判断（前端预筛选）
+function isSimilarName(name1: string, name2: string): boolean {
+  const n1 = name1.toLowerCase()
+  const n2 = name2.toLowerCase()
+  // 包含关系
+  if (n1.includes(n2) || n2.includes(n1)) return true
+  // 首字符相同
+  if (n1[0] === n2[0]) return true
+  // 超过50%字符相同
+  let sameCount = 0
+  const minLen = Math.min(n1.length, n2.length)
+  for (let i = 0; i < minLen; i++) {
+    if (n1[i] === n2[i]) sameCount++
+  }
+  return sameCount / minLen >= 0.5
+}
+
+function showMergeModal(ingredient: Ingredient) {
+  mergeSource.value = ingredient
+  mergeTargetId.value = null
+  showAllIngredients.value = false
+  showMergeModalFlag.value = true
+}
+
+function closeMergeModal() {
+  showMergeModalFlag.value = false
+  mergeSource.value = null
+  mergeTargetId.value = null
+}
+
+async function performMerge() {
+  if (!mergeSource.value || !mergeTargetId.value) return
+
+  // 前端权限检查
+  if (mergeSource.value.is_imported && !userStore.user?.is_admin) {
+    alert('导入的原料只能由管理员执行合并操作')
+    return
+  }
+
+  const target = ingredients.value.find(ing => ing.id === mergeTargetId.value)
+  if (!target) {
+    alert('目标原料不存在')
+    return
+  }
+
+  // 导入原料只能合并到同样为导入的原料
+  if (mergeSource.value.is_imported && !target.is_imported) {
+    alert('导入的原料只能合并到同样为导入的原料')
+    return
+  }
+
+  if (!confirm(`确定要将"${mergeSource.value.name}"合并到"${target.name}"吗？此操作不可撤销。`)) {
+    return
+  }
+
+  mergeLoading.value = true
+  try {
+    await api.post('/ingredients/merge', {
+      source_id: mergeSource.value.id,
+      target_id: mergeTargetId.value
+    })
+    alert('合并成功')
+    closeMergeModal()
+    await loadIngredients()
+  } catch (error: any) {
+    console.error('Failed to merge ingredients:', error)
+    alert(error.message || '合并失败')
+  } finally {
+    mergeLoading.value = false
+  }
+}
 
 onMounted(async () => {
   await loadCategories()
@@ -417,22 +579,6 @@ async function loadIngredients() {
   } finally {
     loading.value = false
   }
-}
-
-// 搜索防抖
-let searchTimeout: ReturnType<typeof setTimeout> | null = null
-function onSearchChange() {
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
-  }
-  searchTimeout = setTimeout(() => {
-    loadIngredients()
-  }, 300)
-}
-
-// 分类变化时立即搜索
-function onCategoryChange() {
-  loadIngredients()
 }
 
 // 直接使用 ingredients，过滤已由后端完成
@@ -687,19 +833,28 @@ async function performConversion() {
 }
 
 .filter-select {
-  padding: 0.5rem;
+  padding: 0.75rem;
   border: 1px solid #ddd;
   border-radius: 0.5rem;
   background: white;
+  font-size: 1rem;
+  min-width: 140px;
 }
 
-.btn-refresh {
+.btn-search {
   padding: 0.75rem 1.5rem;
   background: #667eea;
   color: white;
-  border: none;
+  border: 1px solid #ddd;
   border-radius: 0.5rem;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-search:hover {
+  background: #5a6fd8;
 }
 
 .loading {
@@ -984,5 +1139,29 @@ async function performConversion() {
   font-size: 1.2rem;
   font-weight: bold;
   color: #0ea5e9;
+}
+
+.imported-badge {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.merge-info {
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background: #f9f9f9;
+  border-radius: 0.25rem;
+}
+
+.merge-info p {
+  margin: 0;
+  color: #666;
+  font-size: 0.875rem;
 }
 </style>

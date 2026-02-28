@@ -29,7 +29,7 @@
         <h2>价格趋势</h2>
         <div class="stats">
           <div class="stat-item">
-            <h3>商品记录数</h3>
+            <h3>价格记录数</h3>
             <p>{{ productCount }}</p>
           </div>
           <div class="stat-item">

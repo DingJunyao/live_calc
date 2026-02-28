@@ -54,6 +54,9 @@ class Ingredient(Base, AuditMixin):
 
     nutrition_id = Column(Integer, ForeignKey("nutrition_data.id"))
 
+    # 是否为导入菜谱时顺带导入的原料
+    is_imported = Column(Boolean, default=False, nullable=False)
+
     # created_at, updated_at, created_by, updated_by, is_active 等审计字段从 AuditMixin 继承
 
     # 关系

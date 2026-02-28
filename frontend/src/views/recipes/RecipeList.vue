@@ -22,7 +22,7 @@
     </div>
 
     <div v-else class="recipe-grid">
-      <div v-for="recipe in recipes" :key="recipe.id" class="recipe-card">
+      <div v-for="recipe in recipes" :key="recipe.id" class="recipe-card" @click="viewRecipe(recipe)">
         <div class="recipe-header">
           <h3 :class="{ 'imported-recipe': isImportedRecipe(recipe) }">{{ recipe.name }}</h3>
           <div class="recipe-actions" v-if="!isImportedRecipe(recipe)">
@@ -82,7 +82,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
+
+const router = useRouter()
 
 const recipes = ref<any[]>([])
 const loading = ref(false)
@@ -144,6 +147,11 @@ function getRecipeSource(recipe: any) {
     return recipe.source;
   }
   return '个人创建';
+}
+
+function viewRecipe(recipe: any) {
+  // 跳转到菜谱详情页
+  router.push(`/recipes/${recipe.id}`)
 }
 
 function editRecipe(recipe: any) {
@@ -273,6 +281,7 @@ async function deleteRecipe(recipe: any) {
   border-radius: 1rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   position: relative;
+  cursor: pointer;
 }
 
 .recipe-header {
@@ -291,7 +300,6 @@ async function deleteRecipe(recipe: any) {
 
 .recipe-header h3.imported-recipe {
   color: #666;
-  font-style: italic;
 }
 
 .recipe-actions {

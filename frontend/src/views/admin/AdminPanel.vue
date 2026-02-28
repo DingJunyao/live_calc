@@ -19,7 +19,7 @@
           <p class="stat-number">{{ stats.users }}</p>
         </div>
         <div class="stat-card">
-          <h3>商品记录数</h3>
+          <h3>价格记录数</h3>
           <p class="stat-number">{{ stats.products }}</p>
         </div>
         <div class="stat-card">
