@@ -11,7 +11,7 @@ from app.config import settings
 from app.core.database import Base
 
 # 导入所有模型
-from app.models import user  # noqa: F401
+from app.models import user, recipe, nutrition, ingredient_category  # noqa: F401
 
 # Alembic 配置
 config = context.config

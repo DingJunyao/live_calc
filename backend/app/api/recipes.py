@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_
 from typing import List, Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -39,7 +40,8 @@ async def create_recipe(
             total_time_minutes=recipe.total_time_minutes,
             difficulty=recipe.difficulty,
             servings=recipe.servings,
-            tips=recipe.tips
+            tips=recipe.tips,
+            images=recipe.images or []
         )
         db.add(db_recipe)
         db.flush()
@@ -56,7 +58,11 @@ async def create_recipe(
                 recipe_id=db_recipe.id,
                 ingredient_id=ingredient.id,
                 quantity=ingredient_data.quantity,
-                unit=ingredient_data.unit
+                quantity_range=ingredient_data.quantity_range,
+                unit=ingredient_data.unit,
+                is_optional=ingredient_data.is_optional,
+                note=ingredient_data.note,
+                original_quantity=ingredient_data.original_quantity
             )
             db.add(recipe_ingredient)
 
@@ -83,7 +89,7 @@ async def get_recipes(
 
         # 获取公共导入的菜谱（非当前用户所有，但有来源标识，通常是"howtocook"或其他标识）
         public_imported_recipes = db.query(Recipe).filter(
-            Recipe.source.isnot(None)
+            Recipe.source != None
         )
 
         # 合并查询结果，去重
@@ -112,14 +118,17 @@ async def get_recipe_detail(
         # 查询当前用户的菜谱或公共导入的菜谱
         recipe = db.query(Recipe).filter(
             Recipe.id == recipe_id,
-            (Recipe.user_id == current_user.id) | (Recipe.source.isnot(None))
+            or_(
+                Recipe.user_id == current_user.id,
+                Recipe.source != None
+            )
         ).first()
 
         # 如果没有找到，尝试只通过 source 查询（公共菜谱）
         if not recipe:
             recipe = db.query(Recipe).filter(
                 Recipe.id == recipe_id,
-                Recipe.source.isnot(None)
+                Recipe.source != None
             ).first()
 
         if not recipe:
@@ -140,7 +149,11 @@ async def get_recipe_detail(
                 ingredient_id=ingredient.id,
                 name=ingredient.name,
                 quantity=ri.quantity or "",
+                quantity_range=ri.quantity_range,
                 unit=ri.unit,
+                is_optional=ri.is_optional or False,
+                note=ri.note,
+                original_quantity=ri.original_quantity,
                 nutrition_info=None
             ))
 
@@ -155,6 +168,7 @@ async def get_recipe_detail(
             difficulty=recipe.difficulty,
             servings=recipe.servings,
             tips=recipe.tips,
+            images=recipe.images or [],
             created_at=recipe.created_at,
             updated_at=recipe.updated_at,
             ingredients=ingredients_detail
@@ -263,3 +277,47 @@ async def import_initial_recipes(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导入初始菜谱失败: {str(e)}")
+
+
+@router.post("/import-json-repo")
+async def import_from_json_repo(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """从 JSON 仓库导入菜谱和原料"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="仅限管理员访问")
+
+    try:
+        from app.services.json_recipe_import_service import check_and_import_from_json_repo
+        result = check_and_import_from_json_repo(db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"从 JSON 仓库导入失败: {str(e)}")
+
+
+@router.get("/{recipe_id}/images")
+async def get_recipe_images(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取菜谱图片的完整 URL 列表"""
+    try:
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+
+        if not recipe.images:
+            return {"images": []}
+
+        # 将相对路径转换为完整的 GitHub raw URL
+        image_urls = []
+        for image_path in recipe.images:
+            # 使用 GitHub raw URL
+            full_url = f"https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out/{image_path}"
+            image_urls.append(full_url)
+
+        return {"images": image_urls}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取图片失败: {str(e)}")
