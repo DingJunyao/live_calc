@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from app.api import auth, products, locations, nutrition, recipes, reports, admin, invite_codes
 from app.api import ingredient_extended  # 新增的食材扩展API
 from app.core.database import Base, engine
@@ -7,8 +9,10 @@ from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.recipe_import_service import check_and_import_initial_recipes
+from app.services.json_recipe_import_service import check_and_import_from_json_repo
 import asyncio
 import threading
+import os
 
 
 def init_default_data(db: Session):
@@ -179,9 +183,9 @@ async def lifespan(app: FastAPI):
         # 初始化默认数据（单位、分类等）
         init_default_data(db)
 
-        # 检查并导入初始菜谱
-        result = check_and_import_initial_recipes(db)
-        print(f"初始菜谱导入结果: {result}")
+        # 检查并导入初始菜谱（优先从 JSON 仓库导入）
+        result = check_and_import_from_json_repo(db)
+        print(f"JSON 仓库菜谱导入结果: {result}")
     except Exception as e:
         print(f"初始化过程中发生错误: {str(e)}")
     finally:
@@ -202,6 +206,17 @@ app = FastAPI(
     lifespan=lifespan,
     redirect_slashes=False  # 禁用自动斜杠重定向，避免 307 重定向丢失 Authorization header
 )
+
+# 配置静态文件目录
+static_dir = Path(__file__).parent.parent / "static"
+static_images_dir = static_dir / "images"
+
+# 确保静态文件目录存在
+static_dir.mkdir(exist_ok=True)
+static_images_dir.mkdir(exist_ok=True)
+
+# 挂载静态文件到 /api/v1/static 路径，与 API 路径保持一致
+app.mount("/api/v1/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # 配置 CORS
 app.add_middleware(

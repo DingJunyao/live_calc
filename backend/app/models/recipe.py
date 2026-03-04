@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -18,6 +18,7 @@ class Recipe(Base):
     difficulty = Column(String(20))
     servings = Column(Integer, default=1)
     tips = Column(JSON)
+    images = Column(JSON, default=list)  # 菜谱图片路径列表
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -33,7 +34,11 @@ class RecipeIngredient(Base):
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
     quantity = Column(String(50))  # 改为可空，允许没有数量的原料
+    quantity_range = Column(JSON)  # 数量范围（JSON，如 {"min": 80, "max": 120}）
     unit = Column(String(20))
+    is_optional = Column(Boolean, default=False)  # 是否可选
+    note = Column(Text)  # 备注信息
+    original_quantity = Column(JSON)  # 原始数量描述（JSON，如 {"min": 100, "max": 150}）
 
     # 关系
     recipe = relationship("Recipe", back_populates="ingredients")
