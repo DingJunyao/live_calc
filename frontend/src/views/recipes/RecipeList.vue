@@ -23,6 +23,13 @@
 
     <div v-else class="recipe-grid">
       <div v-for="recipe in recipes" :key="recipe.id" class="recipe-card" @click="viewRecipe(recipe)">
+        <div v-if="getFirstImage(recipe)" class="recipe-image">
+          <img :src="getFirstImage(recipe)" :alt="recipe.name" @error="handleImageError" />
+        </div>
+        <div v-else class="recipe-placeholder">
+          <i class="mdi mdi-image"></i>
+        </div>
+
         <div class="recipe-header">
           <h3 :class="{ 'imported-recipe': isImportedRecipe(recipe) }">{{ recipe.name }}</h3>
           <div class="recipe-actions" v-if="!isImportedRecipe(recipe)">
@@ -147,6 +154,35 @@ function getRecipeSource(recipe: any) {
     return recipe.source;
   }
   return '个人创建';
+}
+
+function getFirstImage(recipe: any) {
+  if (recipe.images && recipe.images.length > 0) {
+    const imagePath = recipe.images[0];
+    // 如果是本地静态文件路径（/static/images/），转换为完整 URL
+    if (imagePath.startsWith('/static/images/')) {
+      return `/api/v1${imagePath}`;
+    }
+    // 如果是相对路径，转换为 GitHub raw URL
+    if (imagePath.startsWith('images/')) {
+      return `https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out/${imagePath}`;
+    }
+    return imagePath;
+  }
+  return null;
+}
+
+function handleImageError(event: Event) {
+  // 图片加载失败时隐藏
+  const target = event.target as HTMLImageElement;
+  if (target) {
+    target.style.display = 'none';
+    // 找到父元素并显示占位符
+    const imageDiv = target.closest('.recipe-image');
+    if (imageDiv && imageDiv.nextElementSibling) {
+      imageDiv.nextElementSibling.classList.remove('hidden');
+    }
+  }
 }
 
 function viewRecipe(recipe: any) {
@@ -277,11 +313,42 @@ async function deleteRecipe(recipe: any) {
 
 .recipe-card {
   background: white;
-  padding: 1.5rem;
+  padding: 0;
   border-radius: 1rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   position: relative;
   cursor: pointer;
+  overflow: hidden;
+}
+
+.recipe-image {
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  border-radius: 1rem 1rem 0 0;
+  background: #f5f5f5;
+}
+
+.recipe-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.recipe-placeholder {
+  width: 100%;
+  height: 180px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f5f5f5;
+  color: #ccc;
+  font-size: 3rem;
+  border-radius: 1rem 1rem 0 0;
+}
+
+.recipe-placeholder.hidden {
+  display: none;
 }
 
 .recipe-header {
@@ -289,6 +356,7 @@ async function deleteRecipe(recipe: any) {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 1rem;
+  padding: 0 1.5rem 1rem 1.5rem;
 }
 
 .recipe-header h3 {
@@ -341,6 +409,7 @@ async function deleteRecipe(recipe: any) {
   margin: 0.25rem 0;
   color: #666;
   font-size: 0.875rem;
+  padding: 0 1.5rem;
 }
 
 .recipe-info p:nth-child(1) {
@@ -350,7 +419,7 @@ async function deleteRecipe(recipe: any) {
 
 .recipe-label {
   position: absolute;
-  top: 0.5rem;
+  top: 10rem;
   right: 0.5rem;
 }
 
