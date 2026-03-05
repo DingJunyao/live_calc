@@ -1,19 +1,12 @@
 <template>
   <div class="recipe-list">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
+    <PageHeader title="菜谱管理" :show-back="true">
+      <template #extra>
+        <button @click="showAddModal = true" class="btn-square add-btn" title="创建菜谱">
+          <i class="mdi mdi-plus"></i>
         </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>菜谱管理</h1>
-      <button @click="showAddModal = true" class="btn-square add-btn" title="创建菜谱">
-        <i class="mdi mdi-plus"></i>
-      </button>
-    </header>
+      </template>
+    </PageHeader>
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -46,8 +39,6 @@
           <p>预计成本: ¥{{ recipe.estimated_cost || 0 }}</p>
           <p>热量: {{ recipe.calories }} kcal</p>
           <p>蛋白质: {{ recipe.protein }} g</p>
-          <p>来源: {{ getRecipeSource(recipe) }}</p>
-          <p>更新时间: {{ formatDate(recipe.updated_at) }}</p>
         </div>
 
         <div v-if="isImportedRecipe(recipe)" class="recipe-label">
@@ -55,6 +46,15 @@
         </div>
       </div>
     </div>
+
+    <Pagination
+      v-if="total > 0"
+      :current-page="currentPage"
+      :page-size="pageSize"
+      :total="total"
+      @change-page="handlePageChange"
+      @change-page-size="handlePageSizeChange"
+    />
 
     <!-- 添加菜谱模态框 -->
     <div v-if="showAddModal" class="modal-overlay" @click="showAddModal = false">
@@ -91,6 +91,8 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
+import Pagination from '@/components/Pagination.vue'
 
 const router = useRouter()
 
@@ -104,6 +106,11 @@ const newRecipe = ref({
   protein: 0
 })
 
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
 onMounted(async () => {
   await loadRecipes()
 })
@@ -111,13 +118,27 @@ onMounted(async () => {
 async function loadRecipes() {
   loading.value = true
   try {
-    const data = await api.get<any[]>('/recipes')
+    const offset = (currentPage.value - 1) * pageSize.value
+    const data = await api.get<any[]>(`/recipes?offset=${offset}&limit=${pageSize.value}`)
     recipes.value = data || []
+    // TODO: 需要后端支持返回总数
+    total.value = recipes.value.length
   } catch (error) {
     console.error('Failed to load recipes:', error)
   } finally {
     loading.value = false
   }
+}
+
+function handlePageChange(page: number) {
+  currentPage.value = page
+  loadRecipes()
+}
+
+function handlePageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadRecipes()
 }
 
 async function addRecipe() {
@@ -213,62 +234,6 @@ async function deleteRecipe(recipe: any) {
 <style scoped>
 .recipe-list {
   padding: 2rem;
-  position: relative;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
-.add-btn {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #42b883;
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.add-btn:hover {
-  background: #36966d;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
 }
 
 .btn-primary {
@@ -291,6 +256,25 @@ async function deleteRecipe(recipe: any) {
 
 .btn-secondary:hover {
   background: #e0e0e0;
+}
+
+.add-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #42b883;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0;
+}
+
+.add-btn:hover {
+  background: #36966d;
 }
 
 .loading {
@@ -355,8 +339,8 @@ async function deleteRecipe(recipe: any) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1rem;
-  padding: 0 1.5rem 1rem 1.5rem;
+  margin: 1.5rem 1.5rem;
+  /* padding: 0 1.5rem 1rem 1.5rem; */
 }
 
 .recipe-header h3 {
@@ -403,6 +387,10 @@ async function deleteRecipe(recipe: any) {
 
 .btn-delete:hover {
   background: #bc2e0b;
+}
+
+.recipe-info {
+  margin: 1.5rem 0;
 }
 
 .recipe-info p {
@@ -487,5 +475,104 @@ async function deleteRecipe(recipe: any) {
   gap: 1rem;
   justify-content: flex-end;
   margin-top: 1.5rem;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .recipe-list {
+    padding: 0.75rem;
+  }
+
+  .add-btn {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.875rem;
+  }
+
+  .recipe-grid {
+    gap: 0.75rem;
+  }
+
+  .recipe-card {
+    border-radius: 0.75rem;
+  }
+
+  .recipe-image,
+  .recipe-placeholder {
+    height: 140px;
+  }
+
+  .recipe-header {
+    margin: 1.5rem 1rem;
+  }
+
+  .recipe-header h3 {
+    font-size: 1rem;
+  }
+
+  .recipe-info p {
+    padding: 0 1rem;
+    font-size: 0.8125rem;
+  }
+
+  .modal-content {
+    padding: 1.5rem;
+  }
+
+  .modal-content h2 {
+    font-size: 1.25rem;
+  }
+
+  .form-group {
+    margin-bottom: 0.75rem;
+  }
+
+  .form-group input {
+    font-size: 0.875rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .recipe-list {
+    padding: 0.5rem;
+  }
+
+  .add-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .recipe-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .recipe-image,
+  .recipe-placeholder {
+    height: 120px;
+  }
+
+  .recipe-header h3 {
+    font-size: 0.9375rem;
+  }
+
+  .recipe-info p {
+    font-size: 0.75rem;
+  }
+
+  .modal-content {
+    padding: 1rem;
+    max-width: calc(100% - 1rem);
+  }
+
+  .btn-fab {
+    width: 2.75rem;
+    height: 2.75rem;
+    bottom: 1rem;
+    right: 1rem;
+    font-size: 1rem;
+  }
 }
 </style>

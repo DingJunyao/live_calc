@@ -1,21 +1,12 @@
 <template>
   <div class="product-list">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
-        </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>价格记录</h1>
-      <div class="action-buttons">
+    <PageHeader title="价格记录" :show-back="true">
+      <template #extra>
         <button @click="showAddModal = true" class="btn-square add-btn" title="添加记录">
           <i class="mdi mdi-plus"></i>
         </button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -34,6 +25,15 @@
         </div>
       </div>
     </div>
+
+    <Pagination
+      v-if="total > 0"
+      :current-page="currentPage"
+      :page-size="pageSize"
+      :total="total"
+      @change-page="handlePageChange"
+      @change-page-size="handlePageSizeChange"
+    />
 
     <!-- 添加价格记录模态框 -->
     <div v-if="showAddModal" class="modal-overlay" @click="showAddModal = false">
@@ -89,6 +89,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
+import Pagination from '@/components/Pagination.vue'
 
 // 自动补全相关
 interface Suggestion {
@@ -105,6 +107,11 @@ const newProduct = ref({
   quantity: 1,
   unit: ''
 })
+
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 // 自动补全功能
 const allIngredients = ref<Suggestion[]>([])
@@ -123,13 +130,27 @@ onMounted(async () => {
 async function loadProducts() {
   loading.value = true
   try {
-    const data = await api.get<any[]>('/products')
+    const offset = (currentPage.value - 1) * pageSize.value
+    const data = await api.get<any[]>(`/products?offset=${offset}&limit=${pageSize.value}`)
     products.value = data || []
+    // TODO: 需要后端支持返回总数
+    total.value = products.value.length
   } catch (error) {
     console.error('Failed to load products:', error)
   } finally {
     loading.value = false
   }
+}
+
+function handlePageChange(page: number) {
+  currentPage.value = page
+  loadProducts()
+}
+
+function handlePageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadProducts()
 }
 
 async function addProduct() {
@@ -218,37 +239,18 @@ function handleKeydown(event: KeyboardEvent) {
 <style scoped>
 .product-list {
   padding: 2rem;
-  position: relative;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.btn-secondary {
+  padding: 0.5rem 1rem;
   background: #f5f5f5;
   color: #333;
   border: 1px solid #ddd;
   border-radius: 0.5rem;
   cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
 }
 
-.btn-square:hover {
+.btn-secondary:hover {
   background: #e0e0e0;
 }
 
@@ -269,24 +271,6 @@ function handleKeydown(event: KeyboardEvent) {
 
 .add-btn:hover {
   background: #36966d;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
-}
-
-.btn-secondary {
-  padding: 0.5rem 1rem;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-}
-
-.btn-secondary:hover {
-  background: #e0e0e0;
 }
 
 .loading {
@@ -419,5 +403,93 @@ function handleKeydown(event: KeyboardEvent) {
 .suggestions-list li:hover,
 .suggestion-selected {
   background-color: #f5f5f5;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .product-list {
+    padding: 0.75rem;
+  }
+
+  .add-btn {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.875rem;
+  }
+
+  .product-grid {
+    gap: 0.75rem;
+  }
+
+  .product-card {
+    padding: 1rem;
+  }
+
+  .product-card h3 {
+    font-size: 1rem;
+  }
+
+  .product-info p {
+    font-size: 0.8125rem;
+  }
+
+  .modal-content {
+    padding: 1.5rem;
+  }
+
+  .modal-content h2 {
+    font-size: 1.25rem;
+  }
+
+  .form-group {
+    margin-bottom: 0.75rem;
+  }
+
+  .form-group input {
+    font-size: 0.875rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .product-list {
+    padding: 0.5rem;
+  }
+
+  .add-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .product-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .product-card {
+    padding: 0.75rem;
+  }
+
+  .product-card h3 {
+    font-size: 0.9375rem;
+  }
+
+  .product-info p {
+    font-size: 0.75rem;
+  }
+
+  .modal-content {
+    padding: 1rem;
+    max-width: calc(100% - 1rem);
+  }
+
+  .btn-fab {
+    width: 2.75rem;
+    height: 2.75rem;
+    bottom: 1rem;
+    right: 1rem;
+    font-size: 1rem;
+  }
 }
 </style>
