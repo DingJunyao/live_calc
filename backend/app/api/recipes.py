@@ -290,7 +290,7 @@ async def import_from_json_repo(
 
     try:
         from app.services.json_recipe_import_service import check_and_import_from_json_repo
-        result = check_and_import_from_json_repo(db)
+        result = check_and_import_from_json_repo(db, user_id=current_user.id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"从 JSON 仓库导入失败: {str(e)}")

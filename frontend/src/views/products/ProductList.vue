@@ -17,8 +17,8 @@
         <h3>{{ product.product_name }}</h3>
         <div class="product-info">
           <p>价格: ¥{{ product.price }}</p>
-          <p>数量: {{ product.quantity }}</p>
-          <p>单位: {{ product.unit }}</p>
+          <p>数量: {{ product.original_quantity }} {{ product.original_unit }}</p>
+          <p>标准单位: {{ product.standard_quantity }} {{ product.standard_unit }}</p>
           <p>记录时间: {{ formatDate(product.recorded_at) }}</p>
         </div>
       </div>
@@ -34,7 +34,7 @@
     />
 
     <!-- 添加价格记录模态框 -->
-    <div v-if="showAddModal" class="modal-overlay" @click="showAddModal = false">
+    <div v-if="showAddModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
         <h2>添加价格记录</h2>
         <form @submit.prevent="addProduct">
@@ -46,13 +46,14 @@
                 type="text"
                 id="productName"
                 required
+                placeholder="搜索并选择商品"
                 @input="onProductInput"
                 @focus="showProductSuggestions = true"
                 @keydown="handleKeydown"
               />
-              <ul v-if="showProductSuggestions && productSuggestions.length > 0" class="suggestions-list">
+              <ul v-if="showProductSuggestions && filteredSuggestions.length > 0" class="suggestions-list">
                 <li
-                  v-for="(suggestion, index) in productSuggestions"
+                  v-for="(suggestion, index) in filteredSuggestions"
                   :key="suggestion.id"
                   :class="{ 'suggestion-selected': index === selectedIndex }"
                   @click="selectProduct(suggestion)"
@@ -64,19 +65,19 @@
             </div>
           </div>
           <div class="form-group">
-            <label for="price">价格:</label>
+            <label for="price">价格 (元):</label>
             <input v-model.number="newProduct.price" type="number" id="price" step="0.01" min="0" required />
           </div>
           <div class="form-group">
             <label for="quantity">数量:</label>
-            <input v-model.number="newProduct.quantity" type="number" id="quantity" min="0" required />
+            <input v-model.number="newProduct.quantity" type="number" id="quantity" min="0" step="any" required />
           </div>
           <div class="form-group">
             <label for="unit">单位:</label>
-            <input v-model="newProduct.unit" type="text" id="unit" required />
+            <input v-model="newProduct.unit" type="text" id="unit" placeholder="如: kg, g, 个" required />
           </div>
           <div class="form-actions">
-            <button type="button" @click="showAddModal = false" class="btn-secondary">取消</button>
+            <button type="button" @click="closeModal" class="btn-secondary">取消</button>
             <button type="submit" class="btn-primary">添加</button>
           </div>
         </form>
@@ -86,22 +87,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { productAPI, type ProductResponse } from '@/api/client'
+import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { productAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
 
-const products = ref<any[]>([])
+interface ProductSuggestion {
+  id: number
+  name: string
+  brand?: string
+}
+
+interface PriceRecord {
+  id: number
+  product_id: number
+  product_name: string
+  price: number
+  original_quantity: number
+  original_unit: string
+  standard_quantity: number
+  standard_unit: string
+  recorded_at: string
+}
+
+const route = useRoute()
+const products = ref<PriceRecord[]>([])
+const allProducts = ref<ProductSuggestion[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
 const newProduct = ref({
   product_id: 0,
+  product_name: '',
   price: 0,
   quantity: 1,
   unit: ''
 })
 
-const productSuggestions = ref<ProductResponse[]>([])
 const showProductSuggestions = ref(false)
 const selectedIndex = ref(-1)
 
@@ -112,17 +134,37 @@ const total = ref(0)
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
+// 过滤后的建议列表
+const filteredSuggestions = computed(() => {
+  if (!newProduct.value.product_name.trim()) {
+    return allProducts.value.slice(0, 10)
+  }
+  const search = newProduct.value.product_name.toLowerCase()
+  return allProducts.value
+    .filter(p => p.name.toLowerCase().includes(search))
+    .slice(0, 10)
+})
+
 onMounted(async () => {
   await loadProducts()
   await loadAllProducts()
+
+  // 检查是否有从商品管理页面传来的参数
+  const productId = route.query.product_id
+  const productName = route.query.product_name as string
+  if (productId && productName) {
+    newProduct.value.product_id = Number(productId)
+    newProduct.value.product_name = productName
+    showAddModal.value = true
+  }
 })
 
 async function loadProducts() {
   loading.value = true
   try {
     const offset = (currentPage.value - 1) * pageSize.value
-    const data = await (await fetch(`/api/v1/products?offset=${offset}&limit=${pageSize.value}`)).json()
-    products.value = data
+    const data = await api.get<PriceRecord[]>(`/products?offset=${offset}&limit=${pageSize.value}`)
+    products.value = data || []
     total.value = products.value.length
   } catch (error) {
     console.error('Failed to load products:', error)
@@ -133,11 +175,28 @@ async function loadProducts() {
 
 async function loadAllProducts() {
   try {
-    const response = await productAPI.list({ limit: 100 })
-    productSuggestions.value = response as ProductResponse[]
+    const response = await productAPI.list({ limit: 200 })
+    allProducts.value = response as ProductSuggestion[]
   } catch (error) {
     console.error('Failed to load products:', error)
   }
+}
+
+function openAddModal() {
+  newProduct.value = {
+    product_id: 0,
+    product_name: '',
+    price: 0,
+    quantity: 1,
+    unit: ''
+  }
+  showAddModal.value = true
+}
+
+function closeModal() {
+  showAddModal.value = false
+  showProductSuggestions.value = false
+  selectedIndex.value = -1
 }
 
 function handlePageChange(page: number) {
@@ -153,36 +212,29 @@ function handlePageSizeChange(size: number) {
 
 async function addProduct() {
   try {
-    // 找到选中的商品
-    const selectedProduct = productSuggestions.value.find(p => p.name === newProduct.value.product_name)
-    if (!selectedProduct) {
-      alert('请选择有效的商品')
-      return
+    // 如果没有选择商品ID，尝试从名称匹配
+    let productId = newProduct.value.product_id
+    if (!productId) {
+      const matched = allProducts.value.find(p => p.name === newProduct.value.product_name)
+      if (matched) {
+        productId = matched.id
+      } else {
+        alert('请选择有效的商品')
+        return
+      }
     }
 
-    // 使用 product_id 提交
-    await fetch('/api/v1/products/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        product_id: selectedProduct.id,
-        price: newProduct.value.price,
-        original_quantity: newProduct.value.quantity,
-        original_unit: newProduct.value.unit
-      })
+    // 提交价格记录
+    await api.post('/products/', {
+      product_id: productId,
+      price: newProduct.value.price,
+      original_quantity: newProduct.value.quantity,
+      original_unit: newProduct.value.unit
     })
 
-    showAddModal.value = false
-    // 重置表单
-    newProduct.value = {
-      product_id: 0,
-      price: 0,
-      quantity: 1,
-      unit: ''
-    }
+    closeModal()
     await loadProducts()
+    alert('价格记录添加成功')
   } catch (error) {
     console.error('Failed to add product:', error)
     alert('添加价格记录失败，请重试')
@@ -191,7 +243,13 @@ async function addProduct() {
 
 function formatDate(dateString: string) {
   const date = new Date(dateString)
-  return date.toLocaleDateString('zh-CN')
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 function onProductInput() {
@@ -199,27 +257,17 @@ function onProductInput() {
     clearTimeout(searchTimeout)
   }
   searchTimeout = setTimeout(() => {
-    filterProducts()
+    // 重置选中的商品ID，因为用户可能正在修改
+    if (!allProducts.value.find(p => p.name === newProduct.value.product_name)) {
+      newProduct.value.product_id = 0
+    }
+    showProductSuggestions.value = true
+    selectedIndex.value = -1
   }, 300)
 }
 
-function filterProducts() {
-  if (!newProduct.value.product_name.trim()) {
-    productSuggestions.value = []
-    showProductSuggestions.value = false
-    return
-  }
-
-  const searchTerm = newProduct.value.product_name.toLowerCase()
-  productSuggestions.value = (productSuggestions.value as any[]).filter((p: any) =>
-    p.name.toLowerCase().includes(searchTerm)
-  ).slice(0, 10)
-
-  showProductSuggestions.value = productSuggestions.value.length > 0
-  selectedIndex.value = -1
-}
-
-function selectProduct(product: ProductResponse) {
+function selectProduct(product: ProductSuggestion) {
+  newProduct.value.product_id = product.id
   newProduct.value.product_name = product.name
   showProductSuggestions.value = false
   selectedIndex.value = -1
@@ -228,13 +276,13 @@ function selectProduct(product: ProductResponse) {
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    selectedIndex.value = Math.min(selectedIndex.value + 1, productSuggestions.value.length - 1)
+    selectedIndex.value = Math.min(selectedIndex.value + 1, filteredSuggestions.value.length - 1)
   } else if (event.key === 'ArrowUp') {
     event.preventDefault()
     selectedIndex.value = Math.max(selectedIndex.value - 1, -1)
   } else if (event.key === 'Enter' && selectedIndex.value >= 0) {
     event.preventDefault()
-    selectProduct(productSuggestions.value[selectedIndex.value])
+    selectProduct(filteredSuggestions.value[selectedIndex.value])
   } else if (event.key === 'Escape') {
     showProductSuggestions.value = false
     selectedIndex.value = -1

@@ -24,9 +24,19 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/products/ProductList.vue').then(m => m.default)
   },
   {
+    path: '/products/manage',
+    name: 'products-manage',
+    component: () => import('@/views/products/ProductManage.vue').then(m => m.default)
+  },
+  {
     path: '/ingredients',
     name: 'ingredients',
     component: () => import('@/views/products/IngredientList.vue').then(m => m.default)
+  },
+  {
+    path: '/preferences',
+    name: 'preferences',
+    component: () => import('@/views/products/PreferenceManage.vue').then(m => m.default)
   },
   {
     path: '/recipes',

@@ -12,9 +12,17 @@
           <i class="mdi mdi-clipboard-text mdi-24px icon"></i>
           <span>价格</span>
         </router-link>
+        <router-link to="/products/manage" class="action-card">
+          <i class="mdi mdi-package mdi-24px icon"></i>
+          <span>商品</span>
+        </router-link>
         <router-link to="/ingredients" class="action-card">
           <i class="mdi mdi-food mdi-24px icon"></i>
           <span>原料</span>
+        </router-link>
+        <router-link to="/preferences" class="action-card">
+          <i class="mdi mdi-heart mdi-24px icon"></i>
+          <span>偏好</span>
         </router-link>
         <router-link to="/recipes" class="action-card">
           <i class="mdi mdi-food mdi-24px icon"></i>
@@ -317,6 +325,24 @@ function formatDate(dateString: string) {
   }
 
   .recent-records {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .quick-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recent-records {
+    padding: 1rem;
+  }
+
+  .stat-card {
     padding: 1rem;
   }
 }
