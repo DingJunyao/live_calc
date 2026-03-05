@@ -1,16 +1,6 @@
 <template>
   <div class="user-management">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
-        </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>用户管理</h1>
-    </header>
+    <PageHeader title="用户管理" :show-back="true" />
 
     <div class="user-controls">
       <div class="search-box">
@@ -70,6 +60,15 @@
       </table>
     </div>
 
+    <Pagination
+      v-if="total > 0"
+      :current-page="currentPage"
+      :page-size="pageSize"
+      :total="total"
+      @change-page="handlePageChange"
+      @change-page-size="handlePageSizeChange"
+    />
+
     <!-- 编辑用户模态框 -->
     <div v-if="showEditModal" class="modal-overlay" @click="closeEditModal">
       <div class="modal-content" @click.stop>
@@ -113,6 +112,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { api } from '@/api/client'
 import { useRouter } from 'vue-router'
+import PageHeader from '@/components/PageHeader.vue'
+import Pagination from '@/components/Pagination.vue'
 
 interface User {
   id: number
@@ -131,6 +132,11 @@ const searchTerm = ref('')
 const showEditModal = ref(false)
 const editingUser = ref<User | null>(null)
 
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
 onMounted(async () => {
   await loadUsers()
 })
@@ -138,14 +144,28 @@ onMounted(async () => {
 async function loadUsers() {
   loading.value = true
   try {
-    const response = await api.get<User[]>('/auth/users')
+    const offset = (currentPage.value - 1) * pageSize.value
+    const response = await api.get<User[]>(`/auth/users?offset=${offset}&limit=${pageSize.value}`)
     users.value = response || []
+    // TODO: 需要后端支持返回总数
+    total.value = users.value.length
   } catch (error) {
     console.error('Failed to load users:', error)
     alert('加载用户数据失败')
   } finally {
     loading.value = false
   }
+}
+
+function handlePageChange(page: number) {
+  currentPage.value = page
+  loadUsers()
+}
+
+function handlePageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadUsers()
 }
 
 const filteredUsers = ref<User[]>([])
@@ -223,42 +243,6 @@ async function deleteUser(user: User) {
 <style scoped>
 .user-management {
   padding: 2rem;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
 }
 
 .user-controls {
@@ -472,5 +456,109 @@ async function deleteUser(user: User) {
 
 .btn-secondary:hover {
   background: #e0e0e0;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .user-management {
+    padding: 0.75rem;
+  }
+
+  .user-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .search-box {
+    max-width: 100%;
+  }
+
+  .search-input {
+    font-size: 0.875rem;
+  }
+
+  .users-table-container {
+    overflow-x: auto;
+  }
+
+  .users-table th,
+  .users-table td {
+    padding: 0.625rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .users-table th {
+    font-size: 0.75rem;
+  }
+
+  .badge {
+    font-size: 0.6875rem;
+    padding: 0.125rem 0.375rem;
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .modal-content {
+    padding: 1.5rem;
+    max-width: calc(100% - 1.5rem);
+  }
+
+  .modal-content h2 {
+    font-size: 1.25rem;
+  }
+
+  .form-group {
+    margin-bottom: 0.75rem;
+  }
+
+  .form-group label {
+    font-size: 0.8125rem;
+  }
+
+  .form-group input {
+    font-size: 0.875rem;
+    padding: 0.625rem;
+  }
+
+  .form-actions {
+    margin-top: 1rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .user-management {
+    padding: 0.5rem;
+  }
+
+  .users-table th,
+  .users-table td {
+    padding: 0.5rem 0.375rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.375rem;
+    font-size: 0.6875rem;
+  }
+
+  .modal-content {
+    padding: 1rem;
+    max-width: calc(100% - 1rem);
+  }
+
+  .modal-content h2 {
+    font-size: 1.125rem;
+  }
 }
 </style>

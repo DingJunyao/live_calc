@@ -1,16 +1,6 @@
 <template>
   <div class="admin-panel">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
-        </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>后台管理</h1>
-    </header>
+    <PageHeader title="后台管理" :show-back="true" />
 
     <div class="admin-dashboard">
       <div class="admin-stats">
@@ -71,6 +61,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '@/api/client'
 import { useRouter } from 'vue-router'
+import PageHeader from '@/components/PageHeader.vue'
 
 interface Stats {
   users: number
@@ -175,42 +166,6 @@ function systemSettings() {
   padding: 2rem;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
-}
-
 .admin-dashboard {
   display: flex;
   flex-direction: column;
@@ -280,5 +235,81 @@ function systemSettings() {
 
 .btn-admin:hover {
   background: #5a6fd8;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .admin-panel {
+    padding: 0.75rem;
+  }
+
+  .admin-dashboard {
+    gap: 1.5rem;
+  }
+
+  .admin-stats {
+    gap: 0.75rem;
+  }
+
+  .stat-card {
+    padding: 1rem;
+  }
+
+  .stat-card h3 {
+    font-size: 0.8125rem;
+  }
+
+  .stat-number {
+    font-size: 1.25rem;
+  }
+
+  .admin-actions {
+    gap: 1.5rem;
+  }
+
+  .action-section {
+    padding: 1rem;
+  }
+
+  .action-section h2 {
+    font-size: 1.125rem;
+  }
+
+  .action-buttons {
+    gap: 0.5rem;
+  }
+
+  .btn-admin {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.8125rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .admin-panel {
+    padding: 0.5rem;
+  }
+
+  .admin-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .stat-card {
+    padding: 0.75rem;
+  }
+
+  .stat-number {
+    font-size: 1.125rem;
+  }
+
+  .action-section h2 {
+    font-size: 1rem;
+  }
+
+  .btn-admin {
+    width: 100%;
+  }
 }
 </style>

@@ -1,16 +1,6 @@
 <template>
   <div class="report-overview">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
-        </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>报告统计</h1>
-    </header>
+    <PageHeader title="报告统计" :show-back="true" />
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -45,6 +35,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const totalExpense = ref(0)
 const productCount = ref(0)
@@ -95,42 +86,6 @@ async function loadReports() {
   padding: 2rem;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
-}
-
 .loading {
   text-align: center;
   padding: 4rem;
@@ -178,5 +133,68 @@ async function loadReports() {
   font-size: 1.5rem;
   font-weight: bold;
   color: #333;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .report-overview {
+    padding: 0.75rem;
+  }
+
+  .report-section {
+    padding: 1rem;
+  }
+
+  .report-section h2 {
+    font-size: 1.125rem;
+  }
+
+  .stats {
+    gap: 0.75rem;
+  }
+
+  .stat-item {
+    padding: 1rem;
+  }
+
+  .stat-item h3 {
+    font-size: 0.8125rem;
+  }
+
+  .stat-item p {
+    font-size: 1.25rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .report-overview {
+    padding: 0.5rem;
+  }
+
+  .report-section {
+    padding: 0.75rem;
+  }
+
+  .report-section h2 {
+    font-size: 1rem;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .stat-item {
+    padding: 0.75rem;
+  }
+
+  .stat-item h3 {
+    font-size: 0.75rem;
+  }
+
+  .stat-item p {
+    font-size: 1.125rem;
+  }
 }
 </style>

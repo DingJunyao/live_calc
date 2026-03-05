@@ -8,9 +8,11 @@
 import { RouterView } from 'vue-router'
 </script>
 
-<style scoped>
+<style>
 #app {
   min-height: 100vh;
-  background: #f5f5f5;
+  height: 100%;
+  background: #f9faf9;
 }
+body {  margin: 0;}
 </style>
