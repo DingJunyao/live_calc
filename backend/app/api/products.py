@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.product import ProductRecord
+from app.models.product_entity import Product
+from app.models.nutrition import Ingredient
 from app.schemas.product import (
     ProductRecordCreate,
     ProductRecordResponse,
@@ -13,6 +15,62 @@ from app.schemas.product import (
 from app.utils.unit_converter import convert_to_standard
 
 router = APIRouter()
+
+
+def _get_or_create_ingredient(db: Session, product_name: str, current_user) -> Ingredient:
+    """获取或创建食材"""
+    # 首先尝试查找已存在的食材
+    ingredient = db.query(Ingredient).filter(
+        Ingredient.name == product_name,
+        Ingredient.is_active == True
+    ).first()
+
+    if ingredient:
+        return ingredient
+
+    # 如果不存在，创建新食材
+    ingredient = Ingredient(
+        name=product_name,
+        is_imported=True,
+        created_by=current_user.id,
+        updated_by=current_user.id,
+        is_active=True
+    )
+    db.add(ingredient)
+    db.commit()
+    db.refresh(ingredient)
+
+    return ingredient
+
+
+def _get_or_create_product(db: Session, product_name: str, current_user) -> Product:
+    """获取或创建商品"""
+    # 首先尝试查找已存在的同名商品
+    product = db.query(Product).filter(
+        Product.name == product_name,
+        Product.is_active == True
+    ).first()
+
+    if product:
+        return product
+
+    # 如果不存在，创建新商品
+    # 先获取或创建对应的食材
+    ingredient = _get_or_create_ingredient(db, product_name, current_user)
+
+    # 创建商品
+    product = Product(
+        name=product_name,
+        ingredient_id=ingredient.id,
+        created_by=current_user.id,
+        updated_by=current_user.id,
+        is_active=True
+    )
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+
+    return product
 
 
 @router.post("", response_model=ProductRecordResponse)
@@ -32,10 +90,31 @@ async def create_product_record(
             record.original_unit
         )
 
+        # 处理商品ID
+        if record.product_id:
+            # 如果提供了 product_id，验证商品是否存在
+            product = db.query(Product).filter(
+                Product.id == record.product_id,
+                Product.is_active == True
+            ).first()
+            if not product:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"商品ID {record.product_id} 不存在"
+                )
+            product_id = record.product_id
+            product_name = product.name
+        else:
+            # 如果没有提供 product_id，自动创建或获取商品
+            product = _get_or_create_product(db, record.product_name, current_user)
+            product_id = product.id
+            product_name = product.name
+
         # 创建记录
         db_record = ProductRecord(
             user_id=current_user.id,
-            product_name=record.product_name,
+            product_id=product_id,
+            product_name=product_name,
             location_id=record.location_id,
             price=record.price,
             currency=record.currency,
@@ -52,6 +131,8 @@ async def create_product_record(
         db.refresh(db_record)
 
         return db_record
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(

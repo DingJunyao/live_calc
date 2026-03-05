@@ -14,7 +14,7 @@ class ProductRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_name = Column(String(200), nullable=False, index=True)
     location_id = Column(Integer, ForeignKey("locations.id"), nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
