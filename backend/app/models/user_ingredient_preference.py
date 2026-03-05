@@ -29,7 +29,7 @@ class UserIngredientPreference(Base, AuditMixin):
     )
 
     # 关系
-    user = relationship("User", back_populates="ingredient_preferences")
+    user = relationship("User", back_populates="ingredient_preferences", foreign_keys="UserIngredientPreference.user_id")
     ingredient = relationship("Ingredient")
     default_product = relationship("Product")
     default_recipe = relationship("Recipe")
