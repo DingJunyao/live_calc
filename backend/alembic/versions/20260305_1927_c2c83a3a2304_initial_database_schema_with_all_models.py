@@ -1,8 +1,8 @@
-"""initial database schema
+"""initial database schema with all models
 
-Revision ID: b7d181ecbf94
+Revision ID: c2c83a3a2304
 Revises: 
-Create Date: 2026-03-05 18:52:14.458688+08:00
+Create Date: 2026-03-05 19:27:05.995188+08:00
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'b7d181ecbf94'
+revision: str = 'c2c83a3a2304'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -135,25 +135,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_nutrition_data_id'), 'nutrition_data', ['id'], unique=False)
     op.create_index(op.f('ix_nutrition_data_usda_id'), 'nutrition_data', ['usda_id'], unique=True)
-    op.create_table('recipes',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('name', sa.String(length=200), nullable=False),
-    sa.Column('source', sa.String(length=100), nullable=True),
-    sa.Column('user_id', sa.Integer(), nullable=True),
-    sa.Column('category', sa.String(length=50), nullable=True),
-    sa.Column('tags', sa.JSON(), nullable=True),
-    sa.Column('cooking_steps', sa.JSON(), nullable=True),
-    sa.Column('total_time_minutes', sa.Integer(), nullable=True),
-    sa.Column('difficulty', sa.String(length=20), nullable=True),
-    sa.Column('servings', sa.Integer(), nullable=True),
-    sa.Column('tips', sa.JSON(), nullable=True),
-    sa.Column('images', sa.JSON(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_recipes_id'), 'recipes', ['id'], unique=False)
     op.create_table('units',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=50), nullable=False),
@@ -335,27 +316,52 @@ def upgrade() -> None:
     op.create_index(op.f('ix_products_id'), 'products', ['id'], unique=False)
     op.create_index(op.f('ix_products_ingredient_id'), 'products', ['ingredient_id'], unique=False)
     op.create_index(op.f('ix_products_name'), 'products', ['name'], unique=False)
-    op.create_table('recipe_ingredients',
+    op.create_table('recipes',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('recipe_id', sa.Integer(), nullable=False),
-    sa.Column('ingredient_id', sa.Integer(), nullable=False),
-    sa.Column('quantity', sa.String(length=50), nullable=True),
-    sa.Column('quantity_range', sa.JSON(), nullable=True),
-    sa.Column('unit', sa.String(length=20), nullable=True),
-    sa.Column('is_optional', sa.Boolean(), nullable=True),
-    sa.Column('note', sa.Text(), nullable=True),
-    sa.Column('original_quantity', sa.JSON(), nullable=True),
-    sa.ForeignKeyConstraint(['ingredient_id'], ['ingredients.id'], ),
-    sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ),
+    sa.Column('name', sa.String(length=200), nullable=False),
+    sa.Column('source', sa.String(length=100), nullable=True),
+    sa.Column('user_id', sa.Integer(), nullable=True),
+    sa.Column('category', sa.String(length=50), nullable=True),
+    sa.Column('tags', sa.JSON(), nullable=True),
+    sa.Column('cooking_steps', sa.JSON(), nullable=True),
+    sa.Column('total_time_minutes', sa.Integer(), nullable=True),
+    sa.Column('difficulty', sa.String(length=20), nullable=True),
+    sa.Column('servings', sa.Integer(), nullable=True),
+    sa.Column('tips', sa.JSON(), nullable=True),
+    sa.Column('images', sa.JSON(), nullable=True),
+    sa.Column('result_ingredient_id', sa.Integer(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_by', sa.Integer(), nullable=True),
+    sa.Column('updated_by', sa.Integer(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['result_ingredient_id'], ['ingredients.id'], ),
+    sa.ForeignKeyConstraint(['updated_by'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_recipe_ingredients_id'), 'recipe_ingredients', ['id'], unique=False)
-    op.create_index(op.f('ix_recipe_ingredients_ingredient_id'), 'recipe_ingredients', ['ingredient_id'], unique=False)
-    op.create_index(op.f('ix_recipe_ingredients_recipe_id'), 'recipe_ingredients', ['recipe_id'], unique=False)
+    op.create_index(op.f('ix_recipes_id'), 'recipes', ['id'], unique=False)
+    op.create_table('product_ingredient_links',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('product_id', sa.Integer(), nullable=False),
+    sa.Column('ingredient_id', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_by', sa.Integer(), nullable=True),
+    sa.Column('updated_by', sa.Integer(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['ingredient_id'], ['ingredients.id'], ),
+    sa.ForeignKeyConstraint(['product_id'], ['products.id'], ),
+    sa.ForeignKeyConstraint(['updated_by'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_product_ingredient_links_id'), 'product_ingredient_links', ['id'], unique=False)
     op.create_table('product_records',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('product_id', sa.Integer(), nullable=True),
+    sa.Column('product_id', sa.Integer(), nullable=False),
     sa.Column('product_name', sa.String(length=200), nullable=False),
     sa.Column('location_id', sa.Integer(), nullable=True),
     sa.Column('price', sa.Numeric(precision=10, scale=2), nullable=False),
@@ -375,19 +381,37 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_product_records_id'), 'product_records', ['id'], unique=False)
     op.create_index(op.f('ix_product_records_product_name'), 'product_records', ['product_name'], unique=False)
+    op.create_table('recipe_ingredients',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('recipe_id', sa.Integer(), nullable=False),
+    sa.Column('ingredient_id', sa.Integer(), nullable=False),
+    sa.Column('quantity', sa.String(length=50), nullable=True),
+    sa.Column('quantity_range', sa.JSON(), nullable=True),
+    sa.Column('unit', sa.String(length=20), nullable=True),
+    sa.Column('is_optional', sa.Boolean(), nullable=True),
+    sa.Column('note', sa.Text(), nullable=True),
+    sa.Column('original_quantity', sa.JSON(), nullable=True),
+    sa.ForeignKeyConstraint(['ingredient_id'], ['ingredients.id'], ),
+    sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_recipe_ingredients_id'), 'recipe_ingredients', ['id'], unique=False)
+    op.create_index(op.f('ix_recipe_ingredients_ingredient_id'), 'recipe_ingredients', ['ingredient_id'], unique=False)
+    op.create_index(op.f('ix_recipe_ingredients_recipe_id'), 'recipe_ingredients', ['recipe_id'], unique=False)
     op.create_table('user_ingredient_preferences',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('ingredient_id', sa.Integer(), nullable=False),
     sa.Column('default_product_id', sa.Integer(), nullable=True),
     sa.Column('default_recipe_id', sa.Integer(), nullable=True),
-    sa.Column('preference_type', sa.String(length=20), nullable=True),
+    sa.Column('preference_type', sa.String(length=20), nullable=False),
     sa.Column('is_favorite', sa.Boolean(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('created_by', sa.Integer(), nullable=True),
     sa.Column('updated_by', sa.Integer(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.CheckConstraint("(preference_type = 'product' AND default_product_id IS NOT NULL) OR (preference_type = 'recipe' AND default_recipe_id IS NOT NULL)", name='check_preference_consistency'),
     sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
     sa.ForeignKeyConstraint(['default_product_id'], ['products.id'], ),
     sa.ForeignKeyConstraint(['default_recipe_id'], ['recipes.id'], ),
@@ -397,42 +421,39 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id', 'ingredient_id', name='unique_user_ingredient')
     )
+    op.create_index(op.f('ix_user_ingredient_preferences_default_product_id'), 'user_ingredient_preferences', ['default_product_id'], unique=False)
+    op.create_index(op.f('ix_user_ingredient_preferences_default_recipe_id'), 'user_ingredient_preferences', ['default_recipe_id'], unique=False)
     op.create_index(op.f('ix_user_ingredient_preferences_id'), 'user_ingredient_preferences', ['id'], unique=False)
     op.create_index(op.f('ix_user_ingredient_preferences_ingredient_id'), 'user_ingredient_preferences', ['ingredient_id'], unique=False)
+    op.create_index(op.f('ix_user_ingredient_preferences_is_favorite'), 'user_ingredient_preferences', ['is_favorite'], unique=False)
+    op.create_index('ix_user_ingredient_preferences_user_favorite', 'user_ingredient_preferences', ['user_id', 'is_favorite'], unique=False)
     op.create_index(op.f('ix_user_ingredient_preferences_user_id'), 'user_ingredient_preferences', ['user_id'], unique=False)
-    op.create_table('product_ingredient_links',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('product_record_id', sa.Integer(), nullable=True),
-    sa.Column('ingredient_id', sa.Integer(), nullable=True),
-    sa.Column('match_confidence', sa.Numeric(precision=3, scale=2), nullable=True),
-    sa.Column('match_method', sa.String(length=50), nullable=True),
-    sa.Column('verified_by_user', sa.Boolean(), nullable=True),
-    sa.Column('verification_notes', sa.String(length=500), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-    sa.ForeignKeyConstraint(['ingredient_id'], ['ingredients.id'], ),
-    sa.ForeignKeyConstraint(['product_record_id'], ['product_records.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_product_ingredient_links_id'), 'product_ingredient_links', ['id'], unique=False)
+    op.create_index('ix_user_ingredient_preferences_user_type', 'user_ingredient_preferences', ['user_id', 'preference_type'], unique=False)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_index(op.f('ix_product_ingredient_links_id'), table_name='product_ingredient_links')
-    op.drop_table('product_ingredient_links')
+    op.drop_index('ix_user_ingredient_preferences_user_type', table_name='user_ingredient_preferences')
     op.drop_index(op.f('ix_user_ingredient_preferences_user_id'), table_name='user_ingredient_preferences')
+    op.drop_index('ix_user_ingredient_preferences_user_favorite', table_name='user_ingredient_preferences')
+    op.drop_index(op.f('ix_user_ingredient_preferences_is_favorite'), table_name='user_ingredient_preferences')
     op.drop_index(op.f('ix_user_ingredient_preferences_ingredient_id'), table_name='user_ingredient_preferences')
     op.drop_index(op.f('ix_user_ingredient_preferences_id'), table_name='user_ingredient_preferences')
+    op.drop_index(op.f('ix_user_ingredient_preferences_default_recipe_id'), table_name='user_ingredient_preferences')
+    op.drop_index(op.f('ix_user_ingredient_preferences_default_product_id'), table_name='user_ingredient_preferences')
     op.drop_table('user_ingredient_preferences')
-    op.drop_index(op.f('ix_product_records_product_name'), table_name='product_records')
-    op.drop_index(op.f('ix_product_records_id'), table_name='product_records')
-    op.drop_table('product_records')
     op.drop_index(op.f('ix_recipe_ingredients_recipe_id'), table_name='recipe_ingredients')
     op.drop_index(op.f('ix_recipe_ingredients_ingredient_id'), table_name='recipe_ingredients')
     op.drop_index(op.f('ix_recipe_ingredients_id'), table_name='recipe_ingredients')
     op.drop_table('recipe_ingredients')
+    op.drop_index(op.f('ix_product_records_product_name'), table_name='product_records')
+    op.drop_index(op.f('ix_product_records_id'), table_name='product_records')
+    op.drop_table('product_records')
+    op.drop_index(op.f('ix_product_ingredient_links_id'), table_name='product_ingredient_links')
+    op.drop_table('product_ingredient_links')
+    op.drop_index(op.f('ix_recipes_id'), table_name='recipes')
+    op.drop_table('recipes')
     op.drop_index(op.f('ix_products_name'), table_name='products')
     op.drop_index(op.f('ix_products_ingredient_id'), table_name='products')
     op.drop_index(op.f('ix_products_id'), table_name='products')
@@ -456,8 +477,6 @@ def downgrade() -> None:
     op.drop_table('ingredients')
     op.drop_index(op.f('ix_units_id'), table_name='units')
     op.drop_table('units')
-    op.drop_index(op.f('ix_recipes_id'), table_name='recipes')
-    op.drop_table('recipes')
     op.drop_index(op.f('ix_nutrition_data_usda_id'), table_name='nutrition_data')
     op.drop_index(op.f('ix_nutrition_data_id'), table_name='nutrition_data')
     op.drop_table('nutrition_data')
