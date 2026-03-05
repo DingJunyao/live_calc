@@ -280,6 +280,32 @@ async def create_ingredient(
         db.add(new_ingredient)
         db.commit()
         db.refresh(new_ingredient)
+        
+        # 自动创建对应的同名商品
+        try:
+            from app.models.product_entity import Product
+            from app.models.nutrition import Ingredient
+            
+            # 检查是否已存在同名商品
+            existing_product = db.query(Product).filter(
+                Product.name == new_ingredient.name,
+                Product.is_active == True
+            ).first()
+            
+            if not existing_product:
+                # 创建商品
+                new_product = Product(
+                    name=new_ingredient.name,
+                    ingredient_id=new_ingredient.id,
+                    created_by=current_user.id,
+                    updated_by=current_user.id,
+                    is_active=True
+                )
+                db.add(new_product)
+                db.commit()
+        except Exception as e:
+            # 创建商品失败不影响原料创建
+            print(f"Warning: Failed to create product for ingredient {new_ingredient.name}: {str(e)}")
 
         return {
             "id": new_ingredient.id,
@@ -528,3 +554,65 @@ async def merge_ingredients(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"合并原料失败: {str(e)}")
+
+
+@router.post("/batch-create-products", response_model=dict)
+async def batch_create_products(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """为所有没有对应商品的原料批量创建商品"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="仅限管理员访问")
+
+    try:
+        from app.models.product_entity import Product
+
+        # 获取所有原料
+        ingredients = db.query(Ingredient).filter(Ingredient.is_active == True).all()
+
+        created_count = 0
+        skipped_count = 0
+        failed_count = 0
+
+        for ingredient in ingredients:
+            try:
+                # 检查是否已存在同名商品
+                existing_product = db.query(Product).filter(
+                    Product.name == ingredient.name,
+                    Product.is_active == True
+                ).first()
+
+                if existing_product:
+                    skipped_count += 1
+                    continue
+
+                # 创建商品
+                new_product = Product(
+                    name=ingredient.name,
+                    ingredient_id=ingredient.id,
+                    created_by=current_user.id,
+                    updated_by=current_user.id,
+                    is_active=True
+                )
+                db.add(new_product)
+                created_count += 1
+                print(f"创建商品: {ingredient.name}")
+
+            except Exception as e:
+                failed_count += 1
+                print(f"创建商品失败 {ingredient.name}: {str(e)}")
+
+        db.commit()
+
+        return {
+            "message": f"批量创建商品完成：创建 {created_count}，跳过 {skipped_count}，失败 {failed_count}",
+            "created": created_count,
+            "skipped": skipped_count,
+            "failed": failed_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"批量创建商品失败: {str(e)}")
