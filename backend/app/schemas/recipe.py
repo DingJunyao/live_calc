@@ -33,6 +33,7 @@ class RecipeCreate(BaseModel):
     servings: int = 1
     tips: Optional[List[str]] = None
     images: Optional[List[str]] = None
+    result_ingredient_id: Optional[int] = None
 
 
 class RecipeResponse(BaseModel):
@@ -47,11 +48,26 @@ class RecipeResponse(BaseModel):
     servings: int
     tips: Optional[List[str]]
     images: Optional[List[str]]
+    result_ingredient_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
+
+
+class RecipeUpdate(BaseModel):
+    name: Optional[str] = None
+    source: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+    cooking_steps: Optional[List[CookingStep]] = None
+    total_time_minutes: Optional[int] = None
+    difficulty: Optional[str] = None
+    servings: Optional[int] = None
+    tips: Optional[List[str]] = None
+    images: Optional[List[str]] = None
+    result_ingredient_id: Optional[int] = None
 
 
 class RecipeIngredientDetail(BaseModel):
