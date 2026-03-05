@@ -102,3 +102,72 @@ class ApiClient {
 }
 
 export const api = new ApiClient()
+
+// Product Entity APIs
+export const productAPI = {
+  create: async (data: any) => {
+    return api.post('/products/entity', data)
+  },
+
+  list: async (params?: {
+    skip?: number
+    limit?: number
+    ingredient_id?: number
+    search?: string
+  }) => {
+    const query = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          query.append(key, String(value))
+        }
+      })
+    }
+    const queryString = query.toString()
+    return api.get(`/products/entity${queryString ? `?${queryString}` : ''}`)
+  },
+
+  get: async (id: number) => {
+    return api.get(`/products/entity/${id}`)
+  },
+
+  update: async (id: number, data: any) => {
+    return api.put(`/products/entity/${id}`, data)
+  },
+
+  delete: async (id: number) => {
+    return api.delete(`/products/entity/${id}`)
+  }
+}
+
+// User Preference APIs
+export const preferenceAPI = {
+  set: async (data: any) => {
+    return api.post('/preferences', data)
+  },
+
+  list: async (params?: { skip?: number; limit?: number }) => {
+    const query = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          query.append(key, String(value))
+        }
+      })
+    }
+    const queryString = query.toString()
+    return api.get(`/preferences${queryString ? `?${queryString}` : ''}`)
+  },
+
+  get: async (ingredient_id: number) => {
+    return api.get(`/preferences/${ingredient_id}`)
+  },
+
+  update: async (ingredient_id: number, data: any) => {
+    return api.put(`/preferences/${ingredient_id}`, data)
+  },
+
+  delete: async (ingredient_id: number) => {
+    return api.delete(`/preferences/${ingredient_id}`)
+  }
+}
