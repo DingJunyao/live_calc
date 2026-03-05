@@ -25,3 +25,4 @@ class User(Base):
     recipes = relationship("Recipe", back_populates="user")
     expenses = relationship("Expense", back_populates="user")
     created_invite_codes = relationship("InviteCode", back_populates="creator")
+    ingredient_preferences = relationship("UserIngredientPreference", back_populates="user")
