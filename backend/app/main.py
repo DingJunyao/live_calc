@@ -5,6 +5,7 @@ from pathlib import Path
 from app.api import auth, products, locations, nutrition, recipes, reports, admin, invite_codes
 from app.api import ingredient_extended  # 新增的食材扩展API
 from app.api import products_entity  # 商品实体 API
+from app.api import user_preferences  # 用户偏好 API
 from app.core.database import Base, engine
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -239,6 +240,7 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["管理员"])
 app.include_router(invite_codes.router, prefix="/api/v1/invite-codes", tags=["邀请码"])
 app.include_router(ingredient_extended.router, prefix="/api/v1/ingredients", tags=["食材扩展"])
 app.include_router(products_entity.router, prefix="/api/v1", tags=["商品实体"])
+app.include_router(user_preferences.router, prefix="/api/v1", tags=["用户偏好"])
 
 
 @app.get("/")
