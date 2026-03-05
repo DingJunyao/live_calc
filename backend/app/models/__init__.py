@@ -11,6 +11,7 @@ from app.models.region_unit_setting import RegionUnitSetting, UserUnitPreference
 from app.models.ingredient_density import IngredientDensity
 from app.models.ingredient_hierarchy import IngredientHierarchy
 from app.models.product_ingredient_link import ProductIngredientLink
+from app.models.product_entity import Product
 
 __all__ = [
     "User", "Location", "FavoriteLocation", "ProductRecord", "RecordType",
@@ -22,5 +23,6 @@ __all__ = [
     "RegionUnitSetting", "UserUnitPreference",
     "IngredientDensity",
     "IngredientHierarchy",
-    "ProductIngredientLink"
+    "ProductIngredientLink",
+    "Product"
 ]

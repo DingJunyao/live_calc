@@ -1,0 +1,21 @@
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship
+from app.core.base_model import AuditMixin
+from app.core.database import Base
+
+
+class Product(Base, AuditMixin):
+    """商品实体 - 代表可在商店购买的具体商品"""
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    brand = Column(String(100))
+    barcode = Column(String(50), unique=True)
+    image_url = Column(String(500))
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
+    tags = Column(String(500))  # JSON 字符串存储标签列表
+
+    # 关系
+    ingredient = relationship("Ingredient", back_populates="products")
+    price_records = relationship("ProductRecord", back_populates="product")
