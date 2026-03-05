@@ -43,8 +43,9 @@ class JsonRecipeImportService:
         "others": "others",
     }
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, user_id: Optional[int] = None):
         self.db = db
+        self.user_id = user_id or 1  # 默认使用用户 ID 1
         # 确保图片目录存在（包括 recipes 子目录）
         self.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -167,6 +168,30 @@ class JsonRecipeImportService:
                     result["imported"] += 1
                     print(f"导入原料: {ingredient_name}")
 
+                    # 自动创建对应的同名商品
+                    try:
+                        from app.models.product_entity import Product
+
+                        # 检查是否已存在同名商品
+                        existing_product = self.db.query(Product).filter(
+                            Product.name == ingredient_name,
+                            Product.is_active == True
+                        ).first()
+
+                        if not existing_product:
+                            # 创建商品
+                            new_product = Product(
+                                name=ingredient_name,
+                                ingredient_id=ingredient.id,
+                                created_by=self.user_id,
+                                updated_by=self.user_id,
+                                is_active=True
+                            )
+                            self.db.add(new_product)
+                            self.db.flush()
+                            print(f"  -> 创建商品 {new_product.name}")
+                    except Exception as e:
+                        print(f"  -> 创建商品失败: {str(e)}")
                 except Exception as e:
                     result["failed"] += 1
                     result["errors"].append(f"导入原料失败: {item.get('ingredient_name')} - {str(e)}")
@@ -383,7 +408,7 @@ class JsonRecipeImportService:
             return False
 
 
-def check_and_import_from_json_repo(db: Session) -> Dict[str, any]:
+def check_and_import_from_json_repo(db: Session, user_id: Optional[int] = None) -> Dict[str, any]:
     """
     检查是否需要从 JSON 仓库导入数据
     """
@@ -400,5 +425,5 @@ def check_and_import_from_json_repo(db: Session) -> Dict[str, any]:
         }
 
     print("未发现 JSON 仓库菜谱，开始导入...")
-    service = JsonRecipeImportService(db)
+    service = JsonRecipeImportService(db, user_id=user_id)
     return service.import_all()

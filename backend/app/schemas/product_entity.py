@@ -33,6 +33,7 @@ class ProductUpdate(BaseModel):
 
 class ProductResponse(ProductBase):
     id: int
+    ingredient_name: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
     is_active: bool

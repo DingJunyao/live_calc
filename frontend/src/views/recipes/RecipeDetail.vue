@@ -58,7 +58,8 @@
         <div class="info-grid">
           <div class="info-item">
             <span class="label">预计成本:</span>
-            <span class="value">¥{{ recipe.estimated_cost || 0 }}</span>
+            <span class="value" v-if="costData">¥{{ costData.total_cost }}</span>
+            <span class="value" v-else>¥{{ recipe.estimated_cost || 0 }}</span>
           </div>
           <div class="info-item">
             <span class="label">分类:</span>
@@ -198,6 +199,16 @@ async function loadRecipe() {
     // 尝试获取营养数据
     try {
       const nutritionData = await api.get(`/recipes/${recipeId}/nutrition`)
+      recipe.value.nutrition = nutritionData
+
+      // 加载成本数据
+      try {
+        const costData = await api.get(`/recipes/${recipeId}/cost`)
+        recipe.value.costData = costData
+      } catch (error) {
+        console.error('Failed to load cost data:', error)
+        recipe.value.costData = null
+      }
       recipe.value.nutrition = nutritionData
     } catch (e) {
       // 营养数据可能不存在，忽略错误

@@ -186,8 +186,49 @@ async def lifespan(app: FastAPI):
         init_default_data(db)
 
         # 检查并导入初始菜谱（优先从 JSON 仓库导入）
-        result = check_and_import_from_json_repo(db)
+        result = check_and_import_from_json_repo(db, user_id=1)  # 使用默认用户 ID 1
         print(f"JSON 仓库菜谱导入结果: {result}")
+
+        # 检查是否需要为现有原料批量创建商品
+        from app.models.nutrition import Ingredient
+        from app.models.product_entity import Product
+
+        ingredient_count = db.query(Ingredient).filter(Ingredient.is_active == True).count()
+        product_count = db.query(Product).filter(Product.is_active == True).count()
+
+        if ingredient_count > 0 and product_count == 0:
+            print(f"检测到 {ingredient_count} 个原料但没有商品，开始批量创建...")
+            created_count = 0
+            ingredients = db.query(Ingredient).filter(Ingredient.is_active == True).all()
+
+            for ingredient in ingredients:
+                try:
+                    # 检查是否已存在同名商品
+                    existing_product = db.query(Product).filter(
+                        Product.name == ingredient.name,
+                        Product.is_active == True
+                    ).first()
+
+                    if not existing_product:
+                        new_product = Product(
+                            name=ingredient.name,
+                            ingredient_id=ingredient.id,
+                            created_by=1,
+                            updated_by=1,
+                            is_active=True
+                        )
+                        db.add(new_product)
+                        created_count += 1
+                        if created_count % 100 == 0:
+                            db.flush()
+                            print(f"已创建 {created_count} 个商品...")
+                except Exception as e:
+                    print(f"创建商品失败 {ingredient.name}: {str(e)}")
+
+            db.commit()
+            print(f"批量创建商品完成：共创建 {created_count} 个商品")
+        elif product_count > 0:
+            print(f"商品已存在，跳过批量创建（原料: {ingredient_count}, 商品: {product_count}）")
     except Exception as e:
         print(f"初始化过程中发生错误: {str(e)}")
     finally:
@@ -231,7 +272,6 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
-app.include_router(products.router, prefix="/api/v1/products", tags=["商品"])
 app.include_router(locations.router, prefix="/api/v1/locations", tags=["地点"])
 app.include_router(nutrition.router, prefix="/api/v1/nutrition", tags=["营养"])
 app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["菜谱"])
@@ -239,7 +279,9 @@ app.include_router(reports.router, prefix="/api/v1/reports", tags=["报告"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["管理员"])
 app.include_router(invite_codes.router, prefix="/api/v1/invite-codes", tags=["邀请码"])
 app.include_router(ingredient_extended.router, prefix="/api/v1/ingredients", tags=["食材扩展"])
+# 商品实体路由必须在商品记录路由之前，避免 /products/entity 被 /products/{record_id} 匹配
 app.include_router(products_entity.router, prefix="/api/v1", tags=["商品实体"])
+app.include_router(products.router, prefix="/api/v1/products", tags=["商品"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["用户偏好"])
 
 

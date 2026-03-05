@@ -1,19 +1,22 @@
 """商品实体 API 路由"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import desc, and_
 from typing import List, Optional
+from datetime import datetime
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.product_entity import Product
+from app.models.product import ProductRecord
 from app.schemas.product_entity import ProductCreate, ProductUpdate, ProductResponse, ProductWithDetails
 from app.utils.database_helpers import serialize_tags, deserialize_tags
-from sqlalchemy import desc
 
-router = APIRouter(prefix="/products/entity", tags=["products_entity"])
+router = APIRouter(tags=["products_entity"])
 
 
-@router.post("/", response_model=ProductResponse)
+@router.post("/products/entity", response_model=ProductResponse)
+@router.post("/products/entity/", response_model=ProductResponse)
 def create_product(
     product: ProductCreate,
     db: Session = Depends(get_db),
@@ -36,10 +39,21 @@ def create_product(
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
+
+    # 反序列化 tags 用于响应
+    if db_product.tags:
+        db_product.tags = deserialize_tags(db_product.tags)
+    else:
+        db_product.tags = []
+
+    # 填充原料名称
+    db_product.ingredient_name = db_product.ingredient.name if db_product.ingredient else None
+
     return db_product
 
 
-@router.get("/", response_model=List[ProductResponse])
+@router.get("/products/entity", response_model=List[ProductResponse])
+@router.get("/products/entity/", response_model=List[ProductResponse])
 def list_products(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -58,17 +72,20 @@ def list_products(
 
     products = query.order_by(desc(Product.created_at)).offset(skip).limit(limit).all()
 
-    # 反序列化 tags
+    # 反序列化 tags 并填充 ingredient_name
     for product in products:
         if product.tags:
             product.tags = deserialize_tags(product.tags)
         else:
             product.tags = []
+        # 填充原料名称
+        product.ingredient_name = product.ingredient.name if product.ingredient else None
 
     return products
 
 
-@router.get("/{product_id}", response_model=ProductWithDetails)
+@router.get("/products/entity/{product_id}", response_model=ProductWithDetails)
+@router.get("/products/entity/{product_id}/", response_model=ProductWithDetails)
 def get_product(product_id: int, db: Session = Depends(get_db)):
     """获取商品详情"""
     product = db.query(Product).filter(Product.id == product_id, Product.is_active == True).first()
@@ -81,17 +98,26 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     else:
         product.tags = []
 
+    # 获取最新价格记录
+    latest_price_record = db.query(ProductRecord).filter(
+        ProductRecord.product_id == product_id
+    ).order_by(desc(ProductRecord.recorded_at)).first()
+
+    latest_price = float(latest_price_record.price) if latest_price_record else None
+    latest_price_date = latest_price_record.recorded_at if latest_price_record else None
+
     # 构建详细响应
     response = ProductWithDetails(
         **product.__dict__,
         ingredient_name=product.ingredient.name if product.ingredient else None,
-        latest_price=None,  # TODO: 从 ProductRecord 获取最新价格
-        latest_price_date=None
+        latest_price=latest_price,
+        latest_price_date=latest_price_date
     )
     return response
 
 
-@router.put("/{product_id}", response_model=ProductResponse)
+@router.put("/products/entity/{product_id}", response_model=ProductResponse)
+@router.put("/products/entity/{product_id}/", response_model=ProductResponse)
 def update_product(
     product_id: int,
     product_update: ProductUpdate,
@@ -128,11 +154,17 @@ def update_product(
     # 反序列化 tags 用于响应
     if db_product.tags:
         db_product.tags = deserialize_tags(db_product.tags)
+    else:
+        db_product.tags = []
+
+    # 填充原料名称
+    db_product.ingredient_name = db_product.ingredient.name if db_product.ingredient else None
 
     return db_product
 
 
-@router.delete("/{product_id}")
+@router.delete("/products/entity/{product_id}")
+@router.delete("/products/entity/{product_id}/")
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),

@@ -8,10 +8,11 @@ from app.models.user import User
 from app.models.user_ingredient_preference import UserIngredientPreference
 from app.schemas.user_preference import UserPreferenceCreate, UserPreferenceUpdate, UserPreferenceResponse
 
-router = APIRouter(prefix="/preferences", tags=["preferences"])
+router = APIRouter(tags=["preferences"])
 
 
-@router.post("/", response_model=UserPreferenceResponse)
+@router.post("/preferences", response_model=UserPreferenceResponse)
+@router.post("/preferences/", response_model=UserPreferenceResponse)
 def set_preference(
     preference: UserPreferenceCreate,
     db: Session = Depends(get_db),
@@ -45,7 +46,8 @@ def set_preference(
         return db_preference
 
 
-@router.get("/", response_model=List[UserPreferenceResponse])
+@router.get("/preferences", response_model=List[UserPreferenceResponse])
+@router.get("/preferences/", response_model=List[UserPreferenceResponse])
 def list_preferences(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -60,7 +62,8 @@ def list_preferences(
     return preferences
 
 
-@router.get("/{ingredient_id}", response_model=UserPreferenceResponse)
+@router.get("/preferences/{ingredient_id}", response_model=UserPreferenceResponse)
+@router.get("/preferences/{ingredient_id}/", response_model=UserPreferenceResponse)
 def get_preference(
     ingredient_id: int,
     db: Session = Depends(get_db),
@@ -79,7 +82,8 @@ def get_preference(
     return preference
 
 
-@router.put("/{ingredient_id}", response_model=UserPreferenceResponse)
+@router.put("/preferences/{ingredient_id}", response_model=UserPreferenceResponse)
+@router.put("/preferences/{ingredient_id}/", response_model=UserPreferenceResponse)
 def update_preference(
     ingredient_id: int,
     preference_update: UserPreferenceUpdate,
@@ -106,7 +110,8 @@ def update_preference(
     return preference
 
 
-@router.delete("/{ingredient_id}")
+@router.delete("/preferences/{ingredient_id}")
+@router.delete("/preferences/{ingredient_id}/")
 def delete_preference(
     ingredient_id: int,
     db: Session = Depends(get_db),
