@@ -12,6 +12,7 @@ from app.models.ingredient_density import IngredientDensity
 from app.models.ingredient_hierarchy import IngredientHierarchy
 from app.models.product_ingredient_link import ProductIngredientLink
 from app.models.product_entity import Product
+from app.models.user_ingredient_preference import UserIngredientPreference
 
 __all__ = [
     "User", "Location", "FavoriteLocation", "ProductRecord", "RecordType",
@@ -24,5 +25,6 @@ __all__ = [
     "IngredientDensity",
     "IngredientHierarchy",
     "ProductIngredientLink",
-    "Product"
+    "Product",
+    "UserIngredientPreference"
 ]
