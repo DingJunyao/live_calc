@@ -25,7 +25,7 @@ class Recipe(Base, AuditMixin):
     result_ingredient_id = Column(Integer, ForeignKey("ingredients.id"))
 
     # 关系
-    user = relationship("User", back_populates="recipes")
+    user = relationship("User", back_populates="recipes", foreign_keys="Recipe.user_id")
     ingredients = relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan")
     result_ingredient = relationship("Ingredient", foreign_keys=[result_ingredient_id], lazy="select")
 
