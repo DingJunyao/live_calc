@@ -1,9 +1,6 @@
 <template>
   <div class="dashboard">
-    <header class="dashboard-header">
-      <h1>欢迎回来，{{ user?.username }}！</h1>
-      <button @click="handleLogout" class="btn-logout">退出</button>
-    </header>
+    <PageHeader :title="`欢迎回来，${user?.username}！`" :show-home="false" />
 
     <div v-if="loading" class="loading">
       加载中...
@@ -78,6 +75,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -154,23 +152,11 @@ function formatDate(dateString: string) {
   const date = new Date(dateString)
   return date.toLocaleDateString('zh-CN')
 }
-
-function handleLogout() {
-  userStore.logout()
-  router.push('/login')
-}
 </script>
 
 <style scoped>
 .dashboard {
   padding: 2rem;
-}
-
-.dashboard-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
 }
 
 /* 为页面中的主要组件之间添加垂直间距 */
@@ -184,25 +170,6 @@ function handleLogout() {
 
 .recent-records {
   margin-top: 1rem;
-}
-
-.dashboard-header h1 {
-  font-size: 1.5rem;
-  color: #333;
-}
-
-.btn-logout {
-  padding: 0.5rem 1rem;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.btn-logout:hover {
-  background: #e0e0e0;
 }
 
 .loading {
@@ -331,12 +298,6 @@ function handleLogout() {
 @media (max-width: 768px) {
   .dashboard {
     padding: 1rem;
-  }
-
-  .dashboard-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
   }
 
   .stats-grid {

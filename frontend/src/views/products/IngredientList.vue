@@ -1,19 +1,12 @@
 <template>
   <div class="ingredient-list">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
+    <PageHeader title="原料管理" :show-back="true">
+      <template #extra>
+        <button @click="showAddModal = true" class="btn-square add-btn" title="添加原料">
+          <i class="mdi mdi-plus"></i>
         </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>原料管理</h1>
-      <button @click="showAddModal = true" class="btn-square add-btn" title="添加原料">
-        <i class="mdi mdi-plus"></i>
-      </button>
-    </header>
+      </template>
+    </PageHeader>
 
     <div class="search-filter">
       <div class="search-box">
@@ -44,6 +37,10 @@
         <div class="ingredient-header">
           <h3>
             {{ ingredient.name }}
+            <div class="ingredient-tags">
+              <span v-if="ingredient.category_name" class="category-tag">{{ ingredient.category_name }}</span>
+              <span v-if="ingredient.default_unit" class="unit-tag">{{ ingredient.default_unit }}</span>
+            </div>
             <span v-if="ingredient.is_imported" class="imported-badge" title="导入菜谱时顺带导入">导入</span>
           </h3>
           <div class="ingredient-actions">
@@ -57,20 +54,8 @@
         </div>
 
         <div class="ingredient-info">
-          <p v-if="ingredient.category_name">
-            <strong>分类:</strong> {{ ingredient.category_name }}
-          </p>
           <p v-if="ingredient.aliases && ingredient.aliases.length > 0">
             <strong>别名:</strong> {{ ingredient.aliases.join(', ') }}
-          </p>
-          <p v-if="ingredient.density">
-            <strong>密度:</strong> {{ ingredient.density }} g/mL
-          </p>
-          <p v-if="ingredient.default_unit">
-            <strong>默认单位:</strong> {{ ingredient.default_unit }}
-          </p>
-          <p>
-            <i class="mdi mdi-calendar"></i> 创建时间: {{ formatDate(ingredient.created_at) }}
           </p>
         </div>
 
@@ -309,6 +294,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { api } from '@/api/client'
 import { useUserStore } from '@/stores/user'
+import PageHeader from '@/components/PageHeader.vue'
 
 const userStore = useUserStore()
 
@@ -750,37 +736,6 @@ async function performConversion() {
   position: relative;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
 .add-btn {
   width: 2.5rem;
   height: 2.5rem;
@@ -798,11 +753,6 @@ async function performConversion() {
 
 .add-btn:hover {
   background: #36966d;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
 }
 
 .search-filter {
@@ -901,6 +851,34 @@ async function performConversion() {
   color: #333;
   margin: 0;
   flex-grow: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ingredient-tags {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.category-tag {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.unit-tag {
+  background: #f3e5f5;
+  color: #7c3aed;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
 }
 
 .ingredient-actions {
@@ -1163,5 +1141,51 @@ async function performConversion() {
   margin: 0;
   color: #666;
   font-size: 0.875rem;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .ingredient-list {
+    padding: 0.75rem;
+  }
+
+  .add-btn {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.875rem;
+  }
+
+  .ingredient-header h3 {
+    font-size: 1rem;
+  }
+
+  .category-tag,
+  .unit-tag {
+    padding: 0.125rem 0.3125rem;
+    font-size: 0.625rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .ingredient-list {
+    padding: 0.5rem;
+  }
+
+  .add-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .ingredient-header h3 {
+    font-size: 0.9375rem;
+  }
+
+  .category-tag,
+  .unit-tag {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.5625rem;
+  }
 }
 </style>

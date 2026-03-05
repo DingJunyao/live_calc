@@ -1,16 +1,6 @@
 <template>
   <div class="invite-codes-manager">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
-        </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>邀请码管理</h1>
-    </header>
+    <PageHeader title="邀请码管理" :show-back="true" />
 
     <div class="manager-content">
       <!-- 创建邀请码表单 -->
@@ -81,6 +71,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 interface InviteCode {
   id: number
@@ -175,42 +166,6 @@ onMounted(() => {
 <style scoped>
 .invite-codes-manager {
   padding: 2rem;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
 }
 
 .manager-content {
@@ -339,5 +294,107 @@ onMounted(() => {
   background: #fce8e6;
   border: 1px solid #f5a6a0;
   color: #d93025;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .invite-codes-manager {
+    padding: 0.75rem;
+  }
+
+  .manager-content {
+    gap: 1.5rem;
+  }
+
+  .card {
+    padding: 1rem;
+  }
+
+  .card h2 {
+    font-size: 1.125rem;
+  }
+
+  .form-group {
+    margin-bottom: 0.75rem;
+  }
+
+  .form-group label {
+    font-size: 0.8125rem;
+  }
+
+  .form-control {
+    font-size: 0.875rem;
+    padding: 0.625rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.8125rem;
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .table th {
+    font-size: 0.75rem;
+  }
+
+  .status-badge {
+    font-size: 0.6875rem;
+    padding: 0.125rem 0.375rem;
+  }
+
+  .alert {
+    padding: 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .btn-danger {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-sm {
+    padding: 0.125rem 0.375rem;
+    font-size: 0.6875rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .invite-codes-manager {
+    padding: 0.5rem;
+  }
+
+  .card {
+    padding: 0.75rem;
+  }
+
+  .card h2 {
+    font-size: 1rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.375rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    width: 100%;
+  }
+
+  .alert {
+    font-size: 0.75rem;
+  }
 }
 </style>

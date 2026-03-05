@@ -1,21 +1,12 @@
 <template>
   <div class="recipe-detail">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
-        </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>{{ recipe?.name || '菜谱详情' }}</h1>
-      <div class="action-buttons" v-if="recipe && !isImportedRecipe(recipe)">
+    <PageHeader :title="recipe?.name || '菜谱详情'" :show-back="true">
+      <template #extra v-if="recipe && !isImportedRecipe(recipe)">
         <button @click="editRecipe" class="btn-square" title="编辑">
           <i class="mdi mdi-pencil"></i>
         </button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -179,6 +170,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
 const recipe = ref<any>(null)
@@ -319,43 +311,6 @@ function openFullscreen() {
 <style scoped>
 .recipe-detail {
   padding: 2rem;
-  position: relative;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
 }
 
 .loading {
@@ -647,5 +602,134 @@ function openFullscreen() {
   color: #999;
   text-align: center;
   padding: 2rem;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .recipe-detail {
+    padding: 0.75rem;
+  }
+
+  .recipe-gallery {
+    padding: 0.75rem;
+  }
+
+  .gallery-main {
+    height: 300px;
+  }
+
+  .info-card {
+    padding: 1rem;
+  }
+
+  .info-card h2 {
+    font-size: 1.125rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .info-item {
+    font-size: 0.875rem;
+  }
+
+  .recipe-label {
+    margin-top: 0.75rem;
+  }
+
+  .servings-info {
+    font-size: 0.8125rem;
+    padding: 0.375rem;
+  }
+
+  .ingredient-item {
+    padding: 0.375rem;
+    gap: 0.375rem;
+  }
+
+  .ingredient-name {
+    font-size: 0.875rem;
+  }
+
+  .optional-badge {
+    font-size: 0.5625rem;
+    padding: 0.125rem 0.25rem;
+  }
+
+  .ingredient-amount {
+    font-size: 0.8125rem;
+  }
+
+  .ingredient-note {
+    font-size: 0.75rem;
+    padding: 0.375rem 0.5rem;
+  }
+
+  .cooking-steps {
+    gap: 0.75rem;
+  }
+
+  .step-item {
+    gap: 0.75rem;
+  }
+
+  .step-number {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .step-content {
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  .thumbnail {
+    width: 60px;
+    height: 60px;
+  }
+
+  .gallery-btn {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .gallery-counter {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .recipe-detail {
+    padding: 0.5rem;
+  }
+
+  .gallery-main {
+    height: 250px;
+  }
+
+  .info-card h2 {
+    font-size: 1rem;
+  }
+
+  .step-number {
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 0.75rem;
+  }
+
+  .step-content {
+    font-size: 0.8125rem;
+  }
+
+  .thumbnail {
+    width: 50px;
+    height: 50px;
+  }
 }
 </style>

@@ -1,16 +1,6 @@
 <template>
   <div class="recipe-import">
-    <header class="page-header">
-      <div class="nav-buttons">
-        <button @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
-          <i class="mdi mdi-arrow-left"></i>
-        </button>
-        <button @click="$router.push('/')" class="btn-square nav-btn" title="主页">
-          <i class="mdi mdi-home"></i>
-        </button>
-      </div>
-      <h1>菜谱导入管理</h1>
-    </header>
+    <PageHeader title="菜谱导入管理" :show-back="true" />
 
     <div class="import-sections">
       <!-- 在线导入部分 -->
@@ -87,6 +77,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { api } from '@/api/client';
+import PageHeader from '@/components/PageHeader.vue';
 
 const repoUrl = ref('https://github.com/Anduin2017/HowToCook');
 const selectedFile = ref<File | null>(null);
@@ -168,42 +159,6 @@ async function importInitialRecipes() {
 <style scoped>
 .recipe-import {
   padding: 2rem;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-square {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0;
-}
-
-.btn-square:hover {
-  background: #e0e0e0;
-}
-
-.page-header h1 {
-  font-size: 1.5rem;
-  color: #333;
 }
 
 .import-sections {
@@ -320,5 +275,84 @@ async function importInitialRecipes() {
   margin: 0.25rem 0;
   border-radius: 0.25rem;
   border-left: 3px solid #ccc;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .recipe-import {
+    padding: 0.75rem;
+  }
+
+  .import-sections {
+    gap: 1.5rem;
+  }
+
+  .card {
+    padding: 1rem;
+  }
+
+  .card h2 {
+    font-size: 1.125rem;
+  }
+
+  .form-group {
+    margin-bottom: 0.75rem;
+  }
+
+  .form-group label {
+    font-size: 0.8125rem;
+  }
+
+  .form-control {
+    font-size: 0.875rem;
+    padding: 0.625rem;
+  }
+
+  .help-text {
+    font-size: 0.75rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.8125rem;
+  }
+
+  .alert {
+    padding: 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .result-card li {
+    font-size: 0.8125rem;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .recipe-import {
+    padding: 0.5rem;
+  }
+
+  .card {
+    padding: 0.75rem;
+  }
+
+  .card h2 {
+    font-size: 1rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    width: 100%;
+  }
+
+  .alert {
+    font-size: 0.75rem;
+  }
+
+  .result-card li {
+    font-size: 0.75rem;
+  }
 }
 </style>
