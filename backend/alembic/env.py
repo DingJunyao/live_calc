@@ -26,6 +26,7 @@ from app.models import (
     ingredient_hierarchy,
     product_ingredient_link,
     product_entity,
+    user_ingredient_preference,
 )  # noqa: F401
 
 # Alembic 配置
