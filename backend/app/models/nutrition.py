@@ -67,6 +67,8 @@ class Ingredient(Base, AuditMixin):
     hierarchy_children = relationship("IngredientHierarchy", foreign_keys="IngredientHierarchy.parent_id", back_populates="parent")
     hierarchy_parents = relationship("IngredientHierarchy", foreign_keys="IngredientHierarchy.child_id", back_populates="child")
     recipe_ingredients = relationship("RecipeIngredient", back_populates="ingredient")  # 添加反向关系
+    products = relationship("Product", back_populates="ingredient", lazy="select")
+    product_links = relationship("ProductIngredientLink", back_populates="ingredient", lazy="select")
 
 
 class IngredientNutritionMapping(Base, AuditMixin):
