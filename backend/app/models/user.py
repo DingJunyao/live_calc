@@ -25,4 +25,4 @@ class User(Base):
     recipes = relationship("Recipe", back_populates="user", foreign_keys="Recipe.user_id")
     expenses = relationship("Expense", back_populates="user")
     created_invite_codes = relationship("InviteCode", back_populates="creator")
-    ingredient_preferences = relationship("UserIngredientPreference", back_populates="user")
+    ingredient_preferences = relationship("UserIngredientPreference", back_populates="user", foreign_keys="UserIngredientPreference.user_id")
