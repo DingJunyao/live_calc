@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
+from app.utils.database_helpers import validate_tags
 
 
 class ProductBase(BaseModel):
@@ -9,7 +10,12 @@ class ProductBase(BaseModel):
     barcode: Optional[str] = Field(None, max_length=50)
     image_url: Optional[str] = Field(None, max_length=500)
     ingredient_id: int
-    tags: Optional[List[str]] = None
+    tags: Optional[List[str]] = Field(None, default_factory=list)
+
+    @validator('tags')
+    @classmethod
+    def validate_tags_list(cls, v):
+        return validate_tags(v) if v else []
 
 
 class ProductCreate(ProductBase):
