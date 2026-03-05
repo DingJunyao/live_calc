@@ -1,10 +1,10 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, ForeignKey
 from sqlalchemy.orm import relationship
+from app.core.base_model import AuditMixin
 from app.core.database import Base
 
 
-class ProductIngredientLink(Base):
+class ProductIngredientLink(Base, AuditMixin):
     """商品与食材之间的映射关系"""
     __tablename__ = "product_ingredient_links"
 
@@ -12,9 +12,7 @@ class ProductIngredientLink(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
 
-    # 审计字段
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # created_at, updated_at, created_by, updated_by, is_active 从 AuditMixin 继承
 
     # 关系
     product = relationship("Product")
