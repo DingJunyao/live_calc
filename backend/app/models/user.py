@@ -22,7 +22,7 @@ class User(Base):
     product_records = relationship("ProductRecord", back_populates="user")
     locations = relationship("Location", back_populates="user")
     favorite_locations = relationship("FavoriteLocation", back_populates="user")
-    recipes = relationship("Recipe", back_populates="user")
+    recipes = relationship("Recipe", back_populates="user", foreign_keys="Recipe.user_id")
     expenses = relationship("Expense", back_populates="user")
     created_invite_codes = relationship("InviteCode", back_populates="creator")
     ingredient_preferences = relationship("UserIngredientPreference", back_populates="user")
