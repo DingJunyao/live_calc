@@ -1,0 +1,149 @@
+"""商品实体 API 路由"""
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from app.core.database import get_db
+from app.core.security import get_current_user
+from app.models.user import User
+from app.models.product_entity import Product
+from app.schemas.product_entity import ProductCreate, ProductUpdate, ProductResponse, ProductWithDetails
+from app.utils.database_helpers import serialize_tags, deserialize_tags
+from sqlalchemy import desc
+
+router = APIRouter(prefix="/products/entity", tags=["products_entity"])
+
+
+@router.post("/", response_model=ProductResponse)
+def create_product(
+    product: ProductCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建商品"""
+    # 检查条码唯一性
+    if product.barcode:
+        existing = db.query(Product).filter(Product.barcode == product.barcode).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Barcode already exists")
+
+    # 将 Pydantic 对象转换为字典并序列化 tags
+    product_data = product.model_dump()
+    if 'tags' in product_data:
+        product_data['tags'] = serialize_tags(product_data['tags'])
+
+    db_product = Product(**product_data)
+    db_product.created_by = current_user.id
+    db.add(db_product)
+    db.commit()
+    db.refresh(db_product)
+    return db_product
+
+
+@router.get("/", response_model=List[ProductResponse])
+def list_products(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    ingredient_id: Optional[int] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """获取商品列表"""
+    query = db.query(Product).filter(Product.is_active == True)
+
+    if ingredient_id:
+        query = query.filter(Product.ingredient_id == ingredient_id)
+
+    if search:
+        query = query.filter(Product.name.contains(search))
+
+    products = query.order_by(desc(Product.created_at)).offset(skip).limit(limit).all()
+
+    # 反序列化 tags
+    for product in products:
+        if product.tags:
+            product.tags = deserialize_tags(product.tags)
+        else:
+            product.tags = []
+
+    return products
+
+
+@router.get("/{product_id}", response_model=ProductWithDetails)
+def get_product(product_id: int, db: Session = Depends(get_db)):
+    """获取商品详情"""
+    product = db.query(Product).filter(Product.id == product_id, Product.is_active == True).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # 反序列化 tags
+    if product.tags:
+        product.tags = deserialize_tags(product.tags)
+    else:
+        product.tags = []
+
+    # 构建详细响应
+    response = ProductWithDetails(
+        **product.__dict__,
+        ingredient_name=product.ingredient.name if product.ingredient else None,
+        latest_price=None,  # TODO: 从 ProductRecord 获取最新价格
+        latest_price_date=None
+    )
+    return response
+
+
+@router.put("/{product_id}", response_model=ProductResponse)
+def update_product(
+    product_id: int,
+    product_update: ProductUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """更新商品"""
+    db_product = db.query(Product).filter(Product.id == product_id).first()
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    update_data = product_update.model_dump(exclude_unset=True)
+
+    # 检查条码唯一性
+    if 'barcode' in update_data and update_data['barcode']:
+        existing = db.query(Product).filter(
+            Product.barcode == update_data['barcode'],
+            Product.id != product_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Barcode already exists")
+
+    # 序列化 tags
+    if 'tags' in update_data:
+        update_data['tags'] = serialize_tags(update_data['tags'])
+
+    for field, value in update_data.items():
+        setattr(db_product, field, value)
+
+    db_product.updated_by = current_user.id
+    db.commit()
+    db.refresh(db_product)
+
+    # 反序列化 tags 用于响应
+    if db_product.tags:
+        db_product.tags = deserialize_tags(db_product.tags)
+
+    return db_product
+
+
+@router.delete("/{product_id}")
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """软删除商品"""
+    db_product = db.query(Product).filter(Product.id == product_id).first()
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    db_product.is_active = False
+    db_product.updated_by = current_user.id
+    db.commit()
+    return {"message": "Product deleted successfully"}
