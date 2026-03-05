@@ -179,17 +179,13 @@ class IngredientMatcher:
 
         return alternatives
 
-    def link_product_to_ingredient(self, product_record_id: int, ingredient_id: int,
-                                   match_confidence: float = 1.0,
-                                   match_method: str = "manual") -> ProductIngredientLink:
+    def link_product_to_ingredient(self, product_id: int, ingredient_id: int) -> ProductIngredientLink:
         """
         创建产品记录与食材之间的链接
         """
         link = ProductIngredientLink(
-            product_record_id=product_record_id,
-            ingredient_id=ingredient_id,
-            match_confidence=match_confidence,
-            match_method=match_method
+            product_id=product_id,
+            ingredient_id=ingredient_id
         )
 
         self.db.add(link)
