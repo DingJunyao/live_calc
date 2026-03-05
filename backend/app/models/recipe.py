@@ -22,9 +22,13 @@ class Recipe(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    # 新增：成品对应食材
+    result_ingredient_id = Column(Integer, ForeignKey("ingredients.id"))
+
     # 关系
     user = relationship("User", back_populates="recipes")
     ingredients = relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan")
+    result_ingredient = relationship("Ingredient", foreign_keys=[result_ingredient_id], lazy="select")
 
 
 class RecipeIngredient(Base):
