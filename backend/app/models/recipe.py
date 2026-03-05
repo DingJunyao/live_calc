@@ -1,10 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, Boolean
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, JSON, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.base_model import AuditMixin
 
 
-class Recipe(Base):
+class Recipe(Base, AuditMixin):
     __tablename__ = "recipes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -19,8 +19,7 @@ class Recipe(Base):
     servings = Column(Integer, default=1)
     tips = Column(JSON)
     images = Column(JSON, default=list)  # 菜谱图片路径列表
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # created_at, updated_at, created_by, updated_by, is_active 从 AuditMixin 继承
 
     # 新增：成品对应食材
     result_ingredient_id = Column(Integer, ForeignKey("ingredients.id"))
