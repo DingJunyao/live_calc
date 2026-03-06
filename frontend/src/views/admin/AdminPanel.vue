@@ -17,8 +17,8 @@
           <p class="stat-number">{{ stats.recipes }}</p>
         </div>
         <div class="stat-card">
-          <h3>地点数</h3>
-          <p class="stat-number">{{ stats.locations }}</p>
+          <h3>商家数</h3>
+          <p class="stat-number">{{ stats.merchants }}</p>
         </div>
       </div>
 
@@ -67,7 +67,7 @@ interface Stats {
   users: number
   products: number
   recipes: number
-  locations: number
+  merchants: number
 }
 
 const router = useRouter()
@@ -75,7 +75,7 @@ const stats = ref<Stats>({
   users: 0,
   products: 0,
   recipes: 0,
-  locations: 0
+  merchants: 0
 })
 
 const inviteCodeRequired = ref(false)
@@ -93,7 +93,7 @@ async function loadStats() {
       users: statsResponse.users || 0,
       products: statsResponse.products || 0,
       recipes: statsResponse.recipes || 0,
-      locations: statsResponse.locations || 0
+      merchants: statsResponse.merchants || 0
     }
   } catch (error) {
     console.error('Failed to load stats:', error)

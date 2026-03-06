@@ -4,8 +4,8 @@ from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 
-class Location(Base):
-    __tablename__ = "locations"
+class Merchant(Base):
+    __tablename__ = "merchants"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -17,12 +17,12 @@ class Location(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # 关系
-    user = relationship("User", back_populates="locations")
-    product_records = relationship("ProductRecord", back_populates="location")
+    user = relationship("User", back_populates="merchants")
+    product_records = relationship("ProductRecord", back_populates="merchant")
 
 
-class FavoriteLocation(Base):
-    __tablename__ = "favorite_locations"
+class FavoriteMerchant(Base):
+    __tablename__ = "favorite_merchants"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -33,4 +33,4 @@ class FavoriteLocation(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # 关系
-    user = relationship("User", back_populates="favorite_locations")
+    user = relationship("User", back_populates="favorite_merchants")

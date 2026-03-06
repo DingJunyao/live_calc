@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from app.api import auth, products, locations, nutrition, recipes, reports, admin, invite_codes
+from app.api import auth, products, merchants, nutrition, recipes, reports, admin, invite_codes
 from app.api import ingredient_extended  # 新增的食材扩展API
 from app.api import products_entity  # 商品实体 API
 from app.api import user_preferences  # 用户偏好 API
@@ -272,7 +272,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
-app.include_router(locations.router, prefix="/api/v1/locations", tags=["地点"])
+app.include_router(merchants.router, prefix="/api/v1/merchants", tags=["商家"])
 app.include_router(nutrition.router, prefix="/api/v1/nutrition", tags=["营养"])
 app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["菜谱"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["报告"])

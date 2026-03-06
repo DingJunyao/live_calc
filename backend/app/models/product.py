@@ -16,7 +16,7 @@ class ProductRecord(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_name = Column(String(200), nullable=False, index=True)
-    location_id = Column(Integer, ForeignKey("locations.id"), nullable=True)
+    merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), default="CNY")
     original_quantity = Column(Numeric(10, 3), nullable=False)
@@ -31,4 +31,4 @@ class ProductRecord(Base):
     # 关系
     user = relationship("User", back_populates="product_records")
     product = relationship("Product", back_populates="price_records")
-    location = relationship("Location", back_populates="product_records")
+    merchant = relationship("Merchant", back_populates="product_records")

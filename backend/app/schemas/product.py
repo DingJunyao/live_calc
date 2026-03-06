@@ -7,7 +7,7 @@ from decimal import Decimal
 class ProductRecordCreate(BaseModel):
     product_id: Optional[int] = None  # 可选，如果不提供则自动创建商品
     product_name: Optional[str] = Field(None, max_length=200)  # 可选，如果提供 product_id 则不需要
-    location_id: Optional[int] = None
+    merchant_id: Optional[int] = None
     price: Decimal = Field(..., gt=0, decimal_places=2)
     currency: str = "CNY"
     original_quantity: Decimal = Field(..., gt=0)
@@ -20,7 +20,7 @@ class ProductRecordResponse(BaseModel):
     id: int
     product_id: int
     product_name: str
-    location_id: Optional[int]
+    merchant_id: Optional[int]
     price: Decimal
     currency: str
     original_quantity: Decimal

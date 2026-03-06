@@ -3,14 +3,14 @@ from typing import Optional, List
 from datetime import datetime  # 修改为 datetime 而不是 date
 
 
-class LocationCreate(BaseModel):
+class MerchantCreate(BaseModel):
     name: str = Field(..., max_length=200)
     address: Optional[str] = Field(None, max_length=500)
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
 
 
-class LocationResponse(BaseModel):
+class MerchantResponse(BaseModel):
     id: int
     name: str
     address: Optional[str]
@@ -22,14 +22,14 @@ class LocationResponse(BaseModel):
         from_attributes = True
 
 
-class FavoriteLocationCreate(BaseModel):
+class FavoriteMerchantCreate(BaseModel):
     name: str = Field(..., max_length=200)
     type: str = "other"
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
 
 
-class FavoriteLocationResponse(BaseModel):
+class FavoriteMerchantResponse(BaseModel):
     id: int
     name: str
     type: str

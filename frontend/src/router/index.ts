@@ -59,9 +59,9 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/recipes/RecipeForm.vue').then(m => m.default)
   },
   {
-    path: '/locations',
-    name: 'locations',
-    component: () => import('@/views/locations/LocationMap.vue').then(m => m.default)
+    path: '/merchants',
+    name: 'merchants',
+    component: () => import('@/views/merchants/MerchantMap.vue').then(m => m.default)
   },
   {
     path: '/reports',

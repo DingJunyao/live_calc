@@ -28,9 +28,9 @@
           <i class="mdi mdi-food mdi-24px icon"></i>
           <span>菜谱</span>
         </router-link>
-        <router-link to="/locations" class="action-card">
+        <router-link to="/merchants" class="action-card">
           <i class="mdi mdi-map-marker mdi-24px icon"></i>
-          <span>地点</span>
+          <span>商家</span>
         </router-link>
         <router-link to="/reports" class="action-card">
           <i class="mdi mdi-chart-bar mdi-24px icon"></i>

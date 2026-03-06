@@ -9,18 +9,28 @@
     </PageHeader>
 
     <!-- 搜索和筛选 -->
-    <div class="search-filter">
-      <div class="search-box">
-        <input
-          v-model="searchTerm"
-          placeholder="搜索商品名称、品牌、条码..."
-          class="search-input"
-          @input="debounceSearch"
-        />
+    <div class="search-filter-wrapper">
+      <!-- 检查是否有商家存在，如果不存在则显示提示 -->
+      <div v-if="!merchantsLoading && allMerchants && allMerchants.length === 0" class="notification-banner full-width">
+        <i class="mdi mdi-alert-outline"></i>
+        <span>
+          尚未创建商家，无法记录商品价格。
+          请先<a href="#" @click.prevent="goToLocations()">创建商家</a>
+        </span>
       </div>
-      <button @click="loadProducts" class="btn-search">
-        <i class="mdi mdi-magnify"></i> 搜索
-      </button>
+      <div class="search-filter">
+        <div class="search-box">
+          <input
+            v-model="searchTerm"
+            placeholder="搜索商品名称、品牌、条码..."
+            class="search-input"
+            @input="debounceSearch"
+          />
+        </div>
+        <button @click="loadProducts" class="btn-search">
+          <i class="mdi mdi-magnify"></i> 搜索
+        </button>
+      </div>
     </div>
 
     <!-- 商品列表 -->
@@ -52,6 +62,8 @@
             <button
               @click.stop="addPriceRecord(product)"
               class="btn-add-price"
+              :class="{ 'btn-disabled': merchantsLoading || allMerchants.length === 0 }"
+              :disabled="merchantsLoading || allMerchants.length === 0"
               title="添加价格记录"
             >
               <i class="mdi mdi-currency-cny"></i>
@@ -207,10 +219,19 @@ interface Ingredient {
   aliases?: string[]
 }
 
+interface Merchant {
+  id: number
+  name: string
+  address?: string
+}
+
 const router = useRouter()
 const products = ref<Product[]>([])
 const ingredients = ref<Ingredient[]>([])
+const allMerchants = ref<Merchant[]>([])
 const loading = ref(false)
+const merchantsLoading = ref(true)  // 添加商家加载状态
+const ingredientsLoading = ref(true)  // 添加原料加载状态
 const showAddModal = ref(false)
 const searchTerm = ref('')
 const currentPage = ref(1)
@@ -239,6 +260,7 @@ let ingredientSearchTimeout: ReturnType<typeof setTimeout> | null = null
 onMounted(() => {
   loadProducts()
   loadIngredients()
+  loadLocations()
 })
 
 async function loadProducts() {
@@ -267,7 +289,24 @@ async function loadIngredients() {
     }))
   } catch (error) {
     console.error('Failed to load ingredients:', error)
+  } finally {
+    ingredientsLoading.value = false  // 更新加载状态
   }
+}
+
+async function loadLocations() {
+  try {
+    const response = await api.get<Merchant[]>('/merchants')  // 移除末尾斜杠
+    allMerchants.value = response || []
+  } catch (error) {
+    console.error('Failed to load merchants:', error)
+  } finally {
+    merchantsLoading.value = false  // 更新加载状态
+  }
+}
+
+function goToLocations() {
+  router.push('/merchants')
 }
 
 function getCategoryName(categoryId?: number): string {
@@ -800,5 +839,45 @@ async function deleteProduct(product: Product) {
   .form-actions button {
     width: 100%;
   }
+}
+
+/* 按钮禁用样式 */
+.btn-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 通知横幅样式 */
+.notification-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1.5rem 0; /* 上右下左：保持一致边距 */
+  font-size: 0.875rem;
+}
+
+.notification-banner.full-width {
+  width: 100%; /* 让其占用全部宽度，内部通过padding实现对齐 */
+  box-sizing: border-box;
+}
+
+.notification-banner a {
+  color: #667eea;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.notification-banner a:hover {
+  color: #5568d3;
+}
+
+.search-filter-wrapper {
+  margin-bottom: 1.5rem;
 }
 </style>
