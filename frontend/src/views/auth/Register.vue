@@ -230,6 +230,7 @@ async function handleRegister() {
   border: 1px solid #ddd;
   border-radius: 0.5rem;
   font-size: 1rem;
+  box-sizing: border-box;
 }
 
 .btn-primary {
@@ -242,6 +243,7 @@ async function handleRegister() {
   font-size: 1rem;
   cursor: pointer;
   margin-top: 1rem;
+  box-sizing: border-box;
 }
 
 .btn-primary:hover {
