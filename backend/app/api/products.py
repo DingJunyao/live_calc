@@ -116,7 +116,7 @@ async def create_product_record(
             user_id=current_user.id,
             product_id=product_id,
             product_name=product_name,
-            location_id=record.location_id,
+            merchant_id=record.merchant_id,
             price=record.price,
             currency=record.currency,
             original_quantity=record.original_quantity,
