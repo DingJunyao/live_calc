@@ -36,11 +36,37 @@
         class="product-card"
         @click="viewProduct(product)"
       >
-        <h3>{{ product.name }}</h3>
+        <div class="product-header">
+          <h3>
+            {{ product.name }}
+            <span v-if="product.brand" class="brand-tag">{{ product.brand }}</span>
+          </h3>
+          <div class="product-actions">
+            <button
+              @click.stop="openEditModal(product)"
+              class="btn-edit"
+              title="编辑"
+            >
+              <i class="mdi mdi-pencil"></i>
+            </button>
+            <button
+              @click.stop="addPriceRecord(product)"
+              class="btn-add-price"
+              title="添加价格记录"
+            >
+              <i class="mdi mdi-currency-cny"></i>
+            </button>
+            <button
+              @click.stop="deleteProduct(product)"
+              class="btn-delete"
+              title="删除"
+            >
+              <i class="mdi mdi-delete"></i>
+            </button>
+          </div>
+        </div>
+
         <div class="product-info">
-          <p v-if="product.brand">
-            <i class="mdi mdi-tag"></i> {{ product.brand }}
-          </p>
           <p v-if="product.ingredient_name">
             <i class="mdi mdi-grain"></i> {{ product.ingredient_name }}
           </p>
@@ -56,29 +82,6 @@
               {{ tag }}
             </span>
           </p>
-        </div>
-        <div class="product-actions">
-          <button
-            @click.stop="openEditModal(product)"
-            class="btn-edit"
-            title="编辑"
-          >
-            <i class="mdi mdi-pencil"></i>
-          </button>
-          <button
-            @click.stop="addPriceRecord(product)"
-            class="btn-add-price"
-            title="添加价格记录"
-          >
-            <i class="mdi mdi-currency-cny"></i>
-          </button>
-          <button
-            @click.stop="deleteProduct(product)"
-            class="btn-delete"
-            title="删除"
-          >
-            <i class="mdi mdi-delete"></i>
-          </button>
         </div>
       </div>
     </div>
@@ -557,90 +560,74 @@ async function deleteProduct(product: Product) {
 
 .product-card {
   background: white;
-  border-radius: 0.75rem;
+  padding: 1.5rem;
+  border-radius: 1rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.2s;
-  padding: 1rem;
+  border-left: 4px solid #667eea;
+  display: flex;
+  flex-direction: column;
 }
 
-.product-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  transform: translateY(-2px);
+.product-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
 }
 
-.product-card h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
+.product-header h3 {
+  font-size: 1.125rem;
   color: #333;
-}
-
-.product-info {
-  margin-bottom: 0.5rem;
-}
-
-.product-info p {
-  margin: 0.25rem 0;
-  font-size: 0.875rem;
-  color: #666;
+  margin: 0;
+  flex-grow: 1;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.tag {
-  display: inline-block;
-  padding: 0.25rem 0.5rem;
-  background: #e8f4fd;
-  color: #0066cc;
+.brand-tag {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
-  font-size: 0.75rem;
-  margin-right: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
 }
 
 .product-actions {
   display: flex;
   gap: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid #eee;
 }
 
 .product-actions button {
-  flex: 1;
-  padding: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   border: none;
-  border-radius: 0.375rem;
+  border-radius: 0.25rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s, color 0.2s;
 }
 
-.btn-edit {
-  background: #e3f2fd;
-  color: #1976d2;
+.btn-edit, .btn-add-price {
+  background: #667eea;
+  color: white;
 }
 
-.btn-edit:hover {
-  background: #bbdefb;
-}
-
-.btn-add-price {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.btn-add-price:hover {
-  background: #c8e6c9;
+.btn-edit:hover, .btn-add-price:hover {
+  background: #5a6fd8;
 }
 
 .btn-delete {
-  background: #ffebee;
-  color: #c62828;
+  background: #de350b;
+  color: white;
 }
 
 .btn-delete:hover {
-  background: #ffcdd2;
+  background: #bc2e0b;
 }
 
 /* 模态框样式 */
