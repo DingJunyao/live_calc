@@ -2,11 +2,36 @@
   <div class="product-list">
     <PageHeader title="价格记录" :show-back="true">
       <template #extra>
-        <button @click="showAddModal = true" class="btn-square add-btn" title="添加记录">
+        <button
+          @click="openAddModal"
+          class="btn-square add-btn"
+          title="添加记录"
+          :disabled="loading || merchantsLoading || allProducts.length === 0 || allMerchants.length === 0"
+          :class="{ 'btn-disabled': loading || merchantsLoading || allProducts.length === 0 || allMerchants.length === 0 }"
+        >
           <i class="mdi mdi-plus"></i>
         </button>
       </template>
     </PageHeader>
+
+    <!-- 检查商品和商家是否存在，如果不存在则显示提示 -->
+    <div v-if="(!loading && allProducts.length === 0) || (!merchantsLoading && allMerchants.length === 0)" class="notification-banner full-width">
+      <i class="mdi mdi-alert-outline"></i>
+      <span>
+        <template v-if="(!loading && allProducts.length === 0) && (!merchantsLoading && allMerchants.length === 0)">
+          尚未创建商品和商家，请先
+          <a href="#" @click.prevent="goToProductsManage()">创建商品</a>
+          和
+          <a href="#" @click.prevent="goToLocations()">创建商家</a>
+        </template>
+        <template v-else-if="!loading && allProducts.length === 0">
+          尚未创建商品，无法记录价格。请先<a href="#" @click.prevent="goToProductsManage()">创建商品</a>
+        </template>
+        <template v-else-if="!merchantsLoading && allMerchants.length === 0">
+          尚未创建商家，无法记录商品价格。请先<a href="#" @click.prevent="goToLocations()">创建商家</a>
+        </template>
+      </span>
+    </div>
 
     <div v-if="loading" class="loading">加载中...</div>
     <div v-else-if="products.length === 0" class="empty-state">
@@ -76,6 +101,31 @@
             <label for="unit">单位:</label>
             <input v-model="newProduct.unit" type="text" id="unit" placeholder="如: kg, g, 个" required />
           </div>
+          <div class="form-group">
+            <label for="location">商家:</label>
+            <div class="autocomplete-container">
+              <input
+                v-model="newProduct.merchant_name"
+                type="text"
+                id="location"
+                placeholder="搜索并选择商家"
+                @input="onLocationInput"
+                @focus="showLocationSuggestions = true"
+                @keydown="handleLocationKeydown"
+              />
+              <ul v-if="showLocationSuggestions && filteredLocationSuggestions.length > 0" class="suggestions-list">
+                <li
+                  v-for="(suggestion, index) in filteredLocationSuggestions"
+                  :key="suggestion.id"
+                  :class="{ 'suggestion-selected': index === selectedLocationIndex }"
+                  @click="selectLocation(suggestion)"
+                >
+                  {{ suggestion.name }}
+                  <span v-if="suggestion.address" class="address">({{ suggestion.address }})</span>
+                </li>
+              </ul>
+            </div>
+          </div>
           <div class="form-actions">
             <button type="button" @click="closeModal" class="btn-secondary">取消</button>
             <button type="submit" class="btn-primary">添加</button>
@@ -88,7 +138,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { productAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
@@ -111,9 +161,17 @@ interface PriceRecord {
   recorded_at: string
 }
 
+interface Merchant {
+  id: number
+  name: string
+  address?: string
+}
+
 const route = useRoute()
+const router = useRouter()
 const products = ref<PriceRecord[]>([])
 const allProducts = ref<ProductSuggestion[]>([])
+const allMerchants = ref<Merchant[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
 const newProduct = ref({
@@ -121,11 +179,18 @@ const newProduct = ref({
   product_name: '',
   price: 0,
   quantity: 1,
-  unit: ''
+  unit: '',
+  merchant_id: 0,
+  merchant_name: ''
 })
 
 const showProductSuggestions = ref(false)
 const selectedIndex = ref(-1)
+const showLocationSuggestions = ref(false)
+const selectedLocationIndex = ref(-1)
+
+// 添加商家加载状态
+const merchantsLoading = ref(true)
 
 // 分页相关
 const currentPage = ref(1)
@@ -145,9 +210,22 @@ const filteredSuggestions = computed(() => {
     .slice(0, 10)
 })
 
+// 过滤后的商家建议列表
+const filteredLocationSuggestions = computed(() => {
+  if (!newProduct.value.merchant_name.trim()) {
+    return allMerchants.value.slice(0, 10)
+  }
+  const search = newProduct.value.merchant_name.toLowerCase()
+  return allMerchants.value
+    .filter(l => l.name.toLowerCase().includes(search) ||
+               (l.address && l.address.toLowerCase().includes(search)))
+    .slice(0, 10)
+})
+
 onMounted(async () => {
   await loadProducts()
   await loadAllProducts()
+  await loadAllMerchants()
 
   // 检查是否有从商品管理页面传来的参数
   const productId = route.query.product_id
@@ -155,6 +233,8 @@ onMounted(async () => {
   if (productId && productName) {
     newProduct.value.product_id = Number(productId)
     newProduct.value.product_name = productName
+    // 如果有路由参数，则检查是否有足够数据（商家），但不强制跳转
+    // 如果商家为空，则直接打开模态框，让用户可以选择商家或被提示
     showAddModal.value = true
   }
 })
@@ -182,13 +262,32 @@ async function loadAllProducts() {
   }
 }
 
+async function loadAllMerchants() {
+  try {
+    const response = await api.get<Merchant[]>('/merchants')  // 移除末尾斜杠
+    allMerchants.value = response || []
+  } catch (error) {
+    console.error('Failed to load merchants:', error)
+  } finally {
+    merchantsLoading.value = false  // 更新加载状态
+  }
+}
+
 function openAddModal() {
+  // 检查按钮是否被禁用，如果是，则不执行任何操作
+  if (loading.value || merchantsLoading.value || allProducts.value.length === 0 || allMerchants.value.length === 0) {
+    return;
+  }
+
+  // 初始化表单并显示模态框
   newProduct.value = {
     product_id: 0,
     product_name: '',
     price: 0,
     quantity: 1,
-    unit: ''
+    unit: '',
+    merchant_id: 0,
+    merchant_name: ''
   }
   showAddModal.value = true
 }
@@ -196,7 +295,9 @@ function openAddModal() {
 function closeModal() {
   showAddModal.value = false
   showProductSuggestions.value = false
+  showLocationSuggestions.value = false
   selectedIndex.value = -1
+  selectedLocationIndex.value = -1
 }
 
 function handlePageChange(page: number) {
@@ -212,9 +313,13 @@ function handlePageSizeChange(size: number) {
 
 async function addProduct() {
   try {
-    // 如果没有选择商品ID，尝试从名称匹配
+    // 验证是否提供了商品
     let productId = newProduct.value.product_id
     if (!productId) {
+      if (!newProduct.value.product_name) {
+        alert('请先选择商品')
+        return
+      }
       const matched = allProducts.value.find(p => p.name === newProduct.value.product_name)
       if (matched) {
         productId = matched.id
@@ -224,12 +329,33 @@ async function addProduct() {
       }
     }
 
+    // 如果选择了商家ID，使用它；否则不发送merchant_id
+    let merchantId = newProduct.value.merchant_id
+    if (!merchantId && newProduct.value.merchant_name) {
+      const matched = allMerchants.value.find(m => m.name === newProduct.value.merchant_name)
+      if (matched) {
+        merchantId = matched.id
+      }
+    }
+
+    // 验证价格、数量等必填字段
+    if (newProduct.value.price <= 0) {
+      alert('请输入有效的价格')
+      return
+    }
+
+    if (newProduct.value.quantity <= 0) {
+      alert('请输入有效的数量')
+      return
+    }
+
     // 提交价格记录
     await api.post('/products/', {
       product_id: productId,
       price: newProduct.value.price,
       original_quantity: newProduct.value.quantity,
-      original_unit: newProduct.value.unit
+      original_unit: newProduct.value.unit,
+      merchant_id: merchantId || undefined
     })
 
     closeModal()
@@ -287,6 +413,51 @@ function handleKeydown(event: KeyboardEvent) {
     showProductSuggestions.value = false
     selectedIndex.value = -1
   }
+}
+
+function onLocationInput() {
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
+  }
+  searchTimeout = setTimeout(() => {
+    // 重置选中的地点ID，因为用户可能正在修改
+    if (!allMerchants.value.find(l => l.name === newProduct.value.merchant_name)) {
+      newProduct.value.merchant_id = 0
+    }
+    showLocationSuggestions.value = true
+    selectedLocationIndex.value = -1
+  }, 300)
+}
+
+function selectLocation(location: Merchant) {
+  newProduct.value.merchant_id = location.id
+  newProduct.value.merchant_name = location.name
+  showLocationSuggestions.value = false
+  selectedLocationIndex.value = -1
+}
+
+function handleLocationKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    selectedLocationIndex.value = Math.min(selectedLocationIndex.value + 1, filteredLocationSuggestions.value.length - 1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    selectedLocationIndex.value = Math.max(selectedLocationIndex.value - 1, -1)
+  } else if (event.key === 'Enter' && selectedLocationIndex.value >= 0) {
+    event.preventDefault()
+    selectLocation(filteredLocationSuggestions.value[selectedLocationIndex.value])
+  } else if (event.key === 'Escape') {
+    showLocationSuggestions.value = false
+    selectedLocationIndex.value = -1
+  }
+}
+
+function goToProductsManage() {
+  router.push('/products/manage')
+}
+
+function goToLocations() {
+  router.push('/merchants')
 }
 </script>
 
@@ -476,8 +647,19 @@ function handleKeydown(event: KeyboardEvent) {
   margin-left: 0.5rem;
 }
 
+.suggestions-list .address {
+  color: #999;
+  font-size: 0.8125rem;
+  margin-left: 0.5rem;
+}
+
 .suggestions-list li:hover .brand,
 .suggestions-list li.suggestion-selected .brand {
+  color: #666;
+}
+
+.suggestions-list li:hover .address,
+.suggestions-list li.suggestion-selected .address {
   color: #666;
 }
 
@@ -501,6 +683,39 @@ function handleKeydown(event: KeyboardEvent) {
 
 .btn-primary:hover {
   background: #36996d;
+}
+
+/* 通知横幅样式 */
+.notification-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1.5rem 0; /* 上右下左：保持左边距，减少右边距 */
+  font-size: 0.875rem;
+}
+
+.notification-banner.full-width {
+  width: 100%; /* 让其占用全部宽度，内部通过padding实现对齐 */
+  box-sizing: border-box;
+}
+
+.notification-banner i {
+  font-size: 1.25rem;
+}
+
+.notification-banner a {
+  color: #667eea;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.notification-banner a:hover {
+  color: #5568d3;
 }
 
 /* 响应式设计 */
@@ -539,5 +754,12 @@ function handleKeydown(event: KeyboardEvent) {
   .btn-secondary {
     width: 100%;
   }
+}
+
+/* 按钮禁用样式 */
+.btn-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 </style>

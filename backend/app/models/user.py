@@ -20,8 +20,8 @@ class User(Base):
 
     # 关系
     product_records = relationship("ProductRecord", back_populates="user")
-    locations = relationship("Location", back_populates="user")
-    favorite_locations = relationship("FavoriteLocation", back_populates="user")
+    merchants = relationship("Merchant", back_populates="user")
+    favorite_merchants = relationship("FavoriteMerchant", back_populates="user")
     recipes = relationship("Recipe", back_populates="user", foreign_keys="Recipe.user_id")
     expenses = relationship("Expense", back_populates="user")
     created_invite_codes = relationship("InviteCode", back_populates="creator")

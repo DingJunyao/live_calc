@@ -5,7 +5,7 @@ from app.core.database import get_db
 from app.models.user import User
 from app.models.product import ProductRecord
 from app.models.recipe import Recipe
-from app.models.location import Location
+from app.models.merchant import Merchant
 from app.schemas.auth import UserResponse
 from pydantic import BaseModel
 from app.services.recipe_import_service import RecipeImportService
@@ -15,7 +15,7 @@ class AdminStatsResponse(BaseModel):
     users: int
     products: int
     recipes: int
-    locations: int
+    merchants: int
 
 
 router = APIRouter()
@@ -37,13 +37,13 @@ async def get_admin_stats(
     users_count = db.query(User).count()
     products_count = db.query(ProductRecord).count()
     recipes_count = db.query(Recipe).count()
-    locations_count = db.query(Location).count()
+    merchants_count = db.query(Merchant).count()
 
     return AdminStatsResponse(
         users=users_count,
         products=products_count,
         recipes=recipes_count,
-        locations=locations_count
+        merchants=merchants_count
     )
 
 

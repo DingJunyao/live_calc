@@ -1,8 +1,8 @@
 <template>
-  <div class="location-map">
-    <PageHeader title="地点管理" :show-back="true">
+  <div class="merchant-map">
+    <PageHeader title="商家管理" :show-back="true">
       <template #extra>
-        <button @click="showAddModal = true" class="btn-square add-btn" title="添加地点">
+        <button @click="showAddModal = true" class="btn-square add-btn" title="添加商家">
           <i class="mdi mdi-plus"></i>
         </button>
       </template>
@@ -10,18 +10,18 @@
 
     <div v-if="loading" class="loading">加载中...</div>
 
-    <div v-else-if="locations.length === 0" class="empty-state">
-      暂无地点记录
+    <div v-else-if="merchants.length === 0" class="empty-state">
+      暂无商家记录
     </div>
 
-    <div v-else class="location-list">
-      <div v-for="location in locations" :key="location.id" class="location-card">
-        <h3>{{ location.name }}</h3>
-        <div class="location-info">
-          <p v-if="location.address">地址: {{ location.address }}</p>
-          <p>纬度: {{ location.latitude }}</p>
-          <p>经度: {{ location.longitude }}</p>
-          <p>添加时间: {{ formatDate(location.created_at) }}</p>
+    <div v-else class="merchant-list">
+      <div v-for="merchant in merchants" :key="merchant.id" class="merchant-card">
+        <h3>{{ merchant.name }}</h3>
+        <div class="merchant-info">
+          <p v-if="merchant.address">地址: {{ merchant.address }}</p>
+          <p>纬度: {{ merchant.latitude }}</p>
+          <p>经度: {{ merchant.longitude }}</p>
+          <p>添加时间: {{ formatDate(merchant.created_at) }}</p>
         </div>
       </div>
     </div>
@@ -35,26 +35,26 @@
       @change-page-size="handlePageSizeChange"
     />
 
-    <!-- 添加地点模态框 -->
+    <!-- 添加商家模态框 -->
     <div v-if="showAddModal" class="modal-overlay" @click="showAddModal = false">
       <div class="modal-content" @click.stop>
-        <h2>添加地点</h2>
-        <form @submit.prevent="addLocation">
+        <h2>添加商家</h2>
+        <form @submit.prevent="addMerchant">
           <div class="form-group">
-            <label for="locationName">地点名称:</label>
-            <input v-model="newLocation.name" type="text" id="locationName" required />
+            <label for="merchantName">商家名称:</label>
+            <input v-model="newMerchant.name" type="text" id="merchantName" required />
           </div>
           <div class="form-group">
             <label for="address">地址:</label>
-            <input v-model="newLocation.address" type="text" id="address" />
+            <input v-model="newMerchant.address" type="text" id="address" />
           </div>
           <div class="form-group">
             <label for="latitude">纬度:</label>
-            <input v-model.number="newLocation.latitude" type="number" id="latitude" step="any" required />
+            <input v-model.number="newMerchant.latitude" type="number" id="latitude" step="any" required />
           </div>
           <div class="form-group">
             <label for="longitude">经度:</label>
-            <input v-model.number="newLocation.longitude" type="number" id="longitude" step="any" required />
+            <input v-model.number="newMerchant.longitude" type="number" id="longitude" step="any" required />
           </div>
           <div class="form-actions">
             <button type="button" @click="showAddModal = false" class="btn-secondary">取消</button>
@@ -72,10 +72,10 @@ import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
 
-const locations = ref<any[]>([])
+const merchants = ref<any[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
-const newLocation = ref({
+const newMerchant = ref({
   name: '',
   address: '',
   latitude: 0,
@@ -88,19 +88,19 @@ const pageSize = ref(10)
 const total = ref(0)
 
 onMounted(async () => {
-  await loadLocations()
+  await loadMerchants()
 })
 
-async function loadLocations() {
+async function loadMerchants() {
   loading.value = true
   try {
     const offset = (currentPage.value - 1) * pageSize.value
-    const data = await api.get<any[]>(`/locations?offset=${offset}&limit=${pageSize.value}`)
-    locations.value = data || []
+    const data = await api.get<any[]>(`/merchants?offset=${offset}&limit=${pageSize.value}`)
+    merchants.value = data || []
     // TODO: 需要后端支持返回总数
-    total.value = locations.value.length
+    total.value = merchants.value.length
   } catch (error) {
-    console.error('Failed to load locations:', error)
+    console.error('Failed to load merchants:', error)
   } finally {
     loading.value = false
   }
@@ -108,31 +108,31 @@ async function loadLocations() {
 
 function handlePageChange(page: number) {
   currentPage.value = page
-  loadLocations()
+  loadMerchants()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
   currentPage.value = 1
-  loadLocations()
+  loadMerchants()
 }
 
-async function addLocation() {
+async function addMerchant() {
   try {
-    await api.post('/locations', newLocation.value)
+    await api.post('/merchants', newMerchant.value)
     showAddModal.value = false
     // 重置表单
-    newLocation.value = {
+    newMerchant.value = {
       name: '',
       address: '',
       latitude: 0,
       longitude: 0
     }
     // 重新加载数据
-    await loadLocations()
+    await loadMerchants()
   } catch (error) {
-    console.error('Failed to add location:', error)
-    alert('添加地点失败，请重试')
+    console.error('Failed to add merchant:', error)
+    alert('添加商家失败，请重试')
   }
 }
 
@@ -143,7 +143,7 @@ function formatDate(dateString: string) {
 </script>
 
 <style scoped>
-.location-map {
+.merchant-map {
   padding: 2rem;
 }
 
@@ -204,26 +204,26 @@ function formatDate(dateString: string) {
   color: #999;
 }
 
-.location-list {
+.merchant-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 1.5rem;
 }
 
-.location-card {
+.merchant-card {
   background: white;
   padding: 1.5rem;
   border-radius: 1rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.location-card h3 {
+.merchant-card h3 {
   font-size: 1.125rem;
   color: #333;
   margin-bottom: 1rem;
 }
 
-.location-info p {
+.merchant-info p {
   margin: 0.25rem 0;
   color: #666;
   font-size: 0.875rem;
@@ -288,7 +288,7 @@ function formatDate(dateString: string) {
 
 /* 移动端优化 */
 @media (max-width: 768px) {
-  .location-map {
+  .merchant-map {
     padding: 0.75rem;
   }
 
@@ -298,19 +298,19 @@ function formatDate(dateString: string) {
     font-size: 0.875rem;
   }
 
-  .location-list {
+  .merchant-list {
     gap: 0.75rem;
   }
 
-  .location-card {
+  .merchant-card {
     padding: 1rem;
   }
 
-  .location-card h3 {
+  .merchant-card h3 {
     font-size: 1rem;
   }
 
-  .location-info p {
+  .merchant-info p {
     font-size: 0.8125rem;
   }
 
@@ -333,7 +333,7 @@ function formatDate(dateString: string) {
 
 /* 超小屏幕优化 */
 @media (max-width: 480px) {
-  .location-map {
+  .merchant-map {
     padding: 0.5rem;
   }
 
@@ -343,20 +343,20 @@ function formatDate(dateString: string) {
     font-size: 0.8125rem;
   }
 
-  .location-list {
+  .merchant-list {
     grid-template-columns: 1fr;
     gap: 0.5rem;
   }
 
-  .location-card {
+  .merchant-card {
     padding: 0.75rem;
   }
 
-  .location-card h3 {
+  .merchant-card h3 {
     font-size: 0.9375rem;
   }
 
-  .location-info p {
+  .merchant-info p {
     font-size: 0.75rem;
   }
 
