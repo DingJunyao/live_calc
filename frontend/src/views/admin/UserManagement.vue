@@ -1,6 +1,7 @@
 <template>
+  <PageHeader title="用户管理" :show-back="true" />
+
   <div class="user-management">
-    <PageHeader title="用户管理" :show-back="true" />
 
     <div class="user-controls">
       <div class="search-box">
@@ -242,7 +243,8 @@ async function deleteUser(user: User) {
 
 <style scoped>
 .user-management {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .user-controls {

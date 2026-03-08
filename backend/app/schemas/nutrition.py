@@ -1,6 +1,18 @@
 from pydantic import BaseModel
 from decimal import Decimal
 from typing import Optional, List
+from datetime import datetime
+
+
+class IngredientResponse(BaseModel):
+    """原料响应模型（仅包含必要字段，避免序列化 Unit 对象）"""
+    id: int
+    name: str
+    aliases: Optional[List[str]]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class NutritionDataResponse(BaseModel):

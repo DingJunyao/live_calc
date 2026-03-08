@@ -47,7 +47,7 @@ class Ingredient(Base, AuditMixin):
     name = Column(String(200), unique=True, nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("ingredient_categories.id"))  # 食材类别ID
     density = Column(Numeric(10, 6))  # 密度值（g/mL 或 kg/L），用于体积重量换算
-    default_unit = Column(String(20))  # 默认单位
+    default_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True, index=True)  # 默认单位外键
 
     # 别名列表，如 ["土豆", "马铃薯", "洋芋"]
     aliases = Column(JSON)
@@ -69,6 +69,7 @@ class Ingredient(Base, AuditMixin):
     recipe_ingredients = relationship("RecipeIngredient", back_populates="ingredient")  # 添加反向关系
     products = relationship("Product", back_populates="ingredient", lazy="select")
     product_links = relationship("ProductIngredientLink", back_populates="ingredient", lazy="select")
+    default_unit = relationship("Unit", lazy="select")
 
 
 class IngredientNutritionMapping(Base, AuditMixin):

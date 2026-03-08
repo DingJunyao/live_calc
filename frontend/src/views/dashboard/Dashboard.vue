@@ -1,6 +1,7 @@
 <template>
+  <PageHeader :title="`欢迎回来，${user?.username}！`" :show-home="false" />
+
   <div class="dashboard">
-    <PageHeader :title="`欢迎回来，${user?.username}！`" :show-home="false" />
 
     <div v-if="loading" class="loading">
       加载中...
@@ -164,7 +165,8 @@ function formatDate(dateString: string) {
 
 <style scoped>
 .dashboard {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 /* 为页面中的主要组件之间添加垂直间距 */

@@ -1,18 +1,41 @@
 <template>
-  <div class="product-list">
-    <PageHeader title="价格记录" :show-back="true">
-      <template #extra>
-        <button
+  <PageHeader title="价格记录" :show-back="true">
+    <template #extra>
+      <button
           @click="openAddModal"
           class="btn-square add-btn"
           title="添加记录"
-          :disabled="loading || merchantsLoading || allProducts.length === 0 || allMerchants.length === 0"
-          :class="{ 'btn-disabled': loading || merchantsLoading || allProducts.length === 0 || allMerchants.length === 0 }"
+          :disabled="loading || merchantsLoading || loadingUnits || allProducts.length === 0 || allMerchants.length === 0"
+          :class="{ 'btn-disabled': loading || merchantsLoading || loadingUnits || allProducts.length === 0 || allMerchants.length === 0 }"
         >
           <i class="mdi mdi-plus"></i>
         </button>
       </template>
-    </PageHeader>
+  </PageHeader>
+
+  <div class="product-list">
+    <div class="search-filter">
+      <div class="search-box">
+        <input v-model="searchTerm" placeholder="搜索商品名称..." class="search-input" />
+      </div>
+      <div class="filter-options">
+        <select v-model="selectedProduct" class="filter-select">
+          <option value="">所有商品</option>
+          <option v-for="product in allProducts" :key="product.id" :value="product.id">
+            {{ product.name }}
+          </option>
+        </select>
+        <select v-model="selectedMerchant" class="filter-select">
+          <option value="">所有商家</option>
+          <option v-for="merchant in allMerchants" :key="merchant.id" :value="merchant.id">
+            {{ merchant.name }}
+          </option>
+        </select>
+      </div>
+      <button @click="loadProducts" class="btn-search" title="搜索">
+        <i class="mdi mdi-magnify"></i>
+      </button>
+    </div>
 
     <!-- 检查商品和商家是否存在，如果不存在则显示提示 -->
     <div v-if="(!loading && allProducts.length === 0) || (!merchantsLoading && allMerchants.length === 0)" class="notification-banner full-width">
@@ -99,7 +122,11 @@
           </div>
           <div class="form-group">
             <label for="unit">单位:</label>
-            <input v-model="newProduct.unit" type="text" id="unit" placeholder="如: kg, g, 个" required />
+            <select v-model="newProduct.unit" id="unit" class="select-input" required>
+              <option v-for="unit in units" :key="unit.id" :value="unit.abbreviation">
+                {{ unit.name }} ({{ unit.abbreviation }})
+              </option>
+            </select>
           </div>
           <div class="form-group">
             <label for="location">商家:</label>
@@ -174,6 +201,9 @@ const allProducts = ref<ProductSuggestion[]>([])
 const allMerchants = ref<Merchant[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
+const searchTerm = ref('')
+const selectedProduct = ref('')
+const selectedMerchant = ref('')
 const newProduct = ref({
   product_id: 0,
   product_name: '',
@@ -191,6 +221,10 @@ const selectedLocationIndex = ref(-1)
 
 // 添加商家加载状态
 const merchantsLoading = ref(true)
+
+// 添加单位相关状态
+const units = ref<any[]>([])
+const loadingUnits = ref(false)
 
 // 分页相关
 const currentPage = ref(1)
@@ -226,6 +260,7 @@ onMounted(async () => {
   await loadProducts()
   await loadAllProducts()
   await loadAllMerchants()
+  await loadUnits()  // 加载单位数据
 
   // 检查是否有从商品管理页面传来的参数
   const productId = route.query.product_id
@@ -243,7 +278,17 @@ async function loadProducts() {
   loading.value = true
   try {
     const offset = (currentPage.value - 1) * pageSize.value
-    const data = await api.get<PriceRecord[]>(`/products?offset=${offset}&limit=${pageSize.value}`)
+    let url = `/products?offset=${offset}&limit=${pageSize.value}`
+    if (selectedProduct.value) {
+      url += `&product_id=${selectedProduct.value}`
+    }
+    if (selectedMerchant.value) {
+      url += `&merchant_id=${selectedMerchant.value}`
+    }
+    if (searchTerm.value) {
+      url += `&search=${encodeURIComponent(searchTerm.value)}`
+    }
+    const data = await api.get<PriceRecord[]>(url)
     products.value = data || []
     total.value = products.value.length
   } catch (error) {
@@ -273,9 +318,22 @@ async function loadAllMerchants() {
   }
 }
 
+// 加载单位
+async function loadUnits() {
+  try {
+    loadingUnits.value = true
+    const response = await api.get('/ingredients/units')
+    units.value = response || []
+  } catch (error) {
+    console.error('Failed to load units:', error)
+  } finally {
+    loadingUnits.value = false
+  }
+}
+
 function openAddModal() {
   // 检查按钮是否被禁用，如果是，则不执行任何操作
-  if (loading.value || merchantsLoading.value || allProducts.value.length === 0 || allMerchants.value.length === 0) {
+  if (loading.value || merchantsLoading.value || loadingUnits.value || allProducts.value.length === 0 || allMerchants.value.length === 0) {
     return;
   }
 
@@ -285,7 +343,7 @@ function openAddModal() {
     product_name: '',
     price: 0,
     quantity: 1,
-    unit: '',
+    unit: units.value.length > 0 ? units.value[0].abbreviation : '', // 设置默认单位
     merchant_id: 0,
     merchant_name: ''
   }
@@ -463,7 +521,61 @@ function goToLocations() {
 
 <style scoped>
 .product-list {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.search-filter {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  flex: 1;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+.filter-options {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.filter-select {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  background: white;
+  font-size: 1rem;
+  min-width: 140px;
+}
+
+.btn-search {
+  padding: 0.5rem;
+  background: #667eea;
+  color: white;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-search:hover {
+  background: #5a6fd8;
 }
 
 .btn-secondary {
@@ -595,6 +707,16 @@ function goToLocations() {
   border: 1px solid #ddd;
   border-radius: 0.5rem;
   font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.form-group select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  background: white;
   box-sizing: border-box;
 }
 

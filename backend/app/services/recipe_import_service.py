@@ -12,6 +12,7 @@ from app.core.database import get_db
 from sqlalchemy.exc import IntegrityError
 import tempfile
 import re
+from app.services.unit_matcher import UnitMatcher
 
 
 class RecipeImportService:
@@ -19,6 +20,7 @@ class RecipeImportService:
 
     def __init__(self, db: Session):
         self.db = db
+        self.unit_matcher = UnitMatcher(db)
 
     def import_recipes_from_cook_repo(self, repo_url: str = "https://github.com/Anduin2017/HowToCook",
                                      branch: str = "master") -> Dict[str, any]:
@@ -854,11 +856,14 @@ class RecipeImportService:
                 ).first()
 
                 if ingredient:
+                    # 使用单位匹配器匹配或创建单位
+                    unit_obj = self.unit_matcher.match_or_create_unit(ingredient_data.unit)
+
                     recipe_ingredient = RecipeIngredient(
                         recipe_id=db_recipe.id,
                         ingredient_id=ingredient.id,
                         quantity=ingredient_data.quantity,
-                        unit=ingredient_data.unit
+                        unit_id=unit_obj.id if unit_obj else None
                     )
                     self.db.add(recipe_ingredient)
                 else:

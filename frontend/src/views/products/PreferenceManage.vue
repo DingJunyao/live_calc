@@ -1,6 +1,7 @@
 <template>
+  <PageHeader title="食材偏好管理" :show-back="true" />
+
   <div class="preference-manage">
-    <PageHeader title="食材偏好管理" :show-back="true" />
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -335,7 +336,8 @@ async function deletePreference(pref: Preference) {
 
 <style scoped>
 .preference-manage {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .loading {

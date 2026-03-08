@@ -1,5 +1,5 @@
 <template>
-  <header class="page-header">
+  <header class="page-header" :class="{ scrolled: isScrolled }">
     <div class="nav-buttons">
       <button v-if="showBack" @click="$router.go(-1)" class="btn-square nav-btn" title="返回">
         <i class="mdi mdi-arrow-left"></i>
@@ -57,6 +57,7 @@ const user = userStore.user
 const showUserMenu = ref(false)
 const userTrigger = ref<HTMLElement | null>(null)
 const userDropdown = ref<HTMLElement | null>(null)
+const isScrolled = ref(false)
 
 function toggleUserMenu() {
   showUserMenu.value = !showUserMenu.value
@@ -82,12 +83,19 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+// 检测滚动以添加阴影效果
+function handleScroll() {
+  isScrolled.value = window.scrollY > 10
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('scroll', handleScroll)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('scroll', handleScroll)
 })
 </script>
 
@@ -97,7 +105,20 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 2rem;
-  position: relative;
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: white;
+  padding: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  transition: box-shadow 0.3s ease, backdrop-filter 0.3s ease;
+}
+
+.page-header.scrolled {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 .nav-buttons {

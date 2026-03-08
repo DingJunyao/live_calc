@@ -20,9 +20,9 @@ class ProductRecord(Base):
     price = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), default="CNY")
     original_quantity = Column(Numeric(10, 3), nullable=False)
-    original_unit = Column(String(20), nullable=False)
+    original_unit_id = Column(Integer, ForeignKey("units.id"), nullable=False, index=True)  # 原始单位外键
     standard_quantity = Column(Numeric(10, 3), nullable=False)
-    standard_unit = Column(String(20), default="g")
+    standard_unit_id = Column(Integer, ForeignKey("units.id"), nullable=False, index=True)  # 标准单位外键
     record_type = Column(String(20), default=RecordType.PURCHASE)
     exchange_rate = Column(Numeric(10, 6), default=1.0)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -32,3 +32,5 @@ class ProductRecord(Base):
     user = relationship("User", back_populates="product_records")
     product = relationship("Product", back_populates="price_records")
     merchant = relationship("Merchant", back_populates="product_records")
+    original_unit = relationship("Unit", foreign_keys=[original_unit_id], lazy="select")
+    standard_unit = relationship("Unit", foreign_keys=[standard_unit_id], lazy="select")
