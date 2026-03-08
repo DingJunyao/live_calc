@@ -758,43 +758,67 @@ async function performConversion() {
 
 .search-filter {
   display: flex;
-  gap: 0.75rem;
+  align-items: stretch;
+  gap: 0.5rem;
   margin-bottom: 1.5rem;
   padding: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .search-box {
-  flex: 1;
-  min-width: 200px;
-  max-width: 300px;
+  flex: 2;
+  min-width: 0;
 }
 
 .search-input {
   width: 100%;
-  padding: 0.75rem;
+  height: 100%;
+  padding: 0.375rem 0.625rem;
   border: 1px solid #ddd;
   border-radius: 0.5rem;
   font-size: 1rem;
+  box-sizing: border-box;
+  line-height: 1.5;
 }
 
 .filter-options {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  flex: 0 0 auto;
 }
 
 .filter-select {
-  padding: 0.75rem;
+  flex: 1;
+  min-width: 80px;
+  max-width: 140px;
+  height: 100%;
+  padding: 0.375rem 2rem 0.375rem 0.625rem;
   border: 1px solid #ddd;
   border-radius: 0.5rem;
   background: white;
   font-size: 1rem;
-  min-width: 140px;
+  box-sizing: border-box;
+  line-height: 1.5;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 12px 12px;
+  padding-right: 2rem;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #667eea;
 }
 
 .btn-search {
-  padding: 0.5rem;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  min-width: 44px;
+  max-width: 48px;
   background: #667eea;
   color: white;
   border: 1px solid #ddd;
@@ -803,6 +827,8 @@ async function performConversion() {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  transition: background-color 0.2s;
 }
 
 .btn-search:hover {
@@ -1166,6 +1192,27 @@ async function performConversion() {
     padding: 0.125rem 0.3125rem;
     font-size: 0.625rem;
   }
+
+  .search-filter {
+    gap: 0.375rem;
+  }
+
+  .filter-select {
+    min-width: 60px;
+    max-width: 100px;
+    padding: 0.5rem 1.5rem 0.5rem 0.625rem;
+    font-size: 0.875rem;
+  }
+
+  .btn-search {
+    min-width: 40px;
+    max-width: 44px;
+  }
+
+  .search-input {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.875rem;
+  }
 }
 
 /* 超小屏幕优化 */
@@ -1188,6 +1235,27 @@ async function performConversion() {
   .unit-tag {
     padding: 0.125rem 0.25rem;
     font-size: 0.5625rem;
+  }
+
+  .search-filter {
+    gap: 0.25rem;
+  }
+
+  .filter-select {
+    min-width: 50px;
+    max-width: 80px;
+    padding: 0.375rem 1.25rem 0.375rem 0.5625rem;
+    font-size: 0.8125rem;
+  }
+
+  .btn-search {
+    min-width: 36px;
+    max-width: 40px;
+  }
+
+  .search-input {
+    padding: 0.375rem 0.5625rem;
+    font-size: 0.8125rem;
   }
 }
 </style>
