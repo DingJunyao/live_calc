@@ -272,8 +272,24 @@ async function loadProducts() {
       limit: pageSize.value,
       search: searchTerm.value || undefined
     })
-    products.value = response as Product[]
-    total.value = products.value.length
+
+    let items: Product[]
+    let totalCount = 0  // 使用不同的变量名避免与 ref 冲突
+
+    if ((response as any).items && (response as any).total !== undefined) {
+      // 新的 PaginatedResponse 格式
+      items = (response as any).items
+      totalCount = (response as any).total
+    } else if (Array.isArray(response)) {
+      // 旧的 List 格式
+      items = response as Product[]
+      if (currentPage.value === 1 && !searchTerm.value) {
+        totalCount = items.length
+      }
+    }
+
+    products.value = items
+    total.value = totalCount
   } catch (error) {
     console.error('Failed to load products:', error)
   } finally {

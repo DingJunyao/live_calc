@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -21,6 +21,7 @@ from app.schemas.auth import (
     UserUpdate,
     ConfigUpdate
 )
+from app.schemas.common import PaginatedResponse
 from app.config import settings
 from typing import List
 from pydantic import BaseModel
@@ -266,30 +267,40 @@ async def update_config(
     )
 
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users", response_model=PaginatedResponse)
 async def get_all_users(
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    """获取所有用户信息 - 仅限管理员"""
+    """获取所有用户信息（分页）- 仅限管理员"""
     if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="仅限管理员访问"
         )
 
-    users = db.query(User).all()
-    return [
-        UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            phone=user.phone,
-            is_admin=user.is_admin,
-            email_verified=user.email_verified,
-            created_at=user.created_at.isoformat() if user.created_at else None
-        ) for user in users
-    ]
+    total = db.query(User).count()
+    users = db.query(User).offset(skip).limit(limit).all()
+    page = skip // limit + 1
+
+    return PaginatedResponse.create(
+        items=[
+            UserResponse(
+                id=user.id,
+                username=user.username,
+                email=user.email,
+                phone=user.phone,
+                is_admin=user.is_admin,
+                email_verified=user.email_verified,
+                created_at=user.created_at.isoformat() if user.created_at else None
+            ) for user in users
+        ],
+        total=total,
+        page=page,
+        page_size=limit
+    )
 
 
 @router.get("/users/stats", response_model=UserStatsResponse)

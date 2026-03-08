@@ -81,6 +81,16 @@
           </tbody>
         </table>
       </div>
+
+      <!-- 分页 -->
+      <Pagination
+        v-if="total > 0"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        @change-page="handlePageChange"
+        @change-page-size="handlePageSizeChange"
+      />
     </div>
 
     <!-- 创建/编辑单位对话框 -->
@@ -213,6 +223,7 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '@/api/client'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
+import Pagination from '@/components/Pagination.vue'
 
 const router = useRouter()
 
@@ -252,6 +263,11 @@ const conversionForm = ref({
 // 编辑中的单位ID
 const editingUnitId = ref<number | null>(null)
 
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
 // 计算属性
 const filteredUnits = computed(() => {
   let result = units.value
@@ -285,8 +301,23 @@ onMounted(async () => {
 
 async function loadUnits() {
   try {
-    const response = await api.get<any>('/units/')
-    units.value = response || []
+    const skip = (currentPage.value - 1) * pageSize.value
+    const url = `/units/?skip=${skip}&limit=${pageSize.value}`
+    const response = await api.get<any>(url)
+
+    // 解析分页响应
+    if (response.items && response.total !== undefined) {
+      // 新的 PaginatedResponse 格式
+      units.value = response.items
+      total.value = response.total
+    } else if (Array.isArray(response)) {
+      // 旧的 List 格式
+      units.value = response
+      // 如果是第一页，用当前数据量作为 total
+      if (currentPage.value === 1) {
+        total.value = units.value.length
+      }
+    }
   } catch (error) {
     console.error('Failed to load units:', error)
     alert('加载单位列表失败')
@@ -413,6 +444,18 @@ function closeConversionsDialog() {
   showAddConversionDialog.value = false
   conversions.value = []
   selectedUnit.value = null
+}
+
+// 分页处理函数
+function handlePageChange(page: number) {
+  currentPage.value = page
+  loadUnits()
+}
+
+function handlePageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadUnits()
 }
 </script>
 

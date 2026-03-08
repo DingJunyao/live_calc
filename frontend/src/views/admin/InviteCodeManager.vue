@@ -59,6 +59,16 @@
             </tbody>
           </table>
         </div>
+
+        <!-- 分页 -->
+        <Pagination
+          v-if="total > 0"
+          :current-page="currentPage"
+          :page-size="pageSize"
+          :total="total"
+          @change-page="handlePageChange"
+          @change-page-size="handlePageSizeChange"
+        />
       </div>
     </div>
 
@@ -73,6 +83,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
+import Pagination from '@/components/Pagination.vue'
 
 interface InviteCode {
   id: number
@@ -90,14 +101,43 @@ const deleting = ref<Record<number, boolean>>({})
 const resultMessage = ref('')
 const resultType = ref<'success' | 'error'>('success')
 
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
 async function loadInviteCodes() {
   try {
-    const response = await api.get<InviteCode[]>('/invite-codes')
-    inviteCodes.value = response.map(code => ({
-      ...code,
-      createdAt: code.createdAt.replace(' ', 'T'),
-      expiresAt: code.expiresAt ? code.expiresAt.replace(' ', 'T') : null
-    }))
+    const skip = (currentPage.value - 1) * pageSize.value
+    const url = `/invite-codes?skip=${skip}&limit=${pageSize.value}`
+    const response = await api.get<any>(url)
+
+    // 解析分页响应
+    let items: InviteCode[]
+    let totalCount = 0  // 使用不同的变量名避免与 ref 冲突
+
+    if (response.items && response.total !== undefined) {
+      // 新的 PaginatedResponse 格式
+      items = response.items
+      totalCount = response.total
+    } else if (Array.isArray(response)) {
+      // 旧的 List 格式
+      items = response.map((code: any) => ({
+        id: code.id,
+        code: code.code,
+        createdBy: code.createdBy,
+        used: code.used,
+        createdAt: code.createdAt.replace(' ', 'T'),
+        expiresAt: code.expiresAt ? code.expiresAt.replace(' ', 'T') : null
+      }))
+      // 如果是第一页，用当前数据量作为 totalCount
+      if (currentPage.value === 1) {
+        totalCount = items.length
+      }
+    }
+
+    inviteCodes.value = items
+    total.value = totalCount
   } catch (error) {
     console.error('加载邀请码失败:', error)
     showResult('加载邀请码失败', 'error')
@@ -157,6 +197,18 @@ function showResult(message: string, type: 'success' | 'error') {
   setTimeout(() => {
     resultMessage.value = ''
   }, 5000)
+}
+
+// 分页处理函数
+function handlePageChange(page: number) {
+  currentPage.value = page
+  loadInviteCodes()
+}
+
+function handlePageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadInviteCodes()
 }
 
 onMounted(() => {
