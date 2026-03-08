@@ -12,6 +12,7 @@ from app.schemas.product import (
     ProductRecordResponse,
     ProductHistoryResponse
 )
+from app.schemas.common import PaginatedResponse
 from app.utils.unit_converter import convert_to_standard
 from app.services.unit_matcher import UnitMatcher
 
@@ -171,16 +172,16 @@ async def create_product_record(
         )
 
 
-@router.get("", response_model=List[ProductRecordResponse])
-@router.get("/", response_model=List[ProductRecordResponse])
+@router.get("", response_model=PaginatedResponse)
+@router.get("/", response_model=PaginatedResponse)
 async def get_product_records(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    product_name: Optional[str] = None,
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
+    product_name: Optional[str] = Query(None, description="商品名称过滤"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取商品记录列表"""
+    """获取商品记录列表（分页）"""
     query = db.query(ProductRecord).options(
         joinedload(ProductRecord.original_unit),
         joinedload(ProductRecord.standard_unit)
@@ -189,28 +190,35 @@ async def get_product_records(
     if product_name:
         query = query.filter(ProductRecord.product_name.contains(product_name))
 
+    total = query.count()
     records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
+    page = skip // limit + 1
 
     # 手动构造响应列表，将 Unit 对象转换为字符串
-    return [
-        ProductRecordResponse(
-            id=record.id,
-            product_id=record.product_id,
-            product_name=record.product_name,
-            merchant_id=record.merchant_id,
-            price=record.price,
-            currency=record.currency,
-            original_quantity=record.original_quantity,
-            original_unit=record.original_unit.abbreviation if record.original_unit else "",
-            standard_quantity=record.standard_quantity,
-            standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
-            record_type=record.record_type,
-            exchange_rate=record.exchange_rate,
-            recorded_at=record.recorded_at,
-            notes=record.notes
-        )
-        for record in records
-    ]
+    return PaginatedResponse.create(
+        items=[
+            ProductRecordResponse(
+                id=record.id,
+                product_id=record.product_id,
+                product_name=record.product_name,
+                merchant_id=record.merchant_id,
+                price=record.price,
+                currency=record.currency,
+                original_quantity=record.original_quantity,
+                original_unit=record.original_unit.abbreviation if record.original_unit else "",
+                standard_quantity=record.standard_quantity,
+                standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
+                record_type=record.record_type,
+                exchange_rate=record.exchange_rate,
+                recorded_at=record.recorded_at,
+                notes=record.notes
+            )
+            for record in records
+        ],
+        total=total,
+        page=page,
+        page_size=limit
+    )
 
 
 @router.get("/{record_id}", response_model=ProductRecordResponse)

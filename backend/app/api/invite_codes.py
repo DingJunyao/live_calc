@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.invite_code import InviteCode, generate_invite_code
 from app.schemas.invite_code import InviteCodeCreate, InviteCodeResponse, InviteCodeUseRequest
+from app.schemas.common import PaginatedResponse
 from app.config import settings
 import datetime
 
@@ -47,20 +48,39 @@ async def create_invite_code(
     return invite_code
 
 
-@router.get("", response_model=list[InviteCodeResponse])
+@router.get("", response_model=PaginatedResponse)
 async def get_invite_codes(
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取邀请码列表 - 仅限管理员"""
+    """获取邀请码列表（分页）- 仅限管理员"""
     if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="仅限管理员访问"
         )
 
-    invite_codes = db.query(InviteCode).order_by(InviteCode.created_at.desc()).all()
-    return invite_codes
+    invite_codes = db.query(InviteCode).order_by(InviteCode.created_at.desc())
+    total = invite_codes.count()
+    items = invite_codes.offset(skip).limit(limit).all()
+
+    page = skip // limit + 1
+
+    return PaginatedResponse.create(
+        items=[{
+            "id": code.id,
+            "code": code.code,
+            "createdBy": code.created_by,
+            "used": code.used,
+            "createdAt": code.created_at.strftime('%Y-%m-%dT%H:%M:%S'),
+            "expiresAt": code.expires_at.strftime('%Y-%m-%dT%H:%M:%S') if code.expires_at else None
+        } for code in items],
+        total=total,
+        page=page,
+        page_size=limit
+    )
 
 
 @router.delete("/{invite_code_id}")

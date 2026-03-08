@@ -277,8 +277,8 @@ onMounted(async () => {
 async function loadProducts() {
   loading.value = true
   try {
-    const offset = (currentPage.value - 1) * pageSize.value
-    let url = `/products?offset=${offset}&limit=${pageSize.value}`
+    const skip = (currentPage.value - 1) * pageSize.value
+    let url = `/products?skip=${skip}&limit=${pageSize.value}`
     if (selectedProduct.value) {
       url += `&product_id=${selectedProduct.value}`
     }
@@ -288,11 +288,28 @@ async function loadProducts() {
     if (searchTerm.value) {
       url += `&search=${encodeURIComponent(searchTerm.value)}`
     }
-    const data = await api.get<PriceRecord[]>(url)
-    products.value = data || []
-    total.value = products.value.length
+    const response = await api.get<any>(url)
+
+    let items: PriceRecord[]
+    let totalCount = 0  // 使用不同的变量名避免与 ref 冲突
+
+    if (response.items && response.total !== undefined) {
+      // 新的 PaginatedResponse 格式
+      items = response.items
+      totalCount = response.total
+    } else if (Array.isArray(response)) {
+      // 旧的 List 格式
+      items = response
+      if (currentPage.value === 1 && !searchTerm.value && !selectedProduct.value && !selectedMerchant.value) {
+        totalCount = items.length
+      }
+    }
+
+    products.value = items || []
+    total.value = totalCount
   } catch (error) {
     console.error('Failed to load products:', error)
+    products.value = []
   } finally {
     loading.value = false
   }

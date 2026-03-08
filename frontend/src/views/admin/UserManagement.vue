@@ -145,11 +145,26 @@ onMounted(async () => {
 async function loadUsers() {
   loading.value = true
   try {
-    const offset = (currentPage.value - 1) * pageSize.value
-    const response = await api.get<User[]>(`/auth/users?offset=${offset}&limit=${pageSize.value}`)
-    users.value = response || []
-    // TODO: 需要后端支持返回总数
-    total.value = users.value.length
+    const skip = (currentPage.value - 1) * pageSize.value
+    const response = await api.get<any>(`/auth/users?skip=${skip}&limit=${pageSize.value}`)
+
+    let items: User[]
+    let totalCount = 0  // 使用不同的变量名避免与 ref 冲突
+
+    if (response.items && response.total !== undefined) {
+      // 新的 PaginatedResponse 格式
+      items = response.items
+      totalCount = response.total
+    } else if (Array.isArray(response)) {
+      // 旧的 List 格式
+      items = response
+      if (currentPage.value === 1) {
+        totalCount = items.length
+      }
+    }
+
+    users.value = items || []
+    total.value = totalCount
   } catch (error) {
     console.error('Failed to load users:', error)
     alert('加载用户数据失败')

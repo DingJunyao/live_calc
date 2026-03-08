@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.product_entity import Product
 from app.models.product import ProductRecord
 from app.schemas.product_entity import ProductCreate, ProductUpdate, ProductResponse, ProductWithDetails
+from app.schemas.common import PaginatedResponse
 from app.utils.database_helpers import serialize_tags, deserialize_tags
 
 router = APIRouter(tags=["products_entity"])
@@ -52,16 +53,16 @@ def create_product(
     return db_product
 
 
-@router.get("/products/entity", response_model=List[ProductResponse])
-@router.get("/products/entity/", response_model=List[ProductResponse])
+@router.get("/products/entity", response_model=PaginatedResponse)
+@router.get("/products/entity/", response_model=PaginatedResponse)
 def list_products(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    ingredient_id: Optional[int] = None,
-    search: Optional[str] = None,
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
+    ingredient_id: Optional[int] = Query(None, description="原料ID过滤"),
+    search: Optional[str] = Query(None, description="搜索关键词"),
     db: Session = Depends(get_db)
 ):
-    """获取商品列表"""
+    """获取商品列表（分页）"""
     query = db.query(Product).filter(Product.is_active == True)
 
     if ingredient_id:
@@ -70,9 +71,12 @@ def list_products(
     if search:
         query = query.filter(Product.name.contains(search))
 
+    total = query.count()
     products = query.order_by(desc(Product.created_at)).offset(skip).limit(limit).all()
+    page = skip // limit + 1
 
-    # 反序列化 tags 并填充 ingredient_name
+    # 反序列化 tags 并填充 ingredient_name，然后构造响应对象
+    items = []
     for product in products:
         if product.tags:
             product.tags = deserialize_tags(product.tags)
@@ -81,7 +85,27 @@ def list_products(
         # 填充原料名称
         product.ingredient_name = product.ingredient.name if product.ingredient else None
 
-    return products
+        # 将 Product 对象转换为 dict 以便正确序列化
+        items.append({
+            "id": product.id,
+            "name": product.name,
+            "brand": product.brand,
+            "barcode": product.barcode,
+            "image_url": product.image_url,
+            "ingredient_id": product.ingredient_id,
+            "ingredient_name": product.ingredient_name,
+            "tags": product.tags,
+            "created_at": product.created_at.isoformat() if product.created_at else None,
+            "updated_at": product.updated_at.isoformat() if product.updated_at else None,
+            "is_active": product.is_active
+        })
+
+    return PaginatedResponse.create(
+        items=items,
+        total=total,
+        page=page,
+        page_size=limit
+    )
 
 
 @router.get("/products/entity/{product_id}", response_model=ProductWithDetails)

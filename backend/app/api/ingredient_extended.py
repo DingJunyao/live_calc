@@ -10,18 +10,21 @@ from app.services.ingredient_matcher import IngredientMatcher
 from app.models.ingredient_category import IngredientCategory
 from app.models.unit import Unit
 from app.models.nutrition import Ingredient
+from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
 
 
-@router.get("/units", response_model=List[dict])
+@router.get("/units", response_model=PaginatedResponse[dict])
 async def get_units(
     unit_type: Optional[str] = Query(None, description="单位类型，如mass, volume, length"),
     is_common: Optional[bool] = Query(None, description="是否为常用单位"),
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取单位列表"""
+    """获取单位列表（分页）"""
     try:
         query = db.query(Unit).filter(Unit.is_active == True)
 
@@ -30,9 +33,13 @@ async def get_units(
         if is_common is not None:
             query = query.filter(Unit.is_common == is_common)
 
-        units = query.all()
+        # 获取总数
+        total = query.count()
 
-        return [{
+        # 获取分页数据
+        units = query.offset(skip).limit(limit).all()
+
+        items = [{
             "id": unit.id,
             "name": unit.name,
             "abbreviation": unit.abbreviation,
@@ -43,6 +50,14 @@ async def get_units(
             "is_common": unit.is_common,
             "display_order": unit.display_order
         } for unit in units]
+
+        page = skip // limit + 1
+        return PaginatedResponse.create(
+            items=items,
+            total=total,
+            page=page,
+            page_size=limit
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取单位列表失败: {str(e)}")
 
@@ -443,7 +458,7 @@ async def hard_delete_ingredient(
         raise HTTPException(status_code=500, detail=f"硬删除食材失败: {str(e)}")
 
 
-@router.get("", response_model=List[dict])
+@router.get("", response_model=PaginatedResponse[dict])
 async def get_ingredients(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -452,7 +467,7 @@ async def get_ingredients(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取食材列表"""
+    """获取食材列表（分页）"""
     try:
         query = db.query(Ingredient).options(
             joinedload(Ingredient.default_unit)
@@ -468,9 +483,13 @@ async def get_ingredients(
         if category_id:
             query = query.filter(Ingredient.category_id == category_id)
 
+        # 获取总数
+        total = query.count()
+
+        # 获取分页数据
         ingredients = query.offset(skip).limit(limit).all()
 
-        return [{
+        items = [{
             "id": ing.id,
             "name": ing.name,
             "category_id": ing.category_id,
@@ -479,6 +498,14 @@ async def get_ingredients(
             "aliases": ing.aliases or [],
             "created_at": ing.created_at
         } for ing in ingredients]
+
+        page = skip // limit + 1
+        return PaginatedResponse.create(
+            items=items,
+            total=total,
+            page=page,
+            page_size=limit
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取食材列表失败: {str(e)}")
 
