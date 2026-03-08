@@ -164,29 +164,35 @@ function formatDate(dateString: string) {
 
 .search-filter {
   display: flex;
-  gap: 0.75rem;
+  align-items: stretch;
+  gap: 0.5rem;
   margin-bottom: 1.5rem;
   padding: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .search-box {
-  flex: 1;
-  min-width: 200px;
-  max-width: 300px;
+  flex: 2;
+  min-width: 0;
 }
 
 .search-input {
   width: 100%;
-  padding: 0.75rem;
+  height: 100%;
+  padding: 0.375rem 0.625rem;
   border: 1px solid #ddd;
   border-radius: 0.5rem;
   font-size: 1rem;
+  box-sizing: border-box;
+  line-height: 1.5;
 }
 
 .btn-search {
-  padding: 0.5rem;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  min-width: 44px;
+  max-width: 48px;
   background: #667eea;
   color: white;
   border: 1px solid #ddd;
@@ -195,6 +201,8 @@ function formatDate(dateString: string) {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  transition: background-color 0.2s;
 }
 
 .btn-search:hover {
@@ -383,6 +391,20 @@ function formatDate(dateString: string) {
   .form-group input {
     font-size: 0.875rem;
   }
+
+  .search-filter {
+    gap: 0.375rem;
+  }
+
+  .btn-search {
+    min-width: 40px;
+    max-width: 44px;
+  }
+
+  .search-input {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.875rem;
+  }
 }
 
 /* 超小屏幕优化 */
@@ -425,6 +447,20 @@ function formatDate(dateString: string) {
     bottom: 1rem;
     right: 1rem;
     font-size: 1rem;
+  }
+
+  .search-filter {
+    gap: 0.25rem;
+  }
+
+  .btn-search {
+    min-width: 36px;
+    max-width: 40px;
+  }
+
+  .search-input {
+    padding: 0.375rem 0.5625rem;
+    font-size: 0.8125rem;
   }
 }
 </style>

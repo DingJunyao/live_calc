@@ -28,8 +28,8 @@
             @input="debounceSearch"
           />
         </div>
-        <button @click="loadProducts" class="btn-search">
-          <i class="mdi mdi-magnify"></i> 搜索
+        <button @click="loadProducts" class="btn-search" title="搜索">
+          <i class="mdi mdi-magnify"></i>
         </button>
       </div>
     </div>
@@ -490,41 +490,49 @@ async function deleteProduct(product: Product) {
 
 .search-filter {
   display: flex;
+  align-items: stretch;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
   padding: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .search-box {
-  flex: 1;
+  flex: 2;
+  min-width: 0;
 }
 
 .search-input {
   width: 100%;
-  padding: 0.75rem 1rem;
+  height: 100%;
+  padding: 0.375rem 0.625rem;
   border: 1px solid #ddd;
   border-radius: 0.5rem;
-  font-size: 0.875rem;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: #42b883;
+  font-size: 1rem;
+  box-sizing: border-box;
+  line-height: 1.5;
 }
 
 .btn-search {
-  padding: 0.75rem 1.5rem;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  min-width: 44px;
+  max-width: 48px;
   background: #667eea;
   color: white;
-  border: none;
+  border: 1px solid #ddd;
   border-radius: 0.5rem;
   cursor: pointer;
-  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   transition: background-color 0.2s;
 }
 
 .btn-search:hover {
-  background: #5568d3;
+  background: #5a6fd8;
 }
 
 .btn-square.add-btn {
@@ -810,21 +818,35 @@ async function deleteProduct(product: Product) {
     font-size: 0.75rem;
     padding: 0.375rem;
   }
+
+  .search-filter {
+    gap: 0.375rem;
+  }
+
+  .btn-search {
+    min-width: 40px;
+    max-width: 44px;
+  }
+
+  .search-input {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.875rem;
+  }
 }
 
 @media (max-width: 480px) {
   .search-filter {
-    flex-direction: column;
-  }
-
-  .search-input {
-    padding: 0.625rem 0.875rem;
-    font-size: 0.8125rem;
+    gap: 0.25rem;
   }
 
   .btn-search {
-    width: 100%;
-    padding: 0.625rem;
+    min-width: 36px;
+    max-width: 40px;
+  }
+
+  .search-input {
+    padding: 0.375rem 0.5625rem;
+    font-size: 0.8125rem;
   }
 
   .product-grid {
