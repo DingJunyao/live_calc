@@ -1,12 +1,13 @@
 <template>
-  <div class="product-manage">
-    <PageHeader title="商品管理" :show-back="true">
-      <template #extra>
-        <button @click="openAddModal" class="btn-square add-btn" title="添加商品">
+  <PageHeader title="商品管理" :show-back="true">
+    <template #extra>
+      <button @click="openAddModal" class="btn-square add-btn" title="添加商品">
           <i class="mdi mdi-plus"></i>
         </button>
-      </template>
-    </PageHeader>
+    </template>
+  </PageHeader>
+
+  <div class="product-manage">
 
     <!-- 搜索和筛选 -->
     <div class="search-filter-wrapper">
@@ -483,13 +484,15 @@ async function deleteProduct(product: Product) {
 
 <style scoped>
 .product-manage {
-  padding: 1rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .search-filter {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
+  padding: 0.5rem;
 }
 
 .search-box {

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from typing import List
 import json
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.nutrition import Ingredient
 from app.schemas.nutrition import (
+    IngredientResponse,
     NutritionDataResponse,
     NutritionMatchResponse,
     NutritionCorrectRequest
@@ -14,7 +15,7 @@ from app.schemas.nutrition import (
 router = APIRouter()
 
 
-@router.get("/ingredients", response_model=List[dict])
+@router.get("/ingredients", response_model=List[IngredientResponse])
 async def get_ingredients(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -24,24 +25,35 @@ async def get_ingredients(
 ):
     """获取原料列表"""
     try:
-        query = db.query(Ingredient).filter(Ingredient.is_active == True)
+        # 明确只加载需要的字段，避免加载 relationship
+        query = db.query(Ingredient).options(
+            load_only(
+                Ingredient.id,
+                Ingredient.name,
+                Ingredient.aliases,
+                Ingredient.default_unit_id,  # 添加外键以加载单位
+                Ingredient.created_at,
+                Ingredient.is_active
+            )
+        ).filter(Ingredient.is_active == True)
 
         if search:
             query = query.filter(Ingredient.name.contains(search))
 
         ingredients = query.offset(skip).limit(limit).all()
 
-        return [{
-            "id": ing.id,
-            "name": ing.name,
-            "aliases": ing.aliases or [],
-            "created_at": ing.created_at
-        } for ing in ingredients]
+        # 使用 Pydantic schema 序列化
+        return [IngredientResponse(
+            id=ing.id,
+            name=ing.name,
+            aliases=ing.aliases or [],
+            created_at=ing.created_at
+        ) for ing in ingredients]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取原料列表失败: {str(e)}")
 
 
-@router.get("/ingredients/{ingredient_id}", response_model=dict)
+@router.get("/ingredients/{ingredient_id}", response_model=IngredientResponse)
 async def get_ingredient(
     ingredient_id: int,
     db: Session = Depends(get_db),
@@ -49,16 +61,25 @@ async def get_ingredient(
 ):
     """获取原料详情"""
     try:
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
+        # 明确只加载需要的字段，避免加载 relationship
+        ingredient = db.query(Ingredient).options(
+            load_only(
+                Ingredient.id,
+                Ingredient.name,
+                Ingredient.aliases,
+                Ingredient.created_at,
+                Ingredient.is_active
+            )
+        ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
 
-        return {
-            "id": ingredient.id,
-            "name": ingredient.name,
-            "aliases": ingredient.aliases or [],
-            "created_at": ingredient.created_at
-        }
+        return IngredientResponse(
+            id=ingredient.id,
+            name=ingredient.name,
+            aliases=ingredient.aliases or [],
+            created_at=ingredient.created_at
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取原料详情失败: {str(e)}")
 

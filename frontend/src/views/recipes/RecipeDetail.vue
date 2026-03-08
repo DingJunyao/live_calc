@@ -1,13 +1,13 @@
 <template>
-  <div class="recipe-detail">
-    <PageHeader :title="recipe?.name || '菜谱详情'" :show-back="true">
-      <template #extra v-if="recipe && !isImportedRecipe(recipe)">
-        <button @click="editRecipe" class="btn-square" title="编辑">
-          <i class="mdi mdi-pencil"></i>
-        </button>
-      </template>
-    </PageHeader>
+  <PageHeader :title="recipe?.name || '菜谱详情'" :show-back="true">
+    <template #extra v-if="recipe && !isImportedRecipe(recipe)">
+      <button @click="editRecipe" class="btn-square" title="编辑">
+        <i class="mdi mdi-pencil"></i>
+      </button>
+    </template>
+  </PageHeader>
 
+  <div class="recipe-detail">
     <div v-if="loading" class="loading">加载中...</div>
 
     <div v-else-if="!recipe" class="empty-state">

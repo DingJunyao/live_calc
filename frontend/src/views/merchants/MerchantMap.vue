@@ -1,12 +1,21 @@
 <template>
+  <PageHeader title="商家管理" :show-back="true">
+    <template #extra>
+      <button @click="showAddModal = true" class="btn-square add-btn" title="添加商家">
+        <i class="mdi mdi-plus"></i>
+      </button>
+    </template>
+  </PageHeader>
+
   <div class="merchant-map">
-    <PageHeader title="商家管理" :show-back="true">
-      <template #extra>
-        <button @click="showAddModal = true" class="btn-square add-btn" title="添加商家">
-          <i class="mdi mdi-plus"></i>
-        </button>
-      </template>
-    </PageHeader>
+    <div class="search-filter">
+      <div class="search-box">
+        <input v-model="searchTerm" placeholder="搜索商家名称或地址..." class="search-input" />
+      </div>
+      <button @click="loadMerchants" class="btn-search" title="搜索">
+        <i class="mdi mdi-magnify"></i>
+      </button>
+    </div>
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -75,6 +84,7 @@ import Pagination from '@/components/Pagination.vue'
 const merchants = ref<any[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
+const searchTerm = ref('')
 const newMerchant = ref({
   name: '',
   address: '',
@@ -95,7 +105,11 @@ async function loadMerchants() {
   loading.value = true
   try {
     const offset = (currentPage.value - 1) * pageSize.value
-    const data = await api.get<any[]>(`/merchants?offset=${offset}&limit=${pageSize.value}`)
+    let url = `/merchants?offset=${offset}&limit=${pageSize.value}`
+    if (searchTerm.value) {
+      url += `&search=${encodeURIComponent(searchTerm.value)}`
+    }
+    const data = await api.get<any[]>(url)
     merchants.value = data || []
     // TODO: 需要后端支持返回总数
     total.value = merchants.value.length
@@ -144,7 +158,47 @@ function formatDate(dateString: string) {
 
 <style scoped>
 .merchant-map {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.search-filter {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  flex: 1;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+.btn-search {
+  padding: 0.5rem;
+  background: #667eea;
+  color: white;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-search:hover {
+  background: #5a6fd8;
 }
 
 .btn-primary {

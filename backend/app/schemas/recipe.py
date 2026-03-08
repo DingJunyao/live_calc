@@ -15,7 +15,7 @@ class RecipeIngredientCreate(BaseModel):
     ingredient_name: str
     quantity: Optional[str] = None
     quantity_range: Optional[Union[dict, str]] = None  # JSON 或字符串
-    unit: Optional[str] = None
+    unit_id: Optional[int] = None  # 单位ID（外键）
     is_optional: bool = False
     note: Optional[str] = None
     original_quantity: Optional[Union[dict, str]] = None  # JSON 或字符串

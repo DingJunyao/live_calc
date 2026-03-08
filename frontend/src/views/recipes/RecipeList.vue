@@ -1,12 +1,26 @@
 <template>
+  <PageHeader title="菜谱管理" :show-back="true">
+    <template #extra>
+      <button @click="showAddModal = true" class="btn-square add-btn" title="创建菜谱">
+        <i class="mdi mdi-plus"></i>
+      </button>
+    </template>
+  </PageHeader>
+
   <div class="recipe-list">
-    <PageHeader title="菜谱管理" :show-back="true">
-      <template #extra>
-        <button @click="showAddModal = true" class="btn-square add-btn" title="创建菜谱">
-          <i class="mdi mdi-plus"></i>
-        </button>
-      </template>
-    </PageHeader>
+    <div class="search-filter">
+      <div class="search-box">
+        <input
+          v-model="searchTerm"
+          type="text"
+          placeholder="搜索菜谱..."
+          class="search-input"
+        />
+      </div>
+      <button @click="loadRecipes" class="btn-search" title="搜索">
+        <i class="mdi mdi-magnify"></i>
+      </button>
+    </div>
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -99,6 +113,7 @@ const router = useRouter()
 const recipes = ref<any[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
+const searchTerm = ref('')
 const newRecipe = ref({
   name: '',
   estimated_cost: 0,
@@ -119,7 +134,11 @@ async function loadRecipes() {
   loading.value = true
   try {
     const offset = (currentPage.value - 1) * pageSize.value
-    const data = await api.get<any[]>(`/recipes?offset=${offset}&limit=${pageSize.value}`)
+    let url = `/recipes?offset=${offset}&limit=${pageSize.value}`
+    if (searchTerm.value) {
+      url += `&search=${encodeURIComponent(searchTerm.value)}`
+    }
+    const data = await api.get<any[]>(url)
     recipes.value = data || []
     // TODO: 需要后端支持返回总数
     total.value = recipes.value.length
@@ -233,7 +252,47 @@ async function deleteRecipe(recipe: any) {
 
 <style scoped>
 .recipe-list {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.search-filter {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  flex: 1;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+.btn-search {
+  padding: 0.5rem;
+  background: #667eea;
+  color: white;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-search:hover {
+  background: #5a6fd8;
 }
 
 .btn-primary {

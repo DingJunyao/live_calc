@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
@@ -24,16 +24,16 @@ class ProductRecordResponse(BaseModel):
     price: Decimal
     currency: str
     original_quantity: Decimal
-    original_unit: str
+    original_unit: str  # 单位缩写字符串
     standard_quantity: Decimal
-    standard_unit: str
+    standard_unit: str  # 标准单位缩写字符串
     record_type: str
     exchange_rate: Decimal
     recorded_at: datetime
     notes: Optional[str]
 
     class Config:
-        from_attributes = True
+        from_attributes = False  # 手动构造响应，不从模型自动读取
 
 
 class ProductHistoryResponse(BaseModel):

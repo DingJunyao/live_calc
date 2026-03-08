@@ -87,6 +87,11 @@ const routes: Array<RouteRecordRaw> = [
     path: '/admin/recipe-import',
     name: 'recipeImport',
     component: () => import('@/views/admin/RecipeImport.vue').then(m => m.default)
+  },
+  {
+    path: '/admin/units',
+    name: 'unitManagement',
+    component: () => import('@/views/admin/UnitManager.vue').then(m => m.default)
   }
 ]
 

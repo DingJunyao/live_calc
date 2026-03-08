@@ -1,6 +1,7 @@
 <template>
+  <PageHeader title="报告统计" :show-back="true" />
+
   <div class="report-overview">
-    <PageHeader title="报告统计" :show-back="true" />
 
     <div v-if="loading" class="loading">加载中...</div>
 
@@ -83,7 +84,8 @@ async function loadReports() {
 
 <style scoped>
 .report-overview {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .loading {
