@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.nutrition import Ingredient
 from app.models.ingredient_category import IngredientCategory
+from app.services.unit_matcher import UnitMatcher
 from sqlalchemy.exc import IntegrityError
 
 
@@ -46,6 +47,7 @@ class JsonRecipeImportService:
     def __init__(self, db: Session, user_id: Optional[int] = None):
         self.db = db
         self.user_id = user_id or 1  # 默认使用用户 ID 1
+        self.unit_matcher = UnitMatcher(db)
         # 确保图片目录存在（包括 recipes 子目录）
         self.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -154,12 +156,17 @@ class JsonRecipeImportService:
                     category_name = item.get("category", "others")
                     category = categories.get(category_name)
 
+                    # 获取单位
+                    unit_str = item.get("unit", "")
+                    unit_obj = self.unit_matcher.match_or_create_unit(unit_str)
+                    unit_id = unit_obj.id if unit_obj else None
+
                     # 创建原料
                     ingredient = Ingredient(
                         name=ingredient_name,
                         aliases=item.get("aliases", []),
                         category_id=category.id if category else None,
-                        default_unit=item.get("unit", ""),
+                        default_unit_id=unit_id,
                         is_imported=True
                     )
 
@@ -364,12 +371,17 @@ class JsonRecipeImportService:
                 ).first()
 
                 if ingredient:
+                    # 获取单位
+                    unit_str = ing_data.get("unit", "")
+                    unit_obj = self.unit_matcher.match_or_create_unit(unit_str)
+                    unit_id = unit_obj.id if unit_obj else None
+
                     recipe_ingredient = RecipeIngredient(
                         recipe_id=recipe.id,
                         ingredient_id=ingredient.id,
                         quantity=str(ing_data.get("quantity", "")),
                         quantity_range=quantity_range,
-                        unit=ing_data.get("unit", ""),
+                        unit_id=unit_id,
                         is_optional=ing_data.get("is_optional", False),
                         note=ing_data.get("note"),
                         original_quantity=original_quantity
@@ -384,12 +396,17 @@ class JsonRecipeImportService:
                     self.db.add(new_ingredient)
                     self.db.flush()
 
+                    # 获取单位
+                    unit_str = ing_data.get("unit", "")
+                    unit_obj = self.unit_matcher.match_or_create_unit(unit_str)
+                    unit_id = unit_obj.id if unit_obj else None
+
                     recipe_ingredient = RecipeIngredient(
                         recipe_id=recipe.id,
                         ingredient_id=new_ingredient.id,
                         quantity=str(ing_data.get("quantity", "")),
                         quantity_range=quantity_range,
-                        unit=ing_data.get("unit", ""),
+                        unit_id=unit_id,
                         is_optional=ing_data.get("is_optional", False),
                         note=ing_data.get("note"),
                         original_quantity=original_quantity

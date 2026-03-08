@@ -1,6 +1,7 @@
 <template>
+  <PageHeader title="后台管理" :show-back="true" />
+
   <div class="admin-panel">
-    <PageHeader title="后台管理" :show-back="true" />
 
     <div class="admin-dashboard">
       <div class="admin-stats">
@@ -39,6 +40,7 @@
           <div class="action-buttons">
             <button @click="goToRecipeImport" class="btn-admin">导入菜谱</button>
             <button @click="goToIngredientManagement" class="btn-admin">原料管理</button>
+            <button @click="goToUnitManagement" class="btn-admin">单位管理</button>
             <button @click="backupData" class="btn-admin">备份数据</button>
             <button @click="restoreData" class="btn-admin">恢复数据</button>
             <button @click="exportReports" class="btn-admin">导出报表</button>
@@ -136,6 +138,10 @@ function goToRecipeImport() {
   router.push('/admin/recipe-import')
 }
 
+function goToUnitManagement() {
+  router.push('/admin/units')
+}
+
 function goToIngredientManagement() {
   router.push('/admin/ingredients')
 }
@@ -163,7 +169,8 @@ function systemSettings() {
 
 <style scoped>
 .admin-panel {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .admin-dashboard {

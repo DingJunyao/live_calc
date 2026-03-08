@@ -14,7 +14,7 @@ from app.core.database import Base
 from app.models import (
     user,
     product,
-    location,
+    merchant,
     nutrition,
     recipe,
     expense,

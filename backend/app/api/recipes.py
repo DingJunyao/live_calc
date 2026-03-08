@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from sqlalchemy import or_, and_
 from typing import List, Optional
 from app.core.database import get_db
@@ -48,7 +48,13 @@ async def create_recipe(
 
         for ingredient_data in recipe.ingredients:
             # 查找食材
-            ingredient = db.query(Ingredient).filter(
+            ingredient = db.query(Ingredient).options(
+                load_only(
+                    Ingredient.id,
+                    Ingredient.name,
+                    Ingredient.is_active
+                )
+            ).filter(
                 Ingredient.name == ingredient_data.ingredient_name
             ).first()
             if not ingredient:
@@ -59,7 +65,7 @@ async def create_recipe(
                 ingredient_id=ingredient.id,
                 quantity=ingredient_data.quantity,
                 quantity_range=ingredient_data.quantity_range,
-                unit=ingredient_data.unit,
+                unit_id=ingredient_data.unit_id,
                 is_optional=ingredient_data.is_optional,
                 note=ingredient_data.note,
                 original_quantity=ingredient_data.original_quantity
@@ -79,6 +85,7 @@ async def get_recipes(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     tag: Optional[str] = None,
+    search: Optional[str] = Query(None, alias="q", description="搜索菜谱名称"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -100,6 +107,10 @@ async def get_recipes(
             user_recipes = user_recipes.filter(Recipe.tags.contains([tag]))
             public_imported_recipes = public_imported_recipes.filter(Recipe.tags.contains([tag]))
             all_recipes_query = user_recipes.union(public_imported_recipes)
+
+        # 应用搜索过滤（如果指定了搜索关键词）
+        if search:
+            all_recipes_query = all_recipes_query.filter(Recipe.name.contains(search))
 
         recipes = all_recipes_query.order_by(Recipe.created_at.desc()).offset(skip).limit(limit).all()
         return recipes
@@ -142,7 +153,13 @@ async def get_recipe_detail(
         # 获取原料详情，处理可能的空关联
         ingredients_detail = []
         for ri in recipe_ingredients:
-            ingredient = db.query(Ingredient).filter(Ingredient.id == ri.ingredient_id).first()
+            ingredient = db.query(Ingredient).options(
+                load_only(
+                    Ingredient.id,
+                    Ingredient.name,
+                    Ingredient.is_active
+                )
+            ).filter(Ingredient.id == ri.ingredient_id).first()
             if ingredient is None:
                 continue
             ingredients_detail.append(RecipeIngredientDetail(
@@ -150,7 +167,7 @@ async def get_recipe_detail(
                 name=ingredient.name,
                 quantity=ri.quantity or "",
                 quantity_range=ri.quantity_range,
-                unit=ri.unit,
+                unit=ri.unit.abbreviation if ri.unit else None,
                 is_optional=ri.is_optional or False,
                 note=ri.note,
                 original_quantity=ri.original_quantity,

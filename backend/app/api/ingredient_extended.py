@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only, joinedload
 from typing import List, Optional
 from decimal import Decimal
 
@@ -95,12 +95,19 @@ async def search_ingredients_by_name(
         results = []
         for ingredient, confidence in matches:
             if ingredient.is_active:
+                # 显式加载 default_unit 关系以获取单位信息
+                ingredient_with_unit = db.query(Ingredient).options(
+                    joinedload(Ingredient.default_unit)
+                ).filter(Ingredient.id == ingredient.id).first()
+
+                default_unit = ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None
+
                 results.append({
                     "id": ingredient.id,
                     "name": ingredient.name,
                     "category_id": ingredient.category_id,
                     "density": ingredient.density,
-                    "default_unit": ingredient.default_unit,
+                    "default_unit": default_unit,
                     "aliases": ingredient.aliases or [],
                     "confidence": float(confidence)
                 })
@@ -120,7 +127,9 @@ async def get_ingredient_hierarchy(
     try:
         from app.models.ingredient_hierarchy import IngredientHierarchy
 
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
+        ingredient = db.query(Ingredient).options(
+            joinedload(Ingredient.default_unit)
+        ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
 
@@ -145,12 +154,15 @@ async def get_ingredient_hierarchy(
 
         children = []
         for rel in child_relations:
-            child_ing = db.query(Ingredient).filter(Ingredient.id == rel.child_id, Ingredient.is_active == True).first()
+            child_ing = db.query(Ingredient).options(
+                joinedload(Ingredient.default_unit)
+            ).filter(Ingredient.id == rel.child_id, Ingredient.is_active == True).first()
             if child_ing:
                 children.append({
                     "id": child_ing.id,
                     "name": child_ing.name,
                     "relationship_type": rel.relationship_type,
+                    "default_unit": child_ing.default_unit.abbreviation if child_ing.default_unit else None,
                     "confidence": float(rel.confidence) if rel.confidence else 1.0
                 })
 
@@ -160,7 +172,7 @@ async def get_ingredient_hierarchy(
                 "name": ingredient.name,
                 "category_id": ingredient.category_id,
                 "density": ingredient.density,
-                "default_unit": ingredient.default_unit,
+                "default_unit": ingredient.default_unit.abbreviation if ingredient.default_unit else None,
                 "aliases": ingredient.aliases or []
             },
             "parents": parents,
@@ -212,12 +224,17 @@ async def resolve_ingredient_hierarchy(
         ingredient = matcher.resolve_ingredient_hierarchy(base_ingredient, grade_requirement)
 
         if ingredient:
+            # 重新查询以加载 default_unit 关系
+            ingredient_with_unit = db.query(Ingredient).options(
+                joinedload(Ingredient.default_unit)
+            ).filter(Ingredient.id == ingredient.id).first()
+
             return {
                 "id": ingredient.id,
                 "name": ingredient.name,
                 "category_id": ingredient.category_id,
                 "density": ingredient.density,
-                "default_unit": ingredient.default_unit,
+                "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
                 "aliases": ingredient.aliases or []
             }
         else:
@@ -234,7 +251,9 @@ async def get_ingredient_alternatives(
 ):
     """获取食材替代选项"""
     try:
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
+        ingredient = db.query(Ingredient).options(
+            joinedload(Ingredient.default_unit)
+        ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
 
@@ -246,7 +265,7 @@ async def get_ingredient_alternatives(
             "name": alt.name,
             "category_id": alt.category_id,
             "density": alt.density,
-            "default_unit": alt.default_unit,
+            "default_unit": alt.default_unit.abbreviation if alt.default_unit else None,
             "aliases": alt.aliases or []
         } for alt in alternatives]
     except Exception as e:
@@ -269,29 +288,37 @@ async def create_ingredient(
         if existing:
             raise HTTPException(status_code=400, detail="食材已存在")
 
+        # 使用单位匹配器获取单位 ID
+        unit_id = None
+        if default_unit:
+            from app.services.unit_matcher import UnitMatcher
+            matcher = UnitMatcher(db)
+            unit_obj = matcher.match_or_create_unit(default_unit)
+            unit_id = unit_obj.id if unit_obj else None
+
         new_ingredient = Ingredient(
             name=name,
             category_id=category_id,
             aliases=aliases or [],
             density=density,
-            default_unit=default_unit,
+            default_unit_id=unit_id,
             created_by=current_user.id
         )
         db.add(new_ingredient)
         db.commit()
         db.refresh(new_ingredient)
-        
+
         # 自动创建对应的同名商品
         try:
             from app.models.product_entity import Product
             from app.models.nutrition import Ingredient
-            
+
             # 检查是否已存在同名商品
             existing_product = db.query(Product).filter(
                 Product.name == new_ingredient.name,
                 Product.is_active == True
             ).first()
-            
+
             if not existing_product:
                 # 创建商品
                 new_product = Product(
@@ -307,12 +334,17 @@ async def create_ingredient(
             # 创建商品失败不影响原料创建
             print(f"Warning: Failed to create product for ingredient {new_ingredient.name}: {str(e)}")
 
+        # 重新查询以加载 default_unit 关系
+        ingredient_with_unit = db.query(Ingredient).options(
+            joinedload(Ingredient.default_unit)
+        ).filter(Ingredient.id == new_ingredient.id).first()
+
         return {
             "id": new_ingredient.id,
             "name": new_ingredient.name,
             "category_id": new_ingredient.category_id,
             "density": new_ingredient.density,
-            "default_unit": new_ingredient.default_unit,
+            "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
             "aliases": new_ingredient.aliases or [],
             "created_at": new_ingredient.created_at
         }
@@ -336,6 +368,8 @@ async def update_ingredient(
 ):
     """更新食材"""
     try:
+        from app.services.unit_matcher import UnitMatcher
+
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
@@ -357,19 +391,26 @@ async def update_ingredient(
         if density is not None:
             ingredient.density = density
         if default_unit is not None:
-            ingredient.default_unit = default_unit
+            # 使用单位匹配器获取单位 ID
+            matcher = UnitMatcher(db)
+            unit_obj = matcher.match_or_create_unit(default_unit)
+            ingredient.default_unit_id = unit_obj.id if unit_obj else None
 
         ingredient.updated_by = current_user.id
 
         db.commit()
-        db.refresh(ingredient)
+
+        # 重新查询以加载 default_unit 关系
+        ingredient_with_unit = db.query(Ingredient).options(
+            joinedload(Ingredient.default_unit)
+        ).filter(Ingredient.id == ingredient.id).first()
 
         return {
             "id": ingredient.id,
             "name": ingredient.name,
             "category_id": ingredient.category_id,
             "density": ingredient.density,
-            "default_unit": ingredient.default_unit,
+            "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
             "aliases": ingredient.aliases or [],
             "is_imported": ingredient.is_imported,
             "created_at": ingredient.created_at
@@ -413,7 +454,9 @@ async def get_ingredients(
 ):
     """获取食材列表"""
     try:
-        query = db.query(Ingredient).filter(Ingredient.is_active == True)
+        query = db.query(Ingredient).options(
+            joinedload(Ingredient.default_unit)
+        ).filter(Ingredient.is_active == True)
 
         if search:
             # 搜索名称或别名
@@ -432,7 +475,7 @@ async def get_ingredients(
             "name": ing.name,
             "category_id": ing.category_id,
             "density": ing.density,
-            "default_unit": ing.default_unit,
+            "default_unit": ing.default_unit.abbreviation if ing.default_unit else None,
             "aliases": ing.aliases or [],
             "created_at": ing.created_at
         } for ing in ingredients]
@@ -448,7 +491,9 @@ async def get_ingredient(
 ):
     """获取食材详情"""
     try:
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
+        ingredient = db.query(Ingredient).options(
+            joinedload(Ingredient.default_unit)
+        ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
 
@@ -457,7 +502,7 @@ async def get_ingredient(
             "name": ingredient.name,
             "category_id": ingredient.category_id,
             "density": ingredient.density,
-            "default_unit": ingredient.default_unit,
+            "default_unit": ingredient.default_unit.abbreviation if ingredient.default_unit else None,
             "aliases": ingredient.aliases or [],
             "created_at": ingredient.created_at
         }

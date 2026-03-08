@@ -1,13 +1,13 @@
 <template>
-  <div class="ingredient-list">
-    <PageHeader title="原料管理" :show-back="true">
-      <template #extra>
-        <button @click="showAddModal = true" class="btn-square add-btn" title="添加原料">
-          <i class="mdi mdi-plus"></i>
-        </button>
-      </template>
-    </PageHeader>
+  <PageHeader title="原料管理" :show-back="true">
+    <template #extra>
+      <button @click="showAddModal = true" class="btn-square add-btn" title="添加原料">
+        <i class="mdi mdi-plus"></i>
+      </button>
+    </template>
+  </PageHeader>
 
+  <div class="ingredient-list">
     <div class="search-filter">
       <div class="search-box">
         <input v-model="searchTerm" placeholder="搜索原料名称或别名..." class="search-input" />
@@ -20,8 +20,8 @@
           </option>
         </select>
       </div>
-      <button @click="loadIngredients" class="btn-search">
-        <i class="mdi mdi-magnify"></i> 搜索
+      <button @click="loadIngredients" class="btn-search" title="搜索">
+        <i class="mdi mdi-magnify"></i>
       </button>
     </div>
 
@@ -732,8 +732,9 @@ async function performConversion() {
 
 <style scoped>
 .ingredient-list {
-  padding: 2rem;
   position: relative;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .add-btn {
@@ -757,8 +758,9 @@ async function performConversion() {
 
 .search-filter {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   margin-bottom: 1.5rem;
+  padding: 0.5rem;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -779,7 +781,7 @@ async function performConversion() {
 
 .filter-options {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .filter-select {
@@ -792,7 +794,7 @@ async function performConversion() {
 }
 
 .btn-search {
-  padding: 0.75rem 1.5rem;
+  padding: 0.5rem;
   background: #667eea;
   color: white;
   border: 1px solid #ddd;
@@ -800,7 +802,7 @@ async function performConversion() {
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
 }
 
 .btn-search:hover {

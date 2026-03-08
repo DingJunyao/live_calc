@@ -6,6 +6,7 @@ from app.api import auth, products, merchants, nutrition, recipes, reports, admi
 from app.api import ingredient_extended  # 新增的食材扩展API
 from app.api import products_entity  # 商品实体 API
 from app.api import user_preferences  # 用户偏好 API
+from app.api import units  # 单位管理 API
 from app.core.database import Base, engine
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -34,12 +35,12 @@ def init_default_data(db: Session):
 
     # 添加国际单位制基本单位
     si_units = [
-        {"name": "meter", "abbreviation": "m", "unit_type": "length", "is_si_base": True},
-        {"name": "kilogram", "abbreviation": "kg", "unit_type": "mass", "is_si_base": True},
-        {"name": "gram", "abbreviation": "g", "unit_type": "mass", "si_factor": 0.001},
-        {"name": "liter", "abbreviation": "L", "unit_type": "volume", "is_si_base": True},
-        {"name": "milliliter", "abbreviation": "mL", "unit_type": "volume", "si_factor": 0.001},
-        {"name": "second", "abbreviation": "s", "unit_type": "time", "is_si_base": True},
+        {"name": "米", "abbreviation": "m", "unit_type": "length", "is_si_base": True},
+        {"name": "千克", "abbreviation": "kg", "unit_type": "mass", "is_si_base": True},
+        {"name": "克", "abbreviation": "g", "unit_type": "mass", "si_factor": 0.001},
+        {"name": "升", "abbreviation": "L", "unit_type": "volume", "is_si_base": True},
+        {"name": "毫升", "abbreviation": "mL", "unit_type": "volume", "si_factor": 0.001},
+        {"name": "秒", "abbreviation": "s", "unit_type": "time", "is_si_base": True},
     ]
 
     for unit_data in si_units:
@@ -51,19 +52,19 @@ def init_default_data(db: Session):
         # 质量单位
         {"name": "斤", "abbreviation": "jin", "unit_type": "mass", "si_factor": 0.5, "is_common": True},
         {"name": "两", "abbreviation": "liang", "unit_type": "mass", "si_factor": 0.05, "is_common": True},
-        {"name": "pound", "abbreviation": "lb", "unit_type": "mass", "si_factor": 0.453592, "is_common": True},
-        {"name": "ounce", "abbreviation": "oz", "unit_type": "mass", "si_factor": 0.0283495, "is_common": True},
+        {"name": "英磅", "abbreviation": "lb", "unit_type": "mass", "si_factor": 0.453592, "is_common": True},
+        {"name": "盎司", "abbreviation": "oz", "unit_type": "mass", "si_factor": 0.0283495, "is_common": True},
 
         # 体积单位
         {"name": "杯", "abbreviation": "cup", "unit_type": "volume", "si_factor": 0.24, "is_common": True},
         {"name": "汤匙", "abbreviation": "tbsp", "unit_type": "volume", "si_factor": 0.015, "is_common": True},
         {"name": "茶匙", "abbreviation": "tsp", "unit_type": "volume", "si_factor": 0.005, "is_common": True},
-        {"name": "fluid ounce", "abbreviation": "fl oz", "unit_type": "volume", "si_factor": 0.03, "is_common": True},
+        {"name": "液盎司", "abbreviation": "fl oz", "unit_type": "volume", "si_factor": 0.03, "is_common": True},
 
         # 长度单位
-        {"name": "centimeter", "abbreviation": "cm", "unit_type": "length", "si_factor": 0.01, "is_common": True},
-        {"name": "millimeter", "abbreviation": "mm", "unit_type": "length", "si_factor": 0.001, "is_common": True},
-        {"name": "inch", "abbreviation": "in", "unit_type": "length", "si_factor": 0.0254, "is_common": True},
+        {"name": "厘米", "abbreviation": "cm", "unit_type": "length", "si_factor": 0.01, "is_common": True},
+        {"name": "毫米", "abbreviation": "mm", "unit_type": "length", "si_factor": 0.001, "is_common": True},
+        {"name": "英寸", "abbreviation": "in", "unit_type": "length", "si_factor": 0.0254, "is_common": True},
 
         # 计数单位
         {"name": "个", "abbreviation": "个", "unit_type": "count", "si_factor": 1.0, "is_common": True},
@@ -283,6 +284,7 @@ app.include_router(ingredient_extended.router, prefix="/api/v1/ingredients", tag
 app.include_router(products_entity.router, prefix="/api/v1", tags=["商品实体"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["商品"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["用户偏好"])
+app.include_router(units.router, prefix="/api/v1", tags=["单位管理"])
 
 
 @app.get("/")

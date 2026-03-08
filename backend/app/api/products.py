@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from datetime import datetime, timedelta
 from app.core.database import get_db
@@ -13,6 +13,7 @@ from app.schemas.product import (
     ProductHistoryResponse
 )
 from app.utils.unit_converter import convert_to_standard
+from app.services.unit_matcher import UnitMatcher
 
 router = APIRouter()
 
@@ -85,11 +86,18 @@ async def create_product_record(
         # 获取当天汇率
         exchange_rate = 1.0  # TODO: 从汇率服务获取
 
+        # 使用单位匹配器获取单位 ID
+        matcher = UnitMatcher(db)
+        original_unit_obj = matcher.match_or_create_unit(record.original_unit)
+
         # 单位转换
-        standard_quantity, standard_unit = convert_to_standard(
+        standard_quantity, standard_unit_str = convert_to_standard(
             record.original_quantity,
             record.original_unit
         )
+
+        # 获取标准单位对象
+        standard_unit_obj = matcher.match_or_create_unit(standard_unit_str)
 
         # 处理商品ID
         if record.product_id:
@@ -120,18 +128,39 @@ async def create_product_record(
             price=record.price,
             currency=record.currency,
             original_quantity=record.original_quantity,
-            original_unit=record.original_unit,
+            original_unit_id=original_unit_obj.id if original_unit_obj else None,
             standard_quantity=standard_quantity,
-            standard_unit=standard_unit,
+            standard_unit_id=standard_unit_obj.id if standard_unit_obj else None,
             record_type=record.record_type,
             exchange_rate=exchange_rate,
             notes=record.notes
         )
         db.add(db_record)
         db.commit()
-        db.refresh(db_record)
 
-        return db_record
+        # 重新查询以加载单位关系
+        db_record = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit),
+            joinedload(ProductRecord.standard_unit)
+        ).filter(ProductRecord.id == db_record.id).first()
+
+        # 手动构造响应对象，将 Unit 对象转换为字符串
+        return ProductRecordResponse(
+            id=db_record.id,
+            product_id=db_record.product_id,
+            product_name=db_record.product_name,
+            merchant_id=db_record.merchant_id,
+            price=db_record.price,
+            currency=db_record.currency,
+            original_quantity=db_record.original_quantity,
+            original_unit=db_record.original_unit.abbreviation if db_record.original_unit else "",
+            standard_quantity=db_record.standard_quantity,
+            standard_unit=db_record.standard_unit.abbreviation if db_record.standard_unit else "",
+            record_type=db_record.record_type,
+            exchange_rate=db_record.exchange_rate,
+            recorded_at=db_record.recorded_at,
+            notes=db_record.notes
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -152,13 +181,36 @@ async def get_product_records(
     current_user = Depends(get_current_user)
 ):
     """获取商品记录列表"""
-    query = db.query(ProductRecord).filter(ProductRecord.user_id == current_user.id)
+    query = db.query(ProductRecord).options(
+        joinedload(ProductRecord.original_unit),
+        joinedload(ProductRecord.standard_unit)
+    ).filter(ProductRecord.user_id == current_user.id)
 
     if product_name:
         query = query.filter(ProductRecord.product_name.contains(product_name))
 
     records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
-    return records
+
+    # 手动构造响应列表，将 Unit 对象转换为字符串
+    return [
+        ProductRecordResponse(
+            id=record.id,
+            product_id=record.product_id,
+            product_name=record.product_name,
+            merchant_id=record.merchant_id,
+            price=record.price,
+            currency=record.currency,
+            original_quantity=record.original_quantity,
+            original_unit=record.original_unit.abbreviation if record.original_unit else "",
+            standard_quantity=record.standard_quantity,
+            standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
+            record_type=record.record_type,
+            exchange_rate=record.exchange_rate,
+            recorded_at=record.recorded_at,
+            notes=record.notes
+        )
+        for record in records
+    ]
 
 
 @router.get("/{record_id}", response_model=ProductRecordResponse)
@@ -168,13 +220,33 @@ async def get_product_record(
     current_user = Depends(get_current_user)
 ):
     """获取商品记录详情"""
-    record = db.query(ProductRecord).filter(
+    record = db.query(ProductRecord).options(
+        joinedload(ProductRecord.original_unit),
+        joinedload(ProductRecord.standard_unit)
+    ).filter(
         ProductRecord.id == record_id,
         ProductRecord.user_id == current_user.id
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
-    return record
+
+    # 手动构造响应对象，将 Unit 对象转换为字符串
+    return ProductRecordResponse(
+        id=record.id,
+        product_id=record.product_id,
+        product_name=record.product_name,
+        merchant_id=record.merchant_id,
+        price=record.price,
+        currency=record.currency,
+        original_quantity=record.original_quantity,
+        original_unit=record.original_unit.abbreviation if record.original_unit else "",
+        standard_quantity=record.standard_quantity,
+        standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
+        record_type=record.record_type,
+        exchange_rate=record.exchange_rate,
+        recorded_at=record.recorded_at,
+        notes=record.notes
+    )
 
 
 @router.get("/history/{product_name}", response_model=ProductHistoryResponse)
@@ -184,12 +256,36 @@ async def get_product_history(
     current_user = Depends(get_current_user)
 ):
     """获取商品历史价格"""
-    records = db.query(ProductRecord).filter(
+    records = db.query(ProductRecord).options(
+        joinedload(ProductRecord.original_unit),
+        joinedload(ProductRecord.standard_unit)
+    ).filter(
         ProductRecord.user_id == current_user.id,
         ProductRecord.product_name == product_name
     ).order_by(ProductRecord.recorded_at.desc()).all()
 
+    # 处理所有记录，将 Unit 对象转换为字符串
+    processed_records = [
+        ProductRecordResponse(
+            id=record.id,
+            product_id=record.product_id,
+            product_name=record.product_name,
+            merchant_id=record.merchant_id,
+            price=record.price,
+            currency=record.currency,
+            original_quantity=record.original_quantity,
+            original_unit=record.original_unit.abbreviation if record.original_unit else "",
+            standard_quantity=record.standard_quantity,
+            standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
+            record_type=record.record_type,
+            exchange_rate=record.exchange_rate,
+            recorded_at=record.recorded_at,
+            notes=record.notes
+        )
+        for record in records
+    ]
+
     return ProductHistoryResponse(
         product_name=product_name,
-        records=records
+        records=processed_records
     )

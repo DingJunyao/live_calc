@@ -38,7 +38,7 @@ class RecipeIngredient(Base):
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
     quantity = Column(String(50))  # 改为可空，允许没有数量的原料
     quantity_range = Column(JSON)  # 数量范围（JSON，如 {"min": 80, "max": 120}）
-    unit = Column(String(20))
+    unit_id = Column(Integer, ForeignKey("units.id"), nullable=True, index=True)  # 单位外键
     is_optional = Column(Boolean, default=False)  # 是否可选
     note = Column(Text)  # 备注信息
     original_quantity = Column(JSON)  # 原始数量描述（JSON，如 {"min": 100, "max": 150}）
@@ -46,3 +46,4 @@ class RecipeIngredient(Base):
     # 关系
     recipe = relationship("Recipe", back_populates="ingredients")
     ingredient = relationship("app.models.nutrition.Ingredient", back_populates="recipe_ingredients", lazy="select")
+    unit = relationship("Unit", lazy="select")

@@ -1,6 +1,7 @@
 <template>
+  <PageHeader title="邀请码管理" :show-back="true" />
+
   <div class="invite-codes-manager">
-    <PageHeader title="邀请码管理" :show-back="true" />
 
     <div class="manager-content">
       <!-- 创建邀请码表单 -->
@@ -165,7 +166,8 @@ onMounted(() => {
 
 <style scoped>
 .invite-codes-manager {
-  padding: 2rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .manager-content {
