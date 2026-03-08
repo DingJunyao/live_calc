@@ -14,6 +14,7 @@ from app.schemas.recipe import (
     RecipeNutritionResponse,
     RecipeIngredientDetail
 )
+from app.schemas.common import PaginatedResponse
 from app.services.recipe_service import calculate_recipe_cost, calculate_recipe_nutrition
 from app.services.recipe_import_service import RecipeImportService
 import shutil
@@ -80,16 +81,16 @@ async def create_recipe(
         raise HTTPException(status_code=500, detail=f"创建菜谱失败: {str(e)}")
 
 
-@router.get("", response_model=List[RecipeResponse])
+@router.get("", response_model=PaginatedResponse)
 async def get_recipes(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    tag: Optional[str] = None,
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
+    tag: Optional[str] = Query(None, description="标签过滤"),
     search: Optional[str] = Query(None, alias="q", description="搜索菜谱名称"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取菜谱列表"""
+    """获取菜谱列表（分页）"""
     try:
         # 获取当前用户的菜谱（允许编辑）
         user_recipes = db.query(Recipe).filter(Recipe.user_id == current_user.id)
@@ -112,8 +113,42 @@ async def get_recipes(
         if search:
             all_recipes_query = all_recipes_query.filter(Recipe.name.contains(search))
 
+        total = all_recipes_query.count()
         recipes = all_recipes_query.order_by(Recipe.created_at.desc()).offset(skip).limit(limit).all()
-        return recipes
+        page = skip // limit + 1
+
+        # 手动构造响应对象列表
+        items = []
+        for recipe in recipes:
+            # 确保 JSON 字段不为 None
+            tags_list = recipe.tags if isinstance(recipe.tags, list) else []
+            cooking_steps_list = recipe.cooking_steps if isinstance(recipe.cooking_steps, list) else []
+            tips_list = recipe.tips if isinstance(recipe.tips, list) else []
+            images_list = recipe.images if isinstance(recipe.images, list) else []
+
+            items.append(RecipeResponse(
+                id=recipe.id,
+                name=recipe.name,
+                source=recipe.source or "",
+                category=recipe.category,
+                tags=tags_list,
+                cooking_steps=cooking_steps_list,
+                total_time_minutes=recipe.total_time_minutes,
+                difficulty=recipe.difficulty,
+                servings=recipe.servings,
+                tips=tips_list,
+                images=images_list,
+                result_ingredient_id=recipe.result_ingredient_id,
+                created_at=recipe.created_at,
+                updated_at=recipe.updated_at
+            ))
+
+        return PaginatedResponse.create(
+            items=items,
+            total=total,
+            page=page,
+            page_size=limit
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取菜谱列表失败: {str(e)}")
 

@@ -76,6 +76,16 @@
       </div>
     </div>
 
+    <!-- 分页 -->
+    <Pagination
+      v-if="total > 0"
+      :current-page="currentPage"
+      :page-size="pageSize"
+      :total="total"
+      @change-page="handlePageChange"
+      @change-page-size="handlePageSizeChange"
+    />
+
     <!-- 添加/编辑原料模态框 -->
     <div v-if="showAddModal" class="modal-overlay" @click="closeAddModal">
       <div class="modal-content" @click.stop>
@@ -295,6 +305,7 @@ import { ref, onMounted, computed } from 'vue'
 import { api } from '@/api/client'
 import { useUserStore } from '@/stores/user'
 import PageHeader from '@/components/PageHeader.vue'
+import Pagination from '@/components/Pagination.vue'
 
 const userStore = useUserStore()
 
@@ -386,6 +397,11 @@ const showMergeModalFlag = ref(false)
 const editingIngredient = ref<Ingredient | null>(null)
 const searchTerm = ref('')
 const selectedCategory = ref('')
+
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const newIngredient = ref<NewIngredient>({
   name: '',
   aliasesText: '',
@@ -441,6 +457,18 @@ const mergeableIngredients = computed(() => {
 
   return candidates
 })
+
+// 分页处理函数
+function handlePageChange(page: number) {
+  currentPage.value = page
+  loadIngredients()
+}
+
+function handlePageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadIngredients()
+}
 
 // 简单的名称相似度判断（前端预筛选）
 function isSimilarName(name1: string, name2: string): boolean {
@@ -543,6 +571,8 @@ async function loadIngredients() {
   try {
     // 构建查询参数
     const params = new URLSearchParams()
+    params.append('skip', String((currentPage.value - 1) * pageSize.value))
+    params.append('limit', String(pageSize.value))
     if (searchTerm.value) {
       params.append('q', searchTerm.value)
     }
@@ -550,15 +580,34 @@ async function loadIngredients() {
       params.append('category_id', selectedCategory.value)
     }
 
-    const queryString = params.toString()
-    const url = queryString ? `/ingredients?${queryString}` : '/ingredients'
+    const url = `/ingredients?${params.toString()}`
 
-    const response = await api.get(url)
-    ingredients.value = response.map((item: any) => ({
+    // 解析分页响应
+    const response = await api.get<any>(url)
+
+    // 处理新旧两种响应格式
+    let items: any[]
+    let totalCount = 0  // 使用不同的变量名避免与 ref 冲突
+
+    if (response.items && response.total !== undefined) {
+      // 新的 PaginatedResponse 格式
+      items = response.items
+      totalCount = response.total
+    } else if (Array.isArray(response)) {
+      // 旧的 List 格式
+      items = response
+      // 如果是第一页且没有搜索/筛选条件，用这个数据量作为 totalCount
+      if (currentPage.value === 1 && !searchTerm.value && !selectedCategory.value) {
+        totalCount = items.length
+      }
+    }
+
+    ingredients.value = items.map((item: any) => ({
       ...item,
       aliases: item.aliases || [],
       category_name: getCategoryName(item.category_id)
     }))
+    total.value = totalCount
   } catch (error) {
     console.error('Failed to load ingredients:', error)
     ingredients.value = []

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import or_
 from typing import List, Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -13,6 +14,7 @@ from app.schemas.merchant import (
     RouteCalculateRequest,
     RouteCalculateResponse
 )
+from app.schemas.common import PaginatedResponse
 from app.services.map_service import calculate_route
 
 router = APIRouter()
@@ -51,17 +53,47 @@ async def create_merchant(
         )
 
 
-@router.get("", response_model=List[MerchantResponse])
+@router.get("", response_model=PaginatedResponse[MerchantResponse])
 async def get_merchants(
+    skip: int = Query(0, ge=0, description="跳过的记录数"),
+    limit: int = Query(10, ge=1, le=100, description="每页记录数"),
+    search: Optional[str] = Query(None, description="搜索关键词（商家名称或地址）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取商家列表"""
+    """获取商家列表（支持分页和搜索）"""
     try:
-        merchants = db.query(Merchant).filter(
+        # 构建查询
+        query = db.query(Merchant).filter(
             Merchant.user_id == current_user.id
-        ).order_by(Merchant.created_at.desc()).all()
-        return merchants
+        )
+
+        # 添加搜索条件
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Merchant.name.like(search_pattern),
+                    Merchant.address.like(search_pattern)
+                )
+            )
+
+        # 获取总数
+        total = query.count()
+
+        # 分页查询
+        merchants = query.order_by(Merchant.created_at.desc()).offset(skip).limit(limit).all()
+
+        # 计算页码
+        page = (skip // limit) + 1
+
+        # 返回分页响应
+        return PaginatedResponse.create(
+            items=merchants,
+            total=total,
+            page=page,
+            page_size=limit
+        )
     except SQLAlchemyError:
         raise HTTPException(
             status_code=500,

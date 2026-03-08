@@ -17,16 +17,16 @@
       <i class="mdi mdi-chevron-left"></i>
     </button>
     <div class="pagination-pages">
-      <button
-        v-for="page in visiblePages"
-        :key="page"
-        @click="goToPage(page)"
-        :class="{ 'pagination-page': true, 'pagination-page-active': page === currentPage }"
-      >
-        {{ page }}
-      </button>
-      <span v-if="showEllipsisStart" class="pagination-ellipsis">...</span>
-      <span v-if="showEllipsisEnd" class="pagination-ellipsis">...</span>
+      <template v-for="(item, index) in visiblePages" :key="index">
+        <button
+          v-if="item > 0"
+          @click="goToPage(item)"
+          :class="{ 'pagination-page': true, 'pagination-page-active': item === currentPage }"
+        >
+          {{ item }}
+        </button>
+        <span v-else class="pagination-ellipsis">...</span>
+      </template>
     </div>
     <button
       @click="goToPage(currentPage + 1)"
@@ -123,6 +123,8 @@ const showEllipsisEnd = computed(() => {
 })
 
 function goToPage(page: number) {
+  // 忽略省略号标记 (-1)
+  if (page === -1) return
   if (page < 1) page = 1
   if (page > totalPages.value) page = totalPages.value
   emit('change-page', page)

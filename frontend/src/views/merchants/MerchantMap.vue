@@ -104,15 +104,20 @@ onMounted(async () => {
 async function loadMerchants() {
   loading.value = true
   try {
-    const offset = (currentPage.value - 1) * pageSize.value
-    let url = `/merchants?offset=${offset}&limit=${pageSize.value}`
+    const skip = (currentPage.value - 1) * pageSize.value
+    let url = `/merchants?skip=${skip}&limit=${pageSize.value}`
     if (searchTerm.value) {
       url += `&search=${encodeURIComponent(searchTerm.value)}`
     }
-    const data = await api.get<any[]>(url)
-    merchants.value = data || []
-    // TODO: 需要后端支持返回总数
-    total.value = merchants.value.length
+    const data = await api.get<{
+      items: any[]
+      total: number
+      page: number
+      page_size: number
+      total_pages: number
+    }>(url)
+    merchants.value = data?.items || []
+    total.value = data?.total || 0
   } catch (error) {
     console.error('Failed to load merchants:', error)
   } finally {
