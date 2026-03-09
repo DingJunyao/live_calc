@@ -90,26 +90,29 @@
             <label for="productName">商品:</label>
             <div class="autocomplete-container">
               <input
+                ref="productInputRef"
                 v-model="newProduct.product_name"
                 type="text"
                 id="productName"
                 required
                 placeholder="搜索并选择商品"
                 @input="onProductInput"
-                @focus="showProductSuggestions = true"
+                @focus="handleProductFocus"
                 @keydown="handleKeydown"
               />
-              <ul v-if="showProductSuggestions && filteredSuggestions.length > 0" class="suggestions-list">
-                <li
-                  v-for="(suggestion, index) in filteredSuggestions"
-                  :key="suggestion.id"
-                  :class="{ 'suggestion-selected': index === selectedIndex }"
-                  @click="selectProduct(suggestion)"
-                >
-                  {{ suggestion.name }}
-                  <span v-if="suggestion.brand" class="brand">({{ suggestion.brand }})</span>
-                </li>
-              </ul>
+              <Teleport to="body">
+                <ul v-if="showProductSuggestions && filteredSuggestions.length > 0" class="suggestions-list product-suggestions" :style="productSuggestionsStyle">
+                  <li
+                    v-for="(suggestion, index) in filteredSuggestions"
+                    :key="suggestion.id"
+                    :class="{ 'suggestion-selected': index === selectedIndex }"
+                    @click.stop="selectProduct(suggestion)"
+                  >
+                    {{ suggestion.name }}
+                    <span v-if="suggestion.brand" class="brand">({{ suggestion.brand }})</span>
+                  </li>
+                </ul>
+              </Teleport>
             </div>
           </div>
           <div class="form-group">
@@ -124,33 +127,56 @@
             <label for="unit">单位:</label>
             <select v-model="newProduct.unit" id="unit" class="select-input" required>
               <option v-for="unit in units" :key="unit.id" :value="unit.abbreviation">
-                {{ unit.name }} ({{ unit.abbreviation }})
+                {{ unit.name }} <template v-if="unit.name && unit.abbreviation">({{ unit.abbreviation }})</template>
               </option>
             </select>
+          </div>
+          <div class="form-group checkbox-group">
+            <label for="isPurchase" class="checkbox-label">
+              <input
+                type="checkbox"
+                id="isPurchase"
+                v-model="newProduct.is_purchase"
+                class="checkbox-input"
+              />
+              <span>计入支出（购买记录）</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label for="recordedAt">记录时间:</label>
+            <input
+              v-model="newProduct.recorded_at"
+              type="datetime-local"
+              id="recordedAt"
+              class="datetime-input"
+            />
           </div>
           <div class="form-group">
             <label for="location">商家:</label>
             <div class="autocomplete-container">
               <input
+                ref="locationInputRef"
                 v-model="newProduct.merchant_name"
                 type="text"
                 id="location"
                 placeholder="搜索并选择商家"
                 @input="onLocationInput"
-                @focus="showLocationSuggestions = true"
+                @focus="handleLocationFocus"
                 @keydown="handleLocationKeydown"
               />
-              <ul v-if="showLocationSuggestions && filteredLocationSuggestions.length > 0" class="suggestions-list">
-                <li
-                  v-for="(suggestion, index) in filteredLocationSuggestions"
-                  :key="suggestion.id"
-                  :class="{ 'suggestion-selected': index === selectedLocationIndex }"
-                  @click="selectLocation(suggestion)"
-                >
-                  {{ suggestion.name }}
-                  <span v-if="suggestion.address" class="address">({{ suggestion.address }})</span>
-                </li>
-              </ul>
+              <Teleport to="body">
+                <ul v-if="showLocationSuggestions && filteredLocationSuggestions.length > 0" class="suggestions-list location-suggestions" :style="locationSuggestionsStyle">
+                  <li
+                    v-for="(suggestion, index) in filteredLocationSuggestions"
+                    :key="suggestion.id"
+                    :class="{ 'suggestion-selected': index === selectedLocationIndex }"
+                    @click.stop="selectLocation(suggestion)"
+                  >
+                    {{ suggestion.name }}
+                    <span v-if="suggestion.address" class="address">({{ suggestion.address }})</span>
+                  </li>
+                </ul>
+              </Teleport>
             </div>
           </div>
           <div class="form-actions">
@@ -164,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, Teleport } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { productAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
@@ -211,13 +237,23 @@ const newProduct = ref({
   quantity: 1,
   unit: '',
   merchant_id: 0,
-  merchant_name: ''
+  merchant_name: '',
+  is_purchase: true,  // 这个SB字段标识是否为购买记录，默认是
+  recorded_at: ''  // 这个SB字段存储自定义的记录时间
 })
 
 const showProductSuggestions = ref(false)
 const selectedIndex = ref(-1)
 const showLocationSuggestions = ref(false)
 const selectedLocationIndex = ref(-1)
+
+// 添加建议列表位置样式
+const productSuggestionsStyle = ref<Record<string, string>>({})
+const locationSuggestionsStyle = ref<Record<string, string>>({})
+
+// 添加输入框引用
+const productInputRef = ref<HTMLInputElement | null>(null)
+const locationInputRef = ref<HTMLInputElement | null>(null)
 
 // 添加商家加载状态
 const merchantsLoading = ref(true)
@@ -231,10 +267,19 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
+// 会话记忆功能（在同一会话中记住上一次的选择）
+const lastIsPurchase = ref(true)  // 记住上一次是否购买
+const lastMerchantId = ref(0)  // 记住上一次的商家ID
+const lastMerchantName = ref('')  // 记住上一次的商家名称
+
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
 // 过滤后的建议列表
 const filteredSuggestions = computed(() => {
+  // 确保allProducts是数组，防止憨批错误
+  if (!Array.isArray(allProducts.value)) {
+    return []
+  }
   if (!newProduct.value.product_name.trim()) {
     return allProducts.value.slice(0, 10)
   }
@@ -246,6 +291,10 @@ const filteredSuggestions = computed(() => {
 
 // 过滤后的商家建议列表
 const filteredLocationSuggestions = computed(() => {
+  // 确保allMerchants是数组，防止憨批错误
+  if (!Array.isArray(allMerchants.value)) {
+    return []
+  }
   if (!newProduct.value.merchant_name.trim()) {
     return allMerchants.value.slice(0, 10)
   }
@@ -272,6 +321,14 @@ onMounted(async () => {
     // 如果商家为空，则直接打开模态框，让用户可以选择商家或被提示
     showAddModal.value = true
   }
+
+  // 添加鼠标按下事件监听，隐藏建议列表 - 使用捕获阶段确保优先处理
+  document.addEventListener('mousedown', handleOutsideClick, true)
+})
+
+onUnmounted(() => {
+  // 移除鼠标按下事件监听 - 使用捕获阶段
+  document.removeEventListener('mousedown', handleOutsideClick, true)
 })
 
 async function loadProducts() {
@@ -318,7 +375,8 @@ async function loadProducts() {
 async function loadAllProducts() {
   try {
     const response = await productAPI.list({ limit: 200 })
-    allProducts.value = response as ProductSuggestion[]
+    // 这个SB API返回的是分页格式，需要从items里取数据
+    allProducts.value = (response as any).items || []
   } catch (error) {
     console.error('Failed to load products:', error)
   }
@@ -326,8 +384,9 @@ async function loadAllProducts() {
 
 async function loadAllMerchants() {
   try {
-    const response = await api.get<Merchant[]>('/merchants')  // 移除末尾斜杠
-    allMerchants.value = response || []
+    const response = await api.get<any>('/merchants')  // 移除末尾斜杠
+    // 这个SB API也可能返回分页格式，需要从items里取数据
+    allMerchants.value = response.items || response || []
   } catch (error) {
     console.error('Failed to load merchants:', error)
   } finally {
@@ -339,10 +398,12 @@ async function loadAllMerchants() {
 async function loadUnits() {
   try {
     loadingUnits.value = true
-    const response = await api.get('/ingredients/units')
-    units.value = response || []
+    const response = await api.get<any>('/ingredients/units')
+    // 这个SB API返回的也是分页格式，需要从items里取数据
+    units.value = response.items || []
   } catch (error) {
     console.error('Failed to load units:', error)
+    units.value = []
   } finally {
     loadingUnits.value = false
   }
@@ -354,15 +415,21 @@ function openAddModal() {
     return;
   }
 
-  // 初始化表单并显示模态框
+  // 初始化表单并显示模态框，使用会话记忆填充上次的选择
+  const now = new Date()
+  // 格式化为 datetime-local 需要的格式: YYYY-MM-DDTHH:mm
+  const localISOTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+
   newProduct.value = {
     product_id: 0,
     product_name: '',
     price: 0,
     quantity: 1,
     unit: units.value.length > 0 ? units.value[0].abbreviation : '', // 设置默认单位
-    merchant_id: 0,
-    merchant_name: ''
+    merchant_id: lastMerchantId.value,  // 使用记忆的商家ID
+    merchant_name: lastMerchantName.value,  // 使用记忆的商家名称
+    is_purchase: lastIsPurchase.value,  // 使用记忆的是否购买
+    recorded_at: localISOTime  // 默认为当前时间
   }
   showAddModal.value = true
 }
@@ -373,6 +440,8 @@ function closeModal() {
   showLocationSuggestions.value = false
   selectedIndex.value = -1
   selectedLocationIndex.value = -1
+  productSuggestionsStyle.value = {}
+  locationSuggestionsStyle.value = {}
 }
 
 function handlePageChange(page: number) {
@@ -424,14 +493,25 @@ async function addProduct() {
       return
     }
 
-    // 提交价格记录
+    // 提交价格记录，根据is_purchase设置record_type
     await api.post('/products/', {
       product_id: productId,
       price: newProduct.value.price,
       original_quantity: newProduct.value.quantity,
       original_unit: newProduct.value.unit,
-      merchant_id: merchantId || undefined
+      merchant_id: merchantId || undefined,
+      record_type: newProduct.value.is_purchase ? 'purchase' : 'price',  // 这个SB字段控制是否计入支出
+      recorded_at: newProduct.value.recorded_at || undefined  // 发送自定义时间
     })
+
+    // 保存当前选择到会话记忆
+    lastIsPurchase.value = newProduct.value.is_purchase
+    if (merchantId) {
+      lastMerchantId.value = merchantId
+    }
+    if (newProduct.value.merchant_name) {
+      lastMerchantName.value = newProduct.value.merchant_name
+    }
 
     closeModal()
     await loadProducts()
@@ -453,6 +533,14 @@ function formatDate(dateString: string) {
   })
 }
 
+function handleProductFocus() {
+  // 延迟执行，确保DOM已经更新
+  setTimeout(() => {
+    updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle)
+    showProductSuggestions.value = true
+  }, 50)
+}
+
 function onProductInput() {
   if (searchTimeout) {
     clearTimeout(searchTimeout)
@@ -464,6 +552,7 @@ function onProductInput() {
     }
     showProductSuggestions.value = true
     selectedIndex.value = -1
+    updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle)
   }, 300)
 }
 
@@ -472,6 +561,7 @@ function selectProduct(product: ProductSuggestion) {
   newProduct.value.product_name = product.name
   showProductSuggestions.value = false
   selectedIndex.value = -1
+  productSuggestionsStyle.value = {}
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -487,7 +577,16 @@ function handleKeydown(event: KeyboardEvent) {
   } else if (event.key === 'Escape') {
     showProductSuggestions.value = false
     selectedIndex.value = -1
+    productSuggestionsStyle.value = {}
   }
+}
+
+function handleLocationFocus() {
+  // 延迟执行，确保DOM已经更新
+  setTimeout(() => {
+    updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle)
+    showLocationSuggestions.value = true
+  }, 50)
 }
 
 function onLocationInput() {
@@ -501,6 +600,7 @@ function onLocationInput() {
     }
     showLocationSuggestions.value = true
     selectedLocationIndex.value = -1
+    updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle)
   }, 300)
 }
 
@@ -509,6 +609,7 @@ function selectLocation(location: Merchant) {
   newProduct.value.merchant_name = location.name
   showLocationSuggestions.value = false
   selectedLocationIndex.value = -1
+  locationSuggestionsStyle.value = {}
 }
 
 function handleLocationKeydown(event: KeyboardEvent) {
@@ -524,6 +625,7 @@ function handleLocationKeydown(event: KeyboardEvent) {
   } else if (event.key === 'Escape') {
     showLocationSuggestions.value = false
     selectedLocationIndex.value = -1
+    locationSuggestionsStyle.value = {}
   }
 }
 
@@ -533,6 +635,49 @@ function goToProductsManage() {
 
 function goToLocations() {
   router.push('/merchants')
+}
+
+// 处理点击外部，隐藏建议列表
+function handleOutsideClick(event: MouseEvent) {
+  const target = event.target as Element
+
+  // 检查是否点击在商品建议列表内
+  const inProductSuggestions = target.closest('.product-suggestions')
+
+  // 检查是否点击在商家建议列表内
+  const inLocationSuggestions = target.closest('.location-suggestions')
+
+  // 检查是否点击在输入框内
+  const inProductInput = productInputRef.value && (target === productInputRef.value || productInputRef.value.contains(target))
+  const inLocationInput = locationInputRef.value && (target === locationInputRef.value || locationInputRef.value.contains(target))
+
+  // 如果点击在建议列表或输入框内，不处理
+  if (inProductSuggestions || inLocationSuggestions || inProductInput || inLocationInput) {
+    return
+  }
+
+  // 点击其他地方，隐藏所有建议列表
+  showProductSuggestions.value = false
+  showLocationSuggestions.value = false
+  selectedIndex.value = -1
+  selectedLocationIndex.value = -1
+  productSuggestionsStyle.value = {}
+  locationSuggestionsStyle.value = {}
+}
+
+// 更新建议列表位置
+function updateSuggestionsPosition(
+  inputRef: HTMLInputElement | null,
+  styleRef: { value: Record<string, string> }
+) {
+  if (!inputRef) return
+
+  const rect = inputRef.getBoundingClientRect()
+  styleRef.value = {
+    top: `${rect.bottom + 4}px`,
+    left: `${rect.left}px`,
+    width: `${rect.width}px`
+  }
 }
 </script>
 
@@ -744,7 +889,7 @@ function goToLocations() {
   font-weight: 500;
 }
 
-.form-group input {
+.form-group input:not([type="checkbox"]) {
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1px solid #ddd;
@@ -763,9 +908,49 @@ function goToLocations() {
   box-sizing: border-box;
 }
 
-.form-group input:focus {
+.form-group input:not([type="checkbox"]):focus {
   outline: none;
   border-color: #42b883;
+}
+
+/* 复选框样式 */
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.checkbox-group label.checkbox-label {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #333;
+  font-weight: 500;
+  user-select: none;
+  width: 100%;
+}
+
+.checkbox-input {
+  height: 1.125rem;
+  margin-right: 0.5rem;
+  cursor: pointer;
+  accent-color: #42b883;
+}
+
+.checkbox-label:hover .checkbox-input {
+  border-color: #36996d;
+}
+
+/* 日期时间选择器样式 */
+.datetime-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  box-sizing: border-box;
 }
 
 .autocomplete-container {
@@ -773,10 +958,7 @@ function goToLocations() {
 }
 
 .suggestions-list {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
+  position: fixed; /* 改用 fixed 定位，避免在模态框内占据空间 */
   background: white;
   border: 1px solid #ddd;
   border-top: none;
@@ -787,7 +969,7 @@ function goToLocations() {
   list-style: none;
   margin: 0;
   padding: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .suggestions-list li {

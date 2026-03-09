@@ -50,8 +50,8 @@ def init_default_data(db: Session):
     # 添加常用单位（含中文单位）
     common_units = [
         # 质量单位
-        {"name": "斤", "abbreviation": "jin", "unit_type": "mass", "si_factor": 0.5, "is_common": True},
-        {"name": "两", "abbreviation": "liang", "unit_type": "mass", "si_factor": 0.05, "is_common": True},
+        {"name": "斤", "abbreviation": "斤", "unit_type": "mass", "si_factor": 0.5, "is_common": True},
+        {"name": "两", "abbreviation": "两", "unit_type": "mass", "si_factor": 0.05, "is_common": True},
         {"name": "英磅", "abbreviation": "lb", "unit_type": "mass", "si_factor": 0.453592, "is_common": True},
         {"name": "盎司", "abbreviation": "oz", "unit_type": "mass", "si_factor": 0.0283495, "is_common": True},
 
@@ -84,12 +84,12 @@ def init_default_data(db: Session):
         # 质量转换
         {"from_unit": "kg", "to_unit": "g", "factor": 1000.0},
         {"from_unit": "g", "to_unit": "kg", "factor": 0.001},
-        {"from_unit": "jin", "to_unit": "g", "factor": 500.0},
-        {"from_unit": "g", "to_unit": "jin", "factor": 0.002},
-        {"from_unit": "jin", "to_unit": "kg", "factor": 0.5},
-        {"from_unit": "kg", "to_unit": "jin", "factor": 2.0},
-        {"from_unit": "liang", "to_unit": "g", "factor": 50.0},
-        {"from_unit": "g", "to_unit": "liang", "factor": 0.02},
+        {"from_unit": "斤", "to_unit": "g", "factor": 500.0},
+        {"from_unit": "g", "to_unit": "斤", "factor": 0.002},
+        {"from_unit": "斤", "to_unit": "kg", "factor": 0.5},
+        {"from_unit": "kg", "to_unit": "斤", "factor": 2.0},
+        {"from_unit": "两", "to_unit": "g", "factor": 50.0},
+        {"from_unit": "g", "to_unit": "两", "factor": 0.02},
         {"from_unit": "lb", "to_unit": "kg", "factor": 0.453592},
         {"from_unit": "kg", "to_unit": "lb", "factor": 2.20462},
         {"from_unit": "oz", "to_unit": "g", "factor": 28.3495},
