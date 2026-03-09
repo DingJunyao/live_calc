@@ -22,12 +22,13 @@ async def generate_expense_report(
 
     current_date = start_date
     while current_date <= end_date:
-        # 商品支出
+        # 商品支出（只计算购买记录，不计算单纯的价格记录）
         if category in ["all", "food"]:
             food_total = db.query(
                 func.sum(ProductRecord.price).label('total')
             ).filter(
                 ProductRecord.user_id == user_id,
+                ProductRecord.record_type == "purchase",  # 这个SB过滤条件确保只计算购买记录
                 func.date(ProductRecord.recorded_at) == current_date
             ).first()
             food_amount = food_total.total if food_total.total else Decimal("0.00")
