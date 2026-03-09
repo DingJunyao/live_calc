@@ -51,6 +51,10 @@ class RecipeResponse(BaseModel):
     result_ingredient_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime]
+    # 添加成本相关字段，用于前端显示
+    estimated_cost: Optional[Decimal] = None
+    calories: Optional[int] = None
+    protein: Optional[Decimal] = None
 
     class Config:
         from_attributes = True

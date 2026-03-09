@@ -9,6 +9,7 @@ from app.models.product_entity import Product
 from app.models.nutrition import Ingredient
 from app.schemas.product import (
     ProductRecordCreate,
+    ProductRecordUpdate,
     ProductRecordResponse,
     ProductHistoryResponse
 )
@@ -256,6 +257,117 @@ async def get_product_record(
         recorded_at=record.recorded_at,
         notes=record.notes
     )
+
+
+@router.put("/{record_id}", response_model=ProductRecordResponse)
+async def update_product_record(
+    record_id: int,
+    record: ProductRecordUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """更新价格记录"""
+    try:
+        # 查找记录
+        db_record = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit),
+            joinedload(ProductRecord.standard_unit)
+        ).filter(
+            ProductRecord.id == record_id,
+            ProductRecord.user_id == current_user.id
+        ).first()
+
+        if not db_record:
+            raise HTTPException(status_code=404, detail="价格记录不存在")
+
+        # 更新单位（如果需要）
+        if record.original_unit:
+            matcher = UnitMatcher(db)
+            original_unit_obj = matcher.match_or_create_unit(record.original_unit)
+        else:
+            original_unit_obj = db_record.original_unit
+
+        # 单位转换
+        if record.original_quantity and record.original_unit:
+            standard_quantity, standard_unit_str = convert_to_standard(
+                record.original_quantity,
+                record.original_unit
+            )
+            standard_unit_obj = matcher.match_or_create_unit(standard_unit_str)
+        else:
+            standard_quantity = db_record.standard_quantity
+            standard_unit_obj = db_record.standard_unit
+
+        # 更新字段
+        update_data = record.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            if key not in ['original_unit', 'original_quantity']:  # 单位需要特殊处理
+                setattr(db_record, key, value)
+
+        # 更新单位相关字段
+        if record.original_unit:
+            db_record.original_unit_id = original_unit_obj.id if original_unit_obj else None
+        if standard_unit_obj:
+            db_record.standard_quantity = standard_quantity
+            db_record.standard_unit_id = standard_unit_obj.id if standard_unit_obj else None
+
+        db.commit()
+        db.refresh(db_record)
+
+        # 手动构造响应对象，将 Unit 对象转换为字符串
+        return ProductRecordResponse(
+            id=db_record.id,
+            product_id=db_record.product_id,
+            product_name=db_record.product_name,
+            merchant_id=db_record.merchant_id,
+            price=db_record.price,
+            currency=db_record.currency,
+            original_quantity=db_record.original_quantity,
+            original_unit=db_record.original_unit.abbreviation if db_record.original_unit else "",
+            standard_quantity=db_record.standard_quantity,
+            standard_unit=db_record.standard_unit.abbreviation if db_record.standard_unit else "",
+            record_type=db_record.record_type,
+            exchange_rate=db_record.exchange_rate,
+            recorded_at=db_record.recorded_at,
+            notes=db_record.notes
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"更新记录失败: {str(e)}"
+        )
+
+
+@router.delete("/{record_id}")
+async def delete_product_record(
+    record_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """删除价格记录"""
+    try:
+        db_record = db.query(ProductRecord).filter(
+            ProductRecord.id == record_id,
+            ProductRecord.user_id == current_user.id
+        ).first()
+
+        if not db_record:
+            raise HTTPException(status_code=404, detail="价格记录不存在")
+
+        db.delete(db_record)
+        db.commit()
+        return {"message": "价格记录删除成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除记录失败: {str(e)}"
+        )
 
 
 @router.get("/history/{product_name}", response_model=ProductHistoryResponse)

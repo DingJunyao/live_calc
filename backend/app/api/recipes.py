@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session, load_only
 from sqlalchemy import or_, and_
 from typing import List, Optional
+from decimal import Decimal
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.recipe import Recipe, RecipeIngredient
@@ -87,6 +88,7 @@ async def get_recipes(
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     tag: Optional[str] = Query(None, description="标签过滤"),
     search: Optional[str] = Query(None, alias="q", description="搜索菜谱名称"),
+    include_cost: bool = Query(True, description="是否包含成本和营养信息"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -126,6 +128,31 @@ async def get_recipes(
             tips_list = recipe.tips if isinstance(recipe.tips, list) else []
             images_list = recipe.images if isinstance(recipe.images, list) else []
 
+            # 如果需要，计算成本和营养信息
+            estimated_cost = None
+            calories = None
+            protein = None
+
+            if include_cost:
+                try:
+                    # 计算菜谱成本
+                    cost_result = await calculate_recipe_cost(recipe.id, current_user.id, db=db)
+                    if cost_result and 'total_cost' in cost_result:
+                        estimated_cost = cost_result['total_cost']
+                except Exception as e:
+                    # 成本计算失败不影响列表返回
+                    pass
+
+                try:
+                    # 计算菜谱营养信息
+                    nutrition_result = await calculate_recipe_nutrition(recipe.id, db=db)
+                    if nutrition_result:
+                        calories = nutrition_result.get('total_calories')
+                        protein = nutrition_result.get('total_protein')
+                except Exception as e:
+                    # 营养计算失败不影响列表返回
+                    pass
+
             items.append(RecipeResponse(
                 id=recipe.id,
                 name=recipe.name,
@@ -140,7 +167,10 @@ async def get_recipes(
                 images=images_list,
                 result_ingredient_id=recipe.result_ingredient_id,
                 created_at=recipe.created_at,
-                updated_at=recipe.updated_at
+                updated_at=recipe.updated_at,
+                estimated_cost=estimated_cost,
+                calories=int(calories) if calories is not None else None,
+                protein=protein
             ))
 
         return PaginatedResponse.create(
