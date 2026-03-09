@@ -62,7 +62,17 @@
     </div>
     <div v-else class="product-grid">
       <div v-for="product in products" :key="product.id" class="product-card">
-        <h3>{{ product.product_name }}</h3>
+        <div class="product-header">
+          <h3>{{ product.product_name }}</h3>
+          <div class="product-actions">
+            <button @click="editProduct(product)" class="btn-edit" title="编辑">
+              <i class="mdi mdi-pencil"></i>
+            </button>
+            <button @click="deleteProduct(product)" class="btn-delete" title="删除">
+              <i class="mdi mdi-delete"></i>
+            </button>
+          </div>
+        </div>
         <div class="product-info">
           <p>价格: ¥{{ product.price }}</p>
           <p>数量: {{ product.original_quantity }} {{ product.original_unit }}</p>
@@ -81,10 +91,10 @@
       @change-page-size="handlePageSizeChange"
     />
 
-    <!-- 添加价格记录模态框 -->
+    <!-- 添加/编辑价格记录模态框 -->
     <div v-if="showAddModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
-        <h2>添加价格记录</h2>
+        <h2>{{ editingProduct ? '编辑价格记录' : '添加价格记录' }}</h2>
         <form @submit.prevent="addProduct">
           <div class="form-group">
             <label for="productName">商品:</label>
@@ -181,7 +191,7 @@
           </div>
           <div class="form-actions">
             <button type="button" @click="closeModal" class="btn-secondary">取消</button>
-            <button type="submit" class="btn-primary">添加</button>
+            <button type="submit" class="btn-primary">{{ editingProduct ? '更新' : '添加' }}</button>
           </div>
         </form>
       </div>
@@ -227,6 +237,7 @@ const allProducts = ref<ProductSuggestion[]>([])
 const allMerchants = ref<Merchant[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
+const editingProduct = ref<PriceRecord | null>(null)
 const searchTerm = ref('')
 const selectedProduct = ref('')
 const selectedMerchant = ref('')
@@ -374,11 +385,20 @@ async function loadProducts() {
 
 async function loadAllProducts() {
   try {
-    const response = await productAPI.list({ limit: 200 })
+    const response = await productAPI.list({ limit: 10000 })
+    console.log('商品API响应:', response) // 调试SB问题
     // 这个SB API返回的是分页格式，需要从items里取数据
-    allProducts.value = (response as any).items || []
+    const items = (response as any).items || (Array.isArray(response) ? response : [])
+    // 确保数据格式正确
+    allProducts.value = items.map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      brand: item.brand || ''
+    }))
+    console.log('处理后的商品列表:', allProducts.value) // 调试SB问题
   } catch (error) {
     console.error('Failed to load products:', error)
+    allProducts.value = []
   }
 }
 
@@ -415,6 +435,7 @@ function openAddModal() {
     return;
   }
 
+  editingProduct.value = null  // 清除编辑状态
   // 初始化表单并显示模态框，使用会话记忆填充上次的选择
   const now = new Date()
   // 格式化为 datetime-local 需要的格式: YYYY-MM-DDTHH:mm
@@ -430,6 +451,31 @@ function openAddModal() {
     merchant_name: lastMerchantName.value,  // 使用记忆的商家名称
     is_purchase: lastIsPurchase.value,  // 使用记忆的是否购买
     recorded_at: localISOTime  // 默认为当前时间
+  }
+  showAddModal.value = true
+}
+
+function editProduct(product: PriceRecord) {
+  editingProduct.value = product  // 设置编辑状态
+
+  // 初始化表单数据为当前记录的数据
+  const recordedDate = new Date(product.recorded_at)
+  const localISOTime = new Date(recordedDate.getTime() - recordedDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+
+  // 查找商品和商家信息
+  const matchedProduct = allProducts.value.find(p => p.id === product.product_id)
+  const matchedMerchant = allMerchants.value.find(m => m.id === product.merchant_id)
+
+  newProduct.value = {
+    product_id: product.product_id,
+    product_name: matchedProduct?.name || product.product_name,
+    price: Number(product.price),
+    quantity: Number(product.original_quantity),
+    unit: product.original_unit,
+    merchant_id: product.merchant_id || 0,
+    merchant_name: matchedMerchant?.name || '',
+    is_purchase: product.record_type === 'purchase',  // 根据record_type设置
+    recorded_at: localISOTime
   }
   showAddModal.value = true
 }
@@ -493,8 +539,7 @@ async function addProduct() {
       return
     }
 
-    // 提交价格记录，根据is_purchase设置record_type
-    await api.post('/products/', {
+    const requestData = {
       product_id: productId,
       price: newProduct.value.price,
       original_quantity: newProduct.value.quantity,
@@ -502,7 +547,17 @@ async function addProduct() {
       merchant_id: merchantId || undefined,
       record_type: newProduct.value.is_purchase ? 'purchase' : 'price',  // 这个SB字段控制是否计入支出
       recorded_at: newProduct.value.recorded_at || undefined  // 发送自定义时间
-    })
+    }
+
+    if (editingProduct.value) {
+      // 编辑模式
+      await api.put(`/products/${editingProduct.value.id}`, requestData)
+      alert('价格记录更新成功')
+    } else {
+      // 添加模式
+      await api.post('/products/', requestData)
+      alert('价格记录添加成功')
+    }
 
     // 保存当前选择到会话记忆
     lastIsPurchase.value = newProduct.value.is_purchase
@@ -515,10 +570,22 @@ async function addProduct() {
 
     closeModal()
     await loadProducts()
-    alert('价格记录添加成功')
   } catch (error) {
-    console.error('Failed to add product:', error)
-    alert('添加价格记录失败，请重试')
+    console.error('Failed to save product:', error)
+    alert(error?.response?.data?.detail || '保存价格记录失败，请重试')
+  }
+}
+
+async function deleteProduct(product: PriceRecord) {
+  if (confirm(`确定要删除这条价格记录吗？\n商品: ${product.product_name}\n价格: ¥${product.price}`)) {
+    try {
+      await api.delete(`/products/${product.id}`)
+      alert('价格记录删除成功')
+      await loadProducts()
+    } catch (error: any) {
+      console.error('Failed to delete product:', error)
+      alert(error?.response?.data?.detail || '删除价格记录失败，请重试')
+    }
   }
 }
 
@@ -832,11 +899,54 @@ function updateSuggestionsPosition(
   transform: translateY(-2px);
 }
 
-.product-card h3 {
-  margin-top: 0;
+.product-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 1rem;
+}
+
+.product-header h3 {
+  margin-top: 0;
+  margin-bottom: 0;
   font-size: 1.25rem;
   color: #333;
+  flex-grow: 1;
+}
+
+.product-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.product-actions button {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.btn-edit {
+  background: #667eea;
+  color: white;
+}
+
+.btn-edit:hover {
+  background: #5a6fd8;
+}
+
+.btn-delete {
+  background: #de350b;
+  color: white;
+}
+
+.btn-delete:hover {
+  background: #bc2e0b;
 }
 
 .product-info p {
@@ -1072,6 +1182,16 @@ function updateSuggestionsPosition(
     gap: 1rem;
   }
 
+  .product-header h3 {
+    font-size: 1.125rem;
+  }
+
+  .product-actions button {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.75rem;
+  }
+
   .modal-content {
     padding: 1.5rem;
   }
@@ -1107,6 +1227,20 @@ function updateSuggestionsPosition(
 @media (max-width: 480px) {
   .product-grid {
     grid-template-columns: 1fr;
+  }
+
+  .product-header h3 {
+    font-size: 1rem;
+  }
+
+  .product-actions {
+    gap: 0.375rem;
+  }
+
+  .product-actions button {
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 0.6875rem;
   }
 
   .modal-content {

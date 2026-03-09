@@ -25,7 +25,17 @@
 
     <div v-else class="merchant-list">
       <div v-for="merchant in merchants" :key="merchant.id" class="merchant-card">
-        <h3>{{ merchant.name }}</h3>
+        <div class="merchant-header">
+          <h3>{{ merchant.name }}</h3>
+          <div class="merchant-actions">
+            <button @click="editMerchant(merchant)" class="btn-edit" title="编辑">
+              <i class="mdi mdi-pencil"></i>
+            </button>
+            <button @click="deleteMerchant(merchant)" class="btn-delete" title="删除">
+              <i class="mdi mdi-delete"></i>
+            </button>
+          </div>
+        </div>
         <div class="merchant-info">
           <p v-if="merchant.address">地址: {{ merchant.address }}</p>
           <p>纬度: {{ merchant.latitude }}</p>
@@ -44,10 +54,10 @@
       @change-page-size="handlePageSizeChange"
     />
 
-    <!-- 添加商家模态框 -->
-    <div v-if="showAddModal" class="modal-overlay" @click="showAddModal = false">
+    <!-- 添加/编辑商家模态框 -->
+    <div v-if="showAddModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
-        <h2>添加商家</h2>
+        <h2>{{ editingMerchant ? '编辑商家' : '添加商家' }}</h2>
         <form @submit.prevent="addMerchant">
           <div class="form-group">
             <label for="merchantName">商家名称:</label>
@@ -66,8 +76,8 @@
             <input v-model.number="newMerchant.longitude" type="number" id="longitude" step="any" required />
           </div>
           <div class="form-actions">
-            <button type="button" @click="showAddModal = false" class="btn-secondary">取消</button>
-            <button type="submit" class="btn-primary">添加</button>
+            <button type="button" @click="closeModal" class="btn-secondary">取消</button>
+            <button type="submit" class="btn-primary">{{ editingMerchant ? '更新' : '添加' }}</button>
           </div>
         </form>
       </div>
@@ -84,6 +94,7 @@ import Pagination from '@/components/Pagination.vue'
 const merchants = ref<any[]>([])
 const loading = ref(false)
 const showAddModal = ref(false)
+const editingMerchant = ref<any>(null)
 const searchTerm = ref('')
 const newMerchant = ref({
   name: '',
@@ -136,22 +147,63 @@ function handlePageSizeChange(size: number) {
   loadMerchants()
 }
 
+// 模态框操作
+function openAddModal() {
+  editingMerchant.value = null
+  newMerchant.value = {
+    name: '',
+    address: '',
+    latitude: 0,
+    longitude: 0
+  }
+  showAddModal.value = true
+}
+
+function editMerchant(merchant: any) {
+  editingMerchant.value = merchant
+  newMerchant.value = {
+    name: merchant.name,
+    address: merchant.address || '',
+    latitude: merchant.latitude || 0,
+    longitude: merchant.longitude || 0
+  }
+  showAddModal.value = true
+}
+
+function closeModal() {
+  showAddModal.value = false
+  editingMerchant.value = null
+}
+
 async function addMerchant() {
   try {
-    await api.post('/merchants', newMerchant.value)
-    showAddModal.value = false
-    // 重置表单
-    newMerchant.value = {
-      name: '',
-      address: '',
-      latitude: 0,
-      longitude: 0
+    if (editingMerchant.value) {
+      // 编辑模式
+      await api.put(`/merchants/${editingMerchant.value.id}`, newMerchant.value)
+      alert('商家更新成功')
+    } else {
+      // 添加模式
+      await api.post('/merchants', newMerchant.value)
+      alert('商家添加成功')
     }
-    // 重新加载数据
+    closeModal()
     await loadMerchants()
-  } catch (error) {
-    console.error('Failed to add merchant:', error)
-    alert('添加商家失败，请重试')
+  } catch (error: any) {
+    console.error('Failed to save merchant:', error)
+    alert(error?.response?.data?.detail || '保存商家失败，请重试')
+  }
+}
+
+async function deleteMerchant(merchant: any) {
+  if (confirm(`确定要删除商家 "${merchant.name}" 吗？`)) {
+    try {
+      await api.delete(`/merchants/${merchant.id}`)
+      alert('商家删除成功')
+      await loadMerchants()
+    } catch (error: any) {
+      console.error('Failed to delete merchant:', error)
+      alert(error?.response?.data?.detail || '删除商家失败，请重试')
+    }
   }
 }
 
@@ -284,10 +336,60 @@ function formatDate(dateString: string) {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.merchant-card h3 {
+.merchant-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.merchant-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.merchant-header h3 {
   font-size: 1.125rem;
   color: #333;
-  margin-bottom: 1rem;
+  margin: 0;
+  flex-grow: 1;
+}
+
+.merchant-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.merchant-actions button {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.btn-edit {
+  background: #667eea;
+  color: white;
+}
+
+.btn-edit:hover {
+  background: #5a6fd8;
+}
+
+.btn-delete {
+  background: #de350b;
+  color: white;
+}
+
+.btn-delete:hover {
+  background: #bc2e0b;
 }
 
 .merchant-info p {
@@ -373,8 +475,14 @@ function formatDate(dateString: string) {
     padding: 1rem;
   }
 
-  .merchant-card h3 {
+  .merchant-header h3 {
     font-size: 1rem;
+  }
+
+  .merchant-actions button {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.75rem;
   }
 
   .merchant-info p {
@@ -433,8 +541,18 @@ function formatDate(dateString: string) {
     padding: 0.75rem;
   }
 
-  .merchant-card h3 {
+  .merchant-header h3 {
     font-size: 0.9375rem;
+  }
+
+  .merchant-actions {
+    gap: 0.375rem;
+  }
+
+  .merchant-actions button {
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 0.6875rem;
   }
 
   .merchant-info p {

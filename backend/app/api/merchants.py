@@ -8,6 +8,7 @@ from app.core.security import get_current_user
 from app.models.merchant import Merchant, FavoriteMerchant
 from app.schemas.merchant import (
     MerchantCreate,
+    MerchantUpdate,
     MerchantResponse,
     FavoriteMerchantCreate,
     FavoriteMerchantResponse,
@@ -50,6 +51,115 @@ async def create_merchant(
         raise HTTPException(
             status_code=500,
             detail="创建商家时发生未知错误"
+        )
+
+
+@router.get("/{merchant_id}", response_model=MerchantResponse)
+async def get_merchant(
+    merchant_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取单个商家详情"""
+    try:
+        merchant = db.query(Merchant).filter(
+            Merchant.id == merchant_id,
+            Merchant.user_id == current_user.id
+        ).first()
+        if not merchant:
+            raise HTTPException(status_code=404, detail="商家不存在")
+        return merchant
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="获取商家详情时发生错误"
+        )
+
+
+@router.put("/{merchant_id}", response_model=MerchantResponse)
+async def update_merchant(
+    merchant_id: int,
+    merchant: MerchantUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """更新商家信息"""
+    try:
+        db_merchant = db.query(Merchant).filter(
+            Merchant.id == merchant_id,
+            Merchant.user_id == current_user.id
+        ).first()
+        if not db_merchant:
+            raise HTTPException(status_code=404, detail="商家不存在")
+
+        # 更新字段
+        update_data = merchant.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_merchant, key, value)
+
+        db.commit()
+        db.refresh(db_merchant)
+        return db_merchant
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="更新商家时发生错误，请稍后重试"
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="更新商家时发生未知错误"
+        )
+
+
+@router.delete("/{merchant_id}")
+async def delete_merchant(
+    merchant_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """删除商家"""
+    try:
+        db_merchant = db.query(Merchant).filter(
+            Merchant.id == merchant_id,
+            Merchant.user_id == current_user.id
+        ).first()
+        if not db_merchant:
+            raise HTTPException(status_code=404, detail="商家不存在")
+
+        # 检查是否有关联的商品记录
+        from app.models.product import ProductRecord
+        record_count = db.query(ProductRecord).filter(
+            ProductRecord.merchant_id == merchant_id
+        ).count()
+        if record_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"该商家还有 {record_count} 条价格记录，无法删除"
+            )
+
+        db.delete(db_merchant)
+        db.commit()
+        return {"message": "商家删除成功"}
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="删除商家时发生错误，请稍后重试"
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="删除商家时发生未知错误"
         )
 
 

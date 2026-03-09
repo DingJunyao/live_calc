@@ -15,6 +15,7 @@
           type="text"
           placeholder="搜索菜谱..."
           class="search-input"
+          @keyup.enter="loadRecipes"
         />
       </div>
       <button @click="loadRecipes" class="btn-search" title="搜索">
@@ -136,7 +137,8 @@ async function loadRecipes() {
     const skip = (currentPage.value - 1) * pageSize.value
     let url = `/recipes?skip=${skip}&limit=${pageSize.value}`
     if (searchTerm.value) {
-      url += `&search=${encodeURIComponent(searchTerm.value)}`
+      // 这个SB后端API的搜索参数别名是q，不是search
+      url += `&q=${encodeURIComponent(searchTerm.value)}`
     }
     const response = await api.get<any>(url)
 

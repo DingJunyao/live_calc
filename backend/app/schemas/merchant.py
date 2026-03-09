@@ -10,6 +10,13 @@ class MerchantCreate(BaseModel):
     longitude: Optional[float] = Field(None, ge=-180, le=180)
 
 
+class MerchantUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=200)
+    address: Optional[str] = Field(None, max_length=500)
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+
+
 class MerchantResponse(BaseModel):
     id: int
     name: str
