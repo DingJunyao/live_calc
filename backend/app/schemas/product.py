@@ -17,6 +17,17 @@ class ProductRecordCreate(BaseModel):
     recorded_at: Optional[datetime] = None  # 这个SB字段用于自定义记录时间
 
 
+class ProductRecordUpdate(BaseModel):
+    merchant_id: Optional[int] = None
+    price: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    currency: Optional[str] = "CNY"
+    original_quantity: Optional[Decimal] = Field(None, gt=0)
+    original_unit: Optional[str] = None
+    record_type: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=500)
+    recorded_at: Optional[datetime] = None
+
+
 class ProductRecordResponse(BaseModel):
     id: int
     product_id: int

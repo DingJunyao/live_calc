@@ -58,7 +58,7 @@
         <div class="info-grid">
           <div class="info-item">
             <span class="label">预计成本:</span>
-            <span class="value" v-if="costData">¥{{ costData.total_cost }}</span>
+            <span class="value" v-if="recipe.costData">¥{{ recipe.costData.total_cost }}</span>
             <span class="value" v-else>¥{{ recipe.estimated_cost || 0 }}</span>
           </div>
           <div class="info-item">
@@ -205,9 +205,11 @@ async function loadRecipe() {
       try {
         const costData = await api.get(`/recipes/${recipeId}/cost`)
         recipe.value.costData = costData
+        console.log('菜谱成本数据:', costData) // 调试SB问题
       } catch (error) {
         console.error('Failed to load cost data:', error)
         recipe.value.costData = null
+        // 不设置默认值，让模板显示备用值
       }
       recipe.value.nutrition = nutritionData
     } catch (e) {
