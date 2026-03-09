@@ -134,7 +134,8 @@ async def create_product_record(
             standard_unit_id=standard_unit_obj.id if standard_unit_obj else None,
             record_type=record.record_type,
             exchange_rate=exchange_rate,
-            notes=record.notes
+            notes=record.notes,
+            recorded_at=record.recorded_at  # 使用自定义记录时间，如果为空则使用默认值
         )
         db.add(db_record)
         db.commit()

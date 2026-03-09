@@ -69,10 +69,15 @@
       <div v-else class="record-list">
         <div v-for="record in recentRecords" :key="record.id" class="record-item">
           <div class="record-info">
-            <span class="record-name">{{ record.product_name }}</span>
+            <span class="record-name">{{ record.product_name || '未知商品' }}</span>
             <span class="record-date">{{ formatDate(record.recorded_at) }}</span>
           </div>
-          <span class="record-price">¥{{ record.price }}</span>
+          <div class="record-price-container">
+            <div class="total-price">¥{{ record.price || '0.00' }}</div>
+            <div class="unit-price">
+              ¥{{ calculateUnitPrice(record) }} {{ record.original_quantity || '0' }} {{ record.original_unit || '' }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -128,8 +133,9 @@ async function loadDashboardData() {
 
     // 获取记录数量
     try {
-      const productsResponse = await api.get<any[]>('/products')
-      recordCount.value = productsResponse.length || 0
+      const productsResponse = await api.get<any>('/products')
+      // 处理分页格式，从total里取总数
+      recordCount.value = productsResponse?.total || productsResponse?.items?.length || 0
     } catch (error) {
       console.error('Failed to load record count:', error)
       recordCount.value = 0
@@ -146,8 +152,9 @@ async function loadDashboardData() {
 
     // 获取最近记录
     try {
-      const recentData = await api.get<any[]>('/products?limit=10')
-      recentRecords.value = recentData || []
+      const recentData = await api.get<any>('/products?limit=10')
+      // 处理分页格式，从items里取数据
+      recentRecords.value = recentData?.items || recentData || []
     } catch (error) {
       console.error('Failed to load recent records:', error)
       recentRecords.value = []
@@ -158,8 +165,26 @@ async function loadDashboardData() {
 }
 
 function formatDate(dateString: string) {
+  if (!dateString) return '未知时间'
   const date = new Date(dateString)
-  return date.toLocaleDateString('zh-CN')
+  // 检查日期是否有效
+  if (isNaN(date.getTime())) return '无效日期'
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+}
+
+// 计算单价（总价除以数量）
+function calculateUnitPrice(record: any) {
+  if (!record.price || !record.original_quantity || record.original_quantity === 0) {
+    return '0.00'
+  }
+  const price = Number(record.price) || 0
+  const quantity = Number(record.original_quantity) || 1
+  const unitPrice = price / quantity
+  return unitPrice.toFixed(2)
 }
 </script>
 
@@ -302,6 +327,24 @@ function formatDate(dateString: string) {
 .record-price {
   font-weight: bold;
   color: #42b883;
+}
+
+.record-price-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.total-price {
+  font-weight: bold;
+  color: #42b883;
+  font-size: 1.125rem;
+}
+
+.unit-price {
+  font-size: 0.875rem;
+  color: #666;
+  margin-top: 0.25rem;
 }
 
 /* 移动端优化 */

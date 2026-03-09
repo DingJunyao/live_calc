@@ -14,6 +14,7 @@ class ProductRecordCreate(BaseModel):
     original_unit: str
     record_type: str = "purchase"
     notes: Optional[str] = Field(None, max_length=500)
+    recorded_at: Optional[datetime] = None  # 这个SB字段用于自定义记录时间
 
 
 class ProductRecordResponse(BaseModel):
