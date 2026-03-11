@@ -103,3 +103,6 @@ class RecipeNutritionResponse(BaseModel):
     total_fat: Optional[Decimal]
     total_carbs: Optional[Decimal]
     per_serving: dict
+    # 添加完整的营养数据结构
+    per_serving_nutrition: Optional[dict] = None  # core_nutrients, all_nutrients, nutrient_details
+    total_nutrition: Optional[dict] = None  # 核心营养素的总量

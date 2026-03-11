@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, BackgroundTasks
 from sqlalchemy.orm import Session, load_only
-from typing import List
+from typing import List, Optional
 import json
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -11,8 +11,68 @@ from app.schemas.nutrition import (
     NutritionMatchResponse,
     NutritionCorrectRequest
 )
+from pydantic import BaseModel, Field
 
 router = APIRouter()
+
+
+# ==================== 新增数据模型 ====================
+
+class ImportRequest(BaseModel):
+    """营养数据导入请求"""
+    mode: str = Field(default="incremental", description="导入模式: incremental/full/force")
+    force_update: bool = Field(default=False, description="是否强制更新已有数据")
+
+
+class ImportResponse(BaseModel):
+    """营养数据导入响应"""
+    success: bool
+    message: str
+    total: int = 0
+    imported: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    errors: List[str] = []
+    mode: str = "incremental"
+
+
+class NutritionRequest(BaseModel):
+    """营养计算请求"""
+    quantity: float = Field(default=100.0, gt=0, description="数量")
+    unit: str = Field(default="g", description="单位")
+
+
+class NutritionResponse(BaseModel):
+    """营养数据响应"""
+    ingredient_id: int
+    ingredient_name: Optional[str] = None
+    quantity: float
+    unit: str
+    base_quantity: float
+    nutrition: dict
+    source: Optional[str] = None
+    reference_amount: Optional[float] = None
+    reference_unit: Optional[str] = None
+    match_confidence: Optional[float] = None
+
+
+class RecipeNutritionResponse(BaseModel):
+    """菜谱营养响应"""
+    recipe_id: int
+    recipe_name: str
+    total_nutrition: dict
+    per_serving_nutrition: dict
+    servings: int
+    ingredient_details: List[dict]
+
+
+class NutrientStatisticsResponse(BaseModel):
+    """营养统计响应"""
+    total_ingredients: int
+    ingredients_with_nutrition: int
+    coverage_percentage: float
+    nutrient_coverage: dict
 
 
 @router.get("/ingredients", response_model=List[IngredientResponse])
@@ -238,3 +298,274 @@ async def correct_nutrition_mapping(
         return {"success": True, "message": "更正成功"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更正失败: {str(e)}")
+
+
+# ==================== 营养数据导入端点（新增） ====================
+
+@router.post("/import", response_model=ImportResponse)
+async def import_nutrition_data(
+    request: ImportRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    导入营养数据
+
+    从 HowToCook_json 仓库的 out/nutritions.json 导入 USDA 标准化营养数据
+
+    - **mode**: 导入模式
+      - `incremental`: 仅导入新食材的营养数据（默认）
+      - `full`: 导入所有食材的营养数据，更新已存在的
+      - `force`: 强制重新导入所有数据
+
+    - **force_update**: 是否强制更新已有数据
+    """
+    # 检查权限（仅管理员可以导入）
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="仅限管理员访问")
+
+    try:
+        from app.services.nutrition_import_service import NutritionImportService
+        service = NutritionImportService(db)
+        result = service.import_all(mode=request.mode, force_update=request.force_update)
+
+        return ImportResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+
+
+@router.post("/import-auto", response_model=ImportResponse)
+async def auto_import_nutrition_data(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    自动导入营养数据（智能模式）
+
+    自动检测并导入营养数据，首次使用时导入，后续仅更新新增食材
+    """
+    # 检查权限（仅管理员可以导入）
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="仅限管理员访问")
+
+    try:
+        from app.services.nutrition_import_service import check_and_import_nutrition
+        result = check_and_import_nutrition(db, mode="incremental", force_update=False)
+        return ImportResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+
+
+@router.get("/statistics", response_model=NutrientStatisticsResponse)
+async def get_nutrition_statistics(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取营养数据统计信息
+
+    返回营养数据的覆盖率和详细统计
+    """
+    try:
+        from app.services.nutrition_import_service import NutritionImportService
+        service = NutritionImportService(db)
+        stats = service.get_nutrient_statistics()
+        return NutrientStatisticsResponse(**stats)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取统计失败: {str(e)}")
+
+
+# ==================== 营养计算端点（新增） ====================
+
+@router.get("/ingredients/{ingredient_id}/nutrition", response_model=NutritionResponse)
+async def get_ingredient_nutrition(
+    ingredient_id: int,
+    quantity: float = Query(default=100.0, gt=0, description="数量"),
+    unit: str = Query(default="g", description="单位"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取指定食材的营养成分（支持自定义数量）
+
+    - **quantity**: 目标数量（默认 100g）
+    - **unit**: 目标单位（默认 g）
+    """
+    try:
+        from app.services.nutrition_calculator import NutritionCalculator
+        from app.models.nutrition_data import NutritionData
+        from app.models.nutrition import Ingredient
+
+        calculator = NutritionCalculator(db)
+        result = calculator.calculate_ingredient_nutrition(ingredient_id, quantity, unit)
+
+        if not result:
+            print(f"[营养查询] 食材 {ingredient_id} 营养数据不存在")
+            print(f"[营养查询] 调用参数: ingredient_id={ingredient_id}, quantity={quantity}, unit={unit}")
+            raise HTTPException(status_code=404, detail="食材营养数据不存在")
+
+        # 查询原料名称
+        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+        if ingredient:
+            result["ingredient_name"] = ingredient.name
+
+        # 查询营养数据源信息
+        nutrition_data = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == ingredient_id
+        ).first()
+
+        if nutrition_data:
+            result["source"] = nutrition_data.source
+            result["reference_amount"] = nutrition_data.reference_amount
+            result["reference_unit"] = nutrition_data.reference_unit
+            result["match_confidence"] = nutrition_data.match_confidence
+
+        print(f"[营养查询] 返回结果: {result}")
+        return NutritionResponse(**result)
+    except HTTPException as he:
+        print(f"[营养查询] HTTP 错误: {he.status_code} - {he.detail}")
+        print(f"[营养查询] 调用参数: ingredient_id={ingredient_id}, quantity={quantity}, unit={unit}")
+        raise
+    except Exception as e:
+        print(f"[营养查询] 异常: {type(e).__name__}: {str(e)}")
+        print(f"[营养查询] 调用参数: ingredient_id={ingredient_id}, quantity={quantity}, unit={unit}")
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
+@router.get("/ingredients/{ingredient_id}/nutrition/base")
+async def get_ingredient_nutrition_base(
+    ingredient_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取指定食材的基准营养数据（每100g）
+
+    返回原始的营养数据，不进行数量缩放
+    """
+    try:
+        from app.models.nutrition_data import NutritionData
+
+        nutrition = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == ingredient_id,
+            NutritionData.is_verified == True
+        ).first()
+
+        if not nutrition:
+            raise HTTPException(status_code=404, detail="食材营养数据不存在")
+
+        return {
+            "ingredient_id": ingredient_id,
+            "source": nutrition.source,
+            "usda_id": nutrition.usda_id,
+            "usda_name": nutrition.usda_name,
+            "nutrients": nutrition.nutrients,
+            "reference_amount": nutrition.reference_amount,
+            "reference_unit": nutrition.reference_unit,
+            "match_confidence": nutrition.match_confidence,
+            "is_verified": nutrition.is_verified
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
+@router.get("/recipes/{recipe_id}/nutrition", response_model=RecipeNutritionResponse)
+async def get_recipe_nutrition(
+    recipe_id: int,
+    servings: Optional[int] = Query(default=None, gt=0, description="份数"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    计算菜谱的营养成分
+
+    - **servings**: 份数（如为 None 则使用菜谱默认份数）
+
+    返回菜谱总营养和每份营养数据
+    """
+    try:
+        from app.services.nutrition_calculator import calculate_recipe_nutrition
+        result = await calculate_recipe_nutrition(recipe_id, db, servings)
+
+        if not result:
+            raise HTTPException(status_code=404, detail="菜谱不存在或营养数据不足")
+
+        return RecipeNutritionResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
+
+
+@router.get("/recipes/{recipe_id}/nutrition/summary")
+async def get_recipe_nutrition_summary(
+    recipe_id: int,
+    servings: Optional[int] = Query(default=None, gt=0, description="份数"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取菜谱营养摘要（简化版）
+
+    返回核心营养素的简要信息，用于列表展示
+    """
+    try:
+        from app.services.nutrition_calculator import calculate_recipe_nutrition
+        result = await calculate_recipe_nutrition(recipe_id, db, servings)
+
+        if not result:
+            raise HTTPException(status_code=404, detail="菜谱不存在或营养数据不足")
+
+        # 提取核心营养素用于摘要
+        core_nutrients = result.get("per_serving_nutrition", {}).get("core_nutrients", {})
+
+        return {
+            "recipe_id": recipe_id,
+            "servings": result.get("servings", 1),
+            "summary": {
+                "energy": core_nutrients.get("能量", {}).get("value", 0),
+                "protein": core_nutrients.get("蛋白质", {}).get("value", 0),
+                "fat": core_nutrients.get("脂肪", {}).get("value", 0),
+                "carbohydrate": core_nutrients.get("碳水化合物", {}).get("value", 0),
+            },
+            "nrp_summary": {
+                "energy": core_nutrients.get("能量", {}).get("nrp_pct", 0),
+                "protein": core_nutrients.get("蛋白质", {}).get("nrp_pct", 0),
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
+
+
+@router.get("/products/{product_id}/nutrition")
+async def get_product_nutrition(
+    product_id: int,
+    quantity: Optional[float] = Query(default=None, gt=0, description="数量"),
+    unit: Optional[str] = Query(default=None, description="单位"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取商品的营养成分
+
+    优先使用商品自定义营养数据，其次使用关联食材的 USDA 数据
+    """
+    try:
+        from app.services.nutrition_calculator import NutritionCalculator
+        calculator = NutritionCalculator(db)
+        result = calculator.calculate_product_nutrition(product_id, quantity, unit)
+
+        if not result:
+            raise HTTPException(status_code=404, detail="商品营养数据不存在")
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")

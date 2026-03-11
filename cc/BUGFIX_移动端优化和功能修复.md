@@ -225,6 +225,58 @@ if latest_record:
 - API响应更完善，提供更多有用信息
 - 前端数据处理更健壮，容错性更强
 
+### 6. 菜谱导入服务语法错误修复 ✅
+
+**问题描述：**
+`enhanced_recipe_import_service.py` 文件存在语法错误，导致无法编译。
+
+**根本原因：**
+1. 第73行重复赋值 `self.user_id` 两次
+2. 第509-510行重复参数 `servings` 出现两次
+
+**修复方案：**
+1. 删除第73行的重复赋值：
+   ```python
+   # 之前：重复赋值
+   self.user_id = user_id or 1  # 默认使用用户 ID 1
+   # ...
+   self.user_id = user_id or 1  # 在方法体内赋值
+
+   # 修复后：只赋值一次
+   self.user_id = user_id or 1  # 默认使用用户 ID 1
+   ```
+
+2. 删除第510行重复的 `servings` 参数，并添加 `images` 参数：
+   ```python
+   # 之前：重复参数
+   recipe = Recipe(
+       # ...
+       servings=recipe_data.get("servings", 1),
+       servings=recipe_data.get("servings", 1),  # 重复！
+       # ...
+   )
+
+   # 修复后：添加images参数
+   recipe = Recipe(
+       # ...
+       servings=recipe_data.get("servings", 1),
+       images=images
+   )
+   ```
+
+3. 简化 `main.py` 导入：
+   - 删除未使用的 `recipe_import_service` 导入
+   - 只使用 `enhanced_recipe_import_service`
+   - 添加向后兼容别名 `check_and_import_from_json_repo`
+
+**增强功能：**
+`enhanced_recipe_import_service.py` 提供以下增强功能：
+- **进度回调机制**：支持导入进度显示
+- **重试逻辑**：最多3次重试，递增延迟
+- **超时设置**：120秒超时（相比原来的30秒）
+- **流式下载**：分块下载并报告进度
+- **批量处理**：每50个原料、每20个菜谱报告一次进度
+
 ## 后续优化建议
 
 ### 性能优化

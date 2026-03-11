@@ -118,49 +118,217 @@
       </div>
 
       <!-- 营养成分 -->
-      <div class="info-card">
+      <div class="info-card" v-if="recipe.nutrition && recipe.nutrition.per_serving_nutrition && recipe.nutrition.per_serving_nutrition.core_nutrients">
         <h2>营养成分（每份）</h2>
         <div class="info-grid">
-          <div class="info-item">
-            <span class="label">能量:</span>
-            <span class="value">{{ recipe.calories || recipe.nutrition?.calories || 0 }} kcal</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">能量:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['能量']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['能量']?.unit || 'kJ' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['能量']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['能量'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">蛋白质:</span>
-            <span class="value">{{ recipe.protein || recipe.nutrition?.protein || 0 }} g</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">蛋白质:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['蛋白质']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['蛋白质']?.unit || 'g' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['蛋白质']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['蛋白质'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">脂肪:</span>
-            <span class="value">{{ recipe.fat || recipe.nutrition?.fat || 0 }} g</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">脂肪:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['脂肪']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['脂肪']?.unit || 'g' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['脂肪']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['脂肪'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">碳水化合物:</span>
-            <span class="value">{{ recipe.carbs || recipe.nutrition?.carbs || 0 }} g</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">碳水化合物:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['碳水化合物']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['碳水化合物']?.unit || 'g' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['碳水化合物']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['碳水化合物'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">钠:</span>
-            <span class="value">{{ nutritionDetails?.sodium || 0 }} mg</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">膳食纤维:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['膳食纤维']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['膳食纤维']?.unit || 'g' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['膳食纤维']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['膳食纤维'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">膳食纤维:</span>
-            <span class="value">{{ nutritionDetails?.fiber || 0 }} g</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">钙:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['钙']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['钙']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['钙']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['钙'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">维生素A:</span>
-            <span class="value">{{ nutritionDetails?.vitamin_a || 0 }} μg</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">铁:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['铁']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['铁']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['铁']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['铁'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">维生素C:</span>
-            <span class="value">{{ nutritionDetails?.vitamin_c || 0 }} mg</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">钠:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['钠']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['钠']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['钠']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['钠'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">钙:</span>
-            <span class="value">{{ nutritionDetails?.calcium || 0 }} mg</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">钾:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['钾']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['钾']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['钾']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['钾'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
-          <div class="info-item">
-            <span class="label">铁:</span>
-            <span class="value">{{ nutritionDetails?.iron || 0 }} mg</span>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素A:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素A']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素A']?.unit || 'μg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素A']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素A'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
           </div>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素C:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素C']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素C']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素C']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素C'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
+          </div>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素B1:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B1']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B1']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B1']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B1'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
+          </div>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素B2:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B2']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B2']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B2']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B2'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
+          </div>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素B12:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B12']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B12']?.unit || 'μg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B12']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素B12'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
+          </div>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素D:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素D']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素D']?.unit || 'μg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素D']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素D'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
+          </div>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素E:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素E']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素E']?.unit || 'mg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素E']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素E'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
+          </div>
+          <div class="info-item nutrition-item">
+            <div class="nutrient-info">
+              <span class="label">维生素K:</span>
+              <span class="value">{{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素K']?.value || 0 }} {{ recipe.nutrition.per_serving_nutrition.core_nutrients['维生素K']?.unit || 'μg' }}</span>
+            </div>
+            <NutritionProgressBar
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素K']?.nrp_pct"
+              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients['维生素K'].nrp_pct"
+              size="small"
+              :show-percentage="true"
+            />
+          </div>
+        </div>
+        <div class="nrp-legend">
+          <span class="legend-icon">📊</span>
+          <span class="legend-text">NRV = 营养素参考值百分比</span>
         </div>
       </div>
     </div>
@@ -172,6 +340,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
+import NutritionProgressBar from '@/components/NutritionProgressBar.vue'
 
 const route = useRoute()
 const recipe = ref<any>(null)
@@ -226,14 +395,17 @@ async function loadRecipe() {
 const nutritionDetails = computed(() => {
   if (!recipe.value) return null
   // 优先使用从 API 获取的营养数据
-  const nutrition = recipe.value.nutrition || recipe.value
+  const nutrition = recipe.value.nutrition || {}
+  // 从 per_serving_nutrition.core_nutrients 获取每份营养数据
+  const coreNutrients = nutrition.per_serving_nutrition?.core_nutrients || {}
+
   return {
-    fiber: nutrition.fiber,
-    vitamin_a: nutrition.vitamin_a,
-    vitamin_c: nutrition.vitamin_c,
-    calcium: nutrition.calcium,
-    iron: nutrition.iron,
-    sodium: nutrition.sodium
+    fiber: coreNutrients['膳食纤维']?.value || 0,
+    vitamin_a: coreNutrients['维生素A']?.value || 0,
+    vitamin_c: coreNutrients['维生素C']?.value || 0,
+    calcium: coreNutrients['钙']?.value || 0,
+    iron: coreNutrients['铁']?.value || 0,
+    sodium: coreNutrients['钠']?.value || 0
   }
 })
 
@@ -615,6 +787,34 @@ function openFullscreen() {
   color: #999;
   text-align: center;
   padding: 2rem;
+}
+
+.nutrition-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nutrient-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nrp-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: #f0f7ff;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #1976d2;
+}
+
+.legend-icon {
+  font-size: 1.25rem;
 }
 
 /* 移动端优化 */

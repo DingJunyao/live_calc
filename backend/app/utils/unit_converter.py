@@ -14,6 +14,7 @@ WEIGHT_CONVERSION = {
 # 容量单位转换（转换为毫升）
 VOLUME_CONVERSION = {
     "ml": (1, "ml"),
+    "mL": (1, "ml"),  # 添加大写支持
     "l": (1000, "ml"),
     "杯": (240, "ml"),
     "汤匙": (15, "ml"),
@@ -31,8 +32,9 @@ def convert_to_standard(quantity: Decimal, unit: str) -> Tuple[Decimal, str]:
         return Decimal(str(quantity)) * Decimal(str(factor)), standard_unit
 
     # 尝试容量单位
-    if unit_lower in VOLUME_CONVERSION:
-        factor, standard_unit = VOLUME_CONVERSION[unit_lower]
+    if unit_lower in VOLUME_CONVERSION or unit in VOLUME_CONVERSION:
+        # 支持大小写混合匹配
+        factor, standard_unit = VOLUME_CONVERSION.get(unit_lower) or VOLUME_CONVERSION.get(unit)
         return Decimal(str(quantity)) * Decimal(str(factor)), standard_unit
 
     # 其他单位不转换

@@ -249,11 +249,16 @@ class JsonRecipeImportService:
             if not os.path.exists(out_dir):
                 raise Exception("out 目录不存在")
 
-            # 找到所有菜谱 JSON 文件
+            # 找到所有菜谱 JSON 文件（排除营养数据和匹配文件）
             recipe_files = []
             for filename in os.listdir(out_dir):
                 file_path = os.path.join(out_dir, filename)
-                if filename.endswith(".json") and filename != "ingredients.json" and filename != "ingredients_raw.json":
+                if filename.endswith(".json") and filename not in [
+                    "ingredients.json",
+                    "ingredients_raw.json",
+                    "nutritions.json",
+                    "matched_ingredients.json"
+                ]:
                     recipe_files.append(file_path)
 
             print(f"找到 {len(recipe_files)} 个菜谱文件")
