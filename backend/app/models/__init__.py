@@ -1,7 +1,8 @@
 from app.models.user import User
 from app.models.merchant import Merchant, FavoriteMerchant
 from app.models.product import ProductRecord, RecordType
-from app.models.nutrition import NutritionData, Ingredient, IngredientNutritionMapping
+from app.models.nutrition_data import NutritionData  # 从 nutrition_data 导入，避免重复定义
+from app.models.nutrition import Ingredient, IngredientNutritionMapping  # nutrition.py 中的其他模型
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.expense import Expense, ExpenseType
 from app.models.invite_code import InviteCode

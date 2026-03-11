@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
-from app.models.nutrition import Ingredient, NutritionData, IngredientNutritionMapping
+from app.models.nutrition import Ingredient, IngredientNutritionMapping  # 其他模型从 nutrition 导入
+from app.models.nutrition_data import NutritionData  # NutritionData 从 nutrition_data 导入，避免冲突
 from decimal import Decimal
 import json
 

@@ -13,11 +13,37 @@
             type="url"
             placeholder="https://github.com/Anduin2017/HowToCook"
             class="form-control"
+            :disabled="importing"
           />
         </div>
         <button @click="importFromUrl" :disabled="importing" class="btn-primary">
           {{ importing ? '导入中...' : '从URL导入' }}
         </button>
+
+        <!-- 进度显示 -->
+        <div v-if="importProgress.show" class="progress-section">
+          <h3>📊 导入进度</h3>
+          <div class="progress-bar-container">
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: importProgress.percentage + '%' }"></div>
+            </div>
+            <span class="progress-text">{{ importProgress.percentage.toFixed(1) }}%</span>
+          </div>
+          <div class="progress-details">
+            <div class="detail-item">
+              <span class="label">当前阶段:</span>
+              <span class="value">{{ importProgress.stage }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">进度:</span>
+              <span class="value">{{ importProgress.current }} / {{ importProgress.total }}</span>
+            </div>
+            <div class="detail-item" v-if="importProgress.message">
+              <span class="label">状态:</span>
+              <span class="value">{{ importProgress.message }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 上传导入部分 -->
@@ -30,6 +56,7 @@
             @change="handleFileUpload"
             accept=".zip,.json,.tar.gz"
             class="form-control"
+            :disabled="importing"
           />
           <small class="help-text">支持 .zip, .json, .tar.gz 格式文件</small>
         </div>
@@ -37,7 +64,7 @@
           @click="importFromFile"
           :disabled="!selectedFile || importing"
           class="btn-primary"
-        >
+          >
           {{ importing ? '导入中...' : '上传并导入' }}
         </button>
       </div>
@@ -56,8 +83,10 @@
         <h2>导入结果</h2>
         <div v-if="importResult.success" class="alert alert-success">
           <h3>✅ 导入成功!</h3>
-          <p>成功导入: {{ importResult.imported_count || 0 }} 个菜谱</p>
-          <p>失败数量: {{ importResult.failed_count || 0 }} 个</p>
+          <p>成功导入: {{ importResult.ingredients?.imported || 0 }} 个原料</p>
+          <p>成功导入: {{ importResult.recipes?.imported || 0 }} 个菜谱</p>
+          <p v-if="importResult.ingredients?.skipped > 0">跳过原料: {{ importResult.ingredients?.skipped }} 个</p>
+          <p v-if="importResult.recipes?.skipped > 0">跳过菜谱: {{ importResult.recipes?.skipped }} 个</p>
           <div v-if="importResult.errors && importResult.errors.length > 0">
             <h4>错误信息:</h4>
             <ul>
@@ -84,6 +113,16 @@ const selectedFile = ref<File | null>(null);
 const importing = ref(false);
 const importResult = ref<any>(null);
 
+// 进度状态
+const importProgress = ref({
+  show: false,
+  stage: '',
+  current: 0,
+  total: 0,
+  percentage: 0,
+  message: ''
+});
+
 function handleFileUpload(event: Event) {
   const target = event.target as HTMLInputElement;
   if (target.files && target.files.length > 0) {
@@ -99,14 +138,39 @@ async function importFromUrl() {
 
   importing.value = true;
   importResult.value = null;
+  importProgress.value = {
+    show: true,
+    stage: '准备中',
+    current: 0,
+    total: 0,
+    percentage: 0,
+    message: ''
+  };
 
   try {
-    const response = await api.post('/recipes/import-from-url', { url: repoUrl.value });
+    // 使用流式响应来获取进度（如果有后端支持）
+    const response = await api.post('/recipes/import-from-url-enhanced', { url: repoUrl.value });
     importResult.value = response;
-    alert(`导入完成! 成功: ${response.imported_count || 0}, 失败: ${response.failed_count || 0}`);
+    importProgress.value = {
+      show: false,
+      stage: '完成',
+      current: 1,
+      total: 1,
+      percentage: 100,
+      message: '导入完成'
+    };
+    alert(`导入完成! 成功: ${response.recipes?.imported || 0}, 失败: ${response.recipes?.failed || 0}`);
   } catch (error) {
     console.error('导入失败:', error);
     importResult.value = { success: false, error: error.message || '导入失败' };
+    importProgress.value = {
+      show: false,
+      stage: '失败',
+      current: 0,
+      total: 0,
+      percentage: 0,
+      message: '导入失败'
+    };
     alert('导入失败: ' + (error.message || '未知错误'));
   } finally {
     importing.value = false;
@@ -121,17 +185,55 @@ async function importFromFile() {
 
   importing.value = true;
   importResult.value = null;
+  importProgress.value = {
+    show: true,
+    stage: '上传中',
+    current: 0,
+    total: 1,
+    percentage: 0,
+    message: '正在上传文件...'
+  };
 
   try {
     const formData = new FormData();
     formData.append('file', selectedFile.value);
 
-    const result = await api.upload('/recipes/import-from-upload', formData);
+    // 使用进度跟踪（如果后端支持）
+    const result = await api.upload('/recipes/import-from-upload-enhanced', formData, (event) => {
+      if (event.type === 'uploadProgress') {
+        const data = event.data as any;
+        importProgress.value = {
+          show: true,
+          stage: data.stage || '处理中',
+          current: data.current || 0,
+          total: data.total || 1,
+          percentage: data.percentage || 0,
+          message: data.message || ''
+        };
+      }
+    });
+
     importResult.value = result;
-    alert(`导入完成! 成功: ${result.imported_count || 0}, 失败: ${result.failed_count || 0}`);
+    importProgress.value = {
+      show: false,
+      stage: '完成',
+      current: 1,
+      total: 1,
+      percentage: 100,
+      message: '导入完成'
+    };
+    alert(`导入完成! 成功: ${result.recipes?.imported || 0}, 失败: ${result.recipes?.failed || 0}`);
   } catch (error) {
     console.error('导入失败:', error);
     importResult.value = { success: false, error: error.message || '导入失败' };
+    importProgress.value = {
+      show: false,
+      stage: '失败',
+      current: 0,
+      total: 0,
+      percentage: 0,
+      message: '导入失败'
+    };
     alert('导入失败: ' + (error.message || '未知错误'));
   } finally {
     importing.value = false;
@@ -141,14 +243,38 @@ async function importFromFile() {
 async function importInitialRecipes() {
   importing.value = true;
   importResult.value = null;
+  importProgress.value = {
+    show: true,
+    stage: '准备中',
+    current: 0,
+    total: 0,
+    percentage: 0,
+    message: ''
+  };
 
   try {
-    const response = await api.post('/recipes/import-initial', {});
+    const response = await api.post('/recipes/import-initial-enhanced', {});
     importResult.value = response;
-    alert(`导入完成! 成功: ${response.imported_count || 0}, 失败: ${response.failed_count || 0}`);
+    importProgress.value = {
+      show: false,
+      stage: '完成',
+      current: 1,
+      total: 1,
+      percentage: 100,
+      message: '导入完成'
+    };
+    alert(`导入完成! 成功: ${response.recipes?.imported || 0}, 失败: ${response.recipes?.failed || 0}`);
   } catch (error) {
     console.error('导入初始菜谱失败:', error);
     importResult.value = { success: false, error: error.message || '导入失败' };
+    importProgress.value = {
+      show: false,
+      stage: '失败',
+      current: 0,
+      total: 0,
+      percentage: 0,
+      message: '导入失败'
+    };
     alert('导入初始菜谱失败: ' + (error.message || '未知错误'));
   } finally {
     importing.value = false;
@@ -164,14 +290,14 @@ async function importInitialRecipes() {
 .import-sections {
   display: grid;
   gap: 2rem;
-  max-width: 800px;
+  max-width: 900px;
 }
 
 .card {
   background: white;
   border-radius: 0.5rem;
   padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .card h2 {
@@ -201,6 +327,11 @@ async function importInitialRecipes() {
   box-sizing: border-box;
 }
 
+.form-control:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+}
+
 .help-text {
   color: #666;
   font-size: 0.875rem;
@@ -208,6 +339,72 @@ async function importInitialRecipes() {
   display: block;
 }
 
+/* 进度条样式 */
+.progress-section {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: #f9f9f9;
+  border-radius: 0.5rem;
+}
+
+.progress-section h3 {
+  margin-top: 0;
+  color: #667eea;
+  font-size: 1.125rem;
+}
+
+.progress-bar-container {
+  margin: 1rem 0;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 24px;
+  background: #e0e0e0;
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+  border-radius: 0.25rem;
+}
+
+.progress-text {
+  margin-left: 0.75rem;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.progress-details {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 0.25rem;
+}
+
+.detail-item .label {
+  color: #666;
+  font-size: 0.875rem;
+}
+
+.detail-item .value {
+  color: #333;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+/* 按钮样式 */
 .btn-primary {
   padding: 0.75rem 1.5rem;
   background: #667eea;
@@ -216,6 +413,7 @@ async function importInitialRecipes() {
   border-radius: 0.5rem;
   cursor: pointer;
   font-size: 1rem;
+  transition: background 0.2s;
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -225,6 +423,7 @@ async function importInitialRecipes() {
 .btn-primary:disabled {
   background: #ccc;
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .btn-secondary {
@@ -235,6 +434,7 @@ async function importInitialRecipes() {
   border-radius: 0.5rem;
   cursor: pointer;
   font-size: 1rem;
+  transition: background 0.2s;
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -244,17 +444,29 @@ async function importInitialRecipes() {
 .btn-secondary:disabled {
   background: #ccc;
   cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* 结果卡片样式 */
+.result-card {
+  margin-top: 1.5rem;
 }
 
 .alert {
   padding: 1rem;
   border-radius: 0.5rem;
-  margin: 1rem 0;
+  margin: 0;
 }
 
 .alert-success {
   background: #e6f4ea;
   border: 1px solid #a3d9b1;
+  color: #137333;
+}
+
+.alert-success h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
   color: #137333;
 }
 
@@ -264,9 +476,16 @@ async function importInitialRecipes() {
   color: #d93025;
 }
 
+.alert-error h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #d93025;
+}
+
 .result-card ul {
   list-style: none;
   padding-left: 0;
+  margin-top: 0.75rem;
 }
 
 .result-card li {
@@ -284,51 +503,33 @@ async function importInitialRecipes() {
   }
 
   .import-sections {
-    gap: 1.5rem;
+    gap: 1rem;
   }
 
   .card {
     padding: 1rem;
   }
 
-  .card h2 {
-    font-size: 1.125rem;
+  .progress-section {
+    padding: 1rem;
   }
 
-  .form-group {
-    margin-bottom: 0.75rem;
+  .progress-bar {
+    height: 20px;
   }
 
-  .form-group label {
+  .detail-item {
+    padding: 0.375rem;
     font-size: 0.8125rem;
-  }
-
-  .form-control {
-    font-size: 0.875rem;
-    padding: 0.625rem;
-  }
-
-  .help-text {
-    font-size: 0.75rem;
   }
 
   .btn-primary,
   .btn-secondary {
     padding: 0.625rem 1.25rem;
-    font-size: 0.8125rem;
-  }
-
-  .alert {
-    padding: 0.75rem;
-    font-size: 0.8125rem;
-  }
-
-  .result-card li {
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
   }
 }
 
-/* 超小屏幕优化 */
 @media (max-width: 480px) {
   .recipe-import {
     padding: 0.5rem;
@@ -342,17 +543,8 @@ async function importInitialRecipes() {
     font-size: 1rem;
   }
 
-  .btn-primary,
-  .btn-secondary {
-    width: 100%;
-  }
-
-  .alert {
-    font-size: 0.75rem;
-  }
-
-  .result-card li {
-    font-size: 0.75rem;
+  .progress-section {
+    padding: 0.75rem;
   }
 }
 </style>

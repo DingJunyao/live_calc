@@ -2,7 +2,8 @@ from sqlalchemy.orm import Session
 from typing import Dict, List
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.product import ProductRecord
-from app.models.nutrition import Ingredient, NutritionData
+from app.models.nutrition import Ingredient
+from app.models.nutrition_data import NutritionData  # NutritionData 从 nutrition_data 导入，避免冲突
 from decimal import Decimal
 
 
@@ -114,39 +115,179 @@ async def calculate_recipe_nutrition(
     if not recipe:
         return None
 
-    total_calories = Decimal("0.00")
-    total_protein = Decimal("0.00")
-    total_fat = Decimal("0.00")
-    total_carbs = Decimal("0.00")
+    # NRV（营养素参考值）- 中国标准值（成人每日摄入量）
+    # 来源：GB 28050-2011《食品安全国家标准 预包装食品营养标签通则》
+    NRV_REFERENCE_VALUES = {
+        "能量": 2000,  # kcal
+        "蛋白质": 60,   # g
+        "脂肪": 60,     # g
+        "碳水化合物": 300,  # g
+        "膳食纤维": 25,   # g
+        "钙": 800,      # mg
+        "铁": 15,       # mg
+        "钠": 2000,     # mg
+        "钾": 2000,     # mg
+        "维生素A": 800,  # μg
+        "维生素C": 100,   # mg
+        "维生素B1": 1.2, # mg
+        "维生素B2": 1.4, # mg
+        "维生素B12": 2.4, # μg
+        "维生素D": 5,     # μg
+        "维生素E": 14,    # mg
+        "维生素K": 80     # μg
+    }
+
+    # 初始化所有核心营养素的总量
+    total_core_nutrients = {
+        "能量": {"value": 0, "unit": "kcal", "key": "energy_kcal"},
+        "蛋白质": {"value": 0, "unit": "g", "key": "protein"},
+        "脂肪": {"value": 0, "unit": "g", "key": "fat"},
+        "碳水化合物": {"value": 0, "unit": "g", "key": "carbohydrate"},
+        "膳食纤维": {"value": 0, "unit": "g", "key": "fiber"},
+        "钙": {"value": 0, "unit": "mg", "key": "calcium"},
+        "铁": {"value": 0, "unit": "mg", "key": "iron"},
+        "钠": {"value": 0, "unit": "mg", "key": "sodium"},
+        "钾": {"value": 0, "unit": "mg", "key": "potassium"},
+        "维生素A": {"value": 0, "unit": "μg", "key": "vitamin_a_rae"},
+        "维生素C": {"value": 0, "unit": "mg", "key": "vitamin_c"},
+        "维生素B1": {"value": 0, "unit": "mg", "key": "vitamin_b1"},
+        "维生素B2": {"value": 0, "unit": "mg", "key": "vitamin_b2"},
+        "维生素B12": {"value": 0, "unit": "μg", "key": "vitamin_b12"},
+        "维生素D": {"value": 0, "unit": "μg", "key": "vitamin_d"},
+        "维生素E": {"value": 0, "unit": "mg", "key": "vitamin_e"},
+        "维生素K": {"value": 0, "unit": "μg", "key": "vitamin_k"}
+    }
+
+    from app.utils.unit_converter import convert_to_standard
 
     for recipe_ingredient in recipe.ingredients:
         ingredient = recipe_ingredient.ingredient
         if not ingredient:
             continue
 
+        # 使用 ingredient_id 查找营养数据（而不是 nutrition_id）
         nutrition = db.query(NutritionData).filter(
-            NutritionData.id == ingredient.nutrition_id
-        ).first()
+            NutritionData.ingredient_id == ingredient.id
+        ).order_by(NutritionData.id.desc()).first()
 
         if not nutrition:
             continue
 
-        total_calories += Decimal(str(nutrition.calories or 0))
-        total_protein += Decimal(str(nutrition.protein or 0))
-        total_fat += Decimal(str(nutrition.fat or 0))
-        total_carbs += Decimal(str(nutrition.carbs or 0))
+        # 获取营养数据（从 JSON 字段）
+        nutrients = nutrition.nutrients or {}
+        core_nutrients = nutrients.get("core_nutrients", {})
+        all_nutrients = nutrients.get("all_nutrients", {})
+
+        # 提取参考基准
+        reference_amount = Decimal(str(nutrition.reference_amount or 100.0))
+        reference_unit = nutrition.reference_unit or "g"
+
+        # 获取菜谱中的原料数量，并转换为标准单位
+        ingredient_quantity_str = recipe_ingredient.quantity or "0"
+        ingredient_unit = ""
+
+        # 尝试解析数量和单位
+        try:
+            # 如果数量是纯数字字符串
+            if ingredient_quantity_str.replace(".", "").replace("-", "").isdigit():
+                quantity = Decimal(str(ingredient_quantity_str))
+                # 如果有单位信息，尝试使用原始数量和单位
+                if recipe_ingredient.unit:
+                    ingredient_unit = recipe_ingredient.unit.abbreviation
+                    # 转换为标准单位
+                    standard_quantity, standard_unit = convert_to_standard(quantity, ingredient_unit)
+                else:
+                    # 没有单位信息，假设使用参考基准单位
+                    standard_quantity = quantity
+                    standard_unit = reference_unit
+            else:
+                # 数量可能包含单位（如 "250g"），需要解析
+                import re
+                match = re.match(r"([\d.]+)\s*([a-zA-Z\u4e00-\u9fff]+)", ingredient_quantity_str)
+                if match:
+                    quantity = Decimal(match.group(1))
+                    ingredient_unit = match.group(2)
+                    standard_quantity, standard_unit = convert_to_standard(quantity, ingredient_unit)
+                else:
+                    # 无法解析，使用默认值
+                    standard_quantity = Decimal("100")
+                    standard_unit = reference_unit
+        except Exception as e:
+            # 解析失败，使用默认值
+            standard_quantity = Decimal("100")
+            standard_unit = reference_unit
+
+        # 计算比例因子（菜谱中的数量 / 参考基准数量）
+        # 确保单位一致才能比较
+        if standard_unit.lower() in ["g", "ml"] and reference_unit.lower() in ["g", "ml"]:
+            # 如果都是重量或容量单位，可以计算比例
+            ratio = standard_quantity / reference_amount
+        else:
+            # 单位不一致，假设比例是1:1（使用参考值）
+            ratio = Decimal("1.0")
+
+        # 累加所有核心营养素值
+        for nutrient_name, nutrient_data in core_nutrients.items():
+            if nutrient_name in total_core_nutrients:
+                value = float(nutrient_data.get("value", 0) or 0)
+                total_core_nutrients[nutrient_name]["value"] += value * float(ratio)
 
     servings = recipe.servings or 1
 
+    # 计算每份营养值和 NRV 百分比
+    per_serving_core_nutrients = {}
+    for name, data in total_core_nutrients.items():
+        per_serving_value = round(data["value"] / servings, 2)
+        per_serving_unit = data["unit"]
+
+        # 使用 NRV 标准参考值计算 NRV 百分比
+        nrv_reference = NRV_REFERENCE_VALUES.get(name, 0)
+        if nrv_reference > 0:
+            # NRV 百分比 = （每份营养值 / NRV 标准值）× 100
+            per_serving_nrp_pct = round((per_serving_value / nrv_reference) * 100, 2)
+        else:
+            # 没有参考值，使用默认值
+            per_serving_nrp_pct = 0
+
+        per_serving_core_nutrients[name] = {
+            "value": per_serving_value,
+            "unit": per_serving_unit,
+            "key": data["key"],
+            "nrp_pct": per_serving_nrp_pct
+        }
+
+    # 提取简化的核心值用于兼容性
+    energy_data = total_core_nutrients.get("能量", {})
+    protein_data = total_core_nutrients.get("蛋白质", {})
+    fat_data = total_core_nutrients.get("脂肪", {})
+    carb_data = total_core_nutrients.get("碳水化合物", {})
+
+    # 如果能量单位是 kJ，转换为 kcal
+    total_calories = float(energy_data["value"])
+    if energy_data["unit"] == "kJ":
+        total_calories *= 0.239006
+
     return {
         "total_calories": total_calories,
-        "total_protein": total_protein,
-        "total_fat": total_fat,
-        "total_carbs": total_carbs,
+        "total_protein": float(protein_data["value"]),
+        "total_fat": float(fat_data["value"]),
+        "total_carbs": float(carb_data["value"]),
         "per_serving": {
             "calories": total_calories / servings,
-            "protein": total_protein / servings,
-            "fat": total_fat / servings,
-            "carbs": total_carbs / servings
+            "protein": float(protein_data["value"]) / servings,
+            "fat": float(fat_data["value"]) / servings,
+            "carbs": float(carb_data["value"]) / servings
+        },
+        "total_nutrition": {
+            "core_nutrients": {
+                name: {
+                    **data,
+                    "value": round(data["value"], 2)
+                }
+                for name, data in total_core_nutrients.items()
+            }
+        },
+        "per_serving_nutrition": {
+            "core_nutrients": per_serving_core_nutrients
         }
     }

@@ -50,6 +50,14 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/recipes/:id/edit',
+    },
+    {
+      path: '/nutrition/:type/:id',
+      name: 'nutrition-detail',
+      component: () => import('@/views/nutrition/NutritionDetail.vue').then(m => m.default)
+    },
+    {
+      path: '/recipes/:id/edit',
     name: 'recipe-form',
     component: () => import('@/views/recipes/RecipeForm.vue').then(m => m.default)
   },
