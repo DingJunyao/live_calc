@@ -47,6 +47,9 @@
             <button @click="editIngredient(ingredient)" class="btn-edit" title="编辑">
               <i class="mdi mdi-pencil"></i>
             </button>
+            <button @click="viewNutrition(ingredient)" class="btn-nutrition" title="查看营养">
+              <i class="mdi mdi-food"></i>
+            </button>
             <button @click="deleteIngredient(ingredient)" class="btn-delete" title="删除">
               <i class="mdi mdi-delete"></i>
             </button>
@@ -302,10 +305,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useUserStore } from '@/stores/user'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
+
+const router = useRouter()
 
 const userStore = useUserStore()
 
@@ -703,6 +709,11 @@ async function deleteIngredient(ingredient: Ingredient) {
   }
 }
 
+function viewNutrition(ingredient: Ingredient) {
+  // 导航到营养详情页面，传入原料ID
+  router.push(`/nutrition/ingredient/${ingredient.id}`)
+}
+
 async function showHierarchy(ingredient: Ingredient) {
   selectedIngredient.value = ingredient
   hierarchyLoading.value = true
@@ -963,7 +974,7 @@ async function performConversion() {
   gap: 0.5rem;
 }
 
-.btn-edit, .btn-delete {
+.btn-edit, .btn-delete, .btn-nutrition {
   width: 2rem;
   height: 2rem;
   display: flex;
@@ -982,6 +993,15 @@ async function performConversion() {
 
 .btn-edit:hover {
   background: #5a6fd8;
+}
+
+.btn-nutrition {
+  background: #66bb6a;
+  color: white;
+}
+
+.btn-nutrition:hover {
+  background: #4caf50;
 }
 
 .btn-delete {

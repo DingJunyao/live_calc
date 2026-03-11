@@ -68,6 +68,9 @@
             <button @click="editProduct(product)" class="btn-edit" title="编辑">
               <i class="mdi mdi-pencil"></i>
             </button>
+            <button @click="viewNutrition(product)" class="btn-nutrition" title="查看营养">
+              <i class="mdi mdi-food"></i>
+            </button>
             <button @click="deleteProduct(product)" class="btn-delete" title="删除">
               <i class="mdi mdi-delete"></i>
             </button>
@@ -704,6 +707,11 @@ function goToLocations() {
   router.push('/merchants')
 }
 
+function viewNutrition(product: PriceRecord) {
+  // 导航到营养详情页面，传入商品ID
+  router.push(`/nutrition/product/${product.product_id}`)
+}
+
 // 处理点击外部，隐藏建议列表
 function handleOutsideClick(event: MouseEvent) {
   const target = event.target as Element
@@ -947,6 +955,15 @@ function updateSuggestionsPosition(
 
 .btn-delete:hover {
   background: #bc2e0b;
+}
+
+.btn-nutrition {
+  background: #66bb6a;
+  color: white;
+}
+
+.btn-nutrition:hover {
+  background: #4caf50;
 }
 
 .product-info p {

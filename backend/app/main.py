@@ -11,8 +11,7 @@ from app.core.database import Base, engine
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.services.recipe_import_service import check_and_import_initial_recipes
-from app.services.json_recipe_import_service import check_and_import_from_json_repo
+from app.services.enhanced_recipe_import_service import check_and_import_initial_recipes
 import asyncio
 import threading
 import os
@@ -186,9 +185,9 @@ async def lifespan(app: FastAPI):
         # 初始化默认数据（单位、分类等）
         init_default_data(db)
 
-        # 检查并导入初始菜谱（优先从 JSON 仓库导入）
-        result = check_and_import_from_json_repo(db, user_id=1)  # 使用默认用户 ID 1
-        print(f"JSON 仓库菜谱导入结果: {result}")
+        # 检查并导入初始数据（原料、菜谱和营养数据）
+        result = check_and_import_initial_recipes(db, user_id=1)  # 使用默认用户 ID 1
+        print(f"数据导入结果: {result}")
 
         # 检查是否需要为现有原料批量创建商品
         from app.models.nutrition import Ingredient
