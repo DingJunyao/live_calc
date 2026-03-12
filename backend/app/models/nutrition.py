@@ -29,6 +29,10 @@ class Ingredient(Base, AuditMixin):
 
     nutrition_id = Column(Integer, ForeignKey("nutrition_data.id"))
 
+    # 每个单位的标准重量（如1个鸡蛋=50g），用于计数单位到质量单位的转换
+    piece_weight = Column(Numeric(10, 3), nullable=True)
+    piece_weight_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
+
     # 是否为导入菜谱时顺带导入的原料
     is_imported = Column(Boolean, default=False, nullable=False)
 
@@ -42,7 +46,8 @@ class Ingredient(Base, AuditMixin):
     recipe_ingredients = relationship("RecipeIngredient", back_populates="ingredient")
     products = relationship("Product", back_populates="ingredient", lazy="select")
     product_links = relationship("ProductIngredientLink", back_populates="ingredient", lazy="select")
-    default_unit = relationship("Unit", lazy="select")
+    default_unit = relationship("Unit", lazy="select", foreign_keys=[default_unit_id])
+    piece_weight_unit = relationship("Unit", lazy="select", foreign_keys=[piece_weight_unit_id])
 
 
 class IngredientNutritionMapping(Base, AuditMixin):

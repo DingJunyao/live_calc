@@ -388,17 +388,41 @@ async function loadProducts() {
 
 async function loadAllProducts() {
   try {
-    const response = await productAPI.list({ limit: 10000 })
-    console.log('商品API响应:', response) // 调试SB问题
-    // 这个SB API返回的是分页格式，需要从items里取数据
-    const items = (response as any).items || (Array.isArray(response) ? response : [])
-    // 确保数据格式正确
-    allProducts.value = items.map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      brand: item.brand || ''
-    }))
-    console.log('处理后的商品列表:', allProducts.value) // 调试SB问题
+    // 分页加载所有商品（后端单页最多 1000 条）
+    let allItems: ProductSuggestion[] = []
+    let skip = 0
+    const limit = 1000
+    let hasMore = true
+
+    while (hasMore) {
+      const response = await productAPI.list({ skip, limit })
+      const items = (response as any).items || (Array.isArray(response) ? response : [])
+
+      // 确保数据格式正确
+      const products = items.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        brand: item.brand || ''
+      }))
+
+      allItems = allItems.concat(products)
+
+      // 如果返回的数据少于 limit，说明没有更多数据了
+      if (items.length < limit) {
+        hasMore = false
+      } else {
+        skip += limit
+      }
+
+      // 安全保护：最多加载 10 页（10000 条），避免死循环
+      if (skip >= 10000) {
+        console.warn('已达到最大商品加载数量限制（10000条）')
+        hasMore = false
+      }
+    }
+
+    allProducts.value = allItems
+    console.log('处理后的商品列表:', allProducts.value, `共 ${allItems.length} 条`) // 调试SB问题
   } catch (error) {
     console.error('Failed to load products:', error)
     allProducts.value = []
@@ -449,7 +473,7 @@ function openAddModal() {
     product_name: '',
     price: 0,
     quantity: 1,
-    unit: units.value.length > 0 ? units.value[0].abbreviation : '', // 设置默认单位
+    unit: '斤', // 默认单位为斤
     merchant_id: lastMerchantId.value,  // 使用记忆的商家ID
     merchant_name: lastMerchantName.value,  // 使用记忆的商家名称
     is_purchase: lastIsPurchase.value,  // 使用记忆的是否购买
