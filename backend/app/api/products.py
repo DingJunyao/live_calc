@@ -180,6 +180,7 @@ async def get_product_records(
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     product_name: Optional[str] = Query(None, description="商品名称过滤"),
+    search: Optional[str] = Query(None, description="搜索关键词（同product_name，向前兼容）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -189,8 +190,10 @@ async def get_product_records(
         joinedload(ProductRecord.standard_unit)
     ).filter(ProductRecord.user_id == current_user.id)
 
-    if product_name:
-        query = query.filter(ProductRecord.product_name.contains(product_name))
+    # 使用search参数（优先）或product_name参数进行过滤
+    search_term = search or product_name
+    if search_term:
+        query = query.filter(ProductRecord.product_name.contains(search_term))
 
     total = query.count()
     records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()

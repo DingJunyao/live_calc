@@ -55,16 +55,17 @@ export const useUserStore = defineStore('user', {
       this.token = user.token || this.token || ''
     },
 
-    setToken(token: string): void {
+    setToken(token: string, refreshToken?: string): void {
       this.token = token
       localStorage.setItem('token', token)
-      api.setToken(token)
+      api.setToken(token, refreshToken)
     },
 
     clearUser(): void {
       this.user = null
       this.token = null
       localStorage.removeItem('token')
+      localStorage.removeItem('refresh_token')
       api.clearToken()
     },
 
@@ -75,8 +76,8 @@ export const useUserStore = defineStore('user', {
           { username, password_hash }
         )
 
-        // 设置 token
-        this.setToken(response.access_token)
+        // 设置 token 和 refresh_token
+        this.setToken(response.access_token, response.refresh_token)
 
         // 获取用户信息
         const user = await api.get<User>('/auth/me')
@@ -91,8 +92,8 @@ export const useUserStore = defineStore('user', {
       try {
         const response = await api.post<{ access_token: string, refresh_token: string }>('/auth/register', userData)
 
-        // 设置 token
-        this.setToken(response.access_token)
+        // 设置 token 和 refresh_token
+        this.setToken(response.access_token, response.refresh_token)
 
         // 获取用户信息
         const user = await api.get<User>('/auth/me')

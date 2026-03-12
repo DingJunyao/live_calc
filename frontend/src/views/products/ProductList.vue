@@ -95,54 +95,56 @@
     />
 
     <!-- 添加/编辑价格记录模态框 -->
-    <div v-if="showAddModal" class="modal-overlay" @click="closeModal">
+    <div v-if="showAddModal" class="modal-overlay" @click="handleOverlayClick">
       <div class="modal-content" @click.stop>
-        <h2>{{ editingProduct ? '编辑价格记录' : '添加价格记录' }}</h2>
-        <form @submit.prevent="addProduct">
+        <div class="modal-header">
+          <h2>{{ editingProduct ? '编辑价格记录' : '添加价格记录' }}</h2>
+          <button class="close-btn" @click="closeModal" title="关闭">&times;</button>
+        </div>
+        <form @submit.prevent="addProduct" class="modal-form">
           <div class="form-group">
             <label for="productName">商品:</label>
-            <div class="autocomplete-container">
-              <input
-                ref="productInputRef"
-                v-model="newProduct.product_name"
-                type="text"
-                id="productName"
-                required
-                placeholder="搜索并选择商品"
-                @input="onProductInput"
-                @focus="handleProductFocus"
-                @keydown="handleKeydown"
-              />
-              <Teleport to="body">
-                <ul v-if="showProductSuggestions && filteredSuggestions.length > 0" class="suggestions-list product-suggestions" :style="productSuggestionsStyle">
-                  <li
-                    v-for="(suggestion, index) in filteredSuggestions"
-                    :key="suggestion.id"
-                    :class="{ 'suggestion-selected': index === selectedIndex }"
-                    @click.stop="selectProduct(suggestion)"
-                  >
-                    {{ suggestion.name }}
-                    <span v-if="suggestion.brand" class="brand">({{ suggestion.brand }})</span>
-                  </li>
-                </ul>
-              </Teleport>
-            </div>
+            <input
+              v-model="productSearchTerm"
+              type="text"
+              id="productName"
+              list="product-list"
+              placeholder="输入搜索商品..."
+              @input="onProductInput"
+              @change="onProductChange"
+              class="datalist-input"
+            />
+            <datalist id="product-list">
+              <option
+                v-for="product in filteredProducts"
+                :key="product.id"
+                :value="product.name"
+              ></option>
+              <option v-if="showProductCreateOption" value="+ 创建新商品"></option>
+            </datalist>
           </div>
           <div class="form-group">
             <label for="price">价格 (元):</label>
             <input v-model.number="newProduct.price" type="number" id="price" step="0.01" min="0" required />
           </div>
           <div class="form-group">
-            <label for="quantity">数量:</label>
-            <input v-model.number="newProduct.quantity" type="number" id="quantity" min="0" step="any" required />
-          </div>
-          <div class="form-group">
-            <label for="unit">单位:</label>
-            <select v-model="newProduct.unit" id="unit" class="select-input" required>
-              <option v-for="unit in units" :key="unit.id" :value="unit.abbreviation">
-                {{ unit.name }} <template v-if="unit.name && unit.abbreviation">({{ unit.abbreviation }})</template>
-              </option>
-            </select>
+            <label>数量与单位:</label>
+            <div class="quantity-unit-row">
+              <input
+                v-model.number="newProduct.quantity"
+                type="number"
+                id="quantity"
+                min="0"
+                step="any"
+                required
+                placeholder="数量"
+              />
+              <select v-model="newProduct.unit" id="unit" required>
+                <option v-for="unit in units" :key="unit.id" :value="unit.abbreviation">
+                  {{ unit.name }} <template v-if="unit.name && unit.abbreviation">({{ unit.abbreviation }})</template>
+                </option>
+              </select>
+            </div>
           </div>
           <div class="form-group checkbox-group">
             <label for="isPurchase" class="checkbox-label">
@@ -166,34 +168,25 @@
           </div>
           <div class="form-group">
             <label for="location">商家:</label>
-            <div class="autocomplete-container">
-              <input
-                ref="locationInputRef"
-                v-model="newProduct.merchant_name"
-                type="text"
-                id="location"
-                placeholder="搜索并选择商家"
-                @input="onLocationInput"
-                @focus="handleLocationFocus"
-                @keydown="handleLocationKeydown"
-              />
-              <Teleport to="body">
-                <ul v-if="showLocationSuggestions && filteredLocationSuggestions.length > 0" class="suggestions-list location-suggestions" :style="locationSuggestionsStyle">
-                  <li
-                    v-for="(suggestion, index) in filteredLocationSuggestions"
-                    :key="suggestion.id"
-                    :class="{ 'suggestion-selected': index === selectedLocationIndex }"
-                    @click.stop="selectLocation(suggestion)"
-                  >
-                    {{ suggestion.name }}
-                    <span v-if="suggestion.address" class="address">({{ suggestion.address }})</span>
-                  </li>
-                </ul>
-              </Teleport>
-            </div>
+            <input
+              v-model="merchantSearchTerm"
+              type="text"
+              id="location"
+              list="merchant-list"
+              placeholder="输入搜索商家（可选）..."
+              @input="filterMerchantOptions"
+              class="datalist-input"
+            />
+            <datalist id="merchant-list">
+              <option
+                v-for="merchant in filteredMerchants"
+                :key="merchant.id"
+                :value="merchant.name"
+              ></option>
+              <option v-if="showMerchantCreateOption" value="+ 创建新商家"></option>
+            </datalist>
           </div>
           <div class="form-actions">
-            <button type="button" @click="closeModal" class="btn-secondary">取消</button>
             <button type="submit" class="btn-primary">{{ editingProduct ? '更新' : '添加' }}</button>
           </div>
         </form>
@@ -203,7 +196,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, Teleport } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { productAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
@@ -252,22 +245,19 @@ const newProduct = ref({
   unit: '',
   merchant_id: 0,
   merchant_name: '',
-  is_purchase: true,  // 这个SB字段标识是否为购买记录，默认是
-  recorded_at: ''  // 这个SB字段存储自定义的记录时间
+  is_purchase: true,
+  recorded_at: ''
 })
 
-const showProductSuggestions = ref(false)
-const selectedIndex = ref(-1)
-const showLocationSuggestions = ref(false)
-const selectedLocationIndex = ref(-1)
+// 商品搜索和选择
+const productSearchTerm = ref('')
+const filteredProducts = ref<ProductSuggestion[]>([])
+const showProductCreateOption = ref(false)
 
-// 添加建议列表位置样式
-const productSuggestionsStyle = ref<Record<string, string>>({})
-const locationSuggestionsStyle = ref<Record<string, string>>({})
-
-// 添加输入框引用
-const productInputRef = ref<HTMLInputElement | null>(null)
-const locationInputRef = ref<HTMLInputElement | null>(null)
+// 商家搜索和选择
+const merchantSearchTerm = ref('')
+const filteredMerchants = ref<Merchant[]>([])
+const showMerchantCreateOption = ref(false)
 
 // 添加商家加载状态
 const merchantsLoading = ref(true)
@@ -286,44 +276,226 @@ const lastIsPurchase = ref(true)  // 记住上一次是否购买
 const lastMerchantId = ref(0)  // 记住上一次的商家ID
 const lastMerchantName = ref('')  // 记住上一次的商家名称
 
-let searchTimeout: ReturnType<typeof setTimeout> | null = null
+// 商品过滤选项
+function filterProductOptions() {
+  const search = productSearchTerm.value.trim().toLowerCase()
+  if (!search) {
+    filteredProducts.value = allProducts.value
+  } else {
+    filteredProducts.value = allProducts.value.filter(p =>
+      p.name.toLowerCase().includes(search) ||
+      (p.brand && p.brand.toLowerCase().includes(search))
+    )
+  }
 
-// 过滤后的建议列表
-const filteredSuggestions = computed(() => {
-  // 确保allProducts是数组，防止憨批错误
-  if (!Array.isArray(allProducts.value)) {
-    return []
-  }
-  if (!newProduct.value.product_name.trim()) {
-    return allProducts.value.slice(0, 10)
-  }
-  const search = newProduct.value.product_name.toLowerCase()
-  return allProducts.value
-    .filter(p => p.name.toLowerCase().includes(search))
-    .slice(0, 10)
-})
+  // 检查是否显示创建选项
+  showProductCreateOption.value = search.length > 0 &&
+    !filteredProducts.value.some(p => p.name.toLowerCase() === search)
+}
 
-// 过滤后的商家建议列表
-const filteredLocationSuggestions = computed(() => {
-  // 确保allMerchants是数组，防止憨批错误
-  if (!Array.isArray(allMerchants.value)) {
-    return []
+// 商品选择变化处理
+function onProductChange() {
+  if (productSearchTerm.value === '+ 创建新商品') {
+    // 如果用户选择了创建新商品选项
+    openQuickCreateProduct();
+    // 恢复搜索词为原来的值
+    setTimeout(() => {
+      productSearchTerm.value = newProduct.value.product_name || '';
+    }, 100);
+  } else {
+    // 如果用户选择了一个具体的商品，将该商品的ID填入newProduct
+    const matchedProduct = allProducts.value.find(p => p.name === productSearchTerm.value);
+    if (matchedProduct) {
+      newProduct.value.product_id = matchedProduct.id;
+      newProduct.value.product_name = matchedProduct.name;
+    } else {
+      newProduct.value.product_id = 0;
+      newProduct.value.product_name = productSearchTerm.value;
+    }
   }
-  if (!newProduct.value.merchant_name.trim()) {
-    return allMerchants.value.slice(0, 10)
+}
+
+// 旧的商品选择变化处理函数（现在重命名为onProductIdChange）
+function onProductIdChange() {
+  if (newProduct.value.product_id === -1) {
+    // 选择了创建新商品
+    openQuickCreateProduct()
   }
-  const search = newProduct.value.merchant_name.toLowerCase()
-  return allMerchants.value
-    .filter(l => l.name.toLowerCase().includes(search) ||
-               (l.address && l.address.toLowerCase().includes(search)))
-    .slice(0, 10)
-})
+}
+
+// 商家过滤选项
+function filterMerchantOptions() {
+  const search = merchantSearchTerm.value.trim().toLowerCase()
+  if (!search) {
+    filteredMerchants.value = allMerchants.value
+  } else {
+    filteredMerchants.value = allMerchants.value.filter(m =>
+      m.name.toLowerCase().includes(search) ||
+      (m.address && m.address.toLowerCase().includes(search))
+    )
+  }
+
+  // 检查是否显示创建选项
+  showMerchantCreateOption.value = search.length > 0 &&
+    !filteredMerchants.value.some(m => m.name.toLowerCase() === search)
+}
+
+// 商家选择变化处理
+function onMerchantChange() {
+  if (newProduct.value.merchant_id === -1) {
+    // 选择了创建新商家
+    openQuickCreateMerchant()
+  }
+}
+
+// 打开快速创建商品对话框
+async function openQuickCreateProduct() {
+  const name = productSearchTerm.value.trim()
+  if (!name) return
+
+  const newName = prompt(`创建新商品：${name}\n\n品牌（可选）：`, '')
+  if (newName === null) {
+    // 用户取消，恢复选择
+    newProduct.value.product_id = 0
+    return
+  }
+
+  try {
+    const response = await productAPI.create({
+      name: newName || name,
+      brand: ''
+    })
+    alert('商品创建成功')
+    // 重新加载商品列表
+    await loadAllProducts()
+    // 自动选中新建的商品
+    newProduct.value.product_id = (response as any).id
+    newProduct.value.product_name = newName || name
+    productSearchTerm.value = newName || name
+    filterProductOptions()
+  } catch (error: any) {
+    console.error('Failed to create product:', error)
+    alert(error.message || '创建商品失败')
+    newProduct.value.product_id = 0
+  }
+}
+
+// 打开快速创建商家对话框
+async function openQuickCreateMerchant() {
+  const name = merchantSearchTerm.value.trim()
+  if (!name) return
+
+  const newName = prompt(`创建新商家：${name}\n\n地址（可选）：`, '')
+  if (newName === null) {
+    // 用户取消，恢复选择
+    newProduct.value.merchant_id = 0
+    return
+  }
+
+  try {
+    const response = await api.post('/merchants', {
+      name: newName || name,
+      address: ''
+    })
+    alert('商家创建成功')
+    // 重新加载商家列表
+    await loadAllMerchants()
+    // 自动选中新建的商家
+    newProduct.value.merchant_id = (response as any).id
+    newProduct.value.merchant_name = newName || name
+    merchantSearchTerm.value = newName || name
+    filterMerchantOptions()
+  } catch (error: any) {
+    console.error('Failed to create merchant:', error)
+    alert(error.message || '创建商家失败')
+    newProduct.value.merchant_id = 0
+  }
+}
+
+// 使用指定名称快速创建商品（不弹出prompt）
+async function openQuickCreateProductWithName(name: string) {
+  try {
+    const response = await productAPI.create({
+      name: name,
+      brand: ''
+    })
+    alert('商品创建成功')
+    // 重新加载商品列表
+    await loadAllProducts()
+    // 自动选中新建的商品
+    const createdProduct = allProducts.value.find(p => p.name === name);
+    if (createdProduct) {
+      newProduct.value.product_id = createdProduct.id
+      newProduct.value.product_name = name
+      productSearchTerm.value = name
+    }
+    filterProductOptions()
+  } catch (error: any) {
+    console.error('Failed to create product:', error)
+    alert(error.message || '创建商品失败')
+    newProduct.value.product_id = 0
+  }
+}
+
+// 创建新商品后自动选择
+async function createAndSelectProduct(name: string) {
+  try {
+    const response = await productAPI.create({
+      name: name,
+      brand: ''
+    })
+    // 重新加载商品列表
+    await loadAllProducts()
+    // 找到刚创建的商品并自动选中
+    const createdProduct = allProducts.value.find(p => p.name === name);
+    if (createdProduct) {
+      newProduct.value.product_id = createdProduct.id
+      newProduct.value.product_name = name
+      productSearchTerm.value = name
+    }
+    return createdProduct;
+  } catch (error: any) {
+    console.error('Failed to create product:', error)
+    alert(error.message || '创建商品失败')
+    return null;
+  }
+}
+
+// 使用指定名称快速创建商家（不弹出prompt）
+async function openQuickCreateMerchantWithName(name: string) {
+  try {
+    const response = await api.post('/merchants', {
+      name: name,
+      address: ''
+    })
+    alert('商家创建成功')
+    // 重新加载商家列表
+    await loadAllMerchants()
+    // 自动选中新建的商家
+    newProduct.value.merchant_id = (response as any).id
+    merchantSearchTerm.value = name
+    filterMerchantOptions()
+  } catch (error: any) {
+    console.error('Failed to create merchant:', error)
+    alert(error.message || '创建商家失败')
+    newProduct.value.merchant_id = 0
+  }
+}
+
+// 遮罩层点击时不关闭（防止误触）
+function handleOverlayClick(event: MouseEvent) {
+  // 不执行任何操作，用户必须点击关闭按钮
+}
 
 onMounted(async () => {
   await loadProducts()
   await loadAllProducts()
   await loadAllMerchants()
   await loadUnits()  // 加载单位数据
+
+  // 初始化过滤后的选项
+  filteredProducts.value = allProducts.value
+  filteredMerchants.value = allMerchants.value
 
   // 检查是否有从商品管理页面传来的参数
   const productId = route.query.product_id
@@ -335,14 +507,6 @@ onMounted(async () => {
     // 如果商家为空，则直接打开模态框，让用户可以选择商家或被提示
     showAddModal.value = true
   }
-
-  // 添加鼠标按下事件监听，隐藏建议列表 - 使用捕获阶段确保优先处理
-  document.addEventListener('mousedown', handleOutsideClick, true)
-})
-
-onUnmounted(() => {
-  // 移除鼠标按下事件监听 - 使用捕获阶段
-  document.removeEventListener('mousedown', handleOutsideClick, true)
 })
 
 async function loadProducts() {
@@ -479,6 +643,19 @@ function openAddModal() {
     is_purchase: lastIsPurchase.value,  // 使用记忆的是否购买
     recorded_at: localISOTime  // 默认为当前时间
   }
+
+  // 初始化搜索词
+  productSearchTerm.value = ''
+  merchantSearchTerm.value = lastMerchantName.value || ''
+
+  // 初始化过滤后的选项
+  filteredProducts.value = allProducts.value
+  filteredMerchants.value = allMerchants.value
+
+  // 关闭创建选项
+  showProductCreateOption.value = false
+  showMerchantCreateOption.value = false
+
   showAddModal.value = true
 }
 
@@ -504,17 +681,27 @@ function editProduct(product: PriceRecord) {
     is_purchase: product.record_type === 'purchase',  // 根据record_type设置
     recorded_at: localISOTime
   }
+
+  // 初始化搜索词
+  productSearchTerm.value = matchedProduct?.name || product.product_name || ''
+  merchantSearchTerm.value = matchedMerchant?.name || ''
+
+  // 初始化过滤后的选项
+  filteredProducts.value = allProducts.value
+  filteredMerchants.value = allMerchants.value
+
+  // 关闭创建选项
+  showProductCreateOption.value = false
+  showMerchantCreateOption.value = false
+
   showAddModal.value = true
 }
 
 function closeModal() {
   showAddModal.value = false
-  showProductSuggestions.value = false
-  showLocationSuggestions.value = false
-  selectedIndex.value = -1
-  selectedLocationIndex.value = -1
-  productSuggestionsStyle.value = {}
-  locationSuggestionsStyle.value = {}
+  // 清除搜索词
+  productSearchTerm.value = ''
+  merchantSearchTerm.value = ''
 }
 
 function handlePageChange(page: number) {
@@ -530,29 +717,55 @@ function handlePageSizeChange(size: number) {
 
 async function addProduct() {
   try {
-    // 验证是否提供了商品
+    // 获取用户输入的商品名称
+    const productName = productSearchTerm.value.trim()
+    if (!productName) {
+      alert('请输入商品名称')
+      return
+    }
+
+    // 尝试匹配商品
     let productId = newProduct.value.product_id
-    if (!productId) {
-      if (!newProduct.value.product_name) {
-        alert('请先选择商品')
-        return
-      }
-      const matched = allProducts.value.find(p => p.name === newProduct.value.product_name)
+    if (!productId || productId === -1) {
+      // 尝试通过名称查找商品ID
+      const matched = allProducts.value.find(p => p.name.toLowerCase() === productName.toLowerCase())
       if (matched) {
         productId = matched.id
+        newProduct.value.product_id = productId
+      } else if (productName === '+ 创建新商品') {
+        // 用户选择了创建新商品选项
+        await openQuickCreateProduct()
+        return
       } else {
-        alert('请选择有效的商品')
+        // 没有匹配的商品，询问是否创建
+        if (confirm(`未找到商品"${productName}"，是否创建一个新商品？`)) {
+          await openQuickCreateProductWithName(productName)
+          return
+        }
         return
       }
     }
 
-    // 如果选择了商家ID，使用它；否则不发送merchant_id
+    // 商家处理
+    const merchantName = merchantSearchTerm.value.trim()
     let merchantId = newProduct.value.merchant_id
-    if (!merchantId && newProduct.value.merchant_name) {
-      const matched = allMerchants.value.find(m => m.name === newProduct.value.merchant_name)
+    if (merchantName && (!merchantId || merchantId === -1)) {
+      // 尝试通过名称查找商家ID
+      const matched = allMerchants.value.find(m => m.name.toLowerCase() === merchantName.toLowerCase())
       if (matched) {
         merchantId = matched.id
+        newProduct.value.merchant_id = merchantId
+      } else if (merchantName === '+ 创建新商家') {
+        await openQuickCreateMerchant()
+        return
+      } else if (confirm(`未找到商家"${merchantName}"，是否创建一个新商家？`)) {
+        await openQuickCreateMerchantWithName(merchantName)
+        return
       }
+    }
+
+    if (merchantId === -1) {
+      merchantId = 0
     }
 
     // 验证价格、数量等必填字段
@@ -572,8 +785,8 @@ async function addProduct() {
       original_quantity: newProduct.value.quantity,
       original_unit: newProduct.value.unit,
       merchant_id: merchantId || undefined,
-      record_type: newProduct.value.is_purchase ? 'purchase' : 'price',  // 这个SB字段控制是否计入支出
-      recorded_at: newProduct.value.recorded_at || undefined  // 发送自定义时间
+      record_type: newProduct.value.is_purchase ? 'purchase' : 'price',
+      recorded_at: newProduct.value.recorded_at || undefined
     }
 
     if (editingProduct.value) {
@@ -591,8 +804,9 @@ async function addProduct() {
     if (merchantId) {
       lastMerchantId.value = merchantId
     }
-    if (newProduct.value.merchant_name) {
-      lastMerchantName.value = newProduct.value.merchant_name
+    // 保存商家名称（从搜索词获取）
+    if (merchantSearchTerm.value) {
+      lastMerchantName.value = merchantSearchTerm.value
     }
 
     closeModal()
@@ -644,10 +858,9 @@ function onProductInput() {
     if (!allProducts.value.find(p => p.name === newProduct.value.product_name)) {
       newProduct.value.product_id = 0
     }
-    showProductSuggestions.value = true
-    selectedIndex.value = -1
-    updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle)
-  }, 300)
+    // 调用过滤函数
+    filterProductOptions()
+  }, 300)  // 延迟300ms以避免频繁过滤
 }
 
 function selectProduct(product: ProductSuggestion) {
@@ -1012,20 +1225,112 @@ function updateSuggestionsPosition(
 
 .modal-content {
   background: white;
-  padding: 2rem;
   border-radius: 1rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   width: 90%;
   max-width: 500px;
   max-height: 90vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.modal-content h2 {
-  margin-top: 0;
-  margin-bottom: 1.5rem;
+.modal-content {
+  padding: 0;
+}
+
+/* 模态框标题栏 */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h2 {
+  margin: 0;
   color: #333;
   font-size: 1.5rem;
+}
+
+/* 表单区域可滚动 */
+.modal-form {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 1.5rem 2rem;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+/* 底部按钮区域 */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 1rem 2rem;
+  flex-shrink: 0;
+  border-top: 1px solid #eee;
+  background: #fafafa;
+}
+
+/* 横向滚动条始终显示 */
+.modal-form,
+.modal-content {
+  overflow-x: auto;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #999;
+  padding: 0.25rem 0.5rem;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #333;
+}
+
+/* 可编辑下拉输入框 */
+.datalist-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.datalist-input:focus {
+  outline: none;
+  border-color: #42b883;
+}
+
+/* 数量与单位行 - 始终1:1比例 */
+.quantity-unit-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.quantity-unit-row input,
+.quantity-unit-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.quantity-unit-row select {
+  max-width: 50%;
+}
+
+/* 表单操作区域 - 只保留提交按钮 */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
 }
 
 .form-group {
@@ -1234,7 +1539,28 @@ function updateSuggestionsPosition(
   }
 
   .modal-content {
-    padding: 1.5rem;
+    max-height: 85vh;
+  }
+
+  .modal-header {
+    padding: 1rem;
+  }
+
+  .modal-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .modal-form {
+    padding: 1rem;
+  }
+
+  .close-btn {
+    font-size: 1.25rem;
+  }
+
+  .datalist-input {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.9375rem;
   }
 
   .add-btn {
@@ -1285,16 +1611,28 @@ function updateSuggestionsPosition(
   }
 
   .modal-content {
-    padding: 1rem;
-    max-width: calc(100% - 2rem);
+    max-width: calc(100% - 1rem);
+    max-height: 85vh;
+  }
+
+  .modal-header {
+    padding: 0.75rem;
+  }
+
+  .modal-header h2 {
+    font-size: 1.125rem;
+  }
+
+  .modal-form {
+    padding: 0.75rem;
   }
 
   .form-actions {
     flex-direction: column;
+    padding: 0.75rem;
   }
 
-  .btn-primary,
-  .btn-secondary {
+  .btn-primary {
     width: 100%;
   }
 
