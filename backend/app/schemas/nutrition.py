@@ -46,3 +46,7 @@ class NutritionMatchResponse(BaseModel):
 class NutritionCorrectRequest(BaseModel):
     ingredient_name: str
     nutrition_id: int
+
+
+# 导入合并相关的模型
+from .ingredient_merge import IngredientMergeRequest, IngredientMergeResponse

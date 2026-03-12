@@ -1,308 +1,3 @@
-<template>
-  <PageHeader title="原料管理" :show-back="true">
-    <template #extra>
-      <button @click="showAddModal = true" class="btn-square add-btn" title="添加原料">
-        <i class="mdi mdi-plus"></i>
-      </button>
-    </template>
-  </PageHeader>
-
-  <div class="ingredient-list">
-    <div class="search-filter">
-      <div class="search-box">
-        <input v-model="searchTerm" placeholder="搜索原料名称或别名..." class="search-input" />
-      </div>
-      <div class="filter-options">
-        <select v-model="selectedCategory" class="filter-select">
-          <option value="">所有分类</option>
-          <option v-for="category in categories" :key="category.id" :value="category.id">
-            {{ category.display_name }}
-          </option>
-        </select>
-      </div>
-      <button @click="loadIngredients" class="btn-search" title="搜索">
-        <i class="mdi mdi-magnify"></i>
-      </button>
-    </div>
-
-    <div v-if="loading" class="loading">加载中...</div>
-
-    <div v-else-if="filteredIngredients.length === 0" class="empty-state">
-      <p>暂无原料数据</p>
-      <button @click="showAddModal = true" class="btn-primary">添加原料</button>
-    </div>
-
-    <div v-else class="ingredient-grid">
-      <div v-for="ingredient in filteredIngredients" :key="ingredient.id" class="ingredient-card">
-        <div class="ingredient-header">
-          <h3>
-            {{ ingredient.name }}
-            <div class="ingredient-tags">
-              <span v-if="ingredient.category_name" class="category-tag">{{ ingredient.category_name }}</span>
-              <span v-if="ingredient.default_unit" class="unit-tag">{{ ingredient.default_unit }}</span>
-            </div>
-            <span v-if="ingredient.is_imported" class="imported-badge" title="导入菜谱时顺带导入">导入</span>
-          </h3>
-          <div class="ingredient-actions">
-            <button @click="editIngredient(ingredient)" class="btn-edit" title="编辑">
-              <i class="mdi mdi-pencil"></i>
-            </button>
-            <button @click="viewNutrition(ingredient)" class="btn-nutrition" title="查看营养">
-              <i class="mdi mdi-food"></i>
-            </button>
-            <button @click="deleteIngredient(ingredient)" class="btn-delete" title="删除">
-              <i class="mdi mdi-delete"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="ingredient-info">
-          <p v-if="ingredient.aliases && ingredient.aliases.length > 0">
-            <strong>别名:</strong> {{ ingredient.aliases.join(', ') }}
-          </p>
-        </div>
-
-        <div class="ingredient-actions-secondary">
-          <button @click="showMergeModal(ingredient)" class="btn-action">
-            <i class="mdi mdi-merge"></i> 合并
-          </button>
-          <button @click="showHierarchy(ingredient)" class="btn-action">
-            <i class="mdi mdi-sitemap"></i> 层级关系
-          </button>
-          <button @click="showAlternatives(ingredient)" class="btn-action">
-            <i class="mdi mdi-shuffle-variant"></i> 替代品
-          </button>
-          <button @click="showConvertUnits(ingredient)" class="btn-action">
-            <i class="mdi mdi-scale"></i> 单位转换
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 分页 -->
-    <Pagination
-      v-if="total > 0"
-      :current-page="currentPage"
-      :page-size="pageSize"
-      :total="total"
-      @change-page="handlePageChange"
-      @change-page-size="handlePageSizeChange"
-    />
-
-    <!-- 添加/编辑原料模态框 -->
-    <div v-if="showAddModal" class="modal-overlay" @click="closeAddModal">
-      <div class="modal-content" @click.stop>
-        <h2>{{ editingIngredient ? '编辑原料' : '添加原料' }}</h2>
-        <form @submit.prevent="saveIngredient">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="ingredientName">原料名称:</label>
-              <input
-                v-model="newIngredient.name"
-                type="text"
-                id="ingredientName"
-                required
-                :disabled="isNameInputDisabled"
-              />
-            </div>
-            <div class="form-group">
-              <label for="ingredientCategory">分类:</label>
-              <select v-model="newIngredient.category_id" id="ingredientCategory" class="select-input">
-                <option value="">请选择分类</option>
-                <option v-for="category in categories" :key="category.id" :value="category.id">
-                  {{ category.display_name }}
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label for="ingredientAliases">别名 (用逗号分隔):</label>
-            <input
-              v-model="newIngredient.aliasesText"
-              type="text"
-              id="ingredientAliases"
-              placeholder="例如: 土豆, 马铃薯, Potato"
-            />
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="ingredientDensity">密度 (g/mL):</label>
-              <input
-                v-model="newIngredient.density"
-                type="number"
-                step="any"
-                id="ingredientDensity"
-                placeholder="例如: 1.0 (水), 0.57 (面粉)"
-              />
-            </div>
-            <div class="form-group">
-              <label for="ingredientDefaultUnit">默认单位:</label>
-              <select v-model="newIngredient.default_unit" id="ingredientDefaultUnit" class="select-input">
-                <option value="">请选择单位</option>
-                <option v-for="unit in units" :key="unit.abbreviation" :value="unit.abbreviation">
-                  {{ unit.name }} ({{ unit.abbreviation }})
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button type="button" @click="closeAddModal" class="btn-secondary">取消</button>
-            <button type="submit" class="btn-primary">{{ editingIngredient ? '更新' : '添加' }}</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- 层级关系模态框 -->
-    <div v-if="showHierarchyModal" class="modal-overlay" @click="closeHierarchyModal">
-      <div class="modal-content large-modal" @click.stop>
-        <h2>{{ selectedIngredient?.name }} - 层级关系</h2>
-
-        <div v-if="hierarchyLoading" class="loading">加载中...</div>
-
-        <div v-else-if="hierarchyData">
-          <div v-if="hierarchyData.parents && hierarchyData.parents.length > 0">
-            <h3>父级原料</h3>
-            <div class="hierarchy-item" v-for="parent in hierarchyData.parents" :key="parent.id">
-              <span>{{ parent.name }}</span>
-              <span class="confidence">置信度: {{ parent.confidence }}</span>
-            </div>
-          </div>
-
-          <div v-if="hierarchyData.children && hierarchyData.children.length > 0">
-            <h3>子级原料</h3>
-            <div class="hierarchy-item" v-for="child in hierarchyData.children" :key="child.id">
-              <span>{{ child.name }}</span>
-              <span class="confidence">置信度: {{ child.confidence }}</span>
-            </div>
-          </div>
-
-          <div v-if="!(hierarchyData.parents && hierarchyData.parents.length > 0) && !(hierarchyData.children && hierarchyData.children.length > 0)">
-            <p>暂无层级关系数据</p>
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button @click="closeHierarchyModal" class="btn-secondary">关闭</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 替代品模态框 -->
-    <div v-if="showAlternativesModal" class="modal-overlay" @click="closeAlternativesModal">
-      <div class="modal-content medium-modal" @click.stop>
-        <h2>{{ selectedIngredient?.name }} - 替代品</h2>
-
-        <div v-if="alternativesLoading" class="loading">加载中...</div>
-
-        <div v-else-if="alternativesData && alternativesData.length > 0" class="alternative-list">
-          <div class="alternative-item" v-for="alt in alternativesData" :key="alt.id">
-            <h4>{{ alt.name }}</h4>
-            <p v-if="alt.category_name"><strong>分类:</strong> {{ alt.category_name }}</p>
-            <p v-if="alt.aliases && alt.aliases.length > 0"><strong>别名:</strong> {{ alt.aliases.join(', ') }}</p>
-            <p v-if="alt.density"><strong>密度:</strong> {{ alt.density }} g/mL</p>
-            <p v-if="alt.default_unit"><strong>默认单位:</strong> {{ alt.default_unit }}</p>
-          </div>
-        </div>
-
-        <div v-else>
-          <p>暂无替代品数据</p>
-        </div>
-
-        <div class="form-actions">
-          <button @click="closeAlternativesModal" class="btn-secondary">关闭</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 单位转换模态框 -->
-    <div v-if="showConvertModal" class="modal-overlay" @click="closeConvertModal">
-      <div class="modal-content medium-modal" @click.stop>
-        <h2>{{ selectedIngredient?.name }} - 单位转换</h2>
-
-        <div class="conversion-section">
-          <div class="form-row">
-            <div class="form-group">
-              <label>数量:</label>
-              <input v-model.number="conversionValue" type="number" step="any" placeholder="输入数值" />
-            </div>
-            <div class="form-group">
-              <label>从单位:</label>
-              <select v-model="fromUnit" class="select-input">
-                <option v-for="unit in units" :key="`${unit.id}-from`" :value="unit.abbreviation">
-                  {{ unit.name }} ({{ unit.abbreviation }})
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>到单位:</label>
-              <select v-model="toUnit" class="select-input">
-                <option v-for="unit in units" :key="`${unit.id}-to`" :value="unit.abbreviation">
-                  {{ unit.name }} ({{ unit.abbreviation }})
-                </option>
-              </select>
-            </div>
-            <div class="form-group" style="display: flex; align-items: flex-end;">
-              <button @click="performConversion" class="btn-primary">转换</button>
-            </div>
-          </div>
-
-          <div v-if="conversionResult !== null" class="conversion-result">
-            <h4>转换结果:</h4>
-            <p>{{ conversionValue }} {{ fromUnit }} = {{ conversionResult }} {{ toUnit }}</p>
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button @click="closeConvertModal" class="btn-secondary">关闭</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 合并原料模态框 -->
-    <div v-if="showMergeModalFlag" class="modal-overlay" @click="closeMergeModal">
-      <div class="modal-content medium-modal" @click.stop>
-        <h2>合并原料 - {{ mergeSource?.name }}</h2>
-
-        <div class="merge-info">
-          <p>选择要合并到的目标原料。合并后，源原料将被软删除，所有关联数据将迁移到目标原料。</p>
-        </div>
-
-        <div class="form-group">
-          <label>
-            <input type="checkbox" v-model="showAllIngredients" />
-            显示全部原料（默认只显示相似原料）
-          </label>
-        </div>
-
-        <div class="form-group">
-          <label for="mergeTarget">目标原料:</label>
-          <select v-model="mergeTargetId" id="mergeTarget" class="select-input">
-            <option value="">请选择目标原料</option>
-            <option v-for="ing in mergeableIngredients" :key="ing.id" :value="ing.id">
-              {{ ing.name }}
-              <span v-if="ing.is_imported">(导入)</span>
-            </option>
-          </select>
-        </div>
-
-        <div v-if="mergeLoading" class="loading">处理中...</div>
-
-        <div class="form-actions">
-          <button @click="closeMergeModal" class="btn-secondary">取消</button>
-          <button @click="performMerge" class="btn-primary" :disabled="!mergeTargetId || mergeLoading">确认合并</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -357,25 +52,25 @@ interface NewIngredient {
 }
 
 interface HierarchyData {
-  ingredient: {
+  parent_relations: Array<{
     id: number
-    name: string
-    category_id?: number
-    density?: number
-    default_unit?: string
-    aliases: string[]
-  }
-  parents: Array<{
-    id: number
-    name: string
-    relationship_type: string
-    confidence: number
+    parent_id: number
+    parent_name: string
+    child_id: number
+    child_name: string
+    relation_type: string
+    strength: number
+    created_at: string
   }>
-  children: Array<{
+  child_relations: Array<{
     id: number
-    name: string
-    relationship_type: string
-    confidence: number
+    parent_id: number
+    parent_name: string
+    child_id: number
+    child_name: string
+    relation_type: string
+    strength: number
+    created_at: string
   }>
 }
 
@@ -439,6 +134,13 @@ const mergeSource = ref<Ingredient | null>(null)
 const mergeTargetId = ref<number | null>(null)
 const mergeLoading = ref(false)
 const showAllIngredients = ref(false)
+
+// 层级关系管理相关
+const showManageHierarchyModal = ref(false)
+const hierarchyParentId = ref<number | null>(null)
+const hierarchyChildId = ref<number | null>(null)
+const hierarchyRelationType = ref<string>('contains')
+const hierarchyStrength = ref<number>(50)
 
 // 可合并的原料列表
 const mergeableIngredients = computed(() => {
@@ -533,9 +235,10 @@ async function performMerge() {
 
   mergeLoading.value = true
   try {
+    // 调用后端合并API，修正请求体格式
     await api.post('/ingredients/merge', {
-      source_id: mergeSource.value.id,
-      target_id: mergeTargetId.value
+      source_ingredient_ids: [mergeSource.value.id],
+      target_ingredient_id: mergeTargetId.value
     })
     alert('合并成功')
     closeMergeModal()
@@ -718,7 +421,8 @@ async function showHierarchy(ingredient: Ingredient) {
   selectedIngredient.value = ingredient
   hierarchyLoading.value = true
   try {
-    const response = await api.get(`/ingredients/hierarchy/${ingredient.id}`)
+    // 调用后端层级关系API
+    const response = await api.get(`/ingredients/${ingredient.id}/hierarchy`)
     hierarchyData.value = response
     showHierarchyModal.value = true
   } catch (error) {
@@ -739,16 +443,22 @@ async function showAlternatives(ingredient: Ingredient) {
   selectedIngredient.value = ingredient
   alternativesLoading.value = true
   try {
-    const response = await api.get(`/ingredients/alternatives/${ingredient.id}`)
-    alternativesData.value = response.map((alt: any) => ({
-      ...alt,
-      aliases: alt.aliases || [],
-      category_name: getCategoryName(alt.category_id)
-    }))
+    // 先尝试获取合并状态
+    const mergeStatus = await api.get(`/ingredients/${ingredient.id}/merge-status`)
+    if (mergeStatus.is_merged) {
+      // 如果已合并，显示相关信息
+      alert(`${ingredient.name} 已合并到 ${mergeStatus.merged_into_name}`)
+      alternativesLoading.value = false
+      return
+    }
+
+    // 如果未合并，获取替代品信息（可以根据层级关系推断替代品）
+    // 这里可以进一步扩展逻辑，获取可能的替代品信息
+    alternativesData.value = []  // 暂时返回空数组
     showAlternativesModal.value = true
   } catch (error) {
-    console.error('Failed to load alternatives:', error)
-    alert('加载替代品失败')
+    console.error('Failed to load alternatives or merge status:', error)
+    alert('加载替代品信息失败')
   } finally {
     alternativesLoading.value = false
   }
@@ -788,7 +498,579 @@ async function performConversion() {
     alert('单位转换失败')
   }
 }
+
+// 获取合并历史记录
+async function getMergeHistory() {
+  try {
+    const response = await api.get('/ingredients/merge-history')
+    return response.records || []
+  } catch (error) {
+    console.error('Failed to fetch merge history:', error)
+    return []
+  }
+}
+
+// 显示层级关系管理模态框
+function showManageHierarchyModalFunc(ingredient: Ingredient) {
+  selectedIngredient.value = ingredient
+  hierarchyParentId.value = null
+  hierarchyChildId.value = null
+  hierarchyRelationType.value = 'contains'
+  hierarchyStrength.value = 50
+
+  // 先加载层级关系数据
+  hierarchyLoading.value = true
+  api.get(`/ingredients/${ingredient.id}/hierarchy`)
+    .then(response => {
+      hierarchyData.value = response
+      showManageHierarchyModal.value = true
+    })
+    .catch(error => {
+      console.error('Failed to load hierarchy:', error)
+      alert('加载层级关系失败')
+    })
+    .finally(() => {
+      hierarchyLoading.value = false
+    })
+}
+
+// 关闭层级关系管理模态框
+function closeManageHierarchyModal() {
+  showManageHierarchyModal.value = false
+  selectedIngredient.value = null
+  hierarchyParentId.value = null
+  hierarchyChildId.value = null
+  hierarchyData.value = null
+}
+
+// 创建新的层级关系
+async function createNewHierarchyRelation() {
+  if (!hierarchyParentId.value || !hierarchyChildId.value) {
+    alert('请选择父级和子级原料')
+    return
+  }
+
+  if (hierarchyParentId.value === hierarchyChildId.value) {
+    alert('父级和子级原料不能相同')
+    return
+  }
+
+  try {
+    await createHierarchyRelation(hierarchyParentId.value, hierarchyChildId.value, hierarchyRelationType.value, hierarchyStrength.value)
+    // 重新加载层级关系数据
+    if (selectedIngredient.value) {
+      await showHierarchy(selectedIngredient.value) // 刷新hierarchyData
+      // 也需要更新管理模态框的数据
+      const response = await api.get(`/ingredients/${selectedIngredient.value.id}/hierarchy`)
+      hierarchyData.value = response
+    }
+  } catch (error) {
+    console.error('Failed to create hierarchy relation:', error)
+  }
+}
+
+// 添加创建层级关系的功能
+async function createHierarchyRelation(parentId: number, childId: number, relationType: string = 'contains', strength: number = 50) {
+  try {
+    const response = await api.post('/ingredients/hierarchy', {
+      parent_id: parentId,
+      child_id: childId,
+      relation_type: relationType,
+      strength: strength
+    })
+    alert('层级关系创建成功')
+    // 重新加载层级关系数据
+    if (selectedIngredient.value) {
+      await showHierarchy(selectedIngredient.value)
+    }
+    return true
+  } catch (error) {
+    console.error('Failed to create hierarchy relation:', error)
+    alert(error.response?.data?.detail || '创建层级关系失败')
+    return false
+  }
+}
+
+// 添加删除层级关系的功能
+async function deleteHierarchyRelation(relationId: number) {
+  if (!confirm('确定要删除这个层级关系吗？此操作不可撤销。')) {
+    return
+  }
+
+  try {
+    await api.delete(`/ingredients/hierarchy/${relationId}`)
+    alert('层级关系删除成功')
+    // 重新加载层级关系数据
+    if (selectedIngredient.value) {
+      await showHierarchy(selectedIngredient.value)
+      // 更新管理模态框的数据
+      const response = await api.get(`/ingredients/${selectedIngredient.value.id}/hierarchy`)
+      hierarchyData.value = response
+    }
+    return true
+  } catch (error: any) {
+    console.error('Failed to delete hierarchy relation:', error)
+    alert(error.response?.data?.detail || '删除层级关系失败')
+    return false
+  }
+}
 </script>
+
+<template>
+  <PageHeader title="原料管理" subtitle="管理食材及其属性" :show-back="true" />
+  <div class="ingredient-list">
+
+    <!-- 搜索和筛选 -->
+    <div class="search-filter">
+      <div class="search-box">
+        <input
+          v-model="searchTerm"
+          @keyup.enter="loadIngredients"
+          type="text"
+          placeholder="搜索原料..."
+          class="search-input"
+        />
+      </div>
+      <div class="filter-options">
+        <select v-model="selectedCategory" @change="loadIngredients" class="filter-select">
+          <option value="">所有类别</option>
+          <option v-for="category in categories" :key="category.id" :value="category.id">
+            {{ category.display_name }}
+          </option>
+        </select>
+        <button @click="loadIngredients" class="btn-search">
+          <i class="mdi mdi-magnify"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 加载状态 -->
+    <div v-if="loading" class="loading">
+      <p>加载中...</p>
+    </div>
+
+    <!-- 空状态 -->
+    <div v-else-if="ingredients.length === 0" class="empty-state">
+      <p>暂无原料数据</p>
+      <button @click="showAddModal = true" class="btn-primary">添加原料</button>
+    </div>
+
+    <!-- 原料列表 -->
+    <div v-else class="ingredient-grid">
+      <div v-for="ingredient in ingredients" :key="ingredient.id" class="ingredient-card">
+        <div class="ingredient-header">
+          <h3>
+            {{ ingredient.name }}
+            <span v-if="ingredient.is_imported" class="imported-badge">导入</span>
+            <span v-if="ingredient.category_name" class="category-tag">{{ ingredient.category_name }}</span>
+            <span v-if="ingredient.default_unit" class="unit-tag">{{ ingredient.default_unit }}</span>
+          </h3>
+          <div class="ingredient-actions">
+            <button @click="editIngredient(ingredient)" class="btn-edit" title="编辑">
+              <i class="mdi mdi-pencil"></i>
+            </button>
+            <button @click="viewNutrition(ingredient)" class="btn-nutrition" title="营养信息">
+              <i class="mdi mdi-food-variant"></i>
+            </button>
+            <button @click="deleteIngredient(ingredient)" class="btn-delete" title="删除">
+              <i class="mdi mdi-trash-can"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="ingredient-info">
+          <p v-if="ingredient.aliases && ingredient.aliases.length > 0">
+            <strong>别名：</strong>{{ ingredient.aliases.join(', ') }}
+          </p>
+          <p v-if="ingredient.density">
+            <strong>密度：</strong>{{ ingredient.density }} g/ml
+          </p>
+          <p>
+            <strong>创建时间：</strong>{{ formatDate(ingredient.created_at) }}
+          </p>
+        </div>
+
+        <div class="ingredient-actions-secondary">
+          <button @click="showHierarchy(ingredient)" class="btn-action">
+            <i class="mdi mdi-sitemap"></i> 查看层级关系
+          </button>
+          <button @click="showManageHierarchyModalFunc(ingredient)" class="btn-action">
+            <i class="mdi mdi-sitemap"></i> 管理层级关系
+          </button>
+          <button @click="showAlternatives(ingredient)" class="btn-action">
+            <i class="mdi mdi-link-variant"></i> 替代品
+          </button>
+          <button @click="showMergeModal(ingredient)" class="btn-action" title="合并原料">
+              <i class="mdi mdi-scale"></i> 合并
+          </button>
+          <button @click="showConvertUnits(ingredient)" class="btn-action">
+            <i class="mdi mdi-transfer"></i> 单位转换
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 分页 -->
+    <Pagination
+      v-if="total > 0"
+      :current-page="currentPage"
+      :page-size="pageSize"
+      :total="total"
+      @page-change="handlePageChange"
+      @page-size-change="handlePageSizeChange"
+    />
+
+    <!-- 添加/编辑模态框 -->
+    <div v-if="showAddModal" class="modal-overlay">
+      <div class="modal-content">
+        <h2>{{ editingIngredient ? '编辑原料' : '添加原料' }}</h2>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="name">名称 *</label>
+            <input
+              id="name"
+              v-model="newIngredient.name"
+              :disabled="isNameInputDisabled"
+              type="text"
+              class="select-input"
+              :placeholder="isNameInputDisabled ? '导入原料名称无法编辑' : '请输入原料名称'"
+            />
+            <p v-if="isNameInputDisabled" style="color: #999; font-size: 0.8rem; margin-top: 0.25rem;">
+              导入的原料只有管理员可以编辑名称
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label for="category">类别</label>
+            <select id="category" v-model="newIngredient.category_id" class="select-input">
+              <option value="">未分类</option>
+              <option v-for="category in categories" :key="category.id" :value="category.id">
+                {{ category.display_name }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="density">密度 (g/ml)</label>
+            <input
+              id="density"
+              v-model.number="newIngredient.density"
+              type="number"
+              step="0.01"
+              min="0"
+              class="select-input"
+              placeholder="0.00"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="default-unit">默认单位</label>
+            <input
+              id="default-unit"
+              v-model="newIngredient.default_unit"
+              type="text"
+              class="select-input"
+              placeholder="例如: g, ml, kg"
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="aliases">别名 (用逗号分隔)</label>
+          <textarea
+            id="aliases"
+            v-model="newIngredient.aliasesText"
+            rows="2"
+            class="select-input"
+            placeholder="请输入原料的别名，用逗号分隔"
+          ></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button @click="closeAddModal" class="btn-secondary">取消</button>
+          <button @click="saveIngredient" class="btn-primary">
+            {{ editingIngredient ? '更新' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 层级关系模态框 -->
+    <div v-if="showHierarchyModal" class="modal-overlay">
+      <div class="modal-content large-modal">
+        <h2>{{ selectedIngredient?.name }} 的层级关系</h2>
+
+        <div v-if="hierarchyLoading" class="loading">
+          <p>加载中...</p>
+        </div>
+
+        <div v-else-if="hierarchyData">
+          <div v-if="hierarchyData.parent_relations.length > 0">
+            <h3>上级关系</h3>
+            <div class="hierarchy-list">
+              <div v-for="relation in hierarchyData.parent_relations" :key="'parent-' + relation.id" class="hierarchy-item">
+                <span>{{ relation.parent_name }} ({{ relation.relation_type }})</span>
+                <span class="confidence">强度: {{ relation.strength }}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="hierarchyData.child_relations.length > 0">
+            <h3>下级关系</h3>
+            <div class="hierarchy-list">
+              <div v-for="relation in hierarchyData.child_relations" :key="'child-' + relation.id" class="hierarchy-item">
+                <span>{{ relation.child_name }} ({{ relation.relation_type }})</span>
+                <span class="confidence">强度: {{ relation.strength }}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="hierarchyData.parent_relations.length === 0 && hierarchyData.child_relations.length === 0">
+            <p>暂无层级关系</p>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button @click="closeHierarchyModal" class="btn-secondary">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 替代品模态框 -->
+    <div v-if="showAlternativesModal" class="modal-overlay">
+      <div class="modal-content">
+        <h2>{{ selectedIngredient?.name }} 的替代品</h2>
+
+        <div v-if="alternativesLoading" class="loading">
+          <p>加载中...</p>
+        </div>
+
+        <div v-else-if="alternativesData.length > 0">
+          <div class="alternative-list">
+            <div v-for="alt in alternativesData" :key="alt.id" class="alternative-item">
+              <h4>{{ alt.name }}</h4>
+              <p v-if="alt.category_name">{{ alt.category_name }}</p>
+              <p v-if="alt.aliases && alt.aliases.length > 0">
+                <strong>别名：</strong>{{ alt.aliases.join(', ') }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div v-else>
+          <p>暂无替代品信息</p>
+        </div>
+
+        <div class="form-actions">
+          <button @click="closeAlternativesModal" class="btn-secondary">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 单位转换模态框 -->
+    <div v-if="showConvertModal" class="modal-overlay">
+      <div class="modal-content medium-modal">
+        <h2>{{ selectedIngredient?.name }} 单位转换</h2>
+
+        <div class="conversion-section">
+          <div class="form-row">
+            <div class="form-group">
+              <label>数值</label>
+              <input
+                v-model.number="conversionValue"
+                type="number"
+                step="any"
+                class="select-input"
+                placeholder="输入数值"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>从单位</label>
+              <input
+                v-model="fromUnit"
+                type="text"
+                class="select-input"
+                placeholder="例如: g, kg, ml"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>到单位</label>
+              <input
+                v-model="toUnit"
+                type="text"
+                class="select-input"
+                placeholder="例如: g, kg, ml"
+              />
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button @click="performConversion" class="btn-primary">转换</button>
+          </div>
+
+          <div v-if="conversionResult !== null" class="conversion-result">
+            <h4>转换结果</h4>
+            <p>{{ conversionValue }} {{ fromUnit }} = {{ conversionResult }} {{ toUnit }}</p>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button @click="closeConvertModal" class="btn-secondary">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 合并模态框 -->
+    <div v-if="showMergeModalFlag" class="modal-overlay">
+      <div class="modal-content medium-modal">
+        <h2>合并原料</h2>
+
+        <div class="merge-info">
+          <p>将 <strong>{{ mergeSource?.name }}</strong> 合并到另一个原料</p>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input
+              v-model="showAllIngredients"
+              type="checkbox"
+              @change="loadIngredients"
+            />
+            显示所有原料（否则只显示相似名称的原料）
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label>选择目标原料</label>
+          <select v-model="mergeTargetId" class="select-input">
+            <option value="">请选择目标原料</option>
+            <option
+              v-for="ingredient in mergeableIngredients"
+              :key="ingredient.id"
+              :value="ingredient.id"
+            >
+              {{ ingredient.name }} {{ ingredient.is_imported ? '(导入)' : '' }}
+            </option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button @click="closeMergeModal" class="btn-secondary">取消</button>
+          <button
+            @click="performMerge"
+            :disabled="!mergeTargetId || mergeLoading"
+            class="btn-primary"
+          >
+            {{ mergeLoading ? '合并中...' : '执行合并' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 管理层级关系模态框 -->
+    <div v-if="showManageHierarchyModal" class="modal-overlay">
+      <div class="modal-content large-modal">
+        <h2>管理层级关系</h2>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>父级原料 (如: 鸡肉)</label>
+            <select v-model="hierarchyParentId" class="select-input">
+              <option value="">请选择父级原料</option>
+              <option
+                v-for="ingredient in ingredients"
+                :key="ingredient.id"
+                :value="ingredient.id"
+              >
+                {{ ingredient.name }} {{ ingredient.is_imported ? '(导入)' : '' }}
+              </option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>子级原料 (如: 鸡胸肉)</label>
+            <select v-model="hierarchyChildId" class="select-input">
+              <option value="">请选择子级原料</option>
+              <option
+                v-for="ingredient in ingredients"
+                :key="ingredient.id"
+                :value="ingredient.id"
+              >
+                {{ ingredient.name }} {{ ingredient.is_imported ? '(导入)' : '' }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>关系类型</label>
+            <select v-model="hierarchyRelationType" class="select-input">
+              <option value="contains">包含 (contains)</option>
+              <option value="substitutable">可替代 (substitutable)</option>
+              <option value="fallback">备选 (fallback)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>关系强度 (%)</label>
+            <input
+              v-model.number="hierarchyStrength"
+              type="number"
+              min="0"
+              max="100"
+              class="select-input"
+              placeholder="0-100"
+            />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button @click="createNewHierarchyRelation" class="btn-primary">
+            创建层级关系
+          </button>
+        </div>
+
+        <hr style="margin: 1.5rem 0;" />
+
+        <h3>当前层级关系</h3>
+        <div v-if="hierarchyData && (hierarchyData.parent_relations.length > 0 || hierarchyData.child_relations.length > 0)">
+          <div v-if="hierarchyData.parent_relations.length > 0">
+            <h4>作为子级的关系</h4>
+            <div class="relations-list">
+              <div v-for="relation in hierarchyData.parent_relations" :key="'parent-' + relation.id" class="relation-item">
+                <span>{{ relation.parent_name }} → {{ selectedIngredient?.name }} ({{ relation.relation_type }} - {{ relation.strength }}%)</span>
+                <button @click="deleteHierarchyRelation(relation.id)" class="btn-delete" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">删除</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="hierarchyData.child_relations.length > 0">
+            <h4>作为父级的关系</h4>
+            <div class="relations-list">
+              <div v-for="relation in hierarchyData.child_relations" :key="'child-' + relation.id" class="relation-item">
+                <span>{{ selectedIngredient?.name }} → {{ relation.child_name }} ({{ relation.relation_type }} - {{ relation.strength }}%)</span>
+                <button @click="deleteHierarchyRelation(relation.id)" class="btn-delete" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else>
+          <p>暂无层级关系</p>
+        </div>
+
+        <div class="form-actions">
+          <button @click="closeManageHierarchyModal" class="btn-secondary">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .ingredient-list {
@@ -1326,5 +1608,21 @@ async function performConversion() {
     padding: 0.375rem 0.5625rem;
     font-size: 0.8125rem;
   }
+}
+
+/* 层级关系列表样式 */
+.relations-list {
+  margin-top: 1rem;
+}
+
+.relation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+  background: #fafafa;
+  border-radius: 0.25rem;
+  margin-bottom: 0.5rem;
 }
 </style>
