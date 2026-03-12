@@ -22,6 +22,12 @@ async def calculate_recipe_cost(
 
     for recipe_ingredient in recipe.ingredients:
         ingredient = recipe_ingredient.ingredient
+
+        # 检查食材是否已被合并，如果是，使用合并后的目标食材
+        if ingredient and ingredient.is_merged and ingredient.merged_into_id:
+            # 获取合并后的目标食材
+            ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient.merged_into_id).first()
+
         if not ingredient:
             continue
 
@@ -162,6 +168,11 @@ async def calculate_recipe_nutrition(
 
     for recipe_ingredient in recipe.ingredients:
         ingredient = recipe_ingredient.ingredient
+
+        # 检查食材是否已被合并，如果是，使用合并后的目标食材
+        if ingredient and ingredient.is_merged and ingredient.merged_into_id:
+            ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient.merged_into_id).first()
+
         if not ingredient:
             continue
 
