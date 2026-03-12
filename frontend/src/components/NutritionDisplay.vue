@@ -18,11 +18,11 @@
       </div>
 
       <!-- 核心营养素 -->
-      <div v-if="coreNutrients" class="nutrition-section">
+      <div v-if="orderedCoreNutrients && Object.keys(orderedCoreNutrients).length > 0" class="nutrition-section">
         <h3>核心营养成分</h3>
         <div class="nutrient-grid">
           <div
-            v-for="(data, name) in coreNutrients"
+            v-for="(data, name) in orderedCoreNutrients"
             :key="name"
             class="nutrient-card"
           >
@@ -139,6 +139,7 @@ interface NutritionDisplayProps {
   showReference?: boolean
   progressSize?: 'default' | 'small'
   loading?: boolean
+  nutrientOrder?: string[]  // 新增：指定营养素显示顺序
 }
 
 const props = withDefaults(defineProps<NutritionDisplayProps>(), {
@@ -149,10 +150,44 @@ const props = withDefaults(defineProps<NutritionDisplayProps>(), {
   progressSize: 'default',
   loading: false,
   referenceAmount: 100,
-  referenceUnit: 'g'
+  referenceUnit: 'g',
+  nutrientOrder: () => []
 })
 
 const detailsExpanded = ref(false)
+
+// 定义标准营养素顺序，与菜谱中的顺序保持一致
+const standardNutrientOrder = [
+  '能量', '蛋白质', '脂肪', '碳水化合物', '膳食纤维',
+  '钙', '铁', '钠', '钾', '维生素A', '维生素C',
+  '维生素B1', '维生素B2', '维生素B12', '维生素D',
+  '维生素E', '维生素K'
+]
+
+// 根据指定顺序整理核心营养素
+const orderedCoreNutrients = computed(() => {
+  const nutrients = props.nutrition?.core_nutrients || {}
+  const order = props.nutrientOrder.length > 0 ? props.nutrientOrder : standardNutrientOrder
+
+  // 按照顺序排列存在的营养素
+  const ordered: Record<string, NutrientData> = {}
+
+  // 先按指定顺序添加
+  for (const nutrientName of order) {
+    if (nutrients[nutrientName]) {
+      ordered[nutrientName] = nutrients[nutrientName]
+    }
+  }
+
+  // 再添加不在顺序中的其他营养素
+  for (const [name, data] of Object.entries(nutrients)) {
+    if (!ordered[name]) {
+      ordered[name] = data
+    }
+  }
+
+  return ordered
+})
 
 const coreNutrients = computed(() => props.nutrition?.core_nutrients || {})
 const allNutrients = computed(() => props.nutrition?.all_nutrients || {})

@@ -4,6 +4,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.core.base_model import AuditMixin
+from app.models.ingredient_merge_record import IngredientMergeRecord
 
 
 class NutrientStatus(Enum):
