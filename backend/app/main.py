@@ -7,6 +7,8 @@ from app.api import ingredient_extended  # 新增的食材扩展API
 from app.api import products_entity  # 商品实体 API
 from app.api import user_preferences  # 用户偏好 API
 from app.api import units  # 单位管理 API
+from app.api import ingredient_merge  # 食材合并 API
+from app.api import ingredient_hierarchy  # 食材层级关系 API
 from app.core.database import Base, engine
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -284,6 +286,8 @@ app.include_router(products_entity.router, prefix="/api/v1", tags=["商品实体
 app.include_router(products.router, prefix="/api/v1/products", tags=["商品"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["用户偏好"])
 app.include_router(units.router, prefix="/api/v1", tags=["单位管理"])
+app.include_router(ingredient_merge.router, prefix="/api/v1", tags=["食材合并"])
+app.include_router(ingredient_hierarchy.router, prefix="/api/v1", tags=["食材层级"])
 
 
 @app.get("/")

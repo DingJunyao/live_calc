@@ -36,6 +36,10 @@ class Ingredient(Base, AuditMixin):
     # 是否为导入菜谱时顺带导入的原料
     is_imported = Column(Boolean, default=False, nullable=False)
 
+    # 合并相关字段
+    is_merged = Column(Boolean, default=False, nullable=False)  # 标记是否已被合并
+    merged_into_id = Column(Integer, ForeignKey("ingredients.id"), nullable=True)  # 合并到的目标食材ID
+
     # 关系
     category_obj = relationship("IngredientCategory", back_populates="ingredients")
     nutrition_data = relationship("NutritionData", foreign_keys=[nutrition_id])
@@ -48,6 +52,12 @@ class Ingredient(Base, AuditMixin):
     product_links = relationship("ProductIngredientLink", back_populates="ingredient", lazy="select")
     default_unit = relationship("Unit", lazy="select", foreign_keys=[default_unit_id])
     piece_weight_unit = relationship("Unit", lazy="select", foreign_keys=[piece_weight_unit_id])
+    # 新增：合并相关的关系
+    merged_to_target = relationship("Ingredient", remote_side=[id], back_populates="merged_from_sources")
+    merged_from_sources = relationship("Ingredient", back_populates="merged_to_target", foreign_keys=[merged_into_id])
+    merge_records_as_source = relationship("IngredientMergeRecord", foreign_keys="IngredientMergeRecord.source_ingredient_id", back_populates="source_ingredient")
+    merge_records_as_target = relationship("IngredientMergeRecord", foreign_keys="IngredientMergeRecord.target_ingredient_id", back_populates="target_ingredient")
+
 
 
 class IngredientNutritionMapping(Base, AuditMixin):
