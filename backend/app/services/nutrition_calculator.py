@@ -11,6 +11,7 @@ from app.models.nutrition_data import NutritionData, NRVStandard
 from app.models.nutrition import Ingredient
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.product_entity import Product
+from app.models.mixins import NutritionMixin
 
 
 class NutritionCalculator:
@@ -199,10 +200,15 @@ class NutritionCalculator:
         """
         计算商品的营养成分
 
+        使用 NutritionMixin 合并商品自定义营养值和食材层级 fallback 值：
+        1. 商品有自定义值 → 使用商品的值
+        2. 商品无自定义值 → 沿食材 fallback 链向上查找
+        3. 没有找到 → 视为未定义
+
         Args:
             product_id: 商品 ID
-            quantity: 数量（如果为 None，使用商品默认数量）
-            unit: 单位（如果为 None，使用商品默认单位）
+            quantity: 数量（如果为 None，使用默认 100g）
+            unit: 单位（如果为 None，使用默认 "g"）
 
         Returns:
             计算后的营养数据
@@ -212,37 +218,93 @@ class NutritionCalculator:
         if not product:
             return None
 
-        # 优先使用商品自定义营养数据
-        if product.has_custom_nutrition and product.custom_nutrition_data:
-            # 直接使用自定义数据
-            if quantity is None:
-                quantity = product.default_quantity or 100.0
-            if unit is None:
-                unit = product.default_unit or "g"
+        # 默认值
+        if quantity is None:
+            quantity = 100.0
+        if unit is None:
+            unit = "g"
 
-            scale_factor = quantity / (product.custom_nutrition_data.get("reference_amount", 100.0))
+        # 获取商品的自定义营养数据（如果有）
+        custom_data = getattr(product, 'custom_nutrition_data', None)
 
-            return {
-                "product_id": product_id,
-                "product_name": product.name,
-                "quantity": quantity,
-                "unit": unit,
-                "source": "custom",
-                "nutrition": self._calculate_scaled_nutrients(
-                    product.custom_nutrition_data,
-                    scale_factor
-                )
-            }
-
-        # 使用关联食材的 USDA 数据
+        # 获取关联的食材
+        ingredient = None
         if product.ingredient_id:
-            return self.calculate_ingredient_nutrition(
-                product.ingredient_id,
-                quantity or 100.0,
-                unit or "g"
-            )
+            ingredient = self.db.query(Ingredient).filter(
+                Ingredient.id == product.ingredient_id
+            ).first()
 
-        return None
+        # 使用 NutritionMixin 合并营养数据
+        merged_nutrients, sources = NutritionMixin.merge_nutrition_data(
+            self.db,
+            custom_data,
+            ingredient,
+            self._get_nutrition_template()
+        )
+
+        # 转换为前端组件期望的格式
+        # merged_nutrients 是扁平格式: { "能量": {...}, "蛋白质": {...}, "calcium": {...}, ... }
+        # 需要转换为: { core_nutrients: {...}, all_nutrients: {...}, nrp_totals: {...} }
+        core_nutrient_names = {"能量", "蛋白质", "脂肪", "碳水化合物", "膳食纤维",
+                              "钙", "铁", "钠", "钾", "维生素A", "维生素C",
+                              "维生素B1", "维生素B2", "维生素D", "维生素E", "维生素K", "维生素B12"}
+
+        core_nutrients = {}
+        all_nutrients = {}
+        nrp_totals = {}
+
+        for key, value in merged_nutrients.items():
+            if isinstance(value, dict) and 'value' in value:
+                # 放入 all_nutrients
+                all_nutrients[key] = value
+
+                # 判断是否是核心营养素
+                if key in core_nutrient_names:
+                    core_nutrients[key] = value
+                    # 如果有 nrp_pct，放入 nrp_totals
+                    if 'nrp_pct' in value and value['nrp_pct'] is not None:
+                        nrp_totals[key] = value['nrp_pct']
+
+        # 格式化返回数据
+        return {
+            "product_id": product_id,
+            "product_name": product.name,
+            "quantity": quantity,
+            "unit": unit,
+            "source": "merged",
+            "nutrition": {
+                "core_nutrients": core_nutrients,
+                "all_nutrients": all_nutrients,
+                "nrp_totals": nrp_totals
+            },
+            "nutrition_sources": sources
+        }
+
+    def _get_nutrition_template(self) -> dict:
+        """
+        获取营养素模板，定义需要包含的核心营养素
+
+        Returns:
+            营养素模板字典
+        """
+        return {
+            "能量": {"unit": "kcal"},
+            "蛋白质": {"unit": "g"},
+            "脂肪": {"unit": "g"},
+            "碳水化合物": {"unit": "g"},
+            "膳食纤维": {"unit": "g"},
+            "钙": {"unit": "mg"},
+            "铁": {"unit": "mg"},
+            "钠": {"unit": "mg"},
+            "钾": {"unit": "mg"},
+            "维生素A": {"unit": "μg"},
+            "维生素C": {"unit": "mg"},
+            "维生素B1": {"unit": "mg"},
+            "维生素B2": {"unit": "mg"},
+            "维生素D": {"unit": "μg"},
+            "维生素E": {"unit": "mg"},
+            "维生素K": {"unit": "μg"}
+        }
 
     def _convert_to_base(self, quantity: float, unit: str) -> float:
         """

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.core.base_model import AuditMixin
 from app.core.database import Base
@@ -15,6 +15,11 @@ class Product(Base, AuditMixin):
     image_url = Column(String(500))
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
     tags = Column(String(500))  # JSON 字符串存储标签列表
+
+    # 自定义营养数据（可选，优先级高于食材的营养数据）
+    # 格式同 NutritionData.nutrition_data
+    custom_nutrition_data = Column(JSON, nullable=True)
+    custom_nutrition_source = Column(String(50), default="custom")  # custom, ai_match
 
     # 关系
     ingredient = relationship("Ingredient", back_populates="products")
