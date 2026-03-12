@@ -219,9 +219,58 @@ async def calculate_recipe_nutrition(
 
         # 计算比例因子（菜谱中的数量 / 参考基准数量）
         # 确保单位一致才能比较
+
+        # 首先处理容量单位的密度转换
+        if standard_unit.lower() == "ml" and recipe_ingredient.unit:
+            # 如果是容量单位，尝试使用密度转换为重量
+            from app.models.ingredient_density import IngredientDensity
+
+            # 查找密度数据（mL → g）
+            density = db.query(IngredientDensity).filter(
+                IngredientDensity.ingredient_id == ingredient.id,
+                IngredientDensity.from_unit_id == recipe_ingredient.unit.id,
+                IngredientDensity.to_unit_id == 3  # g 的 ID
+            ).first()
+
+            if density and density.density_value:
+                # 使用密度转换：重量 = 容量 × 密度
+                standard_quantity = standard_quantity * Decimal(str(density.density_value))
+                standard_unit = "g"  # 转换为克
+            else:
+                # 没有密度数据，假设密度为 1.0 g/mL
+                standard_quantity = standard_quantity
+                standard_unit = "g"
+
         if standard_unit.lower() in ["g", "ml"] and reference_unit.lower() in ["g", "ml"]:
             # 如果都是重量或容量单位，可以计算比例
             ratio = standard_quantity / reference_amount
+        elif recipe_ingredient.unit and recipe_ingredient.unit.unit_type == "count":
+            # 如果是计数单位（如"个"），尝试使用 piece_weight 转换
+            if ingredient.piece_weight and ingredient.piece_weight_unit_id:
+                # 使用食材的标准重量转换（如：1个鸡蛋=50g）
+                piece_weight = Decimal(str(ingredient.piece_weight))
+                piece_weight_unit = ingredient.piece_weight_unit.abbreviation
+
+                # 转换为标准重量单位
+                converted_weight, converted_unit = convert_to_standard(piece_weight, piece_weight_unit)
+                # 计算总重量（数量 × 每个的重量）
+                total_weight = quantity * converted_weight
+
+                if converted_unit.lower() == reference_unit.lower():
+                    # 单位一致，计算比例
+                    ratio = total_weight / reference_amount
+                else:
+                    # 单位不一致，尝试转换
+                    from app.models.unit import Unit
+                    weight_unit_obj = db.query(Unit).filter(Unit.abbreviation == converted_unit).first()
+                    if weight_unit_obj and weight_unit_obj.unit_type == "mass":
+                        ratio = total_weight / reference_amount
+                    else:
+                        # 无法转换，使用默认值
+                        ratio = Decimal("1.0")
+            else:
+                # 没有设置标准重量，假设比例是1:1
+                ratio = Decimal("1.0")
         else:
             # 单位不一致，假设比例是1:1（使用参考值）
             ratio = Decimal("1.0")
@@ -230,7 +279,17 @@ async def calculate_recipe_nutrition(
         for nutrient_name, nutrient_data in core_nutrients.items():
             if nutrient_name in total_core_nutrients:
                 value = float(nutrient_data.get("value", 0) or 0)
-                total_core_nutrients[nutrient_name]["value"] += value * float(ratio)
+                source_unit = nutrient_data.get("unit", "")
+
+                # 如果是能量，检查单位并转换为 kcal
+                if nutrient_name == "能量" and source_unit == "kJ":
+                    # 先将 kJ 转换为 kcal（1 kJ = 0.239006 kcal）
+                    value_kcal = value * 0.239006
+                    total_core_nutrients[nutrient_name]["value"] += value_kcal * float(ratio)
+                    total_core_nutrients[nutrient_name]["unit"] = "kcal"
+                else:
+                    total_core_nutrients[nutrient_name]["value"] += value * float(ratio)
+                    total_core_nutrients[nutrient_name]["unit"] = source_unit
 
     servings = recipe.servings or 1
 
