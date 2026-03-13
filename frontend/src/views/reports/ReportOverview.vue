@@ -56,26 +56,44 @@ async function loadReports() {
     const startDate = firstDay.toISOString().split('T')[0]
     const endDate = today.toISOString().split('T')[0]
 
-    const expenseReport = await api.get<any>(
-      `/reports/expense?start_date=${startDate}&end_date=${endDate}`
-    )
-    totalExpense.value = (expenseReport && typeof expenseReport.total_expense !== 'undefined' && expenseReport.total_expense !== null)
-      ? Number(expenseReport.total_expense) || 0
-      : 0
+    // 构建完整的API URL用于调试
+    const apiUrl = `/reports/expense?start_date=${startDate}&end_date=${endDate}`
+    console.log('Fetching expense report from:', apiUrl)
+
+    try {
+      const expenseReport = await api.get<any>(apiUrl)
+      totalExpense.value = (expenseReport && typeof expenseReport.total_expense !== 'undefined' && expenseReport.total_expense !== null)
+        ? Number(expenseReport.total_expense) || 0
+        : 0
+    } catch (expenseError) {
+      console.error('Failed to load expense report:', expenseError)
+      totalExpense.value = 0
+    }
 
     // 获取记录数
-    const productsResponse = await api.get<{ total: number }>('/products/?limit=1')
-    productCount.value = (productsResponse && typeof productsResponse.total !== 'undefined' && productsResponse.total !== null)
-      ? Number(productsResponse.total) || 0
-      : 0
+    try {
+      const productsResponse = await api.get<{ total: number }>('/products/?limit=1')
+      productCount.value = (productsResponse && typeof productsResponse.total !== 'undefined' && productsResponse.total !== null)
+        ? Number(productsResponse.total) || 0
+        : 0
+    } catch (productError) {
+      console.error('Failed to load product count:', productError)
+      productCount.value = 0
+    }
 
     // 获取菜谱数
-    const recipesResponse = await api.get<{ total: number }>('/recipes/?limit=1')
-    recipeCount.value = (recipesResponse && typeof recipesResponse.total !== 'undefined' && recipesResponse.total !== null)
-      ? Number(recipesResponse.total) || 0
-      : 0
+    try {
+      const recipesResponse = await api.get<{ total: number }>('/recipes/?limit=1')
+      recipeCount.value = (recipesResponse && typeof recipesResponse.total !== 'undefined' && recipesResponse.total !== null)
+        ? Number(recipesResponse.total) || 0
+        : 0
+    } catch (recipeError) {
+      console.error('Failed to load recipe count:', recipeError)
+      recipeCount.value = 0
+    }
   } catch (error) {
     console.error('Failed to load reports:', error)
+    console.error('Error details:', error.message)
   } finally {
     loading.value = false
   }

@@ -131,23 +131,35 @@ async function loadDashboardData() {
       monthlyExpense.value = 0
     }
 
-    // 获取记录数量
+    // 获取个人统计信息（使用新API获取准确计数）
     try {
-      const productsResponse = await api.get<any>('/products')
-      // 处理分页格式，从total里取总数
-      recordCount.value = productsResponse?.total || productsResponse?.items?.length || 0
+      const statsResponse = await api.get<any>('/auth/personal-stats')
+      recordCount.value = statsResponse.record_count || 0
+      recipeCount.value = statsResponse.recipe_count || 0
     } catch (error) {
-      console.error('Failed to load record count:', error)
-      recordCount.value = 0
-    }
+      console.error('Failed to load personal stats:', error)
+      // 如果新的API失败，回退到原来的逻辑
+      try {
+        const productsResponse = await api.get<any>('/products')
+        recordCount.value = productsResponse?.total || productsResponse?.items?.length || 0
+      } catch (error2) {
+        console.error('Failed to load record count:', error2)
+        recordCount.value = 0
+      }
 
-    // 获取菜谱数量
-    try {
-      const recipesResponse = await api.get<any[]>('/recipes')
-      recipeCount.value = recipesResponse.length || 0
-    } catch (error) {
-      console.error('Failed to load recipe count:', error)
-      recipeCount.value = 0
+      try {
+        const recipesResponse = await api.get<any>('/recipes?limit=1&include_cost=false')
+        // 检查是否有分页格式的total
+        if (recipesResponse?.total !== undefined) {
+          recipeCount.value = recipesResponse.total || 0
+        } else {
+          // 如果没有分页格式，假定是数组格式
+          recipeCount.value = Array.isArray(recipesResponse) ? recipesResponse.length : 0
+        }
+      } catch (error2) {
+        console.error('Failed to load recipe count:', error2)
+        recipeCount.value = 0
+      }
     }
 
     // 获取最近记录

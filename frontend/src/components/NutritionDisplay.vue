@@ -17,43 +17,24 @@
         </span>
       </div>
 
-      <!-- 核心营养素 -->
+      <!-- 营养素展示 - 统一格式 -->
       <div v-if="orderedCoreNutrients && Object.keys(orderedCoreNutrients).length > 0" class="nutrition-section">
-        <h3>核心营养成分</h3>
+        <h3>营养成分</h3>
         <div class="nutrient-grid">
           <div
             v-for="(data, name) in orderedCoreNutrients"
             :key="name"
-            class="nutrient-card"
+            class="nutrient-item"
           >
-            <div class="nutrient-name">{{ name }}</div>
-            <div class="nutrient-value">
-              {{ formatValue(data.value) }} {{ data.unit }}
+            <div class="nutrient-info">
+              <span class="label">{{ name }}:</span>
+              <span class="value">
+                {{ formatValue(data.value) }} {{ data.unit }}
+              </span>
             </div>
-            <div v-if="showNRP" class="nutrient-nrp">
+            <div class="nutrient-actions" v-if="showNRP">
               <NutritionProgressBar
                 :percentage="data.nrp_pct"
-                :size="progressSize"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- NRV 汇总 -->
-      <div v-if="showNRP && nrpTotals" class="nutrition-section">
-        <h3>营养素参考值 (NRV)</h3>
-        <div class="nrp-summary">
-          <div
-            v-for="(percentage, name) in nrpTotals"
-            :key="name"
-            class="nrp-item"
-          >
-            <div class="nrp-name">{{ name }}</div>
-            <div class="nrp-bar">
-              <NutritionProgressBar
-                :percentage="percentage"
-                :size="progressSize"
                 :show-percentage="true"
               />
             </div>
@@ -74,7 +55,7 @@
           </button>
         </div>
 
-        <div v-if="detailsExpanded" class="nutrient-details">
+        <div v-if="detailsExpanded" class="nutrient-details-grid">
           <div
             v-for="(data, key) in allNutrients"
             :key="key"
@@ -87,7 +68,7 @@
             <div v-if="data.nrp_pct > 0" class="detail-nrp">
               <NutritionProgressBar
                 :percentage="data.nrp_pct"
-                size="small"
+                :show-percentage="true"
               />
             </div>
             <div v-if="data.note" class="detail-note">
@@ -311,54 +292,41 @@ function toggleDetails() {
 
 .nutrient-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1rem;
 }
 
-.nutrient-card {
+.nutrient-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   background: #f9f9f9;
   padding: 1rem;
   border-radius: 0.5rem;
   border: 1px solid #e0e0e0;
 }
 
-.nutrient-name {
-  font-size: 0.875rem;
-  color: #666;
-  margin-bottom: 0.5rem;
-}
-
-.nutrient-value {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 0.5rem;
-}
-
-.nutrient-nrp {
-  margin-top: 0.5rem;
-}
-
-.nrp-summary {
+.nutrient-info {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  flex: 1;
 }
 
-.nrp-item {
-  background: #f9f9f9;
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-}
-
-.nrp-name {
-  font-size: 0.875rem;
+.nutrient-info .label {
   color: #666;
-  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
 }
 
-.nrp-bar {
-  min-height: 24px;
+.nutrient-info .value {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.nutrient-actions {
+  min-width: 150px;
+  margin-left: 1rem;
 }
 
 .section-header {
@@ -390,19 +358,20 @@ function toggleDetails() {
   background: #e0e0e0;
 }
 
-.nutrient-details {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-height: 400px;
+.nutrient-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  max-height: 500px;
   overflow-y: auto;
+  padding: 0.5rem;
 }
 
 .nutrient-detail-item {
   background: #f9f9f9;
-  padding: 0.75rem;
+  padding: 1rem;
   border-radius: 0.5rem;
-  border-left: 3px solid #667eea;
+  border: 1px solid #e0e0e0;
 }
 
 .detail-header {
@@ -467,8 +436,15 @@ function toggleDetails() {
     gap: 0.75rem;
   }
 
-  .nutrient-value {
-    font-size: 1.125rem;
+  .nutrient-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .nutrient-actions {
+    width: 100%;
+    margin-left: 0;
   }
 
   .section-header h3 {
