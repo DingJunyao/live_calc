@@ -54,6 +54,21 @@
           </h3>
           <div class="product-actions">
             <button
+              @click.stop="viewProduct(product)"
+              class="btn-view"
+              title="查看"
+            >
+              <i class="mdi mdi-eye"></i>
+            </button>
+            <button
+              @click.stop="viewNutrition(product)"
+              class="btn-nutrition"
+              title="查看营养"
+              v-if="hasNutritionInfo(product)"
+            >
+              <i class="mdi mdi-apple"></i>
+            </button>
+            <button
               @click.stop="openEditModal(product)"
               class="btn-edit"
               title="编辑"
@@ -300,7 +315,22 @@ async function loadProducts() {
 async function loadIngredients() {
   try {
     const response = await api.get('/ingredients?limit=500')
-    ingredients.value = response.map((item: any) => ({
+
+    // 处理分页响应格式
+    let items: any[]
+
+    if (response.items && response.total !== undefined) {
+      // 分页响应格式
+      items = response.items
+    } else if (Array.isArray(response)) {
+      // 直接数组格式
+      items = response
+    } else {
+      // 默认处理
+      items = response || []
+    }
+
+    ingredients.value = items.map((item: any) => ({
       ...item,
       category_name: getCategoryName(item.category_id)
     }))
@@ -356,6 +386,18 @@ function handlePageSizeChange(size: number) {
 function viewProduct(product: Product) {
   // 点击卡片可以查看详情或展开操作
   console.log('View product:', product)
+}
+
+function hasNutritionInfo(product: Product): boolean {
+  // 检查商品是否有相关的营养数据
+  // 这里可以根据实际情况判断，比如检查是否有相关的营养数据记录
+  // 一个简单的判断方式是检查是否有关联的原料ID
+  return !!product.ingredient_id;
+}
+
+function viewNutrition(product: Product) {
+  // 导航到营养详情页面，传入商品ID
+  router.push(`/nutrition/product/${product.id}`);
 }
 
 // 模态框操作
@@ -916,6 +958,46 @@ async function deleteProduct(product: Product) {
 
 .notification-banner a:hover {
   color: #5568d3;
+}
+
+/* 营养信息指示器样式 */
+.nutrition-indicator {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+
+.nutrition-indicator i {
+  margin-right: 0.25rem;
+  font-size: 0.875rem;
+  vertical-align: middle;
+}
+
+.product-stats {
+  margin-top: 0.5rem;
+}
+
+.btn-nutrition {
+  background: #4caf50;
+  color: white;
+}
+
+.btn-nutrition:hover {
+  background: #43a047;
+}
+
+.btn-view {
+  background: #9e9e9e;
+  color: white;
+}
+
+.btn-view:hover {
+  background: #757575;
 }
 
 .search-filter-wrapper {

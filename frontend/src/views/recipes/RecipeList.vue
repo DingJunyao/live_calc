@@ -51,9 +51,9 @@
         </div>
 
         <div class="recipe-info">
-          <p>预计成本: ¥{{ recipe.estimated_cost || 0 }}</p>
-          <p>热量: {{ recipe.calories }} kcal</p>
-          <p>蛋白质: {{ recipe.protein }} g</p>
+          <p>预计成本: ¥{{ recipe.estimated_cost ? parseFloat(recipe.estimated_cost).toFixed(2) : '0.00' }}</p>
+          <p>热量: {{ recipe.calories ? parseFloat(recipe.calories).toFixed(3) : '0.000' }} kcal</p>
+          <p>蛋白质: {{ recipe.protein ? parseFloat(recipe.protein).toFixed(3) : '0.000' }} g</p>
         </div>
 
         <div v-if="isImportedRecipe(recipe)" class="recipe-label">

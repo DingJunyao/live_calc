@@ -83,6 +83,7 @@ async def create_recipe(
 
 
 @router.get("", response_model=PaginatedResponse)
+@router.get("/", response_model=PaginatedResponse)
 async def get_recipes(
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
@@ -121,57 +122,86 @@ async def get_recipes(
 
         # 手动构造响应对象列表
         items = []
-        for recipe in recipes:
-            # 确保 JSON 字段不为 None
-            tags_list = recipe.tags if isinstance(recipe.tags, list) else []
-            cooking_steps_list = recipe.cooking_steps if isinstance(recipe.cooking_steps, list) else []
-            tips_list = recipe.tips if isinstance(recipe.tips, list) else []
-            images_list = recipe.images if isinstance(recipe.images, list) else []
 
-            # 如果需要，计算成本和营养信息
-            estimated_cost = None
-            calories = None
-            protein = None
+        # 如果需要包含成本和营养信息，批量计算它们
+        if include_cost:
+            from app.services.recipe_service import batch_calculate_recipes_cost_nutrition
 
-            if include_cost:
-                try:
-                    # 计算菜谱成本
-                    cost_result = await calculate_recipe_cost(recipe.id, current_user.id, db=db)
-                    if cost_result and 'total_cost' in cost_result:
-                        estimated_cost = cost_result['total_cost']
-                except Exception as e:
-                    # 成本计算失败不影响列表返回
-                    pass
+            recipe_ids = [recipe.id for recipe in recipes]
+            batch_results = await batch_calculate_recipes_cost_nutrition(recipe_ids, current_user.id, db)
 
-                try:
-                    # 计算菜谱营养信息
-                    nutrition_result = await calculate_recipe_nutrition(recipe.id, db=db)
-                    if nutrition_result:
-                        calories = nutrition_result.get('total_calories')
-                        protein = nutrition_result.get('total_protein')
-                except Exception as e:
-                    # 营养计算失败不影响列表返回
-                    pass
+            # 为每个菜谱构建响应
+            for recipe in recipes:
+                # 确保 JSON 字段不为 None
+                tags_list = recipe.tags if isinstance(recipe.tags, list) else []
+                cooking_steps_list = recipe.cooking_steps if isinstance(recipe.cooking_steps, list) else []
+                tips_list = recipe.tips if isinstance(recipe.tips, list) else []
+                images_list = recipe.images if isinstance(recipe.images, list) else []
 
-            items.append(RecipeResponse(
-                id=recipe.id,
-                name=recipe.name,
-                source=recipe.source or "",
-                category=recipe.category,
-                tags=tags_list,
-                cooking_steps=cooking_steps_list,
-                total_time_minutes=recipe.total_time_minutes,
-                difficulty=recipe.difficulty,
-                servings=recipe.servings,
-                tips=tips_list,
-                images=images_list,
-                result_ingredient_id=recipe.result_ingredient_id,
-                created_at=recipe.created_at,
-                updated_at=recipe.updated_at,
-                estimated_cost=estimated_cost,
-                calories=int(calories) if calories is not None else None,
-                protein=protein
-            ))
+                # 从批量结果中获取成本和营养信息
+                recipe_result = batch_results.get(recipe.id, {})
+                cost_result = recipe_result.get('cost')
+                nutrition_result = recipe_result.get('nutrition')
+
+                # 从成本结果提取数据
+                estimated_cost = None
+                if cost_result and 'total_cost' in cost_result:
+                    estimated_cost = cost_result['total_cost']
+
+                # 从营养结果提取数据
+                calories = None
+                protein = None
+                if nutrition_result:
+                    calories = nutrition_result.get('total_calories')
+                    protein = nutrition_result.get('total_protein')
+
+                items.append(RecipeResponse(
+                    id=recipe.id,
+                    name=recipe.name,
+                    source=recipe.source or "",
+                    category=recipe.category,
+                    tags=tags_list,
+                    cooking_steps=cooking_steps_list,
+                    total_time_minutes=recipe.total_time_minutes,
+                    difficulty=recipe.difficulty,
+                    servings=recipe.servings,
+                    tips=tips_list,
+                    images=images_list,
+                    result_ingredient_id=recipe.result_ingredient_id,
+                    created_at=recipe.created_at,
+                    updated_at=recipe.updated_at,
+                    estimated_cost=estimated_cost,
+                    calories=int(calories) if calories is not None else None,
+                    protein=protein
+                ))
+        else:
+            # 不需要成本和营养信息时，直接构建响应
+            for recipe in recipes:
+                # 确保 JSON 字段不为 None
+                tags_list = recipe.tags if isinstance(recipe.tags, list) else []
+                cooking_steps_list = recipe.cooking_steps if isinstance(recipe.cooking_steps, list) else []
+                tips_list = recipe.tips if isinstance(recipe.tips, list) else []
+                images_list = recipe.images if isinstance(recipe.images, list) else []
+
+                items.append(RecipeResponse(
+                    id=recipe.id,
+                    name=recipe.name,
+                    source=recipe.source or "",
+                    category=recipe.category,
+                    tags=tags_list,
+                    cooking_steps=cooking_steps_list,
+                    total_time_minutes=recipe.total_time_minutes,
+                    difficulty=recipe.difficulty,
+                    servings=recipe.servings,
+                    tips=tips_list,
+                    images=images_list,
+                    result_ingredient_id=recipe.result_ingredient_id,
+                    created_at=recipe.created_at,
+                    updated_at=recipe.updated_at,
+                    estimated_cost=None,
+                    calories=None,
+                    protein=None
+                ))
 
         return PaginatedResponse.create(
             items=items,

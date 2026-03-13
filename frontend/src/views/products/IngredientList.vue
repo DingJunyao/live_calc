@@ -716,8 +716,8 @@ async function deleteHierarchyRelation(relationId: number) {
       :current-page="currentPage"
       :page-size="pageSize"
       :total="total"
-      @page-change="handlePageChange"
-      @page-size-change="handlePageSizeChange"
+      @change-page="handlePageChange"
+      @change-page-size="handlePageSizeChange"
     />
 
     <!-- 添加/编辑模态框 -->

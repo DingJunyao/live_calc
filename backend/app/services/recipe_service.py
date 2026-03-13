@@ -7,6 +7,32 @@ from app.models.nutrition_data import NutritionData  # NutritionData 从 nutriti
 from decimal import Decimal
 
 
+async def batch_calculate_recipes_cost_nutrition(
+    recipe_ids: List[int],
+    user_id: int,
+    db: Session = None
+) -> Dict[int, Dict]:
+    """批量计算多个菜谱的成本和营养信息"""
+    # 首先获取所有菜谱
+    recipes = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
+
+    results = {}
+
+    for recipe in recipes:
+        cost_result = await calculate_recipe_cost(recipe.id, user_id, db)
+        nutrition_result = await calculate_recipe_nutrition(recipe.id, db)
+
+        # 合并结果
+        combined_result = {
+            "cost": cost_result,
+            "nutrition": nutrition_result
+        }
+
+        results[recipe.id] = combined_result
+
+    return results
+
+
 async def calculate_recipe_cost(
     recipe_id: int,
     user_id: int,
@@ -166,6 +192,9 @@ async def calculate_recipe_nutrition(
 
     from app.utils.unit_converter import convert_to_standard
 
+    # 存储食材贡献详情
+    ingredient_details = []
+
     for recipe_ingredient in recipe.ingredients:
         ingredient = recipe_ingredient.ingredient
 
@@ -302,6 +331,23 @@ async def calculate_recipe_nutrition(
                     total_core_nutrients[nutrient_name]["value"] += value * float(ratio)
                     total_core_nutrients[nutrient_name]["unit"] = source_unit
 
+        # 添加食材贡献详情
+        ingredient_details.append({
+            "ingredient_id": ingredient.id,
+            "ingredient_name": ingredient.name,
+            "quantity": float(standard_quantity),
+            "unit": standard_unit,
+            "nutrition_contribution": {
+                nutrient_name: {
+                    "value": float(nutrient_data.get("value", 0) or 0) * float(ratio),
+                    "unit": nutrient_data.get("unit", ""),
+                    "nrp_pct": round(((float(nutrient_data.get("value", 0) or 0) * float(ratio)) / NRV_REFERENCE_VALUES.get(nutrient_name, 1)) * 100, 2) if NRV_REFERENCE_VALUES.get(nutrient_name, 0) > 0 else 0
+                }
+                for nutrient_name, nutrient_data in core_nutrients.items()
+                if nutrient_name in total_core_nutrients
+            }
+        })
+
     servings = recipe.servings or 1
 
     # 计算每份营养值和 NRV 百分比
@@ -359,5 +405,6 @@ async def calculate_recipe_nutrition(
         },
         "per_serving_nutrition": {
             "core_nutrients": per_serving_core_nutrients
-        }
+        },
+        "ingredient_details": ingredient_details  # 添加食材贡献详情
     }

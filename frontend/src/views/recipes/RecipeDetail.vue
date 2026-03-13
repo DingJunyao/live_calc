@@ -58,8 +58,8 @@
         <div class="info-grid">
           <div class="info-item">
             <span class="label">预计成本:</span>
-            <span class="value" v-if="recipe.costData">¥{{ recipe.costData.total_cost }}</span>
-            <span class="value" v-else>¥{{ recipe.estimated_cost || 0 }}</span>
+            <span class="value" v-if="recipe.costData">¥{{ parseFloat(parseFloat(recipe.costData.total_cost).toFixed(2)) }}</span>
+            <span class="value" v-else>¥{{ recipe.estimated_cost ? parseFloat(parseFloat(recipe.estimated_cost).toFixed(2)) : '0' }}</span>
           </div>
           <div class="info-item">
             <span class="label">分类:</span>
@@ -88,16 +88,27 @@
         </div>
         <div v-if="recipe.ingredients && recipe.ingredients.length > 0" class="ingredient-list">
           <div v-for="item in recipe.ingredients" :key="item.id" class="ingredient-item">
-            <div class="ingredient-main">
-              <span class="ingredient-name">{{ item.name }}</span>
-              <span v-if="item.is_optional" class="optional-badge">可选</span>
-            </div>
-            <div class="ingredient-amount">
-              <span v-if="item.quantity">{{ item.quantity }} {{ item.unit }}</span>
-              <span v-else-if="item.quantity_range && typeof item.quantity_range === 'object'">
-                {{ item.quantity_range.min }} - {{ item.quantity_range.max }} {{ item.unit }}
-              </span>
-              <span v-else>{{ item.quantity || '' }} {{ item.unit || '' }}</span>
+            <div class="ingredient-row">
+              <div class="ingredient-name-col">
+                <router-link :to="`/nutrition/ingredient/${item.ingredient_id}`" class="ingredient-link" v-if="item.ingredient_id">
+                  <span class="ingredient-name">{{ item.name }}</span>
+                </router-link>
+                <span class="ingredient-name" v-else>{{ item.name }}</span>
+                <span v-if="item.is_optional" class="optional-badge">可选</span>
+              </div>
+              <div class="ingredient-amount-col">
+                <span class="ingredient-amount">
+                  <span v-if="item.quantity">{{ item.quantity }} {{ item.unit }}</span>
+                  <span v-else-if="item.quantity_range && typeof item.quantity_range === 'object'">
+                    {{ item.quantity_range.min }} - {{ item.quantity_range.max }} {{ item.unit }}
+                  </span>
+                  <span v-else>{{ item.quantity || '' }} {{ item.unit || '' }}</span>
+                </span>
+              </div>
+              <div class="ingredient-cost-col">
+                <span class="cost-value" v-if="item.costInfo">¥{{ parseFloat(item.costInfo.cost).toFixed(2) }}</span>
+                <span class="cost-unavailable" v-else>-</span>
+              </div>
             </div>
             <div v-if="item.note" class="ingredient-note">{{ item.note }}</div>
           </div>
@@ -118,48 +129,54 @@
       </div>
 
       <!-- 营养成分 -->
-      <div class="info-card" v-if="recipe.nutrition && recipe.nutrition.per_serving_nutrition && recipe.nutrition.per_serving_nutrition.core_nutrients">
+      <div class="info-card" v-if="recipe && recipe.nutrition && recipe.nutrition.per_serving_nutrition && recipe.nutrition.per_serving_nutrition.core_nutrients">
         <h2>营养成分（每份）</h2>
         <div class="info-grid">
-          <div
+          <template
             v-for="nutrientName in standardNutrientOrder"
             :key="nutrientName"
-            v-if="recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]"
-            class="info-item nutrition-item"
           >
-            <div class="nutrient-info">
-              <span class="label">{{ nutrientName }}:</span>
-              <span class="value">
-                {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.value || 0 }}
-                {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.unit || getDefaultUnit(nutrientName) }}
-              </span>
+            <div
+              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]"
+              class="info-item nutrition-item"
+            >
+              <div class="nutrient-info">
+                <span class="label">{{ nutrientName }}:</span>
+                <span class="value">
+                  {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.value !== undefined ? parseFloat(parseFloat(recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName].value).toFixed(3)) : '0' }}
+                  {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.unit || getDefaultUnit(nutrientName) }}
+                </span>
+              </div>
+              <div class="nutrient-actions">
+                <NutritionProgressBar
+                  v-if="recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]"
+                  :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName].nrp_pct || 0"
+                  :show-percentage="true"
+                />
+              </div>
             </div>
-            <NutritionProgressBar
-              v-if="recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.nrp_pct"
-              :percentage="recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName].nrp_pct"
-              size="small"
-              :show-percentage="true"
-            />
-          </div>
+          </template>
+
           <!-- 显示其他不在标准顺序中的营养素 -->
           <div
-            v-for="[nutrientName, nutrientData] in getNonStandardNutrients()"
-            :key="nutrientName"
+            v-for="nonStdItem in getNonStandardNutrients()"
+            :key="nonStdItem[0]"
             class="info-item nutrition-item"
           >
             <div class="nutrient-info">
-              <span class="label">{{ nutrientName }}:</span>
+              <span class="label">{{ nonStdItem[0] }}:</span>
               <span class="value">
-                {{ nutrientData?.value || 0 }}
-                {{ nutrientData?.unit || getDefaultUnit(nutrientName) }}
+                {{ nonStdItem[1]?.value !== undefined ? parseFloat(parseFloat(nonStdItem[1].value).toFixed(3)) : '0' }}
+                {{ nonStdItem[1]?.unit || getDefaultUnit(nonStdItem[0]) }}
               </span>
             </div>
-            <NutritionProgressBar
-              v-if="nutrientData?.nrp_pct"
-              :percentage="nutrientData.nrp_pct"
-              size="small"
-              :show-percentage="true"
-            />
+            <div class="nutrient-actions">
+              <NutritionProgressBar
+                v-if="nonStdItem[1]"
+                :percentage="nonStdItem[1].nrp_pct || 0"
+                :show-percentage="true"
+              />
+            </div>
           </div>
         </div>
         <div class="nrp-legend">
@@ -183,6 +200,10 @@ const recipe = ref<any>(null)
 const loading = ref(true)
 const currentImageIndex = ref(0)
 
+// 食材贡献分解功能状态
+const showIngredientBreakdown = ref(false)  // 全局显示/隐藏
+const expandedNutrients = ref<Record<string, boolean>>({})  // 各营养素展开状态
+
 onMounted(async () => {
   await loadRecipe()
   // 监听键盘事件
@@ -193,6 +214,28 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
 })
+
+// 查找食材ID
+async function findIngredientId(ingredientName: string) {
+  try {
+    // 尝试使用 ingredients API 获取ID
+    const searchResponse = await api.get(`/ingredients/search-by-name/${encodeURIComponent(ingredientName)}`)
+    if (searchResponse && Array.isArray(searchResponse) && searchResponse.length > 0) {
+      return searchResponse[0].id
+    }
+
+    // 如果上面的方法没找到，尝试使用 nutrition API
+    const nutritionSearch = await api.get(`/nutrition/search?q=${encodeURIComponent(ingredientName)}&limit=1`)
+    if (nutritionSearch && Array.isArray(nutritionSearch) && nutritionSearch.length > 0) {
+      return nutritionSearch[0].id
+    }
+
+    return null
+  } catch (error) {
+    console.error(`Failed to find ingredient ID for ${ingredientName}:`, error)
+    return null
+  }
+}
 
 async function loadRecipe() {
   loading.value = true
@@ -216,10 +259,40 @@ async function loadRecipe() {
         recipe.value.costData = null
         // 不设置默认值，让模板显示备用值
       }
-      recipe.value.nutrition = nutritionData
     } catch (e) {
       // 营养数据可能不存在，忽略错误
       console.log('No nutrition data available')
+    }
+
+    // 加载原料成本数据并匹配到食材上
+    try {
+      if (recipe.value.ingredients && recipe.value.costData && recipe.value.costData.cost_breakdown) {
+        // 先将成本数据匹配到相应食材上
+        const updatedIngredients = []
+        for (const ingredient of recipe.value.ingredients) {
+          const costInfo = recipe.value.costData.cost_breakdown.find((cost: any) =>
+            cost.ingredient_name === ingredient.name
+          )
+
+          updatedIngredients.push({
+            ...ingredient,
+            ingredient_id: null, // 先设为null，稍后再更新
+            costInfo: costInfo || null
+          })
+        }
+
+        recipe.value.ingredients = updatedIngredients
+
+        // 异步获取食材ID以提高性能
+        for (let i = 0; i < recipe.value.ingredients.length; i++) {
+          const ingredientId = await findIngredientId(recipe.value.ingredients[i].name)
+          if (ingredientId) {
+            recipe.value.ingredients[i].ingredient_id = ingredientId
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to match cost data to ingredients:', e)
     }
   } catch (error) {
     console.error('Failed to load recipe:', error)
@@ -263,6 +336,41 @@ function getNonStandardNutrients() {
 
   const coreNutrients = recipe.value.nutrition.per_serving_nutrition.core_nutrients
   return Object.entries(coreNutrients).filter(([name]) => !standardNutrientOrder.includes(name))
+}
+
+// 食材贡献分解功能
+// 切换全局食材贡献显示
+function toggleIngredientBreakdown() {
+  showIngredientBreakdown.value = !showIngredientBreakdown.value
+}
+
+// 切换特定营养素的展开状态
+function toggleNutrientBreakdown(nutrientName: string) {
+  expandedNutrients.value[nutrientName] = !expandedNutrients.value[nutrientName]
+}
+
+// 计算各食材对特定营养素的贡献
+function getNutrientContributions(nutrientName: string) {
+  // 从 nutrition.ingredient_details 获取数据
+  const ingredientDetails = recipe.value?.nutrition?.ingredient_details || []
+
+  // 计算贡献百分比并排序
+  const contributions = ingredientDetails.map((detail: any) => {
+    const contribution = detail.nutrition_contribution?.[nutrientName] || {}
+    return {
+      ingredient_name: detail.ingredient_name,
+      quantity: detail.quantity,
+      unit: detail.unit,
+      value: contribution.value || 0,
+      value_unit: contribution.unit || '',
+      percentage: contribution.nrp_pct || 0
+    }
+  })
+
+  // 过滤掉贡献为0的项目并按贡献百分比从高到低排序
+  return contributions
+    .filter((item: any) => item.percentage > 0 || item.value > 0)
+    .sort((a: any, b: any) => b.percentage - a.percentage)
 }
 
 function isImportedRecipe(recipe: any) {
@@ -562,13 +670,41 @@ function openFullscreen() {
 
 .ingredient-item {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 0.5rem;
+  flex-direction: column;
   gap: 0.5rem;
+  padding: 0.5rem;
   background: #f9f9f9;
   border-radius: 0.25rem;
+}
+
+.ingredient-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ingredient-name-col {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.ingredient-amount-col {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  text-align: right;
+  flex: 1;
+}
+
+.ingredient-cost-col {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  text-align: right;
+  flex: 1;
 }
 
 .ingredient-main {
@@ -576,6 +712,16 @@ function openFullscreen() {
   align-items: center;
   gap: 0.5rem;
   flex: 1;
+}
+
+.ingredient-link {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.ingredient-link:hover {
+  text-decoration: underline;
 }
 
 .ingredient-name {
@@ -597,6 +743,33 @@ function openFullscreen() {
   justify-content: flex-end;
   gap: 0.5rem;
   flex: 1;
+  text-align: right;
+}
+
+.ingredient-cost {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-left: 1rem;
+  font-size: inherit; /* 与原料量的字体大小一致 */
+  color: inherit; /* 与原料量的字体颜色一致 */
+  font-weight: inherit; /* 使用相同的字重 */
+  flex: 1;
+}
+
+.cost-label {
+  display: none; /* 隐藏“成本:”文本 */
+}
+
+.cost-value {
+  color: inherit; /* 与原料量的字体颜色一致 */
+  font-weight: inherit; /* 使用相同的字重 */
+}
+
+.cost-unavailable {
+  color: inherit; /* 与原料量的字体颜色一致 */
+  font-style: italic;
 }
 
 .ingredient-note {
@@ -605,8 +778,9 @@ function openFullscreen() {
   border-radius: 0.25rem;
   font-size: 0.875rem;
   color: #666;
-  margin-top: 0.25rem;
   width: 100%;
+  margin-top: 0.25rem;
+  box-sizing: border-box; /* 确保padding不会增加元素总宽度 */
 }
 
 .cooking-steps {
@@ -719,6 +893,29 @@ function openFullscreen() {
     gap: 0.375rem;
   }
 
+  .ingredient-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.25rem;
+    align-items: center;
+  }
+
+  .ingredient-name-col,
+  .ingredient-amount-col,
+  .ingredient-cost-col {
+    display: flex;
+    justify-content: flex-start;
+    text-align: left;
+    min-width: 0; /* 允许收缩 */
+    word-wrap: break-word; /* 允许文本换行 */
+  }
+
+  .ingredient-amount-col,
+  .ingredient-cost-col {
+    justify-content: flex-end;
+    text-align: right;
+  }
+
   .ingredient-name {
     font-size: 0.875rem;
   }
@@ -728,13 +925,15 @@ function openFullscreen() {
     padding: 0.125rem 0.25rem;
   }
 
-  .ingredient-amount {
+  .ingredient-amount,
+  .cost-value {
     font-size: 0.8125rem;
   }
 
   .ingredient-note {
     font-size: 0.75rem;
     padding: 0.375rem 0.5rem;
+    width: 100%;
   }
 
   .cooking-steps {
@@ -799,6 +998,172 @@ function openFullscreen() {
   .thumbnail {
     width: 50px;
     height: 50px;
+  }
+}
+
+/* 食材贡献分解相关样式 */
+.ingredient-breakdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toggle-label {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #667eea;
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+.nutrient-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.expand-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+  width: 24px;
+  height: 24px;
+}
+
+.expand-btn:hover {
+  background-color: #f0f0f0;
+}
+
+.expand-btn.expanded {
+  background-color: #e0e0e0;
+}
+
+.ingredient-breakdown-details {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #f9f9f9;
+  border-radius: 0.5rem;
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+.breakdown-header {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #eee;
+  color: #333;
+}
+
+.breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.breakdown-item:last-child {
+  border-bottom: none;
+}
+
+.ingredient-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.ingredient-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.ingredient-amount, .cost-value, .cost-unavailable {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.contribution-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.contribution-amount {
+  font-weight: 500;
+  color: #333;
+}
+
+.contribution-percent {
+  font-size: 0.75rem;
+  color: #667eea;
+  font-weight: 500;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .ingredient-breakdown-details {
+    font-size: 0.8rem;
+  }
+
+  .breakdown-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .contribution-value {
+    align-self: flex-end;
+    margin-top: -1.5rem;
   }
 }
 </style>
