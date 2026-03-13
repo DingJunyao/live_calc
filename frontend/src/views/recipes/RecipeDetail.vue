@@ -98,15 +98,16 @@
               </div>
               <div class="ingredient-amount-col">
                 <span class="ingredient-amount">
-                  <span v-if="item.quantity">{{ item.quantity }} {{ item.unit }}</span>
+                  <span v-if="item.quantity && item.quantity !== 'null' && item.quantity !== 'None' && item.quantity !== 'undefined'">{{ item.quantity }} {{ item.unit }}</span>
                   <span v-else-if="item.quantity_range && typeof item.quantity_range === 'object'">
                     {{ item.quantity_range.min }} - {{ item.quantity_range.max }} {{ item.unit }}
                   </span>
-                  <span v-else>{{ item.quantity || '' }} {{ item.unit || '' }}</span>
+                  <span v-else>-</span>
                 </span>
               </div>
               <div class="ingredient-cost-col">
-                <span class="cost-value" v-if="item.costInfo">¥{{ parseFloat(item.costInfo.cost).toFixed(2) }}</span>
+                <span class="cost-value" v-if="item.costInfo && item.costInfo.cost !== undefined && item.costInfo.cost !== null && item.costInfo.cost !== 0 && item.quantity !== 'None' && item.quantity !== 'null' && item.quantity !== null && item.quantity !== undefined">¥{{ parseFloat(item.costInfo.cost).toFixed(2) }}</span>
+                <span class="cost-value" v-else-if="item.costInfo && item.costInfo.cost === 0 && item.quantity !== 'None' && item.quantity !== 'null' && item.quantity !== null && item.quantity !== undefined">¥0.00</span>
                 <span class="cost-unavailable" v-else>-</span>
               </div>
             </div>
@@ -268,11 +269,26 @@ async function loadRecipe() {
     try {
       if (recipe.value.ingredients && recipe.value.costData && recipe.value.costData.cost_breakdown) {
         // 先将成本数据匹配到相应食材上
+        // 修改匹配逻辑：后端现在返回recipe_ingredient_id，我们应该利用这个信息
         const updatedIngredients = []
         for (const ingredient of recipe.value.ingredients) {
-          const costInfo = recipe.value.costData.cost_breakdown.find((cost: any) =>
-            cost.ingredient_name === ingredient.name
-          )
+          // 查找成本数据时，如果有recipe_ingredient_id，优先使用它
+          // 否则回退到原来的名称匹配
+          let costInfo = null
+
+          // 如果ingredient对象上有id（这应该是recipe_ingredient的id），则优先匹配
+          if (ingredient.id) {
+            costInfo = recipe.value.costData.cost_breakdown.find((cost: any) =>
+              cost.recipe_ingredient_id === ingredient.id
+            )
+          }
+
+          // 如果没找到，尝试按名称匹配（保持向后兼容）
+          if (!costInfo) {
+            costInfo = recipe.value.costData.cost_breakdown.find((cost: any) =>
+              cost.ingredient_name === ingredient.name
+            )
+          }
 
           updatedIngredients.push({
             ...ingredient,
@@ -358,6 +374,7 @@ function getNutrientContributions(nutrientName: string) {
   const contributions = ingredientDetails.map((detail: any) => {
     const contribution = detail.nutrition_contribution?.[nutrientName] || {}
     return {
+      recipe_ingredient_id: detail.recipe_ingredient_id,  // 添加recipe_ingredient_id
       ingredient_name: detail.ingredient_name,
       quantity: detail.quantity,
       unit: detail.unit,
