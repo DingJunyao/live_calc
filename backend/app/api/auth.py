@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -152,17 +152,22 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
     )
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
-    credentials: HTTPBearer = Depends(security),
+    token_request: RefreshTokenRequest,
     db: Session = Depends(get_db)
 ):
-    """刷新访问令牌"""
-    token = credentials.credentials
+    """刷新访问令牌 - 从请求体接收 refresh_token"""
+    token = token_request.refresh_token
+
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未授权"
+            detail="未提供刷新令牌"
         )
 
     payload = decode_token(token)
@@ -423,3 +428,46 @@ async def delete_user(
     db.commit()
 
     return {"detail": "用户删除成功"}
+
+
+# 为用户添加个人统计信息端点
+class PersonalStatsResponse(BaseModel):
+    user_id: int
+    username: str
+    record_count: int
+    recipe_count: int
+    merchant_count: int
+
+
+@router.get("/personal-stats", response_model=PersonalStatsResponse)
+async def get_personal_stats(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    """获取用户的个人统计信息 - 所有用户可访问自己的统计信息"""
+    from app.models.product import ProductRecord
+    from app.models.recipe import Recipe
+    from app.models.merchant import Merchant
+
+    # 获取用户自己的记录数
+    record_count = db.query(ProductRecord).filter(
+        ProductRecord.user_id == current_user.id
+    ).count()
+
+    # 获取用户的菜谱数
+    recipe_count = db.query(Recipe).filter(
+        Recipe.user_id == current_user.id
+    ).count()
+
+    # 获取用户的商家数
+    merchant_count = db.query(Merchant).filter(
+        Merchant.user_id == current_user.id
+    ).count()
+
+    return PersonalStatsResponse(
+        user_id=current_user.id,
+        username=current_user.username,
+        record_count=record_count,
+        recipe_count=recipe_count,
+        merchant_count=merchant_count
+    )

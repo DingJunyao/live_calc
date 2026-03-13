@@ -51,10 +51,12 @@ const barColor = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  width: 100%; /* 确保组件占满父容器宽度 */
 }
 
 .progress-container {
   flex: 1;
+  min-height: 16px;
   height: 100%;
   background: #f0f0f0;
   border-radius: 0.25rem;
