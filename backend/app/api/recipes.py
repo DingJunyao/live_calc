@@ -258,6 +258,7 @@ async def get_recipe_detail(
             if ingredient is None:
                 continue
             ingredients_detail.append(RecipeIngredientDetail(
+                id=ri.id,  # 添加recipe_ingredient的ID
                 ingredient_id=ingredient.id,
                 name=ingredient.name,
                 quantity=ri.quantity or "",

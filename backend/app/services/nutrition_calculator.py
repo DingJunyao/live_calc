@@ -342,30 +342,32 @@ class NutritionCalculator:
         """
         try:
             if quantity_range and isinstance(quantity_range, dict):
-                min_q = float(quantity_range.get("min", 0))
-                max_q = float(quantity_range.get("max", 0))
+                min_q = float(quantity_range.get("min", 0) or 0)
+                max_q = float(quantity_range.get("max", 0) or 0)
                 if min_q > 0 and max_q > 0:
                     return (min_q + max_q) / 2
 
-            if quantity and isinstance(quantity, str):
+            if quantity is not None and isinstance(quantity, str):
                 # 尝试解析 "100-200" 格式
                 if "-" in quantity:
                     parts = quantity.split("-")
                     if len(parts) == 2:
-                        min_q = float(parts[0].strip())
-                        max_q = float(parts[1].strip())
+                        min_q = float(parts[0].strip() or 0)
+                        max_q = float(parts[1].strip() or 0)
                         return (min_q + max_q) / 2
 
                 # 尝试直接转换为 float
-                return float(quantity.strip())
+                return float(quantity.strip() or 0)
 
-            if quantity:
-                return float(quantity)
+            if quantity is not None:
+                return float(quantity or 0)
 
-            return None
+            # 如果所有值都为 None 或无效，返回默认值 0
+            return 0.0
 
         except (ValueError, TypeError):
-            return None
+            # 如果解析失败，返回默认值 0
+            return 0.0
 
     def _calculate_scaled_nutrients(
         self,
@@ -384,19 +386,31 @@ class NutritionCalculator:
         # 处理核心营养素
         core_nutrients = nutrients.get("core_nutrients", {})
         for name, data in core_nutrients.items():
+            if data is None or not isinstance(data, dict):
+                continue
+
+            value = data.get("value", 0) or 0
+            nrp_pct = data.get("nrp_pct", 0) or 0
+
             result["core_nutrients"][name] = {
                 **data,
-                "value": round(data["value"] * scale_factor, 2),
-                "nrp_pct": round(data["nrp_pct"] * scale_factor, 2)
+                "value": round(float(value) * scale_factor, 2),
+                "nrp_pct": round(float(nrp_pct) * scale_factor, 2)
             }
 
         # 处理所有营养素
         all_nutrients = nutrients.get("all_nutrients", {})
         for key, data in all_nutrients.items():
+            if data is None or not isinstance(data, dict):
+                continue
+
+            value = data.get("value", 0) or 0
+            nrp_pct = data.get("nrp_pct", 0) or 0
+
             result["all_nutrients"][key] = {
                 **data,
-                "value": round(data["value"] * scale_factor, 2),
-                "nrp_pct": round(data["nrp_pct"] * scale_factor, 2)
+                "value": round(float(value) * scale_factor, 2),
+                "nrp_pct": round(float(nrp_pct) * scale_factor, 2)
             }
 
         # 计算 NRV 总和
@@ -416,19 +430,33 @@ class NutritionCalculator:
         """
         # 累加核心营养素
         for name, data in addition.get("core_nutrients", {}).items():
+            if data is None or not isinstance(data, dict):
+                continue
+
             if name not in total["core_nutrients"]:
-                total["core_nutrients"][name] = data.copy()
+                total["core_nutrients"][name] = {
+                    "value": data.get("value", 0) or 0,
+                    "nrp_pct": data.get("nrp_pct", 0) or 0,
+                    "unit": data.get("unit", "")
+                }
             else:
-                total["core_nutrients"][name]["value"] += data["value"]
-                total["core_nutrients"][name]["nrp_pct"] += data["nrp_pct"]
+                total["core_nutrients"][name]["value"] += float(data.get("value", 0) or 0)
+                total["core_nutrients"][name]["nrp_pct"] += float(data.get("nrp_pct", 0) or 0)
 
         # 累加所有营养素
         for key, data in addition.get("all_nutrients", {}).items():
+            if data is None or not isinstance(data, dict):
+                continue
+
             if key not in total["all_nutrients"]:
-                total["all_nutrients"][key] = data.copy()
+                total["all_nutrients"][key] = {
+                    "value": data.get("value", 0) or 0,
+                    "nrp_pct": data.get("nrp_pct", 0) or 0,
+                    "unit": data.get("unit", "")
+                }
             else:
-                total["all_nutrients"][key]["value"] += data["value"]
-                total["all_nutrients"][key]["nrp_pct"] += data["nrp_pct"]
+                total["all_nutrients"][key]["value"] += float(data.get("value", 0) or 0)
+                total["all_nutrients"][key]["nrp_pct"] += float(data.get("nrp_pct", 0) or 0)
 
     def _calculate_per_serving(
         self,
@@ -449,18 +477,30 @@ class NutritionCalculator:
 
         # 计算核心营养素每份值
         for name, data in total_nutrition.get("core_nutrients", {}).items():
+            if data is None or not isinstance(data, dict):
+                continue
+
+            value = float(data.get("value", 0) or 0)
+            nrp_pct = float(data.get("nrp_pct", 0) or 0)
+
             per_serving["core_nutrients"][name] = {
                 **data,
-                "value": round(data["value"] / servings, 2),
-                "nrp_pct": round(data["nrp_pct"] / servings, 2)
+                "value": round(value / servings, 2),
+                "nrp_pct": round(nrp_pct / servings, 2)
             }
 
         # 计算所有营养素每份值
         for key, data in total_nutrition.get("all_nutrients", {}).items():
+            if data is None or not isinstance(data, dict):
+                continue
+
+            value = float(data.get("value", 0) or 0)
+            nrp_pct = float(data.get("nrp_pct", 0) or 0)
+
             per_serving["all_nutrients"][key] = {
                 **data,
-                "value": round(data["value"] / servings, 2),
-                "nrp_pct": round(data["nrp_pct"] / servings, 2)
+                "value": round(value / servings, 2),
+                "nrp_pct": round(nrp_pct / servings, 2)
             }
 
         # 计算 NRV 每份总和

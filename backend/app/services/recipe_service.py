@@ -77,8 +77,15 @@ async def calculate_recipe_cost(
             if latest_record:
                 # 计算单价：总价 ÷ 数量
                 record_price = Decimal(str(latest_record.price))
-                record_quantity = Decimal(str(latest_record.standard_quantity))
-                unit_price = record_price / record_quantity
+
+                # 修复：检查 standard_quantity 是否为 None 或 0，避免除零错误
+                std_qty = latest_record.standard_quantity
+                if std_qty is None or std_qty == 0:
+                    # 如果标准数量未知，使用原始价格作为单位价格（这种情况很少见）
+                    unit_price = record_price
+                else:
+                    record_quantity = Decimal(str(std_qty))
+                    unit_price = record_price / record_quantity
         else:
             # 如果找不到商品或者找不到价格记录，尝试通过名称匹配（这个SB数据一致性问题）
             latest_record = db.query(ProductRecord).filter(
@@ -89,23 +96,39 @@ async def calculate_recipe_cost(
             if latest_record:
                 # 同样需要计算单价
                 record_price = Decimal(str(latest_record.price))
-                record_quantity = Decimal(str(latest_record.standard_quantity))
-                unit_price = record_price / record_quantity
+
+                # 修复：检查 standard_quantity 是否为 None 或 0，避免除零错误
+                std_qty = latest_record.standard_quantity
+                if std_qty is None or std_qty == 0:
+                    # 如果标准数量未知，使用原始价格作为单位价格
+                    unit_price = record_price
+                else:
+                    record_quantity = Decimal(str(std_qty))
+                    unit_price = record_price / record_quantity
 
         if latest_record:
             # 计算成本：单价 × 菜谱中的数量 = 成本
             ingredient_quantity = recipe_ingredient.quantity
+
+            # 将 None 或字符串 "None" 视为 0
+            if ingredient_quantity is None or (isinstance(ingredient_quantity, str) and ingredient_quantity.lower() == "none"):
+                ingredient_quantity = 0
+
+            # 只有当数量大于0时才计算成本
+            # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
             if ingredient_quantity:
                 try:
                     # 尝试解析数量（可能是数字或字符串）
                     quantity = Decimal(str(ingredient_quantity))
-                    cost = unit_price * quantity
+                    cost = unit_price * quantity if unit_price else Decimal("0")
                     total_cost += cost
 
                     cost_breakdown.append({
                         "ingredient_name": ingredient.name,
+                        "ingredient_id": ingredient.id,
+                        "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                         "quantity": str(ingredient_quantity),
-                        "unit_price": float(unit_price),
+                        "unit_price": float(unit_price) if unit_price else 0.0,
                         "cost": float(cost)
                     })
                 except Exception as e:
@@ -114,21 +137,23 @@ async def calculate_recipe_cost(
                     total_cost += cost
                     cost_breakdown.append({
                         "ingredient_name": ingredient.name,
+                        "ingredient_id": ingredient.id,
+                        "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                         "quantity": "1",  # 默认为1
                         "unit_price": float(latest_record.price),
                         "cost": float(cost)
                     })
             else:
-                # 没有数量，直接使用单价
-                if unit_price:
-                    cost = unit_price
-                    total_cost += cost
-                    cost_breakdown.append({
-                        "ingredient_name": ingredient.name,
-                        "quantity": "1",
-                        "unit_price": float(unit_price),
-                        "cost": float(cost)
-                    })
+                # 对于数量为0的食材，我们仍然添加到明细中但成本为0
+                # 这样用户可以看到所有食材，即使它们的数量为0
+                cost_breakdown.append({
+                    "ingredient_name": ingredient.name,
+                    "ingredient_id": ingredient.id,
+                    "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
+                    "quantity": str(ingredient_quantity),
+                    "unit_price": float(unit_price) if unit_price else 0.0,
+                    "cost": 0.0
+                })
 
     return {
         "total_cost": total_cost,
@@ -224,12 +249,15 @@ async def calculate_recipe_nutrition(
 
         # 获取菜谱中的原料数量，并转换为标准单位
         ingredient_quantity_str = recipe_ingredient.quantity or "0"
+        # 将 None 视为 "0"
+        if recipe_ingredient.quantity is None:
+            ingredient_quantity_str = "0"
         ingredient_unit = ""
 
         # 尝试解析数量和单位
         try:
             # 如果数量是纯数字字符串
-            if ingredient_quantity_str.replace(".", "").replace("-", "").isdigit():
+            if str(ingredient_quantity_str).replace(".", "").replace("-", "").isdigit():
                 quantity = Decimal(str(ingredient_quantity_str))
                 # 如果有单位信息，尝试使用原始数量和单位
                 if recipe_ingredient.unit:
@@ -243,18 +271,18 @@ async def calculate_recipe_nutrition(
             else:
                 # 数量可能包含单位（如 "250g"），需要解析
                 import re
-                match = re.match(r"([\d.]+)\s*([a-zA-Z\u4e00-\u9fff]+)", ingredient_quantity_str)
+                match = re.match(r"([\d.]+)\s*([a-zA-Z\u4e00-\u9fff]+)", str(ingredient_quantity_str))
                 if match:
                     quantity = Decimal(match.group(1))
                     ingredient_unit = match.group(2)
                     standard_quantity, standard_unit = convert_to_standard(quantity, ingredient_unit)
                 else:
                     # 无法解析，使用默认值
-                    standard_quantity = Decimal("100")
+                    standard_quantity = Decimal("0")
                     standard_unit = reference_unit
         except Exception as e:
             # 解析失败，使用默认值
-            standard_quantity = Decimal("100")
+            standard_quantity = Decimal("0")
             standard_unit = reference_unit
 
         # 计算比例因子（菜谱中的数量 / 参考基准数量）
@@ -318,6 +346,7 @@ async def calculate_recipe_nutrition(
         # 累加所有核心营养素值
         for nutrient_name, nutrient_data in core_nutrients.items():
             if nutrient_name in total_core_nutrients:
+                # 确保 value 不为 None
                 value = float(nutrient_data.get("value", 0) or 0)
                 source_unit = nutrient_data.get("unit", "")
 
@@ -333,12 +362,14 @@ async def calculate_recipe_nutrition(
 
         # 添加食材贡献详情
         ingredient_details.append({
+            "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
             "ingredient_id": ingredient.id,
             "ingredient_name": ingredient.name,
             "quantity": float(standard_quantity),
             "unit": standard_unit,
             "nutrition_contribution": {
                 nutrient_name: {
+                    # 确保值不为 None
                     "value": float(nutrient_data.get("value", 0) or 0) * float(ratio),
                     "unit": nutrient_data.get("unit", ""),
                     "nrp_pct": round(((float(nutrient_data.get("value", 0) or 0) * float(ratio)) / NRV_REFERENCE_VALUES.get(nutrient_name, 1)) * 100, 2) if NRV_REFERENCE_VALUES.get(nutrient_name, 0) > 0 else 0
@@ -353,8 +384,10 @@ async def calculate_recipe_nutrition(
     # 计算每份营养值和 NRV 百分比
     per_serving_core_nutrients = {}
     for name, data in total_core_nutrients.items():
-        per_serving_value = round(data["value"] / servings, 2)
-        per_serving_unit = data["unit"]
+        # 处理 None 值的情况
+        total_value = data["value"] if data["value"] is not None else 0
+        per_serving_value = round(total_value / servings, 2)
+        per_serving_unit = data["unit"] if data["unit"] is not None else ""
 
         # 使用 NRV 标准参考值计算 NRV 百分比
         nrv_reference = NRV_REFERENCE_VALUES.get(name, 0)
@@ -378,10 +411,20 @@ async def calculate_recipe_nutrition(
     fat_data = total_core_nutrients.get("脂肪", {})
     carb_data = total_core_nutrients.get("碳水化合物", {})
 
-    # 如果能量单位是 kJ，转换为 kcal
-    total_calories = float(energy_data["value"])
-    if energy_data["unit"] == "kJ":
+    # 如果能量单位是 kJ，转换为 kcal，并处理 None 值
+    energy_value = energy_data.get("value", 0) if energy_data else 0
+    total_calories = float(energy_value) if energy_value is not None else 0.0
+    if energy_data and energy_data.get("unit") == "kJ":
         total_calories *= 0.239006
+
+    protein_value = protein_data.get("value", 0) if protein_data else 0.0
+    total_protein = float(protein_value) if protein_value is not None else 0.0
+
+    fat_value = fat_data.get("value", 0) if fat_data else 0.0
+    total_fat = float(fat_value) if fat_value is not None else 0.0
+
+    carb_value = carb_data.get("value", 0) if carb_data else 0.0
+    total_carbs = float(carb_value) if carb_value is not None else 0.0
 
     return {
         "total_calories": total_calories,
@@ -390,9 +433,9 @@ async def calculate_recipe_nutrition(
         "total_carbs": float(carb_data["value"]),
         "per_serving": {
             "calories": total_calories / servings,
-            "protein": float(protein_data["value"]) / servings,
-            "fat": float(fat_data["value"]) / servings,
-            "carbs": float(carb_data["value"]) / servings
+            "protein": total_protein / servings,
+            "fat": total_fat / servings,
+            "carbs": total_carbs / servings
         },
         "total_nutrition": {
             "core_nutrients": {

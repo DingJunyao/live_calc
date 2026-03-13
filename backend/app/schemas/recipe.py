@@ -75,6 +75,7 @@ class RecipeUpdate(BaseModel):
 
 
 class RecipeIngredientDetail(BaseModel):
+    id: int  # recipe_ingredient表的ID，用于区分相同的食材
     ingredient_id: int
     name: str
     quantity: Optional[str]
