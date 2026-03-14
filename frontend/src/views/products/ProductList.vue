@@ -105,23 +105,42 @@
           <div class="form-group">
             <label for="productName">商品:</label>
             <input
+              ref="productInputRef"
               v-model="productSearchTerm"
               type="text"
               id="productName"
-              list="product-list"
               placeholder="输入搜索商品..."
               @input="onProductInput"
               @change="onProductChange"
+              @focus="handleProductFocus"
+              @keydown="handleKeydown"
               class="datalist-input"
             />
-            <datalist id="product-list">
-              <option
-                v-for="product in filteredProducts"
+            <!-- 自定义下拉建议列表 -->
+            <div
+              v-show="showProductSuggestions && filteredProducts.length > 0"
+              class="product-suggestions"
+              :style="productSuggestionsStyle"
+            >
+              <div
+                v-for="(product, index) in filteredProducts"
                 :key="product.id"
-                :value="product.name"
-              ></option>
-              <option v-if="showProductCreateOption" value="+ 创建新商品"></option>
-            </datalist>
+                class="suggestion-item"
+                :class="{ 'suggestion-selected': selectedIndex === index }"
+                @click="selectProduct(product)"
+              >
+                {{ product.name }}
+                <span v-if="product.brand" class="suggestion-brand"> - {{ product.brand }}</span>
+              </div>
+              <div
+                v-if="showProductCreateOption"
+                class="suggestion-item suggestion-create"
+                :class="{ 'suggestion-selected': selectedIndex === filteredProducts.length }"
+                @click="createNewProduct"
+              >
+                + 创建新商品: {{ productSearchTerm }}
+              </div>
+            </div>
           </div>
           <div class="form-group">
             <label for="price">价格 (元):</label>
@@ -141,7 +160,7 @@
               />
               <select v-model="newProduct.unit" id="unit" required>
                 <option v-for="unit in units" :key="unit.id" :value="unit.abbreviation">
-                  {{ unit.name }} <template v-if="unit.name && unit.abbreviation">({{ unit.abbreviation }})</template>
+                  {{ unit.name }}{{ unit.name !== unit.abbreviation ? ` (${unit.abbreviation})` : '' }}
                 </option>
               </select>
             </div>
@@ -169,46 +188,64 @@
           <div class="form-group">
             <label for="location">商家:</label>
             <input
+              ref="locationInputRef"
               v-model="merchantSearchTerm"
               type="text"
               id="location"
-              list="merchant-list"
               placeholder="输入搜索商家（可选）..."
-              @input="filterMerchantOptions"
+              @input="onMerchantInput"
+              @focus="handleLocationFocus"
               class="datalist-input"
             />
-            <datalist id="merchant-list">
-              <option
-                v-for="merchant in filteredMerchants"
+            <!-- 自定义下拉建议列表 -->
+            <div
+              v-show="showLocationSuggestions && filteredMerchants.length > 0"
+              class="location-suggestions"
+              :style="locationSuggestionsStyle"
+            >
+              <div
+                v-for="(merchant, index) in filteredMerchants"
                 :key="merchant.id"
-                :value="merchant.name"
-              ></option>
-              <option v-if="showMerchantCreateOption" value="+ 创建新商家"></option>
-            </datalist>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn-primary">{{ editingProduct ? '更新' : '添加' }}</button>
+                class="suggestion-item"
+                :class="{ 'suggestion-selected': selectedLocationIndex === index }"
+                @click="selectLocation(merchant)"
+              >
+                {{ merchant.name }}
+                <span v-if="merchant.address" class="suggestion-address"> - {{ merchant.address }}</span>
+              </div>
+              <div
+                v-if="showMerchantCreateOption"
+                class="suggestion-item suggestion-create"
+                :class="{ 'suggestion-selected': selectedLocationIndex === filteredMerchants.length }"
+                @click="createNewMerchant"
+              >
+                + 创建新商家: {{ merchantSearchTerm }}
+              </div>
+            </div>
           </div>
         </form>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">{{ editingProduct ? '更新' : '添加' }}</button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, Teleport } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { productAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
 
-interface ProductSuggestion {
+type ProductSuggestion = {
   id: number
   name: string
   brand?: string
 }
 
-interface PriceRecord {
+type PriceRecord = {
   id: number
   product_id: number
   product_name: string
@@ -220,7 +257,7 @@ interface PriceRecord {
   recorded_at: string
 }
 
-interface Merchant {
+type Merchant = {
   id: number
   name: string
   address?: string
@@ -249,15 +286,17 @@ const newProduct = ref({
   recorded_at: ''
 })
 
-// 商品搜索和选择
+// 商品搜索和选择相关状态
 const productSearchTerm = ref('')
 const filteredProducts = ref<ProductSuggestion[]>([])
 const showProductCreateOption = ref(false)
+let productSearchTimeout: ReturnType<typeof setTimeout> | null = null  // 用于商品搜索防抖
 
-// 商家搜索和选择
+// 商家搜索和选择相关状态
 const merchantSearchTerm = ref('')
 const filteredMerchants = ref<Merchant[]>([])
 const showMerchantCreateOption = ref(false)
+let merchantSearchTimeout: ReturnType<typeof setTimeout> | null = null  // 用于商家搜索防抖
 
 // 添加商家加载状态
 const merchantsLoading = ref(true)
@@ -276,21 +315,102 @@ const lastIsPurchase = ref(true)  // 记住上一次是否购买
 const lastMerchantId = ref(0)  // 记住上一次的商家ID
 const lastMerchantName = ref('')  // 记住上一次的商家名称
 
+// 自动完成下拉建议相关状态
+const productInputRef = ref<HTMLInputElement | null>(null)
+const locationInputRef = ref<HTMLInputElement | null>(null)
+const showProductSuggestions = ref(false)
+const showLocationSuggestions = ref(false)
+const selectedIndex = ref(-1)
+const selectedLocationIndex = ref(-1)
+const productSuggestionsStyle = ref<Record<string, string>>({})
+const locationSuggestionsStyle = ref<Record<string, string>>({})
+const filteredSuggestions = ref<ProductSuggestion[]>([])
+const filteredLocationSuggestions = ref<Merchant[]>([])
+
 // 商品过滤选项
-function filterProductOptions() {
-  const search = productSearchTerm.value.trim().toLowerCase()
-  if (!search) {
-    filteredProducts.value = allProducts.value
-  } else {
-    filteredProducts.value = allProducts.value.filter(p =>
-      p.name.toLowerCase().includes(search) ||
-      (p.brand && p.brand.toLowerCase().includes(search))
-    )
+async function filterProductOptions() {
+  const search = productSearchTerm.value.trim()
+
+  // 如果搜索词太短，显示所有商品
+  if (!search || search.length < 1) {
+    filteredProducts.value = allProducts.value // 显示所有商品
+    console.log(`显示所有商品，总数: ${allProducts.value.length}`)
+    showProductCreateOption.value = false
+    return
   }
 
-  // 检查是否显示创建选项
-  showProductCreateOption.value = search.length > 0 &&
-    !filteredProducts.value.some(p => p.name.toLowerCase() === search)
+  // 优先使用API进行搜索以获得最新最全的结果
+  try {
+    // 使用API端点进行搜索，这样可以利用后端的数据库索引
+    console.log(`调用API搜索: ${search}`)
+    const response = await productAPI.list({
+      skip: 0,
+      limit: 1000,  // 修改为1000，符合后端限制
+      search: search  // 假设API支持搜索参数
+    });
+
+    const items = (response as any).items || (Array.isArray(response) ? response : []);
+    filteredProducts.value = items;
+    console.log(`API搜索结果数量: ${items.length}, 搜索词: "${search}"`)
+
+    // 检查是否显示创建选项
+    showProductCreateOption.value = search.length > 0 &&
+      !items.some((p: ProductSuggestion) => p.name.toLowerCase() === search.toLowerCase())
+  } catch (error) {
+    console.warn('API搜索失败，使用优化的本地搜索:', error);
+
+    // 使用优化后的本地搜索逻辑
+    console.log(`使用优化的本地搜索: ${search}`)
+    console.log(`本地数据总数量: ${allProducts.value.length}`)
+
+    // 检查是否需要获取完整数据集来进行搜索
+    // 如果当前本地数据集较小，可能是因为没有加载所有数据
+    // 在本地数据集中搜索，但使用更全面的方法
+    const searchLower = search.toLowerCase();
+
+    // 将所有商品按匹配类型分类
+    const exactMatch = [];
+    const startsWith = [];
+    const nameContains = [];
+    const brandContains = [];
+
+    for (const p of allProducts.value) {
+      const nameLower = p.name.toLowerCase();
+      const brandLower = p.brand ? p.brand.toLowerCase() : '';
+
+      // 检查名称匹配
+      if (nameLower === searchLower) {
+        exactMatch.push(p);
+      } else if (nameLower.startsWith(searchLower)) {
+        startsWith.push(p);
+      } else if (nameLower.includes(searchLower)) {
+        nameContains.push(p);
+      }
+
+      // 检查品牌匹配（避免重复）
+      if (brandLower && brandLower.includes(searchLower)) {
+        // 确保没有在名称匹配中已经添加过的商品
+        if (!nameLower.includes(searchLower)) {
+          brandContains.push(p);
+        }
+      }
+    }
+
+    // 合并结果，保持顺序：精确匹配 > 开头匹配 > 名称包含 > 品牌包含
+    filteredProducts.value = [...exactMatch, ...startsWith, ...nameContains, ...brandContains];
+
+    console.log(`优化本地搜索总结果数量: ${filteredProducts.value.length}, 搜索词: "${search}"`)
+    console.log(`- 精确匹配: ${exactMatch.length}`)
+    console.log(`- 开头匹配: ${startsWith.length}`)
+    console.log(`- 名称包含: ${nameContains.length}`)
+    console.log(`- 品牌包含: ${brandContains.length}`)
+
+    // 检查是否显示创建选项
+    showProductCreateOption.value = search.length > 0 &&
+      !filteredProducts.value.some(p => p.name.toLowerCase() === search.toLowerCase())
+  }
+
+  console.log(`最终显示结果数量: ${filteredProducts.value.length}`)
 }
 
 // 商品选择变化处理
@@ -324,20 +444,71 @@ function onProductIdChange() {
 }
 
 // 商家过滤选项
-function filterMerchantOptions() {
-  const search = merchantSearchTerm.value.trim().toLowerCase()
-  if (!search) {
-    filteredMerchants.value = allMerchants.value
-  } else {
-    filteredMerchants.value = allMerchants.value.filter(m =>
-      m.name.toLowerCase().includes(search) ||
-      (m.address && m.address.toLowerCase().includes(search))
-    )
+async function filterMerchantOptions() {
+  const search = merchantSearchTerm.value.trim()
+
+  // 如果搜索词太短，显示所有商家
+  if (!search || search.length < 1) {
+    filteredMerchants.value = allMerchants.value // 显示所有商家
+    console.log(`显示所有商家，总数: ${allMerchants.value.length}`)
+    showMerchantCreateOption.value = false
+    return
   }
 
-  // 检查是否显示创建选项
-  showMerchantCreateOption.value = search.length > 0 &&
-    !filteredMerchants.value.some(m => m.name.toLowerCase() === search)
+  // 优先使用API进行搜索以获得最新最全的结果
+  try {
+    // 使用API端点进行搜索，利用后端的数据库索引进行高效匹配
+    console.log(`调用API搜索商家: ${search}`)
+    const response = await api.get(`/merchants?search=${encodeURIComponent(search)}&skip=0&limit=1000`);
+    const items = response.items || response || [];
+    filteredMerchants.value = items;
+    console.log(`API搜索商家结果数量: ${items.length}, 搜索词: "${search}"`)
+
+    // 检查是否显示创建选项
+    showMerchantCreateOption.value = search.length > 0 &&
+      !items.some((m: Merchant) => m.name.toLowerCase() === search.toLowerCase())
+  } catch (error) {
+    console.warn('API搜索商家失败，使用优化的本地搜索:', error);
+
+    // 使用优化后的本地搜索逻辑
+    console.log(`使用优化的本地商家搜索: ${search}`)
+
+    // 直接在allMerchants.value上进行搜索，不设限
+    const searchResults = allMerchants.value.filter(m =>
+      m.name.toLowerCase().includes(search.toLowerCase()) ||
+      (m.address && m.address.toLowerCase().includes(search.toLowerCase()))
+    );
+
+    // 按照相关性排序：精确匹配 > 开头匹配 > 包含匹配
+    const exactMatch = searchResults.filter(m => m.name.toLowerCase() === search.toLowerCase());
+    const startsWith = searchResults.filter(m =>
+      m.name.toLowerCase().startsWith(search.toLowerCase()) &&
+      m.name.toLowerCase() !== search.toLowerCase());
+    const contains = searchResults.filter(m =>
+      !m.name.toLowerCase().startsWith(search.toLowerCase()) &&
+      m.name.toLowerCase().includes(search.toLowerCase()));
+
+    // 包含地址匹配的结果
+    const addressMatch = allMerchants.value.filter(m =>
+      !m.name.toLowerCase().includes(search.toLowerCase()) &&  // 避免重复
+      m.address && m.address.toLowerCase().includes(search.toLowerCase())
+    );
+
+    // 合并结果，保持顺序：精确匹配 > 开头匹配 > 名称包含 > 地址包含
+    filteredMerchants.value = [...exactMatch, ...startsWith, ...contains, ...addressMatch];
+
+    console.log(`优化本地商家搜索总结果数量: ${filteredMerchants.value.length}, 搜索词: "${search}"`)
+    console.log(`- 精确匹配: ${exactMatch.length}`)
+    console.log(`- 开头匹配: ${startsWith.length}`)
+    console.log(`- 名称包含: ${contains.length}`)
+    console.log(`- 地址包含: ${addressMatch.length}`)
+
+    // 检查是否显示创建选项
+    showMerchantCreateOption.value = search.length > 0 &&
+      !filteredMerchants.value.some(m => m.name.toLowerCase() === search.toLowerCase())
+  }
+
+  console.log(`商家最终显示结果数量: ${filteredMerchants.value.length}`)
 }
 
 // 商家选择变化处理
@@ -507,7 +678,120 @@ onMounted(async () => {
     // 如果商家为空，则直接打开模态框，让用户可以选择商家或被提示
     showAddModal.value = true
   }
+
+  // 添加点击外部区域关闭下拉建议的功能，使用捕获阶段确保能接收到事件
+  setTimeout(() => {
+    document.addEventListener('click', handleClickOutside, true);
+  }, 100); // 延迟添加事件监听器以确保DOM完全加载
 })
+
+onUnmounted(() => {
+  // 移除事件监听器（同样使用捕获阶段）
+  document.removeEventListener('click', handleClickOutside, true);
+
+  // 移除窗口大小变化监听器
+  window.removeEventListener('resize', handleWindowResize);
+
+  // 移除屏幕方向改变监听器
+  window.removeEventListener('orientationchange', handleOrientationChange);
+
+  // 移除视口变化监听器
+  window.removeEventListener('resize', handleViewportChange);
+})
+
+// 处理点击外部区域关闭下拉建议
+function handleClickOutside(event: Event) {
+  const target = event.target as HTMLElement;
+
+  // 检查点击是否在商品输入框或其下拉列表之内
+  const isProductInputArea = target.closest('#product-input') ||
+                            target.closest('.product-suggestions') ||
+                            target.classList.contains('product-suggestions');
+
+  // 检查点击是否在商家输入框或其下拉列表之内
+  const isLocationInputArea = target.closest('#location-input') ||
+                             target.closest('.location-suggestions') ||
+                             target.classList.contains('location-suggestions');
+
+  // 如果点击不在商品相关区域，隐藏商品下拉
+  if (!isProductInputArea) {
+    showProductSuggestions.value = false;
+  }
+
+  // 如果点击不在商家相关区域，隐藏商家下拉
+  if (!isLocationInputArea) {
+    showLocationSuggestions.value = false;
+  }
+}
+
+onUnmounted(() => {
+  // 移除事件监听器
+  document.removeEventListener('click', handleClickOutside);
+
+  // 移除窗口大小变化监听器
+  window.removeEventListener('resize', handleWindowResize);
+})
+
+// 监听窗口大小变化，重新计算下拉建议位置
+function handleWindowResize() {
+  // 在下一个tick确保DOM已更新
+  nextTick(() => {
+    if (showProductSuggestions.value && productInputRef.value) {
+      updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle, false);
+    }
+    if (showLocationSuggestions.value && locationInputRef.value) {
+      updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle, true);
+    }
+  });
+}
+
+// 添加窗口大小变化监听器
+window.addEventListener('resize', handleWindowResize);
+
+// 专门处理移动端键盘显示/隐藏的情况
+function handleOrientationChange() {
+  // 在屏幕方向改变或键盘弹出/收起时重新计算位置
+  setTimeout(() => {
+    if (showProductSuggestions.value && productInputRef.value) {
+      updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle, false);
+    }
+    if (showLocationSuggestions.value && locationInputRef.value) {
+      updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle, true);
+    }
+  }, 300); // 等待界面布局完成
+}
+
+// 监听屏幕方向改变事件
+window.addEventListener('orientationchange', handleOrientationChange);
+
+// 监听视口变化，检测软键盘弹出（移动端）
+let initialViewportHeight = window.innerHeight;
+
+function handleViewportChange() {
+  const currentViewportHeight = window.innerHeight;
+
+  // 如果视口高度变化超过阈值，可能是因为软键盘弹出/收起
+  const heightDifference = Math.abs(initialViewportHeight - currentViewportHeight);
+  const threshold = 100; // 阈值设定为100px
+
+  if (heightDifference > threshold) {
+    // 更新初始视口高度
+    initialViewportHeight = currentViewportHeight;
+
+    // 重新计算下拉建议位置
+    setTimeout(() => {
+      if (showProductSuggestions.value && productInputRef.value) {
+        updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle, false);
+      }
+      if (showLocationSuggestions.value && locationInputRef.value) {
+        updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle, true);
+      }
+    }, 300); // 等待界面布局完成
+  }
+}
+
+// 监听视口大小变化，主要用于检测移动设备上软键盘的弹出
+window.addEventListener('resize', handleViewportChange);
 
 async function loadProducts() {
   loading.value = true
@@ -552,11 +836,13 @@ async function loadProducts() {
 
 async function loadAllProducts() {
   try {
-    // 分页加载所有商品（后端单页最多 1000 条）
+    // 加载所有商品作为完整数据集用于本地搜索
     let allItems: ProductSuggestion[] = []
     let skip = 0
-    const limit = 1000
+    const limit = 100  // 增加单次请求量以减少请求数量
     let hasMore = true
+
+    console.log('开始加载所有商品数据...')
 
     while (hasMore) {
       const response = await productAPI.list({ skip, limit })
@@ -578,15 +864,12 @@ async function loadAllProducts() {
         skip += limit
       }
 
-      // 安全保护：最多加载 10 页（10000 条），避免死循环
-      if (skip >= 10000) {
-        console.warn('已达到最大商品加载数量限制（10000条）')
-        hasMore = false
-      }
+      // 添加进度日志
+      console.log(`已加载 ${allItems.length} 个商品...`)
     }
 
     allProducts.value = allItems
-    console.log('处理后的商品列表:', allProducts.value, `共 ${allItems.length} 条`) // 调试SB问题
+    console.log(`完成加载，共 ${allItems.length} 个商品`) // 调试信息
   } catch (error) {
     console.error('Failed to load products:', error)
     allProducts.value = []
@@ -595,9 +878,39 @@ async function loadAllProducts() {
 
 async function loadAllMerchants() {
   try {
-    const response = await api.get<any>('/merchants')  // 移除末尾斜杠
-    // 这个SB API也可能返回分页格式，需要从items里取数据
-    allMerchants.value = response.items || response || []
+    // 尝试获取所有商家（使用分页来获取所有数据，limit限制为100）
+    let allItems: Merchant[] = [];
+    let skip = 0;
+    const limit = 100;  // 限制为100以满足API要求
+
+    // 只加载前3页数据作为初始缓存，提高首次加载速度
+    let pageCount = 0;
+    const maxInitialPages = 3;
+
+    while (pageCount < maxInitialPages) {
+      const response = await api.get<any>(`/merchants?skip=${skip}&limit=${limit}`);
+      const items = response.items || response || [];
+
+      // 确保数据格式正确
+      const merchants = items.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        address: item.address || ''
+      }));
+
+      allItems = allItems.concat(merchants);
+
+      // 如果返回的数据少于 limit，说明没有更多数据了
+      if (items.length < limit) {
+        break;
+      }
+
+      skip += limit;
+      pageCount++;
+    }
+
+    allMerchants.value = allItems;
+    console.log('处理后的商家列表:', allMerchants.value, `共 ${allItems.length} 条`); // 调试信息
   } catch (error) {
     console.error('Failed to load merchants:', error)
   } finally {
@@ -844,44 +1157,83 @@ function formatDate(dateString: string) {
 function handleProductFocus() {
   // 延迟执行，确保DOM已经更新
   setTimeout(() => {
-    updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle)
+    updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle, false)
     showProductSuggestions.value = true
   }, 50)
 }
 
 function onProductInput() {
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
+  if (productSearchTimeout) {
+    clearTimeout(productSearchTimeout)
   }
-  searchTimeout = setTimeout(() => {
+  // 进一步减少延迟时间以实现更快速响应
+  productSearchTimeout = setTimeout(() => {
     // 重置选中的商品ID，因为用户可能正在修改
     if (!allProducts.value.find(p => p.name === newProduct.value.product_name)) {
       newProduct.value.product_id = 0
     }
     // 调用过滤函数
     filterProductOptions()
-  }, 300)  // 延迟300ms以避免频繁过滤
+  }, 25)  // 减少延迟到25ms，实现更快响应
+}
+
+function onMerchantInput() {
+  if (merchantSearchTimeout) {
+    clearTimeout(merchantSearchTimeout)
+  }
+  // 减少延迟时间以实现更快速响应
+  merchantSearchTimeout = setTimeout(() => {
+    // 重置选中的商家ID，因为用户可能正在修改
+    if (!allMerchants.value.find(m => m.name === newProduct.value.merchant_name)) {
+      newProduct.value.merchant_id = 0
+    }
+    // 调用过滤函数
+    filterMerchantOptions()
+  }, 25)  // 减少延迟到25ms，实现更快响应
 }
 
 function selectProduct(product: ProductSuggestion) {
   newProduct.value.product_id = product.id
   newProduct.value.product_name = product.name
+  productSearchTerm.value = product.name  // 确保输入框显示商品名称
   showProductSuggestions.value = false
   selectedIndex.value = -1
   productSuggestionsStyle.value = {}
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  // 更新filteredSuggestions以保持向后兼容
+  filteredSuggestions.value = filteredProducts.value;
+
+  // 检查建议列表是否可见且有内容
+  if (!showProductSuggestions.value || filteredProducts.value.length === 0) {
+    if (event.key === 'Escape') {
+      showProductSuggestions.value = false
+      selectedIndex.value = -1
+      productSuggestionsStyle.value = {}
+    }
+    return
+  }
+
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    selectedIndex.value = Math.min(selectedIndex.value + 1, filteredSuggestions.value.length - 1)
+    // 包含创建选项的总长度
+    const totalLength = filteredProducts.value.length + (showProductCreateOption.value ? 1 : 0)
+    selectedIndex.value = Math.min(selectedIndex.value + 1, totalLength - 1)
   } else if (event.key === 'ArrowUp') {
     event.preventDefault()
     selectedIndex.value = Math.max(selectedIndex.value - 1, -1)
   } else if (event.key === 'Enter' && selectedIndex.value >= 0) {
     event.preventDefault()
-    selectProduct(filteredSuggestions.value[selectedIndex.value])
+    if (selectedIndex.value < filteredProducts.value.length) {
+      // 选择已有商品
+      selectProduct(filteredProducts.value[selectedIndex.value])
+    } else {
+      // 选择创建新商品选项
+      createNewProduct()
+    }
   } else if (event.key === 'Escape') {
+    event.preventDefault()
     showProductSuggestions.value = false
     selectedIndex.value = -1
     productSuggestionsStyle.value = {}
@@ -891,45 +1243,88 @@ function handleKeydown(event: KeyboardEvent) {
 function handleLocationFocus() {
   // 延迟执行，确保DOM已经更新
   setTimeout(() => {
-    updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle)
+    updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle, true)
     showLocationSuggestions.value = true
   }, 50)
 }
 
 function onLocationInput() {
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
+  if (merchantSearchTimeout) {
+    clearTimeout(merchantSearchTimeout)
   }
-  searchTimeout = setTimeout(() => {
+  // 进一步减少延迟时间以实现更快速响应
+  merchantSearchTimeout = setTimeout(() => {
     // 重置选中的地点ID，因为用户可能正在修改
     if (!allMerchants.value.find(l => l.name === newProduct.value.merchant_name)) {
       newProduct.value.merchant_id = 0
     }
-    showLocationSuggestions.value = true
-    selectedLocationIndex.value = -1
-    updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle)
-  }, 300)
+    // 调用过滤函数
+    filterMerchantOptions()
+  }, 50)  // 减少延迟到50ms，实现更快速响应
 }
 
 function selectLocation(location: Merchant) {
   newProduct.value.merchant_id = location.id
   newProduct.value.merchant_name = location.name
+  merchantSearchTerm.value = location.name  // 确保输入框显示商家名称
   showLocationSuggestions.value = false
   selectedLocationIndex.value = -1
   locationSuggestionsStyle.value = {}
 }
 
+// 创建新商品处理
+function createNewProduct() {
+  if (productSearchTerm.value.trim()) {
+    openQuickCreateProduct()
+    showProductSuggestions.value = false
+    selectedIndex.value = -1
+    productSuggestionsStyle.value = {}
+  }
+}
+
+// 创建新商家处理
+function createNewMerchant() {
+  if (merchantSearchTerm.value.trim()) {
+    openQuickCreateMerchant()
+    showLocationSuggestions.value = false
+    selectedLocationIndex.value = -1
+    locationSuggestionsStyle.value = {}
+  }
+}
+
 function handleLocationKeydown(event: KeyboardEvent) {
+  // 更新filteredLocationSuggestions以保持向后兼容
+  filteredLocationSuggestions.value = filteredMerchants.value;
+
+  // 检查建议列表是否可见且有内容
+  if (!showLocationSuggestions.value || filteredMerchants.value.length === 0) {
+    if (event.key === 'Escape') {
+      showLocationSuggestions.value = false
+      selectedLocationIndex.value = -1
+      locationSuggestionsStyle.value = {}
+    }
+    return
+  }
+
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    selectedLocationIndex.value = Math.min(selectedLocationIndex.value + 1, filteredLocationSuggestions.value.length - 1)
+    // 包含创建选项的总长度
+    const totalLength = filteredMerchants.value.length + (showMerchantCreateOption.value ? 1 : 0)
+    selectedLocationIndex.value = Math.min(selectedLocationIndex.value + 1, totalLength - 1)
   } else if (event.key === 'ArrowUp') {
     event.preventDefault()
     selectedLocationIndex.value = Math.max(selectedLocationIndex.value - 1, -1)
   } else if (event.key === 'Enter' && selectedLocationIndex.value >= 0) {
     event.preventDefault()
-    selectLocation(filteredLocationSuggestions.value[selectedLocationIndex.value])
+    if (selectedLocationIndex.value < filteredMerchants.value.length) {
+      // 选择已有商家
+      selectLocation(filteredMerchants.value[selectedLocationIndex.value])
+    } else {
+      // 选择创建新商家选项
+      createNewMerchant()
+    }
   } else if (event.key === 'Escape') {
+    event.preventDefault()
     showLocationSuggestions.value = false
     selectedLocationIndex.value = -1
     locationSuggestionsStyle.value = {}
@@ -949,51 +1344,70 @@ function viewNutrition(product: PriceRecord) {
   router.push(`/nutrition/product/${product.product_id}`)
 }
 
-// 处理点击外部，隐藏建议列表
-function handleOutsideClick(event: MouseEvent) {
-  const target = event.target as Element
-
-  // 检查是否点击在商品建议列表内
-  const inProductSuggestions = target.closest('.product-suggestions')
-
-  // 检查是否点击在商家建议列表内
-  const inLocationSuggestions = target.closest('.location-suggestions')
-
-  // 检查是否点击在输入框内
-  const inProductInput = productInputRef.value && (target === productInputRef.value || productInputRef.value.contains(target))
-  const inLocationInput = locationInputRef.value && (target === locationInputRef.value || locationInputRef.value.contains(target))
-
-  // 如果点击在建议列表或输入框内，不处理
-  if (inProductSuggestions || inLocationSuggestions || inProductInput || inLocationInput) {
-    return
-  }
-
-  // 点击其他地方，隐藏所有建议列表
-  showProductSuggestions.value = false
-  showLocationSuggestions.value = false
-  selectedIndex.value = -1
-  selectedLocationIndex.value = -1
-  productSuggestionsStyle.value = {}
-  locationSuggestionsStyle.value = {}
-}
-
 // 更新建议列表位置
 function updateSuggestionsPosition(
   inputRef: HTMLInputElement | null,
-  styleRef: { value: Record<string, string> }
+  styleRef: { value: Record<string, string> },
+  isLocation: boolean = false
 ) {
   if (!inputRef) return
 
-  const rect = inputRef.getBoundingClientRect()
+  // 使用 getBoundingClientRect 获取元素相对于视口的位置
+  const inputRect = inputRef.getBoundingClientRect()
+
+  // 获取页面的当前滚动位置
+  const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0
+  const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft || 0
+
+  // 计算下拉框相对于页面的位置
+  const inputTop = inputRect.top + scrollTop
+  const inputBottom = inputRect.bottom + scrollTop
+  const inputLeft = inputRect.left + scrollLeft
+  const inputWidth = inputRect.width
+
+  // 计算可用空间
+  const windowHeight = window.innerHeight || document.documentElement.clientHeight
+  const windowWidth = window.innerWidth || document.documentElement.clientWidth
+  const spaceAbove = inputRect.top // 输入框上方的可用空间
+  const spaceBelow = windowHeight - inputRect.bottom // 输入框下方的可用空间
+
+  // 计算下拉框的高度（估算）
+  const estimatedDropdownHeight = Math.min(filteredProducts.value.length * 44, 200) // 每个项目约44px
+
+  // 默认位置：下拉框显示在输入框下方
+  let positionTop = inputBottom
+  let maxHeight = Math.min(200, spaceBelow - 10) // 留10px边距
+
+  // 如果下方空间不足，尝试放在输入框上方
+  if (maxHeight < 60 && spaceAbove > spaceBelow) {
+    positionTop = inputTop - estimatedDropdownHeight - 10 // 放在输入框上方
+    maxHeight = Math.min(200, spaceAbove - 10)
+  }
+
+  // 确保位置不会超出视窗边界
+  const safeTop = Math.max(10, positionTop) // 至少10px边距
+  const safeLeft = Math.max(10, inputLeft) // 至少10px边距
+  const safeWidth = Math.min(inputWidth, windowWidth - safeLeft - 10) // 确保不超过视窗宽度
+
+  // 应用样式
   styleRef.value = {
-    top: `${rect.bottom + 4}px`,
-    left: `${rect.left}px`,
-    width: `${rect.width}px`
+    top: `${safeTop}px`,
+    left: `${safeLeft}px`,
+    width: `${safeWidth}px`,
+    maxHeight: `${maxHeight}px`,
+    position: 'fixed', // 使用fixed定位以应对页面滚动
+    zIndex: '1001',
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+    borderRadius: '4px',
+    border: '1px solid #ddd',
+    backgroundColor: 'white',
   }
 }
 </script>
 
 <style scoped>
+@import '@/styles/product-modal-fix.css';
+
 .product-list {
   padding-left: 1rem;
   padding-right: 1rem;
@@ -1239,6 +1653,20 @@ function updateSuggestionsPosition(
   padding: 0;
 }
 
+/* 模态框内容区域采用flex布局，使标题栏、表单内容区和底部按钮区垂直排列 */
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  margin: 5vh auto;
+  background: white;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
 /* 模态框标题栏 */
 .modal-header {
   display: flex;
@@ -1259,7 +1687,7 @@ function updateSuggestionsPosition(
 .modal-form {
   flex: 1;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;  /* 修复：改为hidden以避免不必要的横向滚动 */
   padding: 1.5rem 2rem;
   min-width: 100%;
   box-sizing: border-box;
@@ -1275,11 +1703,6 @@ function updateSuggestionsPosition(
   background: #fafafa;
 }
 
-/* 横向滚动条始终显示 */
-.modal-form,
-.modal-content {
-  overflow-x: auto;
-}
 
 .close-btn {
   background: none;
@@ -1386,6 +1809,7 @@ function updateSuggestionsPosition(
   font-weight: 500;
   user-select: none;
   width: 100%;
+  justify-content: flex-start; /* 确保内容左对齐 */
 }
 
 .checkbox-input {
@@ -1393,6 +1817,7 @@ function updateSuggestionsPosition(
   margin-right: 0.5rem;
   cursor: pointer;
   accent-color: #42b883;
+  width: 1.125rem !important;
 }
 
 .checkbox-label:hover .checkbox-input {
@@ -1519,6 +1944,13 @@ function updateSuggestionsPosition(
 
 .notification-banner a:hover {
   color: #5568d3;
+}
+
+/* 小按钮样式 */
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  border-radius: 0.375rem;
 }
 
 /* 响应式设计 */
@@ -1656,6 +2088,17 @@ function updateSuggestionsPosition(
     padding: 0.375rem 0.5625rem;
     font-size: 0.8125rem;
   }
+
+  /* 在超小屏幕上保持数量和单位在一行 */
+  .quantity-unit-row {
+    flex-direction: row;
+  }
+
+  .quantity-unit-row input,
+  .quantity-unit-row select {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 /* 按钮禁用样式 */
@@ -1663,5 +2106,75 @@ function updateSuggestionsPosition(
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+/* 自定义下拉建议样式 */
+.product-suggestions,
+.location-suggestions {
+  position: fixed;
+  top: 0;
+  left: 0;
+  background: white;
+  border: 1px solid #ddd;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1001;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 0 0 4px 4px;
+  box-sizing: border-box;
+  font-size: 1rem;
+}
+
+.suggestion-item {
+  padding: 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  transition: background-color 0.2s;
+}
+
+.suggestion-item:hover,
+.suggestion-item.selected {
+  background-color: #f5f5f5;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-brand,
+.suggestion-address {
+  color: #666;
+  font-size: 0.9em;
+}
+
+/* 创建新项目的特殊样式 */
+.suggestion-item.create-new {
+  background-color: #e8f4fd;
+  font-style: italic;
+  color: #007bff;
+}
+
+.suggestion-item.create-new:hover {
+  background-color: #d1e8ff;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .product-suggestions,
+  .location-suggestions {
+    max-height: 150px;
+    font-size: 1rem;
+  }
+
+  .suggestion-item {
+    padding: 0.8rem;
+  }
+
+  /* 确保在移动设备上有足够的触摸目标 */
+  .suggestion-item {
+    min-height: 44px; /* iOS推荐的最小触摸目标 */
+    display: flex;
+    align-items: center;
+  }
 }
 </style>

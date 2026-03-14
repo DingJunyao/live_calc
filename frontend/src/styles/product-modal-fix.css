@@ -1,0 +1,145 @@
+/* 修复移动端添加价格记录对话框的交互问题 */
+
+/* 1. 修复对话框横向滚动问题 */
+@media (max-width: 768px) {
+  /* 确保模态框内容不会产生不必要的横向滚动 */
+  .modal-content {
+    overflow-x: hidden;
+  }
+
+  .modal-form {
+    overflow-x: hidden;
+    min-width: 100%;
+    /* 确保表单项不超出容器 */
+    width: 100%;
+  }
+
+  /* 特别针对日期时间输入框进行优化 */
+  .datetime-input {
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  /* 修复数量和单位行的布局 */
+  .quantity-unit-row {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+  }
+
+  .quantity-unit-row input,
+  .quantity-unit-row select {
+    flex: 1;
+    min-width: 0;
+    /* 确保输入框不会溢出 */
+    max-width: 100%;
+  }
+
+  /* 在小屏幕上垂直排列输入框 */
+  @media (max-width: 480px) {
+    .quantity-unit-row {
+      flex-direction: column;
+    }
+
+    .quantity-unit-row input,
+    .quantity-unit-row select {
+      width: 100%;
+    }
+  }
+}
+
+/* 2. 优化下拉列表性能 */
+.datalist-input {
+  /* 限制下拉列表的最大高度，避免过长 */
+  position: relative;
+  /* 使用硬件加速 */
+  transform: translateZ(0);
+  will-change: transform;
+  /* 减少重绘 */
+  contain: layout style paint;
+  /* 优化文本渲染 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 优化下拉列表样式 */
+#product-list,
+#merchant-list {
+  max-height: 150px; /* 限制高度以提高性能 */
+  overflow-y: auto;
+  /* 优化滚动性能 */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 优化选项渲染 */
+#product-list option,
+#merchant-list option {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+}
+
+/* 3. 针对Safari浏览器的特殊优化 */
+@supports (-webkit-appearance: none) {
+  .datalist-input {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+/* 针对Webkit浏览器的datalist优化 */
+::-webkit-calendar-picker-indicator {
+  position: absolute;
+  background: transparent;
+  z-index: 1;
+}
+
+/* 确保在所有设备上都有良好的表现 */
+.modal-content {
+  /* 移除可能导致横向滚动的固定宽度设置 */
+  width: 90%;
+  max-width: 500px;
+  /* 确保内容不会超出容器 */
+  box-sizing: border-box;
+}
+
+/* 修复表单元素可能超出容器的问题 */
+.form-group input,
+.form-group select,
+.datalist-input,
+.datetime-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  /* 防止元素溢出 */
+  max-width: 100%;
+}
+
+/* 优化移动端表单布局 */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95%;
+    max-width: 95%;
+    margin: 0.5rem;
+  }
+
+  .modal-form {
+    padding: 1rem;
+  }
+
+  /* 确保在小屏幕上表单元素能够正确缩放 */
+  .form-group input,
+  .form-group select,
+  .datalist-input,
+  .datetime-input {
+    padding: 0.6rem 0.8rem;
+    font-size: 1rem; /* 防止iOS Safari缩放 */
+  }
+
+  /* 优化日期时间输入框在移动端的显示 */
+  .datetime-input {
+    font-size: 1rem;
+    padding: 0.6rem 0.8rem;
+  }
+}
