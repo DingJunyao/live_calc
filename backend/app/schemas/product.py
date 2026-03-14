@@ -33,6 +33,7 @@ class ProductRecordResponse(BaseModel):
     product_id: int
     product_name: str
     merchant_id: Optional[int]
+    merchant_name: Optional[str]  # 商家名称
     price: Decimal
     currency: str
     original_quantity: Decimal

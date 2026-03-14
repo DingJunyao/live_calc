@@ -384,8 +384,8 @@ function handlePageSizeChange(size: number) {
 }
 
 function viewProduct(product: Product) {
-  // 点击卡片可以查看详情或展开操作
-  console.log('View product:', product)
+  // 跳转到商品详情页
+  router.push(`/items/product/${product.id}`)
 }
 
 function hasNutritionInfo(product: Product): boolean {

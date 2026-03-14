@@ -141,10 +141,11 @@ async def create_product_record(
         db.add(db_record)
         db.commit()
 
-        # 重新查询以加载单位关系
+        # 重新查询以加载单位关系和商家关系
         db_record = db.query(ProductRecord).options(
             joinedload(ProductRecord.original_unit),
-            joinedload(ProductRecord.standard_unit)
+            joinedload(ProductRecord.standard_unit),
+            joinedload(ProductRecord.merchant)
         ).filter(ProductRecord.id == db_record.id).first()
 
         # 手动构造响应对象，将 Unit 对象转换为字符串
@@ -153,6 +154,7 @@ async def create_product_record(
             product_id=db_record.product_id,
             product_name=db_record.product_name,
             merchant_id=db_record.merchant_id,
+            merchant_name=db_record.merchant.name if db_record.merchant else None,
             price=db_record.price,
             currency=db_record.currency,
             original_quantity=db_record.original_quantity,
@@ -181,19 +183,33 @@ async def get_product_records(
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     product_name: Optional[str] = Query(None, description="商品名称过滤"),
     search: Optional[str] = Query(None, description="搜索关键词（同product_name，向前兼容）"),
+    product_id: Optional[int] = Query(None, description="商品ID过滤"),
+    start_date: Optional[datetime] = Query(None, description="开始日期"),
+    end_date: Optional[datetime] = Query(None, description="结束日期"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """获取商品记录列表（分页）"""
     query = db.query(ProductRecord).options(
         joinedload(ProductRecord.original_unit),
-        joinedload(ProductRecord.standard_unit)
+        joinedload(ProductRecord.standard_unit),
+        joinedload(ProductRecord.merchant)
     ).filter(ProductRecord.user_id == current_user.id)
 
-    # 使用search参数（优先）或product_name参数进行过滤
-    search_term = search or product_name
-    if search_term:
-        query = query.filter(ProductRecord.product_name.contains(search_term))
+    # 优先使用 product_id 过滤
+    if product_id:
+        query = query.filter(ProductRecord.product_id == product_id)
+    # 然后使用search参数（优先）或product_name参数进行过滤
+    else:
+        search_term = search or product_name
+        if search_term:
+            query = query.filter(ProductRecord.product_name.contains(search_term))
+
+    # 添加日期范围过滤
+    if start_date:
+        query = query.filter(ProductRecord.recorded_at >= start_date)
+    if end_date:
+        query = query.filter(ProductRecord.recorded_at <= end_date)
 
     total = query.count()
     records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
@@ -207,6 +223,7 @@ async def get_product_records(
                 product_id=record.product_id,
                 product_name=record.product_name,
                 merchant_id=record.merchant_id,
+                merchant_name=record.merchant.name if record.merchant else None,
                 price=record.price,
                 currency=record.currency,
                 original_quantity=record.original_quantity,
@@ -235,7 +252,8 @@ async def get_product_record(
     """获取商品记录详情"""
     record = db.query(ProductRecord).options(
         joinedload(ProductRecord.original_unit),
-        joinedload(ProductRecord.standard_unit)
+        joinedload(ProductRecord.standard_unit),
+        joinedload(ProductRecord.merchant)
     ).filter(
         ProductRecord.id == record_id,
         ProductRecord.user_id == current_user.id
@@ -249,6 +267,7 @@ async def get_product_record(
         product_id=record.product_id,
         product_name=record.product_name,
         merchant_id=record.merchant_id,
+        merchant_name=record.merchant.name if record.merchant else None,
         price=record.price,
         currency=record.currency,
         original_quantity=record.original_quantity,
@@ -274,7 +293,8 @@ async def update_product_record(
         # 查找记录
         db_record = db.query(ProductRecord).options(
             joinedload(ProductRecord.original_unit),
-            joinedload(ProductRecord.standard_unit)
+            joinedload(ProductRecord.standard_unit),
+            joinedload(ProductRecord.merchant)
         ).filter(
             ProductRecord.id == record_id,
             ProductRecord.user_id == current_user.id
@@ -323,6 +343,7 @@ async def update_product_record(
             product_id=db_record.product_id,
             product_name=db_record.product_name,
             merchant_id=db_record.merchant_id,
+            merchant_name=db_record.merchant.name if db_record.merchant else None,
             price=db_record.price,
             currency=db_record.currency,
             original_quantity=db_record.original_quantity,
@@ -382,7 +403,8 @@ async def get_product_history(
     """获取商品历史价格"""
     records = db.query(ProductRecord).options(
         joinedload(ProductRecord.original_unit),
-        joinedload(ProductRecord.standard_unit)
+        joinedload(ProductRecord.standard_unit),
+        joinedload(ProductRecord.merchant)
     ).filter(
         ProductRecord.user_id == current_user.id,
         ProductRecord.product_name == product_name
@@ -395,6 +417,7 @@ async def get_product_history(
             product_id=record.product_id,
             product_name=record.product_name,
             merchant_id=record.merchant_id,
+            merchant_name=record.merchant.name if record.merchant else None,
             price=record.price,
             currency=record.currency,
             original_quantity=record.original_quantity,

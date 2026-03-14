@@ -15,12 +15,12 @@
     "@mdi/font": "^7.4.47",
     "@vueuse/core": "^10.7.2",
     "axios": "^1.6.5",
-    "chart.js": "^4.4.1",
     "crypto-js": "^4.2.0",
+    "echarts": "^6.0.0",
+    "echarts-for-vue": "^1.4.1",
     "leaflet": "^1.9.4",
     "pinia": "^2.1.7",
     "vue": "^3.4.0",
-    "vue-chartjs": "^5.3.0",
     "vue-router": "^4.2.5"
   },
   "devDependencies": {
