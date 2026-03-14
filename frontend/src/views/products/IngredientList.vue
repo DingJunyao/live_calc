@@ -339,6 +339,12 @@ function formatDate(dateString: string) {
   return date.toLocaleDateString('zh-CN')
 }
 
+function viewIngredient(ingredient: Ingredient) {
+  // 跳转到原料详情页
+  router.push(`/items/ingredient/${ingredient.id}`)
+}
+
+
 function editIngredient(ingredient: Ingredient) {
   editingIngredient.value = ingredient
   newIngredient.value = {
@@ -657,7 +663,7 @@ async function deleteHierarchyRelation(relationId: number) {
 
     <!-- 原料列表 -->
     <div v-else class="ingredient-grid">
-      <div v-for="ingredient in ingredients" :key="ingredient.id" class="ingredient-card">
+      <div v-for="ingredient in ingredients" :key="ingredient.id" class="ingredient-card" @click="viewIngredient(ingredient)">
         <div class="ingredient-header">
           <h3>
             {{ ingredient.name }}

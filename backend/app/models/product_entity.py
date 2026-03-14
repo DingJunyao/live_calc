@@ -24,3 +24,20 @@ class Product(Base, AuditMixin):
     # 关系
     ingredient = relationship("Ingredient", back_populates="products")
     price_records = relationship("ProductRecord", back_populates="product")
+    barcodes = relationship("ProductBarcode", back_populates="product", cascade="all, delete-orphan", lazy="dynamic")
+
+    @property
+    def primary_barcode(self):
+        """获取主条码"""
+        from app.models.product_barcode import ProductBarcode
+        primary = self.barcodes.filter(
+            ProductBarcode.is_primary == True,
+            ProductBarcode.is_active == True
+        ).first()
+        return primary.barcode if primary else None
+
+    @property
+    def all_barcodes(self):
+        """获取所有活跃条码"""
+        from app.models.product_barcode import ProductBarcode
+        return [barcode.barcode for barcode in self.barcodes.filter(ProductBarcode.is_active == True).all()]
