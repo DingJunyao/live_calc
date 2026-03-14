@@ -6,6 +6,7 @@
 
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import './style.css'  /* 引入全局样式 */
 </script>
 
 <style>
