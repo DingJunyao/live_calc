@@ -97,6 +97,21 @@ const routes: Array<RouteRecordRaw> = [
     path: '/admin/units',
     name: 'unitManagement',
     component: () => import('@/views/admin/UnitManager.vue').then(m => m.default)
+  },
+  {
+    path: '/items/:type/:id',
+    name: 'item-detail',
+    component: () => import('@/views/items/ItemDetail.vue').then(m => m.default)
+  },
+  {
+    path: '/items/:type/:id/nutrition/edit',
+    name: 'nutrition-edit',
+    component: () => import('@/views/items/NutritionEditForm.vue').then(m => m.default)
+  },
+  {
+    path: '/items/:type/:id/associations/manage',
+    name: 'association-manage',
+    component: () => import('@/views/items/AssociationManage.vue').then(m => m.default)
   }
 ]
 

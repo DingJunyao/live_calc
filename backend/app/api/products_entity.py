@@ -8,8 +8,12 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.product_entity import Product
+from app.models.product_barcode import ProductBarcode
 from app.models.product import ProductRecord
-from app.schemas.product_entity import ProductCreate, ProductUpdate, ProductResponse, ProductWithDetails
+from app.schemas.product_entity import (
+    ProductCreate, ProductUpdate, ProductResponse, ProductWithDetails,
+    ProductBarcodeCreate, ProductBarcodeUpdate, ProductBarcodeResponse
+)
 from app.schemas.common import PaginatedResponse
 from app.utils.database_helpers import serialize_tags, deserialize_tags
 
@@ -203,3 +207,118 @@ def delete_product(
     db_product.updated_by = current_user.id
     db.commit()
     return {"message": "Product deleted successfully"}
+
+
+# ==================== 条码管理端点 ====================
+
+@router.post("/products/entity/{product_id}/barcodes", response_model=ProductBarcodeResponse)
+def add_product_barcode(
+    product_id: int,
+    barcode: ProductBarcodeCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """为商品添加条码"""
+    # 验证商品是否存在
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # 检查条码是否已存在（全局唯一）
+    existing_barcode = db.query(ProductBarcode).filter(
+        ProductBarcode.barcode == barcode.barcode
+    ).first()
+    if existing_barcode:
+        raise HTTPException(status_code=400, detail="Barcode already exists")
+
+    # 如果设置为主条码，需要先将该商品的其他主条码取消
+    if barcode.is_primary:
+        db.query(ProductBarcode).filter(
+            ProductBarcode.product_id == product_id,
+            ProductBarcode.is_primary == True
+        ).update({"is_primary": False})
+
+    # 创建新条码
+    new_barcode = ProductBarcode(
+        product_id=product_id,
+        barcode=barcode.barcode,
+        barcode_type=barcode.barcode_type,
+        is_primary=barcode.is_primary,
+        created_by=current_user.id,
+        updated_by=current_user.id
+    )
+
+    db.add(new_barcode)
+    db.commit()
+    db.refresh(new_barcode)
+
+    return new_barcode
+
+
+@router.get("/products/entity/{product_id}/barcodes", response_model=List[ProductBarcodeResponse])
+def get_product_barcodes(
+    product_id: int,
+    db: Session = Depends(get_db)
+):
+    """获取商品的所有条码"""
+    # 验证商品是否存在
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    barcodes = db.query(ProductBarcode).filter(
+        ProductBarcode.product_id == product_id,
+        ProductBarcode.is_active == True
+    ).order_by(ProductBarcode.is_primary.desc(), ProductBarcode.created_at).all()
+
+    return barcodes
+
+
+@router.put("/products/entity/barcodes/{barcode_id}", response_model=ProductBarcodeResponse)
+def update_product_barcode(
+    barcode_id: int,
+    barcode_update: ProductBarcodeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """更新条码信息"""
+    barcode = db.query(ProductBarcode).filter(ProductBarcode.id == barcode_id).first()
+    if not barcode:
+        raise HTTPException(status_code=404, detail="Barcode not found")
+
+    # 如果设置为主条码，需要先将该商品的其他主条码取消
+    if barcode_update.is_primary is True:
+        db.query(ProductBarcode).filter(
+            ProductBarcode.product_id == barcode.product_id,
+            ProductBarcode.id != barcode_id,
+            ProductBarcode.is_primary == True
+        ).update({"is_primary": False})
+
+    # 更新字段
+    update_data = barcode_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(barcode, field, value)
+
+    barcode.updated_by = current_user.id
+    db.commit()
+    db.refresh(barcode)
+
+    return barcode
+
+
+@router.delete("/products/entity/barcodes/{barcode_id}")
+def delete_product_barcode(
+    barcode_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """删除条码（软删除）"""
+    barcode = db.query(ProductBarcode).filter(ProductBarcode.id == barcode_id).first()
+    if not barcode:
+        raise HTTPException(status_code=404, detail="Barcode not found")
+
+    barcode.is_active = False
+    barcode.updated_by = current_user.id
+    db.commit()
+
+    return {"message": "Barcode deleted successfully"}

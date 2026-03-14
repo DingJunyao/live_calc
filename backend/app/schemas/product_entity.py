@@ -46,3 +46,31 @@ class ProductWithDetails(ProductResponse):
     ingredient_name: Optional[str] = None
     latest_price: Optional[float] = None
     latest_price_date: Optional[datetime] = None
+
+
+# ==================== 条码相关 Schema ====================
+
+class ProductBarcodeBase(BaseModel):
+    barcode: str = Field(..., min_length=1, max_length=50)
+    barcode_type: str = Field(default="internal", max_length=20)
+    is_primary: bool = False
+
+
+class ProductBarcodeCreate(ProductBarcodeBase):
+    product_id: int
+
+
+class ProductBarcodeUpdate(BaseModel):
+    is_primary: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class ProductBarcodeResponse(ProductBarcodeBase):
+    id: int
+    product_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

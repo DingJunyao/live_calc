@@ -5,11 +5,15 @@ import json
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.nutrition import Ingredient
+from app.models.nutrition_data import NutritionData
+from app.models.product_entity import Product
 from app.schemas.nutrition import (
     IngredientResponse,
     NutritionDataResponse,
     NutritionMatchResponse,
-    NutritionCorrectRequest
+    NutritionCorrectRequest,
+    NutritionEditRequest,
+    NutritionEditResponse
 )
 from pydantic import BaseModel, Field
 
@@ -569,3 +573,123 @@ async def get_product_nutrition(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
+
+
+# ==================== 营养编辑端点 ====================
+
+@router.post("/ingredients/{ingredient_id}/nutrition", response_model=NutritionEditResponse)
+async def edit_ingredient_nutrition(
+    ingredient_id: int,
+    request: NutritionEditRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    编辑原料营养数据
+
+    创建或更新原料的营养数据
+    """
+    try:
+        # 验证原料是否存在
+        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+        if not ingredient:
+            raise HTTPException(status_code=404, detail="原料不存在")
+
+        # 构建营养数据字典
+        nutrients_dict = {}
+        for nutrient in request.nutrients:
+            nutrients_dict[nutrient.name] = {
+                "value": nutrient.value,
+                "unit": nutrient.unit,
+                "key": nutrient.key
+            }
+
+        # 查找或创建营养数据
+        nutrition_data = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == ingredient_id
+        ).first()
+
+        if nutrition_data:
+            # 更新现有数据
+            nutrition_data.nutrients = nutrients_dict
+            nutrition_data.reference_amount = request.base_quantity
+            nutrition_data.reference_unit = request.base_unit
+            nutrition_data.source = request.source
+            nutrition_data.is_verified = True
+        else:
+            # 创建新数据
+            nutrition_data = NutritionData(
+                ingredient_id=ingredient_id,
+                nutrients=nutrients_dict,
+                reference_amount=request.base_quantity,
+                reference_unit=request.base_unit,
+                source=request.source,
+                is_verified=True,
+                match_confidence=100.0  # 用户自定义数据，置信度100%
+            )
+            db.add(nutrition_data)
+
+        db.commit()
+        db.refresh(nutrition_data)
+
+        return NutritionEditResponse(
+            success=True,
+            message="营养数据保存成功",
+            ingredient_id=ingredient_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+
+
+@router.post("/products/{product_id}/nutrition", response_model=NutritionEditResponse)
+async def edit_product_nutrition(
+    product_id: int,
+    request: NutritionEditRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    编辑商品营养数据
+
+    创建或更新商品的自定义营养数据
+    """
+    try:
+        # 验证商品是否存在
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="商品不存在")
+
+        # 构建营养数据字典
+        nutrients_dict = {}
+        for nutrient in request.nutrients:
+            nutrients_dict[nutrient.name] = {
+                "value": nutrient.value,
+                "unit": nutrient.unit,
+                "key": nutrient.key
+            }
+
+        # 更新商品的自定义营养数据
+        product.custom_nutrition_data = nutrients_dict
+        product.custom_nutrition_source = request.source
+        product.updated_by = current_user.id
+
+        db.commit()
+        db.refresh(product)
+
+        return NutritionEditResponse(
+            success=True,
+            message="商品营养数据保存成功",
+            product_id=product_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
