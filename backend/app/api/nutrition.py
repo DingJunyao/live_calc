@@ -132,6 +132,7 @@ async def get_ingredient(
                 Ingredient.name,
                 Ingredient.aliases,
                 Ingredient.created_at,
+                Ingredient.updated_at,
                 Ingredient.is_active
             )
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
@@ -142,7 +143,8 @@ async def get_ingredient(
             id=ingredient.id,
             name=ingredient.name,
             aliases=ingredient.aliases or [],
-            created_at=ingredient.created_at
+            created_at=ingredient.created_at,
+            updated_at=ingredient.updated_at
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取原料详情失败: {str(e)}")

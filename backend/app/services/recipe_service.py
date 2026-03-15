@@ -1,10 +1,135 @@
 from sqlalchemy.orm import Session
-from typing import Dict, List
+from typing import Dict, List, Optional
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.product import ProductRecord
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData  # NutritionData 从 nutrition_data 导入，避免冲突
+from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelationType
 from decimal import Decimal
+
+
+def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, visited: Optional[List[int]] = None) -> Optional[tuple[Ingredient, ProductRecord, str]]:
+    """
+    获取食材的回退链中的第一个有价格的食材
+
+    Args:
+        db: 数据库会话
+        ingredient: 食材对象
+        user_id: 用户ID
+        visited: 已访问的食材ID列表（避免循环）
+
+    Returns:
+        (fallback_ingredient, price_record, fallback_chain) 或 None
+        - fallback_ingredient: 回退食材对象
+        - price_record: 价格记录
+        - fallback_chain: 回退链描述（如 "猪肉 → 里脊"）
+    """
+    if not ingredient:
+        return None
+
+    # 防止循环引用
+    if visited is None:
+        visited = []
+
+    if ingredient.id in visited:
+        return None
+
+    visited = visited + [ingredient.id]
+
+    # 查找回退父级
+    hierarchy = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.child_id == ingredient.id,
+        IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
+    ).order_by(IngredientHierarchy.strength.desc()).first()
+
+    if hierarchy and hierarchy.parent:
+        # 检查回退父级是否有价格
+        from app.models.product_entity import Product
+        product = db.query(Product).filter(
+            Product.ingredient_id == hierarchy.parent.id,
+            Product.is_active == True
+        ).first()
+
+        if product:
+            # 查找用户是否有该商品的价格记录
+            latest_record = db.query(ProductRecord).filter(
+                ProductRecord.user_id == user_id,
+                ProductRecord.product_id == product.id
+            ).order_by(ProductRecord.recorded_at.desc()).first()
+
+            if latest_record:
+                # 找到了有价格的回退食材
+                fallback_chain = f"{ingredient.name} → {hierarchy.parent.name}"
+                return hierarchy.parent, latest_record, fallback_chain
+
+        # 如果当前回退父级没有价格，继续向上查找
+        result = _get_ingredient_fallback(db, hierarchy.parent, user_id, visited)
+        if result:
+            fallback_ingredient, price_record, chain = result
+            # 在回退链的开头添加当前食材
+            fallback_chain = f"{ingredient.name} → {chain}"
+            return fallback_ingredient, price_record, fallback_chain
+
+    return None
+
+
+def _get_ingredient_nutrition(
+    db: Session,
+    ingredient: Ingredient,
+    visited: Optional[List[int]] = None
+) -> Optional[tuple[Ingredient, NutritionData, str]]:
+    """
+    获取食材的回退链中的第一个有营养数据的食材
+
+    Args:
+        db: 数据库会话
+        ingredient: 食材对象
+        visited: 已访问的食材ID列表（避免循环）
+
+    Returns:
+        (fallback_ingredient, nutrition_data, fallback_chain) 或 None
+        - fallback_ingredient: 回退食材对象
+        - nutrition_data: 营养数据
+        - fallback_chain: 回退链描述（如 "猪肉 → 里脊"）
+    """
+    if not ingredient:
+        return None
+
+    # 防止循环引用
+    if visited is None:
+        visited = []
+
+    if ingredient.id in visited:
+        return None
+
+    visited = visited + [ingredient.id]
+
+    # 查找回退父级
+    hierarchy = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.child_id == ingredient.id,
+        IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
+    ).order_by(IngredientHierarchy.strength.desc()).first()
+
+    if hierarchy and hierarchy.parent:
+        # 检查回退父级是否有营养数据
+        nutrition = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == hierarchy.parent.id
+        ).order_by(NutritionData.id.desc()).first()
+
+        if nutrition:
+            # 找到了有营养数据的回退食材
+            fallback_chain = f"{ingredient.name} → {hierarchy.parent.name}"
+            return hierarchy.parent, nutrition, fallback_chain
+
+        # 如果当前回退父级没有营养数据，继续向上查找
+        result = _get_ingredient_nutrition(db, hierarchy.parent, visited)
+        if result:
+            fallback_ingredient, nutrition_data, chain = result
+            # 在回退链的开头添加当前食材
+            fallback_chain = f"{ingredient.name} → {chain}"
+            return fallback_ingredient, nutrition_data, fallback_chain
+
+    return None
 
 
 async def batch_calculate_recipes_cost_nutrition(
@@ -66,6 +191,8 @@ async def calculate_recipe_cost(
 
         latest_record = None
         unit_price = None
+        fallback_chain = None  # 回退链信息
+        original_ingredient_name = ingredient.name  # 保存原始食材名称
 
         if product:
             # 通过商品ID查找用户最新的价格记录
@@ -73,6 +200,16 @@ async def calculate_recipe_cost(
                 ProductRecord.user_id == user_id,
                 ProductRecord.product_id == product.id
             ).order_by(ProductRecord.recorded_at.desc()).first()
+
+            # 如果找不到价格记录，尝试使用回退食材
+            if not latest_record:
+                fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
+                if fallback_result:
+                    fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
+                    # 直接使用回退的价格记录
+                    latest_record = fallback_price_record
+                    # 更新ingredient为回退食材，用于成本计算
+                    ingredient = fallback_ingredient
 
             if latest_record:
                 # 计算单价：总价 ÷ 数量
@@ -87,11 +224,28 @@ async def calculate_recipe_cost(
                     record_quantity = Decimal(str(std_qty))
                     unit_price = record_price / record_quantity
         else:
-            # 如果找不到商品或者找不到价格记录，尝试通过名称匹配（这个SB数据一致性问题）
-            latest_record = db.query(ProductRecord).filter(
-                ProductRecord.user_id == user_id,
-                ProductRecord.product_name.contains(ingredient.name)
-            ).order_by(ProductRecord.recorded_at.desc()).first()
+            # 如果找不到商品，尝试使用回退食材
+            fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
+            if fallback_result:
+                fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
+                # 查找回退食材的商品
+                product = db.query(Product).filter(
+                    Product.ingredient_id == fallback_ingredient.id,
+                    Product.is_active == True
+                ).first()
+
+                if product:
+                    # 直接使用回退的价格记录
+                    latest_record = fallback_price_record
+                    # 更新ingredient为回退食材
+                    ingredient = fallback_ingredient
+
+            if not latest_record:
+                # 如果找不到回退食材的价格记录，尝试通过名称匹配（这个SB数据一致性问题）
+                latest_record = db.query(ProductRecord).filter(
+                    ProductRecord.user_id == user_id,
+                    ProductRecord.product_name.contains(original_ingredient_name)
+                ).order_by(ProductRecord.recorded_at.desc()).first()
 
             if latest_record:
                 # 同样需要计算单价
@@ -129,7 +283,8 @@ async def calculate_recipe_cost(
                         "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                         "quantity": str(ingredient_quantity),
                         "unit_price": float(unit_price) if unit_price else 0.0,
-                        "cost": float(cost)
+                        "cost": float(cost),
+                        "fallback_chain": fallback_chain  # 回退链信息（如果有）
                     })
                 except Exception as e:
                     # 数量解析失败，使用基础价格
@@ -141,7 +296,8 @@ async def calculate_recipe_cost(
                         "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                         "quantity": "1",  # 默认为1
                         "unit_price": float(latest_record.price),
-                        "cost": float(cost)
+                        "cost": float(cost),
+                        "fallback_chain": fallback_chain  # 回退链信息（如果有）
                     })
             else:
                 # 对于数量为0的食材，我们仍然添加到明细中但成本为0
@@ -152,7 +308,8 @@ async def calculate_recipe_cost(
                     "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                     "quantity": str(ingredient_quantity),
                     "unit_price": float(unit_price) if unit_price else 0.0,
-                    "cost": 0.0
+                    "cost": 0.0,
+                    "fallback_chain": fallback_chain  # 回退链信息（如果有）
                 })
 
     return {
@@ -235,13 +392,38 @@ async def calculate_recipe_nutrition(
             NutritionData.ingredient_id == ingredient.id
         ).order_by(NutritionData.id.desc()).first()
 
+        # 如果当前食材没有营养数据，尝试使用回退食材
         if not nutrition:
-            continue
+            fallback_result = _get_ingredient_nutrition(db, ingredient, None)
+            if fallback_result:
+                fallback_ingredient, fallback_nutrition, fallback_chain = fallback_result
+                ingredient = fallback_ingredient
+                nutrition = fallback_nutrition
+                # 记录使用了回退食材
+                fallback_chain_info = fallback_chain
+            else:
+                continue
+        else:
+            fallback_chain_info = None
 
         # 获取营养数据（从 JSON 字段）
         nutrients = nutrition.nutrients or {}
         core_nutrients = nutrients.get("core_nutrients", {})
         all_nutrients = nutrients.get("all_nutrients", {})
+
+        # 获取回退食材的营养数据（用于单条营养素回退）
+        fallback_nutrition = None
+        if not fallback_chain_info:
+            # 如果已经使用了回退食材（fallback_chain_info 不为 None），就不需要再次查找
+            fallback_result = _get_ingredient_nutrition(db, ingredient, None)
+            if fallback_result:
+                fallback_nutrition = fallback_result[1]
+                if fallback_nutrition and fallback_nutrition.nutrients:
+                    fallback_nutrients = fallback_nutrition.nutrients.get("core_nutrients", {})
+                else:
+                    fallback_nutrients = {}
+            else:
+                fallback_nutrients = {}
 
         # 提取参考基准
         reference_amount = Decimal(str(nutrition.reference_amount or 100.0))
@@ -350,6 +532,14 @@ async def calculate_recipe_nutrition(
                 value = float(nutrient_data.get("value", 0) or 0)
                 source_unit = nutrient_data.get("unit", "")
 
+                # 如果值为 0 且有回退食材，尝试从回退食材获取该营养素的值
+                if value == 0 and fallback_nutrients and nutrient_name in fallback_nutrients:
+                    fallback_value = float(fallback_nutrients[nutrient_name].get("value", 0) or 0)
+                    if fallback_value > 0:
+                        value = fallback_value
+                        source_unit = fallback_nutrients[nutrient_name].get("unit", "")
+                        # 记录使用了回退值（可在日志中查看）
+
                 # 如果是能量，检查单位并转换为 kcal
                 if nutrient_name == "能量" and source_unit == "kJ":
                     # 先将 kJ 转换为 kcal（1 kJ = 0.239006 kcal）
@@ -361,22 +551,34 @@ async def calculate_recipe_nutrition(
                     total_core_nutrients[nutrient_name]["unit"] = source_unit
 
         # 添加食材贡献详情
+        # 收集每个营养素的贡献值（考虑回退）
+        contribution_data = {}
+        for nutrient_name, nutrient_data in core_nutrients.items():
+            if nutrient_name in total_core_nutrients:
+                value = float(nutrient_data.get("value", 0) or 0)
+                used_fallback = False  # 标记是否使用了回退
+
+                # 如果值为 0 且有回退食材，尝试从回退食材获取该营养素的值
+                if value == 0 and fallback_nutrients and nutrient_name in fallback_nutrients:
+                    fallback_value = float(fallback_nutrients[nutrient_name].get("value", 0) or 0)
+                    if fallback_value > 0:
+                        value = fallback_value
+                        used_fallback = True
+
+                contribution_data[nutrient_name] = {
+                    "value": value * float(ratio),
+                    "unit": nutrient_data.get("unit", ""),
+                    "nrp_pct": round((value * float(ratio) / NRV_REFERENCE_VALUES.get(nutrient_name, 1)) * 100, 2) if NRV_REFERENCE_VALUES.get(nutrient_name, 0) > 0 else 0,
+                    "used_fallback": used_fallback  # 标记是否使用了回退
+                }
+
         ingredient_details.append({
             "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
             "ingredient_id": ingredient.id,
             "ingredient_name": ingredient.name,
             "quantity": float(standard_quantity),
             "unit": standard_unit,
-            "nutrition_contribution": {
-                nutrient_name: {
-                    # 确保值不为 None
-                    "value": float(nutrient_data.get("value", 0) or 0) * float(ratio),
-                    "unit": nutrient_data.get("unit", ""),
-                    "nrp_pct": round(((float(nutrient_data.get("value", 0) or 0) * float(ratio)) / NRV_REFERENCE_VALUES.get(nutrient_name, 1)) * 100, 2) if NRV_REFERENCE_VALUES.get(nutrient_name, 0) > 0 else 0
-                }
-                for nutrient_name, nutrient_data in core_nutrients.items()
-                if nutrient_name in total_core_nutrients
-            }
+            "nutrition_contribution": contribution_data
         })
 
     servings = recipe.servings or 1
