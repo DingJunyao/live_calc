@@ -1,6 +1,6 @@
 """商品实体 API 路由"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, and_
 from typing import List, Optional
 from datetime import datetime
@@ -116,9 +116,14 @@ def list_products(
 @router.get("/products/entity/{product_id}/", response_model=ProductWithDetails)
 def get_product(product_id: int, db: Session = Depends(get_db)):
     """获取商品详情"""
-    product = db.query(Product).filter(Product.id == product_id, Product.is_active == True).first()
+    print(f"DEBUG get_product: 开始查询 product_id={product_id}")
+    product = db.query(Product).options(
+        joinedload(Product.ingredient)
+    ).filter(Product.id == product_id, Product.is_active == True).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    print(f"DEBUG get_product: 找到 product, id={product.id}, name={product.name}, ingredient_id={product.ingredient_id}")
+    print(f"DEBUG get_product: product.ingredient={product.ingredient}")
 
     # 反序列化 tags
     if product.tags:
@@ -135,12 +140,15 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     latest_price_date = latest_price_record.recorded_at if latest_price_record else None
 
     # 构建详细响应
+    ingredient_name = product.ingredient.name if product.ingredient else None
+    print(f"DEBUG get_product: product_id={product_id}, ingredient_id={product.ingredient_id}, ingredient_name={ingredient_name}")
     response = ProductWithDetails(
         **product.__dict__,
-        ingredient_name=product.ingredient.name if product.ingredient else None,
+        ingredient_name=ingredient_name,
         latest_price=latest_price,
         latest_price_date=latest_price_date
     )
+    print(f"DEBUG get_product: response.ingredient_name={response.ingredient_name}")
     return response
 
 

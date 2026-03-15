@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import eruda from 'vite-plugin-eruda'
 import path from 'path'
 
 // 读取环境变量来配置允许的主机
@@ -12,6 +13,13 @@ console.log('Allowed hosts:', allowedHostsArray) // 调试信息
 export default defineConfig({
   plugins: [
     vue(),
+    // eruda 移动端调试工具（仅在开发环境启用）
+    process.env.NODE_ENV !== 'production' ? eruda({
+      disable: process.env.NODE_ENV === 'production',
+      default: true, // 默认打开
+      autoScale: true, // 自动缩放
+      buttons: ['console', 'elements', 'network', 'resources', 'sources', 'info', 'snippets']
+    }) : null,
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png'],

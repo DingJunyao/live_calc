@@ -106,8 +106,21 @@
                 </span>
               </div>
               <div class="ingredient-cost-col">
-                <span class="cost-value" v-if="item.costInfo && item.costInfo.cost !== undefined && item.costInfo.cost !== null && item.costInfo.cost !== 0 && item.quantity !== 'None' && item.quantity !== 'null' && item.quantity !== null && item.quantity !== undefined">¥{{ parseFloat(item.costInfo.cost).toFixed(2) }}</span>
-                <span class="cost-value" v-else-if="item.costInfo && item.costInfo.cost === 0 && item.quantity !== 'None' && item.quantity !== 'null' && item.quantity !== null && item.quantity !== undefined">¥0.00</span>
+                <div class="cost-wrapper" v-if="item.costInfo && item.costInfo.cost !== undefined && item.costInfo.cost !== null && item.quantity !== 'None' && item.quantity !== 'null' && item.quantity !== null && item.quantity !== undefined">
+                  <!-- 回退标记 -->
+                  <span
+                    v-if="item.costInfo.fallback_chain"
+                    class="fallback-icon"
+                    @click.stop="showFallbackTooltip(item.costInfo.fallback_chain, $event)"
+                    title="点击查看价格来源"
+                  >
+                    <i class="mdi mdi-information-outline"></i>
+                  </span>
+                  <span class="cost-value">¥{{ parseFloat(item.costInfo.cost).toFixed(2) }}</span>
+                </div>
+                <div class="cost-wrapper" v-else-if="item.costInfo && item.costInfo.cost === 0 && item.quantity !== 'None' && item.quantity !== 'null' && item.quantity !== null && item.quantity !== undefined">
+                  <span class="cost-value">¥0.00</span>
+                </div>
                 <span class="cost-unavailable" v-else>-</span>
               </div>
             </div>
@@ -143,10 +156,21 @@
             >
               <div class="nutrient-info">
                 <span class="label">{{ nutrientName }}:</span>
-                <span class="value">
-                  {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.value !== undefined ? parseFloat(parseFloat(recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName].value).toFixed(3)) : '0' }}
-                  {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.unit || getDefaultUnit(nutrientName) }}
-                </span>
+                <div class="nutrient-value-wrapper">
+                  <!-- 营养回退标记 -->
+                  <span
+                    v-if="checkNutrientUsedFallback(nutrientName)"
+                    class="fallback-icon nutrient-fallback-icon"
+                    @click.stop="showNutrientTooltip(`使用回退食材数据：${nutrientName}`, $event)"
+                    title="点击查看数据来源"
+                  >
+                    <i class="mdi mdi-information-outline"></i>
+                  </span>
+                  <span class="value">
+                    {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.value !== undefined ? parseFloat(parseFloat(recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName].value).toFixed(3)) : '0' }}
+                    {{ recipe.nutrition.per_serving_nutrition.core_nutrients[nutrientName]?.unit || getDefaultUnit(nutrientName) }}
+                  </span>
+                </div>
               </div>
               <div class="nutrient-actions">
                 <NutritionProgressBar
@@ -186,6 +210,36 @@
         </div>
       </div>
     </div>
+
+    <!-- 回退 tooltip -->
+    <div
+      v-if="fallbackTooltip.show"
+      class="fallback-tooltip"
+      @click="closeTooltip"
+    >
+      <div class="tooltip-container" :style="{ left: fallbackTooltip.x + 'px', top: fallbackTooltip.y + 'px' }">
+        <div class="tooltip-content">
+          <i class="mdi mdi-information-outline"></i>
+          <span>{{ fallbackTooltip.message }}</span>
+        </div>
+        <div class="tooltip-arrow"></div>
+      </div>
+    </div>
+
+    <!-- 营养回退 tooltip -->
+    <div
+      v-if="nutrientTooltip.show"
+      class="fallback-tooltip"
+      @click="closeTooltip"
+    >
+      <div class="tooltip-container" :style="{ left: nutrientTooltip.x + 'px', top: nutrientTooltip.y + 'px' }">
+        <div class="tooltip-content">
+          <i class="mdi mdi-information-outline"></i>
+          <span>{{ nutrientTooltip.message }}</span>
+        </div>
+        <div class="tooltip-arrow"></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -205,16 +259,42 @@ const currentImageIndex = ref(0)
 const showIngredientBreakdown = ref(false)  // 全局显示/隐藏
 const expandedNutrients = ref<Record<string, boolean>>({})  // 各营养素展开状态
 
+// 回退 tooltip 状态
+const fallbackTooltip = ref({
+  show: false,
+  message: '',
+  x: 0,
+  y: 0
+})
+
+// 营养回退 tooltip 状态
+const nutrientTooltip = ref({
+  show: false,
+  message: '',
+  x: 0,
+  y: 0
+})
+
 onMounted(async () => {
   await loadRecipe()
   // 监听键盘事件
   window.addEventListener('keydown', handleKeydown)
+  // 点击外部关闭 tooltip
+  document.addEventListener('click', handleOutsideClick)
 })
 
-// 组件卸载时移除键盘监听
+// 组件卸载时移除监听器
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('click', handleOutsideClick)
 })
+
+// 点击外部关闭 tooltip
+function handleOutsideClick(event: MouseEvent) {
+  if (fallbackTooltip.value.show) {
+    closeTooltip()
+  }
+}
 
 // 查找食材ID
 async function findIngredientId(ingredientName: string) {
@@ -472,6 +552,78 @@ function openFullscreen() {
     img.requestFullscreen();
   }
 }
+
+// 显示回退 tooltip
+function showFallbackTooltip(fallbackChain: string, event: MouseEvent) {
+  console.log('showFallbackTooltip called', fallbackChain, event)
+  const icon = event.currentTarget as HTMLElement
+  const rect = icon.getBoundingClientRect()
+  console.log('icon rect:', rect)
+
+  // 计算 tooltip 的位置（居中于图标上方）
+  const tooltipWidth = 240
+  const tooltipHeight = 40
+  const screenPadding = 10
+
+  // 默认居中
+  let x = rect.left + rect.width / 2 - tooltipWidth / 2
+  let y = rect.top - tooltipHeight - 8 // 在图标上方
+
+  // 防止超出屏幕左边界
+  if (x < screenPadding) {
+    x = screenPadding
+  }
+
+  // 防止超出屏幕右边界
+  if (x + tooltipWidth > window.innerWidth - screenPadding) {
+    x = window.innerWidth - tooltipWidth - screenPadding
+  }
+
+  // 如果上方空间不足，改为显示在下方
+  if (y < screenPadding) {
+    y = rect.bottom + 8
+  }
+
+  fallbackTooltip.value = {
+    show: true,
+    message: `使用回退食材价格：${fallbackChain}`,
+    x: x,
+    y: y
+  }
+  console.log('tooltip position:', fallbackTooltip.value)
+}
+
+// 关闭 tooltip
+function closeTooltip() {
+  fallbackTooltip.value.show = false
+  nutrientTooltip.value.show = false
+}
+
+// 显示营养回退 tooltip
+function showNutrientTooltip(message: string, event: MouseEvent) {
+  const icon = event.currentTarget as HTMLElement
+  const rect = icon.getBoundingClientRect()
+
+  nutrientTooltip.value = {
+    show: true,
+    message: message,
+    x: rect.left + rect.width / 2 - 120, // 居中，tooltip 宽度为 240px
+    y: rect.top - 40 - 8 // 在图标上方
+  }
+}
+
+// 检查某个营养素是否使用了回退数据
+function checkNutrientUsedFallback(nutrientName: string): boolean {
+  if (!recipe.value?.nutrition?.ingredient_details) {
+    return false
+  }
+
+  // 检查所有食材，只要有任何一个食材的该营养素使用了回退，就返回 true
+  return recipe.value.nutrition.ingredient_details.some((detail: any) => {
+    const contribution = detail.nutrition_contribution?.[nutrientName]
+    return contribution && contribution.used_fallback === true
+  })
+}
 </script>
 
 <style scoped>
@@ -722,6 +874,99 @@ function openFullscreen() {
   align-items: center;
   text-align: right;
   flex: 1;
+}
+
+.cost-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.fallback-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: #ff9800;
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.fallback-icon:hover {
+  background: #f57c00;
+  transform: scale(1.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.nutrient-fallback-icon {
+  margin-right: 0.5rem;
+}
+
+.nutrient-value-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fallback-tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  pointerEvents: none;
+}
+
+.tooltip-container {
+  position: absolute;
+  pointerEvents: auto;
+}
+
+.tooltip-arrow {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #323232;
+  margin: 0 auto;
+  pointerEvents: auto;
+}
+
+.tooltip-content {
+  background: #323232;
+  color: white;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  fontSize: 0.9rem;
+  display: flex;
+  alignItems: center;
+  gap: 0.5rem;
+  boxShadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  width: 240px;
+  whiteSpace: nowrap;
+  pointerEvents: auto;
+}
+
+.tooltip-content i {
+  color: #ff9800;
+  flexShrink: 0;
+}
+
+.tooltip-arrow {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #323232;
+  margin: 0 auto;
+  pointerEvents: auto;
 }
 
 .ingredient-main {
@@ -1181,6 +1426,22 @@ input:checked + .slider:before {
   .contribution-value {
     align-self: flex-end;
     margin-top: -1.5rem;
+  }
+
+  .nutrient-value-wrapper {
+    gap: 0.25rem;
+  }
+
+  .nutrient-fallback-icon {
+    width: 1rem;
+    height: 1rem;
+    font-size: 0.625rem;
+  }
+
+  .fallback-icon {
+    width: 1rem;
+    height: 1rem;
+    font-size: 0.625rem;
   }
 }
 </style>

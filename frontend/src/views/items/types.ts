@@ -65,7 +65,7 @@ export interface HierarchyRelation {
   parent_name: string
   child_id: number
   child_name: string
-  relation_type: string
+  relation_type: 'CONTAINS' | 'SIMILAR' | 'SUBSTITUTABLE' | 'FALLBACK'
   strength: number
   created_at: string
 }

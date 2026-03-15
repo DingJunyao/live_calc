@@ -13,6 +13,7 @@
       <table class="price-table">
         <thead>
           <tr>
+            <th v-if="type === 'ingredient'">商品</th>
             <th>日期</th>
             <th>商家</th>
             <th>价格</th>
@@ -22,6 +23,7 @@
         </thead>
         <tbody>
           <tr v-for="record in records" :key="record.id">
+            <td v-if="type === 'ingredient'" class="product-name-cell">{{ record.product_name }}</td>
             <td>{{ formatDate(record.recorded_at) }}</td>
             <td>{{ record.merchant_name || '-' }}</td>
             <td class="price-cell">¥{{ formatPrice(record.price) }}</td>
@@ -60,6 +62,7 @@ import type { PriceRecord } from '../types'
 
 defineProps<{
   records: PriceRecord[]
+  type: 'product' | 'ingredient'
   pagination: {
     page: number
     pageSize: number
@@ -146,6 +149,15 @@ function formatPrice(price: any): string {
   color: #42b883;
 }
 
+.product-name-cell {
+  font-weight: 500;
+  color: #333;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .no-data {
   display: flex;
   flex-direction: column;
@@ -217,8 +229,12 @@ function formatPrice(price: any): string {
     font-size: 13px;
   }
 
-  .price-table th:nth-child(2),
-  .price-table td:nth-child(2) {
+  .product-name-cell {
+    max-width: 80px;
+  }
+
+  .price-table th:nth-child(3),
+  .price-table td:nth-child(3) {
     display: none;
   }
 }

@@ -158,6 +158,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;
+  min-width: fit-content;
 }
 
 .user-menu {
@@ -272,6 +274,12 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .page-header {
     margin-bottom: 1.5rem;
+    padding: 0.75rem;
+  }
+
+  .header-right {
+    gap: 0.375rem;
+    flex-shrink: 0;
   }
 
   .nav-buttons {
