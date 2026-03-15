@@ -49,7 +49,13 @@
 
       <div class="info-row" v-if="type === 'product' && item.ingredient_name">
         <span class="info-label">关联原料</span>
-        <span class="info-value">{{ item.ingredient_name }}</span>
+        <span
+          class="info-value clickable"
+          @click="handleIngredientClick"
+        >
+          {{ item.ingredient_name }}
+          <i class="mdi mdi-chevron-right"></i>
+        </span>
       </div>
 
       <div class="info-row" v-if="item.aliases && item.aliases.length > 0">
@@ -77,14 +83,21 @@
 <script setup lang="ts">
 import type { Item } from '../types'
 
-defineProps<{
+const props = defineProps<{
   item: Item
   type: 'product' | 'ingredient'
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   edit: []
+  ingredientClick: [ingredientId: number]
 }>()
+
+function handleIngredientClick() {
+  if (props.type === 'product' && props.item.ingredient_id) {
+    emit('ingredientClick', props.item.ingredient_id)
+  }
+}
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return ''
@@ -164,6 +177,25 @@ function formatDate(dateStr: string): string {
 .info-value {
   flex: 1;
   color: #333;
+}
+
+.info-value.clickable {
+  color: #42b883;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+.info-value.clickable:hover {
+  color: #3aa876;
+  text-decoration: underline;
+}
+
+.info-value.clickable i {
+  font-size: 16px;
 }
 
 .barcode-list,

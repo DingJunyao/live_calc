@@ -225,7 +225,7 @@
           </div>
         </form>
         <div class="form-actions">
-          <button type="submit" class="btn-primary">{{ editingProduct ? '更新' : '添加' }}</button>
+          <button type="button" @click="addProduct" class="btn-primary">{{ editingProduct ? '更新' : '添加' }}</button>
         </div>
       </div>
     </div>
@@ -233,7 +233,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, Teleport } from 'vue'
+import { ref, onMounted, onUnmounted, Teleport, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { productAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
@@ -683,6 +683,11 @@ onMounted(async () => {
   setTimeout(() => {
     document.addEventListener('click', handleClickOutside, true);
   }, 100); // 延迟添加事件监听器以确保DOM完全加载
+
+  // 添加 visualViewport 监听器，用于移动端键盘弹出时重新计算下拉框位置
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', handleVisualViewportResize);
+  }
 })
 
 onUnmounted(() => {
@@ -697,6 +702,11 @@ onUnmounted(() => {
 
   // 移除视口变化监听器
   window.removeEventListener('resize', handleViewportChange);
+
+  // 移除 visualViewport 监听器
+  if (window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', handleVisualViewportResize);
+  }
 })
 
 // 处理点击外部区域关闭下拉建议
@@ -792,6 +802,19 @@ function handleViewportChange() {
 
 // 监听视口大小变化，主要用于检测移动设备上软键盘的弹出
 window.addEventListener('resize', handleViewportChange);
+
+// 使用 visualViewport API 处理移动端键盘弹出（更可靠的方法）
+function handleVisualViewportResize() {
+  // 重新计算下拉建议位置
+  setTimeout(() => {
+    if (showProductSuggestions.value && productInputRef.value) {
+      updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle, false);
+    }
+    if (showLocationSuggestions.value && locationInputRef.value) {
+      updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle, true);
+    }
+  }, 100); // 短延迟确保布局已更新
+}
 
 async function loadProducts() {
   loading.value = true
@@ -934,10 +957,16 @@ async function loadUnits() {
 }
 
 function openAddModal() {
+  console.log('[openAddModal] 被调用')
+  console.log('[openAddModal] loading:', loading.value, 'merchantsLoading:', merchantsLoading.value, 'loadingUnits:', loadingUnits.value)
+  console.log('[openAddModal] allProducts.length:', allProducts.value.length, 'allMerchants.length:', allMerchants.value.length)
+
   // 检查按钮是否被禁用，如果是，则不执行任何操作
   if (loading.value || merchantsLoading.value || loadingUnits.value || allProducts.value.length === 0 || allMerchants.value.length === 0) {
+    console.log('[openAddModal] 按钮被禁用，不执行操作')
     return;
   }
+  console.log('[openAddModal] 开始打开模态框')
 
   editingProduct.value = null  // 清除编辑状态
   // 初始化表单并显示模态框，使用会话记忆填充上次的选择
@@ -1029,6 +1058,11 @@ function handlePageSizeChange(size: number) {
 }
 
 async function addProduct() {
+  console.log('[addProduct] 函数被调用')
+  console.log('[addProduct] newProduct.value:', newProduct.value)
+  console.log('[addProduct] productSearchTerm.value:', productSearchTerm.value)
+  console.log('[addProduct] merchantSearchTerm.value:', merchantSearchTerm.value)
+
   try {
     // 获取用户输入的商品名称
     const productName = productSearchTerm.value.trim()
@@ -1155,6 +1189,10 @@ function formatDate(dateString: string) {
 }
 
 function handleProductFocus() {
+  // 隐藏商家下拉框，避免两个下拉框同时显示
+  showLocationSuggestions.value = false
+  locationSuggestionsStyle.value = {}
+
   // 延迟执行，确保DOM已经更新
   setTimeout(() => {
     updateSuggestionsPosition(productInputRef.value, productSuggestionsStyle, false)
@@ -1241,6 +1279,10 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 function handleLocationFocus() {
+  // 隐藏商品下拉框，避免两个下拉框同时显示
+  showProductSuggestions.value = false
+  productSuggestionsStyle.value = {}
+
   // 延迟执行，确保DOM已经更新
   setTimeout(() => {
     updateSuggestionsPosition(locationInputRef.value, locationSuggestionsStyle, true)
@@ -1507,6 +1549,8 @@ function updateSuggestionsPosition(
 }
 
 .add-btn {
+  position: relative;
+  z-index: 10;
   width: 2.5rem;
   height: 2.5rem;
   display: flex;
@@ -1634,7 +1678,7 @@ function updateSuggestionsPosition(
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 10000;
 }
 
 .modal-content {
@@ -2118,7 +2162,7 @@ function updateSuggestionsPosition(
   border: 1px solid #ddd;
   max-height: 200px;
   overflow-y: auto;
-  z-index: 1001;
+  z-index: 10001;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   border-radius: 0 0 4px 4px;
   box-sizing: border-box;

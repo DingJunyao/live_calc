@@ -1,7 +1,7 @@
 """
 食材层级关系管理API
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.security import get_current_user
@@ -214,6 +214,44 @@ def get_ingredient_hierarchy(
     return HierarchyRelationsResponse(
         parent_relations=parent_responses,
         child_relations=child_responses
+    )
+
+
+@router.put("/ingredients/hierarchy/{relation_id}", response_model=HierarchyRelationResponse)
+def update_hierarchy_relation(
+    relation_id: int,
+    strength: int = Body(..., embed=True, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    修改层级关系的强度
+    """
+    relation = db.query(IngredientHierarchy).filter(IngredientHierarchy.id == relation_id).first()
+    if not relation:
+        raise HTTPException(status_code=404, detail="层级关系不存在")
+
+    # 更新强度
+    relation.strength = strength
+    db.commit()
+    db.refresh(relation)
+
+    # 查询相关食材信息
+    parent_ingredient = db.query(Ingredient).filter(Ingredient.id == relation.parent_id).first()
+    child_ingredient = db.query(Ingredient).filter(Ingredient.id == relation.child_id).first()
+
+    if not parent_ingredient or not child_ingredient:
+        raise HTTPException(status_code=404, detail="相关食材不存在")
+
+    return HierarchyRelationResponse(
+        id=relation.id,
+        parent_id=relation.parent_id,
+        parent_name=parent_ingredient.name,
+        child_id=relation.child_id,
+        child_name=child_ingredient.name,
+        relation_type=relation.relation_type,
+        strength=relation.strength,
+        created_at=relation.created_at
     )
 
 

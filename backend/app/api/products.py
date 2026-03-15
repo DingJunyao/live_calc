@@ -184,6 +184,7 @@ async def get_product_records(
     product_name: Optional[str] = Query(None, description="商品名称过滤"),
     search: Optional[str] = Query(None, description="搜索关键词（同product_name，向前兼容）"),
     product_id: Optional[int] = Query(None, description="商品ID过滤"),
+    ingredient_id: Optional[int] = Query(None, description="原料ID过滤（查询关联商品的价格记录）"),
     start_date: Optional[datetime] = Query(None, description="开始日期"),
     end_date: Optional[datetime] = Query(None, description="结束日期"),
     db: Session = Depends(get_db),
@@ -196,10 +197,20 @@ async def get_product_records(
         joinedload(ProductRecord.merchant)
     ).filter(ProductRecord.user_id == current_user.id)
 
-    # 优先使用 product_id 过滤
-    if product_id:
+    # 优先使用 ingredient_id 过滤（通过关联商品）
+    if ingredient_id:
+        # 通过 ingredient_id 查找所有关联的商品
+        from app.models.product_entity import Product
+        product_ids = db.query(Product.id).filter(
+            Product.ingredient_id == ingredient_id,
+            Product.is_active == True
+        ).all()
+        product_ids = [pid[0] for pid in product_ids]
+        query = query.filter(ProductRecord.product_id.in_(product_ids))
+    # 然后使用 product_id 过滤
+    elif product_id:
         query = query.filter(ProductRecord.product_id == product_id)
-    # 然后使用search参数（优先）或product_name参数进行过滤
+    # 最后使用search参数（优先）或product_name参数进行过滤
     else:
         search_term = search or product_name
         if search_term:
@@ -207,8 +218,16 @@ async def get_product_records(
 
     # 添加日期范围过滤
     if start_date:
+        # 如果输入时间带有时区信息，转换为本地时间（naive datetime）
+        if start_date.tzinfo:
+            # 先转换为时间戳，再转换为本地时间
+            start_date = datetime.fromtimestamp(start_date.timestamp())
         query = query.filter(ProductRecord.recorded_at >= start_date)
     if end_date:
+        # 如果输入时间带有时区信息，转换为本地时间（naive datetime）
+        if end_date.tzinfo:
+            # 先转换为时间戳，再转换为本地时间
+            end_date = datetime.fromtimestamp(end_date.timestamp())
         query = query.filter(ProductRecord.recorded_at <= end_date)
 
     total = query.count()

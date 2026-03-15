@@ -10,6 +10,7 @@ class IngredientResponse(BaseModel):
     name: str
     aliases: Optional[List[str]]
     created_at: datetime
+    updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
