@@ -9,6 +9,8 @@ export interface Item {
   ingredient_name?: string
   ingredient_id?: number
   aliases?: string[]
+  default_unit_id?: number
+  default_unit_name?: string
   created_at: string
   updated_at?: string
   barcodes?: ProductBarcode[]

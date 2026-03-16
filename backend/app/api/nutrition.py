@@ -126,11 +126,13 @@ async def get_ingredient(
     """获取原料详情"""
     try:
         # 明确只加载需要的字段，避免加载 relationship
+        from app.models.unit import Unit
         ingredient = db.query(Ingredient).options(
             load_only(
                 Ingredient.id,
                 Ingredient.name,
                 Ingredient.aliases,
+                Ingredient.default_unit_id,
                 Ingredient.created_at,
                 Ingredient.updated_at,
                 Ingredient.is_active
@@ -139,10 +141,19 @@ async def get_ingredient(
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
 
+        # 获取默认单位名称
+        default_unit_name = None
+        if ingredient.default_unit_id:
+            unit = db.query(Unit).filter(Unit.id == ingredient.default_unit_id).first()
+            if unit:
+                default_unit_name = unit.name
+
         return IngredientResponse(
             id=ingredient.id,
             name=ingredient.name,
             aliases=ingredient.aliases or [],
+            default_unit_id=ingredient.default_unit_id,
+            default_unit_name=default_unit_name,
             created_at=ingredient.created_at,
             updated_at=ingredient.updated_at
         )
@@ -154,6 +165,7 @@ async def get_ingredient(
 async def create_ingredient(
     name: str = Body(..., min_length=1),
     aliases: str = Body(None),
+    default_unit_id: int = Body(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -195,6 +207,7 @@ async def update_ingredient(
     ingredient_id: int,
     name: str = Body(None),
     aliases: str = Body(None),
+    default_unit_id: Optional[int] = Body(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -213,6 +226,9 @@ async def update_ingredient(
         if aliases is not None:
             ingredient.aliases = [alias.strip() for alias in aliases.split(',') if alias.strip()]
 
+        if default_unit_id is not None:
+            ingredient.default_unit_id = default_unit_id
+
         ingredient.updated_by = current_user.id
 
         db.commit()
@@ -222,6 +238,7 @@ async def update_ingredient(
             "id": ingredient.id,
             "name": ingredient.name,
             "aliases": ingredient.aliases or [],
+            "default_unit_id": ingredient.default_unit_id,
             "created_at": ingredient.created_at
         }
     except HTTPException:

@@ -205,8 +205,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { productAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
@@ -241,6 +241,7 @@ interface Merchant {
   address?: string
 }
 
+const route = useRoute()
 const router = useRouter()
 const products = ref<Product[]>([])
 const ingredients = ref<Ingredient[]>([])
@@ -277,6 +278,17 @@ onMounted(() => {
   loadProducts()
   loadIngredients()
   loadLocations()
+
+  // 检查 URL 中的 edit 参数，如果有则打开编辑模态框
+  const editId = route.query.edit as string
+  if (editId) {
+    nextTick(() => {
+      const productToEdit = products.value.find(p => p.id === parseInt(editId))
+      if (productToEdit) {
+        editProduct(productToEdit)
+      }
+    })
+  }
 })
 
 async function loadProducts() {

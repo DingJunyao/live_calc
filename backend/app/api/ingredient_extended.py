@@ -378,6 +378,7 @@ async def update_ingredient(
     aliases: Optional[List[str]] = Body(None),
     density: Optional[float] = Body(None),
     default_unit: Optional[str] = Body(None),
+    default_unit_id: Optional[int] = Body(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -405,7 +406,12 @@ async def update_ingredient(
             ingredient.aliases = aliases
         if density is not None:
             ingredient.density = density
-        if default_unit is not None:
+
+        # 处理默认单位：优先使用 default_unit_id（数字ID），如果没有则使用 default_unit（字符串）
+        if default_unit_id is not None:
+            # 直接使用单位 ID
+            ingredient.default_unit_id = default_unit_id if default_unit_id > 0 else None
+        elif default_unit is not None:
             # 使用单位匹配器获取单位 ID
             matcher = UnitMatcher(db)
             unit_obj = matcher.match_or_create_unit(default_unit)

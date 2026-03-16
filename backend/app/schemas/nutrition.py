@@ -9,6 +9,8 @@ class IngredientResponse(BaseModel):
     id: int
     name: str
     aliases: Optional[List[str]]
+    default_unit_id: Optional[int] = None
+    default_unit_name: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
 
