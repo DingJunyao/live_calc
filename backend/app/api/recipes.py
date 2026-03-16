@@ -5,7 +5,7 @@ from typing import List, Optional
 from decimal import Decimal
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.recipe import Recipe, RecipeIngredient
+from app.models.recipe import Recipe, RecipeIngredient, RecipeCostHistory
 from app.models.nutrition import Ingredient
 from app.schemas.recipe import (
     RecipeCreate,
@@ -13,10 +13,15 @@ from app.schemas.recipe import (
     RecipeDetailResponse,
     RecipeCostResponse,
     RecipeNutritionResponse,
-    RecipeIngredientDetail
+    RecipeIngredientDetail,
+    RecipeCostHistoryResponse
 )
 from app.schemas.common import PaginatedResponse
-from app.services.recipe_service import calculate_recipe_cost, calculate_recipe_nutrition
+from app.services.recipe_service import (
+    calculate_recipe_cost,
+    calculate_recipe_nutrition,
+    calculate_recipe_cost_trend
+)
 from app.services.recipe_import_service import RecipeImportService
 import shutil
 import tempfile
@@ -433,4 +438,46 @@ async def get_recipe_images(
 
         return {"images": image_urls}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取图片失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取图片失败：{str(e)}")
+
+
+@router.get("/{recipe_id}/cost-history", response_model=List[RecipeCostHistoryResponse])
+async def get_recipe_cost_history(
+    recipe_id: int,
+    days: int = Query(90, ge=7, le=365, description="查询天数"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取菜谱成本趋势
+
+    根据菜谱中食材的历史价格，计算每一天的菜谱成本。
+    如果某天某食材没有价格数据，则向前找食材价格；
+    如果没有食材价格，则以时间最早的为准。
+    """
+    try:
+        # 验证菜谱存在且属于当前用户
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
+
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+
+        # 实时计算成本趋势
+        cost_trend = calculate_recipe_cost_trend(recipe_id, current_user.id, db, days)
+
+        # 转换为响应模型（按时间倒序）
+        return [
+            RecipeCostHistoryResponse(
+                id=i,  # 使用索引作为临时 ID
+                recipe_id=recipe_id,
+                recipe_name=recipe.name,
+                total_cost=item["total_cost"],
+                recorded_at=item["recorded_at"],
+                exchange_rate=100  # 默认无汇率转换
+            )
+            for i, item in enumerate(reversed(cost_trend))
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取成本历史失败：{str(e)}")

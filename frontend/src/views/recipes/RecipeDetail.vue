@@ -41,11 +41,11 @@
             :key="index"
             class="thumbnail"
             :class="{ active: index === currentImageIndex }"
-            @click="currentImageIndex = index"
+            @click="currentImageIndex = index as number"
           >
             <img
               :src="getImageUrl(image)"
-              :alt="`${recipe.name} 缩略图 ${index + 1}`"
+              :alt="`${recipe.name} 缩略图 ${Number(index) + 1}`"
               @error="handleThumbnailError"
             />
           </div>
@@ -135,12 +135,15 @@
         <h2>做法</h2>
         <div v-if="recipe.cooking_steps && recipe.cooking_steps.length > 0" class="cooking-steps">
           <div v-for="(stepItem, index) in recipe.cooking_steps" :key="index" class="step-item">
-            <span class="step-number">{{ index + 1 }}</span>
+            <span class="step-number">{{ Number(index) + 1 }}</span>
             <span class="step-content">{{ typeof stepItem === 'object' ? stepItem.content : stepItem }}</span>
           </div>
         </div>
         <div v-else class="empty-text">暂无做法数据</div>
       </div>
+
+      <!-- 成本趋势 -->
+      <CostChartSection v-if="costHistoryRecords.length > 0" :records="costHistoryRecords || []" />
 
       <!-- 营养成分 -->
       <div class="info-card" v-if="recipe && recipe.nutrition && recipe.nutrition.per_serving_nutrition && recipe.nutrition.per_serving_nutrition.core_nutrients">
@@ -184,21 +187,21 @@
 
           <!-- 显示其他不在标准顺序中的营养素 -->
           <div
-            v-for="nonStdItem in getNonStandardNutrients()"
-            :key="nonStdItem[0]"
+            v-for="(nonStdItem, idx) in getNonStandardNutrients()"
+            :key="idx"
             class="info-item nutrition-item"
           >
             <div class="nutrient-info">
               <span class="label">{{ nonStdItem[0] }}:</span>
               <span class="value">
-                {{ nonStdItem[1]?.value !== undefined ? parseFloat(parseFloat(nonStdItem[1].value).toFixed(3)) : '0' }}
-                {{ nonStdItem[1]?.unit || getDefaultUnit(nonStdItem[0]) }}
+                {{ (nonStdItem[1] as any)?.value !== undefined ? parseFloat(parseFloat((nonStdItem[1] as any).value).toFixed(3)) : '0' }}
+                {{ (nonStdItem[1] as any)?.unit || getDefaultUnit(nonStdItem[0]) }}
               </span>
             </div>
             <div class="nutrient-actions">
               <NutritionProgressBar
                 v-if="nonStdItem[1]"
-                :percentage="nonStdItem[1].nrp_pct || 0"
+                :percentage="(nonStdItem[1] as any)?.nrp_pct || 0"
                 :show-percentage="true"
               />
             </div>
@@ -249,6 +252,7 @@ import { useRoute } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import NutritionProgressBar from '@/components/NutritionProgressBar.vue'
+import CostChartSection from './components/CostChartSection.vue'
 
 const route = useRoute()
 const recipe = ref<any>(null)
@@ -273,10 +277,31 @@ const nutrientTooltip = ref({
   message: '',
   x: 0,
   y: 0
-})
+}) as any
+
+// 成本历史数据
+const costHistoryRecords = ref<any[]>([])
+const loadingCostHistory = ref(false)
+
+// 加载成本历史数据
+async function loadCostHistory(recipeId: string) {
+  loadingCostHistory.value = true
+  try {
+    const response: any[] = await api.get(`/recipes/${recipeId}/cost-history`)
+    costHistoryRecords.value = response || []
+    console.log('成本历史数据:', costHistoryRecords.value)
+  } catch (error) {
+    console.error('Failed to load cost history:', error)
+    costHistoryRecords.value = []
+  } finally {
+    loadingCostHistory.value = false
+  }
+}
 
 onMounted(async () => {
+  const recipeId = route.params.id as string
   await loadRecipe()
+  await loadCostHistory(recipeId)
   // 监听键盘事件
   window.addEventListener('keydown', handleKeydown)
   // 点击外部关闭 tooltip
@@ -340,6 +365,9 @@ async function loadRecipe() {
         recipe.value.costData = null
         // 不设置默认值，让模板显示备用值
       }
+
+      // 加载成本历史数据
+      await loadCostHistory(recipeId)
     } catch (e) {
       // 营养数据可能不存在，忽略错误
       console.log('No nutrition data available')
@@ -371,12 +399,12 @@ async function loadRecipe() {
           }
 
           updatedIngredients.push({
-            ...ingredient,
+            ...ingredient as any,
             ingredient_id: null, // 先设为null，稍后再更新
             costInfo: costInfo || null
           })
         }
-
+        
         recipe.value.ingredients = updatedIngredients
 
         // 异步获取食材ID以提高性能
@@ -427,7 +455,7 @@ function getDefaultUnit(nutrientName: string): string {
   return defaultUnits[nutrientName] || 'g'
 }
 
-function getNonStandardNutrients() {
+function getNonStandardNutrients(): Array<[string, any]> {
   if (!recipe.value?.nutrition?.per_serving_nutrition?.core_nutrients) return []
 
   const coreNutrients = recipe.value.nutrition.per_serving_nutrition.core_nutrients

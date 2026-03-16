@@ -28,6 +28,7 @@ class Recipe(Base, AuditMixin):
     user = relationship("User", back_populates="recipes", foreign_keys="Recipe.user_id")
     ingredients = relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan")
     result_ingredient = relationship("Ingredient", foreign_keys=[result_ingredient_id], lazy="select")
+    cost_history = relationship("RecipeCostHistory", back_populates="recipe")
 
 
 class RecipeIngredient(Base):
@@ -47,3 +48,17 @@ class RecipeIngredient(Base):
     recipe = relationship("Recipe", back_populates="ingredients")
     ingredient = relationship("app.models.nutrition.Ingredient", back_populates="recipe_ingredients", lazy="select")
     unit = relationship("Unit", lazy="select")
+
+
+class RecipeCostHistory(Base, AuditMixin):
+    """菜谱成本历史记录"""
+    __tablename__ = "recipe_cost_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
+    total_cost = Column(Integer, nullable=False)  # 总成本（分）
+    recorded_at = Column(Integer, nullable=False)  # 记录时间戳（秒）
+    exchange_rate = Column(Integer, default=100)  # 汇率（100表示无汇率转换）
+
+    # 关系
+    recipe = relationship("Recipe", back_populates="cost_history")

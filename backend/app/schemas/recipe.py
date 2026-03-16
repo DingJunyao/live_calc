@@ -107,3 +107,13 @@ class RecipeNutritionResponse(BaseModel):
     # 添加完整的营养数据结构
     per_serving_nutrition: Optional[dict] = None  # core_nutrients, all_nutrients, nutrient_details
     total_nutrition: Optional[dict] = None  # 核心营养素的总量
+
+
+class RecipeCostHistoryResponse(BaseModel):
+    """菜谱成本历史记录响应"""
+    id: int
+    recipe_id: int
+    recipe_name: str
+    total_cost: int
+    recorded_at: int
+    exchange_rate: int
