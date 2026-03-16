@@ -40,6 +40,7 @@ echarts.use([LineChart, TitleComponent, TooltipComponent, GridComponent, LegendC
 const props = defineProps<{
   records: PriceRecord[]
   filter: 'week' | 'month' | 'quarter' | 'year'
+  defaultUnit?: string
 }>()
 
 defineEmits<{
@@ -99,10 +100,16 @@ function aggregateDailyPrices(records: PriceRecord[]) {
     const day = String(date.getDate()).padStart(2, '0')
     const dateKey = `${year}-${month}-${day}`
 
+    // 计算单价（价格/数量）
+    // 使用原始录入的数据，避免标准化后的单位转换导致价格计算错误
+    const unitPrice = record.original_quantity > 0
+      ? record.price / record.original_quantity
+      : record.price
+
     if (!dailyMap.has(dateKey)) {
       dailyMap.set(dateKey, [])
     }
-    dailyMap.get(dateKey)!.push(record.price)
+    dailyMap.get(dateKey)!.push(unitPrice)
   }
 
   // 计算每日统计值并按日期排序
@@ -175,6 +182,11 @@ function updateChart() {
     return
   }
 
+  // 获取实际使用的单位（从第一条有效记录的 original_unit）
+  const actualUnit = props.records.length > 0 && props.records[0]?.original_unit
+    ? props.records[0].original_unit
+    : ''
+
   // 找到最小价格作为 base
   const minPriceInDataset = Math.min(...dailyData.map(d => d.min))
   const base = Math.min(0, minPriceInDataset - 0.1)
@@ -183,10 +195,11 @@ function updateChart() {
   console.log('Daily Price Data:', dailyData)
   console.log('Min price in dataset:', minPriceInDataset)
   console.log('Base value:', base)
+  console.log('Actual unit:', actualUnit)
 
   const option: EChartsOption = {
     title: {
-      text: '价格趋势',
+      text: `价格趋势${actualUnit ? `（${actualUnit}）` : ''}`,
       textStyle: {
         fontSize: 16,
         fontWeight: 600
@@ -220,11 +233,11 @@ function updateChart() {
             <div style="font-weight: 600; margin-bottom: 8px;">${dateStr}</div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: #42b883;"></span>
-              <span>平均价格: ¥${data.avg.toFixed(2)}</span>
+              <span>平均价格: ¥${data.avg.toFixed(2)}/${actualUnit}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
               <span style="display: inline-block; width: 12px; height: 12px; background-color: rgba(66, 184, 131, 0.3); border-radius: 2px;"></span>
-              <span>价格范围: ¥${data.min.toFixed(2)} - ¥${data.max.toFixed(2)}</span>
+              <span>价格范围: ¥${data.min.toFixed(2)} - ¥${data.max.toFixed(2)}/${actualUnit}</span>
             </div>
             <div style="margin-top: 4px; color: #999; font-size: 12px;">记录数: ${data.count}</div>
           </div>
@@ -257,7 +270,7 @@ function updateChart() {
     yAxis: {
       type: 'value',
       axisLabel: {
-        formatter: '¥{value}'
+        formatter: (value: number) => `¥${value.toFixed(2)}`
       },
       splitLine: {
         lineStyle: {
@@ -268,7 +281,8 @@ function updateChart() {
       axisPointer: {
         label: {
           formatter: (params: any) => {
-            return `¥${params.value.toFixed(2)}`
+            const unit = actualUnit ? `/${actualUnit}` : ''
+            return `¥${params.value.toFixed(2)}${unit}`
           }
         }
       }
@@ -363,6 +377,12 @@ watch(() => props.records, () => {
 
 watch(() => props.filter, (newFilter) => {
   currentFilter.value = newFilter
+})
+
+// 监听默认单位变化
+watch(() => props.defaultUnit, () => {
+  console.log('PriceChartSection - defaultUnit 变化:', props.defaultUnit)
+  updateChart()
 })
 
 // 生命周期

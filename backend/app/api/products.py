@@ -187,10 +187,15 @@ async def get_product_records(
     ingredient_id: Optional[int] = Query(None, description="原料ID过滤（查询关联商品的价格记录）"),
     start_date: Optional[datetime] = Query(None, description="开始日期"),
     end_date: Optional[datetime] = Query(None, description="结束日期"),
+    target_unit: Optional[str] = Query(None, description="目标单位（用于价格单位转换）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取商品记录列表（分页）"""
+    """获取商品记录列表（分页）
+
+    target_unit: 目标单位（如 'g', 'L'），价格将按此单位显示
+    如果不指定，使用标准单位（重量为 g，体积为 ml）
+    """
     query = db.query(ProductRecord).options(
         joinedload(ProductRecord.original_unit),
         joinedload(ProductRecord.standard_unit),
@@ -235,8 +240,11 @@ async def get_product_records(
     page = skip // limit + 1
 
     # 手动构造响应列表，将 Unit 对象转换为字符串
-    return PaginatedResponse.create(
-        items=[
+    # 价格记录已经以正确的单位存储（如 L），不需要数值转换
+    # target_unit 仅用于控制显示的标签（如果需要的话）
+    items = []
+    for record in records:
+        items.append(
             ProductRecordResponse(
                 id=record.id,
                 product_id=record.product_id,
@@ -254,8 +262,10 @@ async def get_product_records(
                 recorded_at=record.recorded_at,
                 notes=record.notes
             )
-            for record in records
-        ],
+        )
+
+    return PaginatedResponse.create(
+        items=items,
         total=total,
         page=page,
         page_size=limit

@@ -14,7 +14,7 @@ WEIGHT_CONVERSION = {
 # 容量单位转换（转换为毫升）
 VOLUME_CONVERSION = {
     "ml": (1, "ml"),
-    "mL": (1, "ml"),  # 添加大写支持
+    "mL": (1, "ml"),
     "l": (1000, "ml"),
     "杯": (240, "ml"),
     "汤匙": (15, "ml"),
@@ -23,7 +23,11 @@ VOLUME_CONVERSION = {
 
 
 def convert_to_standard(quantity: Decimal, unit: str) -> Tuple[Decimal, str]:
-    """转换为标准单位"""
+    """转换为标准单位
+
+    将单位转换为标准单位（重量为 g，体积为 ml）
+    注意：重量和体积之间的转换需要密度信息，此函数不处理此类转换
+    """
     unit_lower = unit.lower()
 
     # 尝试重量单位

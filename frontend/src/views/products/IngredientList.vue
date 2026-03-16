@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, computed, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useUserStore } from '@/stores/user'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
 
+const route = useRoute()
 const router = useRouter()
 
 const userStore = useUserStore()
@@ -255,6 +256,17 @@ onMounted(async () => {
   await loadCategories()
   await loadUnits()
   await loadIngredients()
+
+  // 检查 URL 中的 edit 参数，如果有则打开编辑模态框
+  const editId = route.query.edit as string
+  if (editId) {
+    nextTick(() => {
+      const ingredientToEdit = ingredients.value.find(i => i.id === parseInt(editId))
+      if (ingredientToEdit) {
+        editIngredient(ingredientToEdit)
+      }
+    })
+  }
 })
 
 async function loadCategories() {
@@ -268,8 +280,8 @@ async function loadCategories() {
 
 async function loadUnits() {
   try {
-    const response = await api.get('/ingredients/units')
-    units.value = response
+    const response = await api.get('/units/')
+    units.value = (response as any).items || response || []
   } catch (error) {
     console.error('Failed to load units:', error)
   }
@@ -774,13 +786,16 @@ async function deleteHierarchyRelation(relationId: number) {
 
           <div class="form-group">
             <label for="default-unit">默认单位</label>
-            <input
+            <select
               id="default-unit"
               v-model="newIngredient.default_unit"
-              type="text"
               class="select-input"
-              placeholder="例如: g, ml, kg"
-            />
+            >
+              <option value="">无默认单位</option>
+              <option v-for="unit in units" :key="unit.id" :value="unit.name">
+                {{ unit.name }}
+              </option>
+            </select>
           </div>
         </div>
 

@@ -2,7 +2,6 @@
   <PageHeader :title="itemName" :show-back="true">
     <template #extra>
       <button
-        v-if="type === 'product'"
         @click="goToEdit"
         class="btn-square edit-btn"
         title="编辑"
@@ -30,6 +29,7 @@
       <PriceChartSection v-if="item && priceRecords.length > 0"
         :records="priceRecords"
         :filter="priceFilter"
+        :default-unit="item.default_unit_name"
         @filter-change="handleFilterChange"
       />
       <PriceHistoryList v-if="item && priceRecords.length > 0"
@@ -77,10 +77,72 @@
     <div class="loading-spinner"></div>
     <p>加载中...</p>
   </div>
+
+  <!-- 编辑模态框 -->
+  <div v-if="showEditModal" class="modal-overlay">
+    <div class="modal-content">
+      <h2>{{ type === 'ingredient' ? '编辑原料' : '编辑商品' }}</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="edit-name">名称 *</label>
+          <input
+            id="edit-name"
+            v-model="editForm.name"
+            type="text"
+            class="input-field"
+            placeholder="请输入名称"
+          />
+        </div>
+      </div>
+
+      <div class="form-row" v-if="type === 'ingredient'">
+        <div class="form-group">
+          <label for="edit-category">类别</label>
+          <select id="edit-category" v-model="editForm.category_id" class="select-field">
+            <option value="">未分类</option>
+            <option v-for="cat in categories" :key="cat.id" :value="cat.id">
+              {{ cat.display_name }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row" v-if="type === 'ingredient'">
+        <div class="form-group">
+          <label for="edit-unit">默认单位</label>
+          <select id="edit-unit" v-model="editForm.default_unit_id" class="select-field">
+            <option value="0">无默认单位</option>
+            <option v-for="unit in units" :key="unit.id" :value="unit.id">
+              {{ unit.name }}{{ unit.name !== unit.abbreviation ? ` (${unit.abbreviation})` : '' }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="edit-aliases">别名 (用逗号分隔)</label>
+          <textarea
+            id="edit-aliases"
+            v-model="editForm.aliasesText"
+            rows="2"
+            class="input-field"
+            placeholder="请输入别名，用逗号分隔"
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button @click="closeEditModal" class="btn-secondary">取消</button>
+        <button @click="saveEdit" class="btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
 import InfoCard from './components/InfoCard.vue'
@@ -110,6 +172,21 @@ const associations = ref<Association[]>([])
 const priceFilter = ref<'week' | 'month' | 'quarter' | 'year'>('month')
 const pricePagination = ref({ page: 1, pageSize: 20, total: 0 })
 
+// 编辑相关状态
+const showEditModal = ref(false)
+const editing = ref(false)
+const editForm = ref({
+  name: '',
+  category_id: 0,
+  default_unit_id: 0,
+  aliasesText: ''
+})
+const units = ref<any[]>([])
+const categories = ref<any[]>([])
+
+// 强制刷新标记
+const forceRefresh = ref(0)
+
 // 计算属性
 const itemName = computed(() => item.value?.name || '详情')
 
@@ -136,18 +213,39 @@ async function loadItemData() {
 }
 
 // 加载基本信息
-async function loadBaseInfo() {
+async function loadBaseInfo(skipReload: boolean = false) {
   const endpoint = type.value === 'product'
     ? `/products/entity/${itemId.value}`
     : `/nutrition/ingredients/${itemId.value}`
 
-  const response = await api.get(endpoint)
+  // 添加时间戳避免缓存
+  const response = await api.get(`${endpoint}${skipReload ? '' : '?_t=' + Date.now()}`)
   console.log('loadBaseInfo - 响应数据:', response)
-  console.log('loadBaseInfo - ingredient_id:', response?.ingredient_id)
-  console.log('loadBaseInfo - ingredient_name:', response?.ingredient_name)
-  console.log('loadBaseInfo - updated_at:', response?.updated_at)
+  console.log('loadBaseInfo - 响应字段:', response ? Object.keys(response) : null)
+  console.log('loadBaseInfo - default_unit_id:', response?.default_unit_id)
+  console.log('loadBaseInfo - default_unit_name:', response?.default_unit_name)
   if (response) {
     item.value = response
+  }
+}
+
+// 加载单位列表
+async function loadUnits() {
+  try {
+    const response = await api.get('/units/')
+    units.value = (response as any).items || response || []
+  } catch (error) {
+    console.error('加载单位失败:', error)
+  }
+}
+
+// 加载分类列表
+async function loadCategories() {
+  try {
+    const response = await api.get('/ingredients/categories')
+    categories.value = response || []
+  } catch (error) {
+    console.error('加载分类失败:', error)
   }
 }
 
@@ -181,6 +279,10 @@ async function loadPriceHistory() {
     } else {
       // 原料类型：通过 ingredient_id 查询关联商品的价格记录
       params.append('ingredient_id', String(itemId.value))
+    }
+    // 添加目标单位参数（用于价格单位转换）
+    if (item.value && item.value.default_unit_name && type.value === 'ingredient') {
+      params.append('target_unit', item.value.default_unit_name)
     }
 
     params.append('skip', String((pricePagination.value.page - 1) * pricePagination.value.pageSize))
@@ -341,8 +443,103 @@ function handleIngredientClick(ingredientId: number) {
 }
 
 function goToEdit() {
-  // TODO: 实现编辑功能
-  console.log('编辑功能待实现')
+  if (!item.value) return
+  // 初始化表单数据
+  editForm.value.name = item.value.name || ''
+  editForm.value.category_id = (item.value as any).category_id || 0
+  editForm.value.default_unit_id = item.value.default_unit_id || 0
+  editForm.value.aliasesText = (item.value.aliases || []).join(', ')
+  editing.value = true
+  showEditModal.value = true
+}
+
+function closeEditModal() {
+  console.log('closeEditModal - 关闭对话框，item.default_unit_id:', item.value?.default_unit_id)
+  showEditModal.value = false
+  editForm.value = {
+    name: '',
+    category_id: 0,
+    default_unit_id: 0,
+    aliasesText: ''
+  }
+  editing.value = false
+
+  // 关闭对话框后不重新加载，保持直接更新的数据
+  // nextTick(() => {
+  //   loadBaseInfo(true)
+  // })
+}
+
+async function saveEdit() {
+  console.log('saveEdit - 开始保存')
+  console.log('saveEdit - 当前表单:', JSON.parse(JSON.stringify(editForm.value)))
+  console.log('saveEdit - 当前 item.default_unit_id:', item.value?.default_unit_id)
+
+  if (!editForm.value.name) {
+    alert('请输入名称')
+    return
+  }
+
+  try {
+    // 解析别名
+    const aliases = editForm.value.aliasesText
+      .split(',')
+      .map(a => a.trim())
+      .filter(a => a.length > 0)
+
+    const data: any = {
+      name: editForm.value.name
+    }
+
+    if (editForm.value.category_id > 0) {
+      data.category_id = editForm.value.category_id
+    }
+
+    // 默认单位：发送 0 表示取消默认单位
+    if (type.value === 'ingredient') {
+      data.default_unit_id = editForm.value.default_unit_id || null
+      console.log('saveEdit - 发送 default_unit_id:', data.default_unit_id)
+    }
+
+    if (aliases.length > 0) {
+      data.aliases = aliases
+    }
+
+    console.log('saveEdit - 发送数据:', data)
+    console.log('saveEdit - API endpoint:', type.value === 'ingredient' ? `/ingredients/${itemId.value}` : `/products/entity/${itemId.value}`)
+
+    if (type.value === 'ingredient') {
+      await api.put(`/ingredients/${itemId.value}`, data)
+    } else {
+      await api.put(`/products/entity/${itemId.value}`, data)
+    }
+
+    console.log('saveEdit - API 调用完成')
+
+    // 直接更新 item 数据
+    if (item.value && type.value === 'ingredient') {
+      item.value.default_unit_id = data.default_unit_id
+      // 重新获取单位名称
+      if (data.default_unit_id) {
+        const unit = units.value.find((u: any) => u.id === data.default_unit_id)
+        item.value.default_unit_name = unit?.name || ''
+      } else {
+        item.value.default_unit_name = ''
+      }
+      console.log('saveEdit - 更新后的 item.default_unit_id:', item.value.default_unit_id)
+      console.log('saveEdit - 更新后的 item.default_unit_name:', item.value.default_unit_name)
+    }
+
+    alert('更新成功')
+    closeEditModal()
+
+    // 不重新加载数据，只依赖直接更新
+    // await loadBaseInfo(true)
+  } catch (error: any) {
+    console.error('更新失败:', error)
+    console.error('更新失败详情:', error.response?.data || error.message)
+    alert(`更新失败: ${error.message || '未知错误'}`)
+  }
 }
 
 function goToNutritionEdit() {
@@ -441,6 +638,8 @@ async function handleEditStrength(data: any) {
 // 生命周期
 onMounted(() => {
   loadItemData()
+  loadUnits()
+  loadCategories()
 })
 
 // 监听路由参数变化，重新加载数据
@@ -524,5 +723,108 @@ watch(
   .item-detail {
     padding: 12px;
   }
+}
+
+/* 编辑模态框样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-content h2 {
+  margin: 0 0 20px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  padding-top: 20px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+}
+
+.input-field,
+.select-field {
+  padding: 10px 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #333;
+  transition: border-color 0.3s;
+}
+
+.input-field:focus,
+.select-field:focus {
+  outline: none;
+  border-color: #42b883;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 0 20px 20px;
+}
+
+.btn-primary {
+  background-color: #42b883;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-primary:hover {
+  background-color: #3aa876;
+}
+
+.btn-secondary {
+  background-color: #e5e5e5;
+  color: #666;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-secondary:hover {
+  background-color: #d4d4d4;
 }
 </style>

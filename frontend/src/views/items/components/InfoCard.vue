@@ -58,6 +58,11 @@
         </span>
       </div>
 
+      <div class="info-row" v-if="item.default_unit_name">
+        <span class="info-label">默认单位</span>
+        <span class="info-value">{{ item.default_unit_name }}</span>
+      </div>
+
       <div class="info-row" v-if="item.aliases && item.aliases.length > 0">
         <span class="info-label">别名</span>
         <div class="alias-list">

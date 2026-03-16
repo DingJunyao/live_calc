@@ -90,7 +90,7 @@
           <div v-for="item in recipe.ingredients" :key="item.id" class="ingredient-item">
             <div class="ingredient-row">
               <div class="ingredient-name-col">
-                <router-link :to="`/nutrition/ingredient/${item.ingredient_id}`" class="ingredient-link" v-if="item.ingredient_id">
+                <router-link :to="`/items/ingredient/${item.ingredient_id}`" class="ingredient-link" v-if="item.ingredient_id">
                   <span class="ingredient-name">{{ item.name }}</span>
                 </router-link>
                 <span class="ingredient-name" v-else>{{ item.name }}</span>
