@@ -70,46 +70,188 @@ function initChart() {
   window.addEventListener('resize', handleResize)
 }
 
+// 检查日期是否有效
+function isValidDate(date: Date): boolean {
+  return !isNaN(date.getTime())
+}
+
+// 按日期聚合价格数据，计算每日的最小值、最大值和平均值
+function aggregateDailyPrices(records: PriceRecord[]) {
+  const dailyMap = new Map<string, number[]>()
+
+  // 将记录按日期分组
+  for (const record of records) {
+    if (!record.recorded_at) {
+      console.warn('PriceRecord 缺少 recorded_at 字段:', record)
+      continue
+    }
+
+    const date = new Date(record.recorded_at)
+
+    // 检查日期是否有效
+    if (!isValidDate(date)) {
+      console.warn('无效的日期格式:', record.recorded_at, record)
+      continue
+    }
+
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const dateKey = `${year}-${month}-${day}`
+
+    if (!dailyMap.has(dateKey)) {
+      dailyMap.set(dateKey, [])
+    }
+    dailyMap.get(dateKey)!.push(record.price)
+  }
+
+  // 计算每日统计值并按日期排序
+  const dailyData = Array.from(dailyMap.entries())
+    .map(([dateKey, prices]) => {
+      // 检查 prices 数组有效性
+      if (!prices || prices.length === 0) {
+        return {
+          date: dateKey,
+          dateObj: new Date(`${dateKey}T00:00:00`),
+          min: 0,
+          max: 0,
+          avg: 0,
+          count: 0
+        }
+      }
+
+      // 转换为数字数组，过滤无效值
+      const numericPrices = prices.map(p => Number(p)).filter(p => !isNaN(p) && p !== null && p !== undefined)
+
+      if (numericPrices.length === 0) {
+        return {
+          date: dateKey,
+          dateObj: new Date(`${dateKey}T00:00:00`),
+          min: 0,
+          max: 0,
+          avg: 0,
+          count: prices.length
+        }
+      }
+
+      const sortedPrices = numericPrices.sort((a, b) => a - b)
+      const minPrice = sortedPrices[0]
+      const maxPrice = sortedPrices[sortedPrices.length - 1]
+
+      // 计算平均值
+      const sum = sortedPrices.reduce((acc, p) => acc + p, 0)
+      const avgPrice = sum / sortedPrices.length
+
+      // 调试输出
+      if (isNaN(avgPrice)) {
+        console.error('计算平均值时出现 NaN:', { dateKey, prices, numericPrices, minPrice, maxPrice, sum, avgPrice })
+      }
+
+      return {
+        date: dateKey,
+        dateObj: new Date(`${dateKey}T00:00:00`),
+        min: minPrice,
+        max: maxPrice,
+        avg: avgPrice,
+        count: prices.length
+      }
+    })
+    .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())
+
+  return dailyData
+}
+
 // 更新图表数据
 function updateChart() {
   if (!chart) return
 
-  // 准备数据
-  const dates = props.records.map(r => r.recorded_at)
-  const prices = props.records.map(r => r.price)
+  // 聚合每日价格数据
+  const dailyData = aggregateDailyPrices(props.records)
+
+  if (dailyData.length === 0) {
+    chart.setOption({
+      series: []
+    })
+    return
+  }
+
+  // 找到最小价格作为 base
+  const minPriceInDataset = Math.min(...dailyData.map(d => d.min))
+  const base = Math.min(0, minPriceInDataset - 0.1)
+
+  // 调试日志
+  console.log('Daily Price Data:', dailyData)
+  console.log('Min price in dataset:', minPriceInDataset)
+  console.log('Base value:', base)
 
   const option: EChartsOption = {
     title: {
-      text: '价格趋势'
+      text: '价格趋势',
+      textStyle: {
+        fontSize: 16,
+        fontWeight: 600
+      },
+      left: 0
     },
     tooltip: {
       trigger: 'axis',
+      axisPointer: {
+        type: 'cross',
+        animation: false,
+        label: {
+          backgroundColor: '#42b883',
+          borderColor: '#42b883',
+          borderWidth: 1,
+          color: '#fff'
+        }
+      },
       formatter: (params: any) => {
-        const param = params[0]
-        const date = new Date(param.axisValue)
-        const formattedDate = date.toLocaleDateString('zh-CN', {
+        const dateIndex = params[2]?.dataIndex ?? -1
+        if (dateIndex < 0 || dateIndex >= dailyData.length) return ''
+        const data = dailyData[dateIndex]
+        const dateStr = data.dateObj.toLocaleDateString('zh-CN', {
+          year: 'numeric',
           month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
+          day: '2-digit'
         })
-        return `${formattedDate}<br/>价格: ¥${param.value}`
+
+        return `
+          <div style="padding: 8px 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">${dateStr}</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: #42b883;"></span>
+              <span>平均价格: ¥${data.avg.toFixed(2)}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+              <span style="display: inline-block; width: 12px; height: 12px; background-color: rgba(66, 184, 131, 0.3); border-radius: 2px;"></span>
+              <span>价格范围: ¥${data.min.toFixed(2)} - ¥${data.max.toFixed(2)}</span>
+            </div>
+            <div style="margin-top: 4px; color: #999; font-size: 12px;">记录数: ${data.count}</div>
+          </div>
+        `
       }
     },
     grid: {
-      left: '3%',
+      left: '5%',
       right: '4%',
-      bottom: '3%',
-      containLabel: false
+      bottom: '10%',
+      containLabel: true
     },
     xAxis: {
-      type: 'time',
+      type: 'category',
+      data: dailyData.map(d => d.date),
       boundaryGap: false,
       axisLabel: {
-        formatter: (value: number) => {
-          const date = new Date(value)
-          return `${date.getMonth() + 1}/${date.getDate()}`
+        formatter: (value: string) => {
+          const parts = value.split('-')
+          if (parts.length === 3) {
+            return `${parts[1]}/${parts[2]}`
+          }
+          return value
         }
+      },
+      splitLine: {
+        show: false
       }
     },
     yAxis: {
@@ -119,39 +261,93 @@ function updateChart() {
       },
       splitLine: {
         lineStyle: {
-          type: 'dashed'
+          type: 'dashed',
+          color: '#e5e5e5'
+        }
+      },
+      axisPointer: {
+        label: {
+          formatter: (params: any) => {
+            return `¥${params.value.toFixed(2)}`
+          }
         }
       }
     },
-    series: [{
-      name: '价格',
-      type: 'line',
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 6,
-      data: dates.map((date, index) => [date, prices[index]]),
-      lineStyle: {
-        color: '#42b883',
-        width: 2
+    series: [
+      // L 系列：下限
+      {
+        name: 'L',
+        type: 'line',
+        data: dailyData.map(d => d.min - base),
+        lineStyle: {
+          opacity: 0
+        },
+        stack: 'confidence-band',
+        symbol: 'none',
+        showSymbol: false
       },
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0,
-          y: 0,
-          x2: 0,
-          y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(66, 184, 131, 0.3)' },
-            { offset: 1, color: 'rgba(66, 184, 131, 0.05)' }
-          ]
+      // U 系列：上限（使用 stack 堆叠，areaStyle 绘制范围带）
+      {
+        name: 'U',
+        type: 'line',
+        data: dailyData.map(d => d.max - d.min),
+        lineStyle: {
+          opacity: 0
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(66, 184, 131, 0.4)' },
+              { offset: 1, color: 'rgba(66, 184, 131, 0.1)' }
+            ]
+          }
+        },
+        stack: 'confidence-band',
+        symbol: 'none',
+        showSymbol: false
+      },
+      // 平均价格线
+      {
+        name: '平均价格',
+        type: 'line',
+        data: dailyData.map(d => d.avg),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          color: '#42b883',
+          width: 2.5
+        },
+        itemStyle: {
+          color: '#42b883',
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        emphasis: {
+          scale: true,
+          itemStyle: {
+            color: '#42b883',
+            borderColor: '#fff',
+            borderWidth: 3,
+            shadowBlur: 10,
+            shadowColor: 'rgba(66, 184, 131, 0.5)'
+          }
         }
-      },
-      itemStyle: {
-        color: '#42b883'
       }
-    }]
+    ]
   }
+
+  // 调试：输出 series 数据
+  console.log('L series data:', dailyData.map(d => d.min - base))
+  console.log('U series data:', dailyData.map(d => d.max - d.min))
+  console.log('Avg series data:', dailyData.map(d => d.avg))
+  console.log('X axis data:', dailyData.map(d => d.date))
+
   chart.setOption(option)
 }
 
