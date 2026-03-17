@@ -50,6 +50,7 @@
         <div class="action-section">
           <h2>系统配置</h2>
           <div class="action-buttons">
+            <button @click="goToMapSettings" class="btn-admin">地图设置</button>
             <button @click="viewLogs" class="btn-admin">查看日志</button>
             <button @click="systemSettings" class="btn-admin">系统设置</button>
           </div>
@@ -144,6 +145,10 @@ function goToUnitManagement() {
 
 function goToIngredientManagement() {
   router.push('/admin/ingredients')
+}
+
+function goToMapSettings() {
+  router.push('/admin/map-settings')
 }
 
 function backupData() {
