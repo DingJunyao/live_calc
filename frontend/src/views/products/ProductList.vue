@@ -79,7 +79,7 @@
         <div class="product-info">
           <p>价格: ¥{{ product.price }}</p>
           <p>数量: {{ product.original_quantity }} {{ product.original_unit }}</p>
-          <p>标准单位: {{ product.standard_quantity }} {{ product.standard_unit }}</p>
+          <p>商家: {{ product.merchant_name || '-' }}</p>
           <p>记录时间: {{ formatDate(product.recorded_at) }}</p>
         </div>
       </div>
@@ -249,6 +249,8 @@ type PriceRecord = {
   id: number
   product_id: number
   product_name: string
+  merchant_id: number | null
+  merchant_name: string | null
   price: number
   original_quantity: number
   original_unit: string
