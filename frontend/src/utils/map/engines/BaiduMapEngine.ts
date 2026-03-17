@@ -1,6 +1,6 @@
 /**
  * 百度地图引擎
- * 使用 leaflet.chinatmsproviders 插件加载瓦片
+ * 使用 leaflet.chinaProvider 加载瓦片
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
@@ -35,10 +35,10 @@ export class BaiduMapEngine implements MapEngine {
       zoomControl: true
     });
 
-    // 使用 leaflet.chinatmsproviders 插件加载百度瓦片
-    // 注意：百度地图使用的是 BD09 坐标系
-    const baiduLayer = L.tileLayer.chinatmsprovider('Baidu.Normal', {
-      maxZoom: 18
+    // 使用 chinaProvider 加载百度瓦片
+    const baiduLayer = L.tileLayer.chinaProvider('Baidu.Normal.Map', {
+      maxZoom: 18,
+      minZoom: 5
     }).addTo(this.map);
 
     if (options.enableClick !== false) {
