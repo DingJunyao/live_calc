@@ -416,6 +416,122 @@ async def calculate_recipe_cost(
     }
 
 
+def calculate_recipe_cost_range_as_of(
+    recipe_id: int,
+    user_id: int,
+    as_of_date: datetime,
+    db: Session
+) -> Dict:
+    """
+    计算菜谱在指定日期的成本区间
+
+    Args:
+        recipe_id: 菜谱ID
+        user_id: 用户ID
+        as_of_date: 指定日期
+        db: 数据库会话
+
+    Returns:
+        成本区间数据，包含 min_cost, max_cost, avg_cost（单位：元）
+    """
+    from app.models.product_entity import Product
+
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        return None
+
+    total_min_cost = Decimal("0.00")
+    total_max_cost = Decimal("0.00")
+    total_avg_cost = Decimal("0.00")
+    valid_ingredients = 0
+
+    # 获取菜谱中的所有食材（包括可选食材）
+    for recipe_ingredient in recipe.ingredients:
+        ingredient = recipe_ingredient.ingredient
+
+        # 检查食材是否已被合并，如果是，使用合并后的目标食材
+        if ingredient and ingredient.is_merged and ingredient.merged_into_id:
+            ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient.merged_into_id).first()
+
+        if not ingredient:
+            continue
+
+        # 获取食材对应的商品
+        product = db.query(Product).filter(
+            Product.ingredient_id == ingredient.id,
+            Product.is_active == True
+        ).first()
+
+        if not product:
+            continue
+
+        # 获取当天的所有价格记录
+        day_records = _get_price_records_for_date(db, user_id, ingredient.id, as_of_date)
+
+        # 如果当天无记录，使用前向填充
+        if not day_records:
+            fallback_record = _get_price_record_with_fallback(
+                db=db,
+                user_id=user_id,
+                product_id=product.id,
+                as_of_date=as_of_date
+            )
+            if fallback_record:
+                day_records = [fallback_record]
+
+        # 如果仍然没有记录，跳过该食材
+        if not day_records:
+            continue
+
+        # 计算当天的单价列表
+        unit_prices = []
+        for record in day_records:
+            record_price = Decimal(str(record.price))
+            std_qty = record.standard_quantity
+            if std_qty is None or std_qty == 0:
+                unit_price = record_price
+            else:
+                record_quantity = Decimal(str(std_qty))
+                unit_price = record_price / record_quantity
+            unit_prices.append(unit_price)
+
+        if not unit_prices:
+            continue
+
+        # 计算统计值
+        min_unit_price = min(unit_prices)
+        max_unit_price = max(unit_prices)
+        avg_unit_price = sum(unit_prices) / len(unit_prices)
+
+        # 计算该食材的成本
+        ingredient_quantity = recipe_ingredient.quantity
+        if ingredient_quantity is None or (isinstance(ingredient_quantity, str) and ingredient_quantity.lower() == "none"):
+            ingredient_quantity = 0
+
+        if ingredient_quantity:
+            try:
+                quantity = Decimal(str(ingredient_quantity))
+                ingredient_min_cost = min_unit_price * quantity
+                ingredient_max_cost = max_unit_price * quantity
+                ingredient_avg_cost = avg_unit_price * quantity
+
+                total_min_cost += ingredient_min_cost
+                total_max_cost += ingredient_max_cost
+                total_avg_cost += ingredient_avg_cost
+                valid_ingredients += 1
+            except Exception as e:
+                # 数量解析失败，跳过该食材
+                continue
+
+    return {
+        "min_cost": float(total_min_cost),
+        "max_cost": float(total_max_cost),
+        "avg_cost": float(total_avg_cost),
+        "currency": "CNY",
+        "valid_ingredients": valid_ingredients
+    }
+
+
 async def calculate_recipe_nutrition(
     recipe_id: int,
     db: Session = None
