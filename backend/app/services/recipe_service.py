@@ -532,6 +532,81 @@ def calculate_recipe_cost_range_as_of(
     }
 
 
+def calculate_recipe_cost_range_trend(
+    recipe_id: int,
+    user_id: int,
+    db: Session,
+    days: int = 90
+) -> List[Dict]:
+    """
+    计算菜谱的成本区间趋势
+
+    遍历指定日期范围，对于每一天，计算菜谱在该日期的成本区间。
+
+    Args:
+        recipe_id: 菜谱ID
+        user_id: 用户ID
+        db: 数据库会话
+        days: 查询天数（默认90天）
+
+    Returns:
+        成本区间趋势数据列表，每条记录包含：
+        - date: 日期 (YYYY-MM-DD)
+        - recorded_at: Unix 时间戳（秒）
+        - min_cost: 最小成本（元）
+        - max_cost: 最大成本（元）
+        - avg_cost: 平均成本（元）
+    """
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        return []
+
+    # 获取最早的价格记录日期
+    earliest_record = db.query(ProductRecord).filter(
+        ProductRecord.user_id == user_id
+    ).order_by(ProductRecord.recorded_at.asc()).first()
+
+    if not earliest_record:
+        return []
+
+    # 确定日期范围
+    end_date = datetime.now().date()
+    start_date = max(earliest_record.recorded_at.date(), end_date - timedelta(days=days))
+
+    # 生成日期列表
+    date_list = []
+    current_date = start_date
+    while current_date <= end_date:
+        date_list.append(current_date)
+        current_date += timedelta(days=1)
+
+    # 计算每一天的成本区间
+    cost_range_trend = []
+    for date in date_list:
+        # 计算该日期 23:59:59 的成本区间（使用截至当天的最新价格）
+        as_of_datetime = datetime.combine(date, datetime.max.time()) - timedelta(seconds=1)
+
+        # 调用成本区间计算函数
+        cost_result = calculate_recipe_cost_range_as_of(
+            recipe_id, user_id, as_of_datetime, db
+        )
+
+        if cost_result and cost_result["avg_cost"] > 0:
+            # 转换为 Unix 时间戳（使用当天 12:00）
+            recorded_at_dt = datetime.combine(date, datetime.min.time()) + timedelta(hours=12)
+            recorded_at = int(recorded_at_dt.timestamp())
+
+            cost_range_trend.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "recorded_at": recorded_at,
+                "min_cost": cost_result["min_cost"],
+                "max_cost": cost_result["max_cost"],
+                "avg_cost": cost_result["avg_cost"]
+            })
+
+    return cost_range_trend
+
+
 async def calculate_recipe_nutrition(
     recipe_id: int,
     db: Session = None
