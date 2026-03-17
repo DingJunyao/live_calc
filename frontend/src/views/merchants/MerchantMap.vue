@@ -66,7 +66,10 @@
           <div class="form-group">
             <label for="address">地址:</label>
             <div class="address-input-group">
-              <input v-model="newMerchant.address" type="text" id="address" />
+              <input v-model="newMerchant.address" type="text" id="address" class="address-input" />
+              <button @click="searchAddressFromInput" class="search-address-btn" :disabled="!newMerchant.address.trim()">
+                搜索地址
+              </button>
             </div>
           </div>
           <div class="form-group">
@@ -74,7 +77,7 @@
             <MapPicker
               v-model="merchantCoordinate"
               height="300px"
-              :show-search="true"
+              :show-search="false"
               :show-switcher="true"
               @address-selected="handleAddressSelected"
             />
@@ -117,6 +120,38 @@ function handleAddressSelected(data: { address: string; lat: number; lng: number
   newMerchant.value.address = data.address
   newMerchant.value.latitude = data.lat
   newMerchant.value.longitude = data.lng
+}
+
+// 从地址输入框搜索地址
+async function searchAddressFromInput() {
+  const address = newMerchant.value.address?.trim()
+  if (!address) return
+
+  try {
+    // 使用 Nominatim 进行地址搜索（不需要 API Key）
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
+    const response = await fetch(url)
+    const data = await response.json()
+
+    if (data && data.length > 0) {
+      const result = data[0]
+      const lat = parseFloat(result.lat)
+      const lng = parseFloat(result.lon)
+
+      // 更新坐标
+      merchantCoordinate.value = { lat, lng }
+      newMerchant.value.latitude = lat
+      newMerchant.value.longitude = lng
+      newMerchant.value.address = result.display_name
+
+      alert(`找到位置: ${result.display_name}`)
+    } else {
+      alert('未找到该地址')
+    }
+  } catch (error) {
+    console.error('Search address error:', error)
+    alert('搜索地址失败，请重试')
+  }
 }
 
 // 监听 MapPicker 坐标变化
@@ -620,5 +655,34 @@ function formatDate(dateString: string) {
     padding: 0.375rem 0.5625rem;
     font-size: 0.8125rem;
   }
+}
+
+.address-input-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.address-input {
+  flex: 1;
+}
+
+.search-address-btn {
+  padding: 0.5rem 1rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.search-address-btn:hover:not(:disabled) {
+  background: #5a6fd8;
+}
+
+.search-address-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
 }
 </style>
