@@ -6,6 +6,10 @@
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+// 先导入 proj4leaflet
+import 'proj4leaflet';
+// 再导入 chinatmsproviders（它会检查 L.Proj.CRS）
 import 'leaflet.chinatmsproviders';
 
 export class BaiduMapEngine implements MapEngine {
@@ -29,12 +33,20 @@ export class BaiduMapEngine implements MapEngine {
     const center = options.center || [39.9042, 116.4074];
     const zoom = options.zoom || 13;
 
+    // 检查 Baidu CRS 是否可用
+    const baiduCrs = (L as any).CRS.Baidu;
+    if (!baiduCrs) {
+      console.error('Baidu CRS not available, make sure proj4leaflet is loaded');
+      container.textContent = '百度地图加载失败，请刷新页面重试';
+      return;
+    }
+
     // 百度地图需要使用 Baidu CRS
     this.map = L.map(container, {
       center: center,
       zoom: zoom,
       zoomControl: true,
-      crs: (L as any).CRS.Baidu
+      crs: baiduCrs
     });
 
     // 使用 chinaProvider 加载百度瓦片
