@@ -99,6 +99,11 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/admin/UnitManager.vue').then(m => m.default)
   },
   {
+    path: '/admin/map-settings',
+    name: 'mapSettings',
+    component: () => import('@/views/admin/MapSettings.vue').then(m => m.default)
+  },
+  {
     path: '/items/:type/:id',
     name: 'item-detail',
     component: () => import('@/views/items/ItemDetail.vue').then(m => m.default)
