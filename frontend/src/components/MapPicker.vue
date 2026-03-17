@@ -63,6 +63,7 @@ import type { MapEngineType, Coordinate, SearchResult as SearchResultType, MapCo
 import { mapEngineNames, defaultMapConfig } from '@/utils/mapTypes';
 import { mapEngineManager } from '@/utils/mapEngineManager';
 import { getCurrentMapEngine, getUserMapPreference } from '@/utils/mapConfig';
+import { convertCoordinate, getCoordinateSystem } from '@/utils/coordinateTransform';
 
 // Props
 interface Props {
@@ -133,8 +134,11 @@ onUnmounted(() => {
 });
 
 // 初始化地图
-async function initMap() {
+async function initMap(initialCoord?: Coordinate) {
   if (!mapContainer.value) return;
+
+  // 确定使用的坐标
+  const coord = initialCoord || props.modelValue;
 
   // 创建配置
   const config: MapConfig = {
@@ -151,7 +155,7 @@ async function initMap() {
     currentMap.value,
     mapContainer.value,
     {
-      center: props.modelValue ? [props.modelValue.lat, props.modelValue.lng] : [39.9042, 116.4074],
+      center: coord && coord.lat && coord.lng ? [coord.lat, coord.lng] : [39.9042, 116.4074],
       zoom: 13,
       enableClick: !props.readonly,
       enableDrag: !props.readonly
@@ -167,17 +171,31 @@ async function initMap() {
 async function switchMap(mapType: MapEngineType) {
   if (mapType === currentMap.value || !mapContainer.value) return;
 
+  // 获取当前坐标和目标坐标系的转换
+  const currentCoord = currentCoordinate.value || props.modelValue;
+  const fromSystem = getCoordinateSystem(currentMap.value);
+  const toSystem = getCoordinateSystem(mapType);
+
+  // 转换坐标到新坐标系
+  let convertedCoord: Coordinate | undefined;
+  if (currentCoord && currentCoord.lat && currentCoord.lng) {
+    convertedCoord = convertCoordinate(
+      currentCoord.lat,
+      currentCoord.lng,
+      fromSystem,
+      toSystem
+    );
+  }
+
   currentMap.value = mapType;
 
-  // 保持当前坐标
-  const currentCoord = currentCoordinate.value || props.modelValue;
-
-  // 重新初始化地图
-  await initMap();
+  // 重新初始化地图，使用转换后的坐标
+  await initMap(convertedCoord);
 
   // 恢复标记
-  if (currentCoord && currentCoord.lat && currentCoord.lng) {
-    setMarker(currentCoord);
+  if (convertedCoord && convertedCoord.lat && convertedCoord.lng) {
+    setMarker(convertedCoord);
+    currentCoordinate.value = convertedCoord;
   }
 
   // 触发地图切换事件
@@ -237,18 +255,35 @@ async function searchAddress() {
 
 // 选择搜索结果
 function selectSearchResult(result: SearchResultType) {
+  // 搜索结果通常是 WGS84 坐标，需要转换为当前地图的坐标系
+  const coordSystem = getCoordinateSystem(currentMap.value);
+  let convertedCoord: Coordinate;
+
+  if (coordSystem === 'wgs84') {
+    // 当前地图使用 WGS84，不需要转换
+    convertedCoord = { lat: result.lat, lng: result.lng };
+  } else if (coordSystem === 'gcj02') {
+    // 转换为 GCJ02（高德/腾讯）
+    const converted = convertCoordinate(result.lat, result.lng, 'wgs84', 'gcj02');
+    convertedCoord = { lat: converted.lat, lng: converted.lng };
+  } else {
+    // 转换为 BD09（百度）
+    const converted = convertCoordinate(result.lat, result.lng, 'wgs84', 'bd09');
+    convertedCoord = { lat: converted.lat, lng: converted.lng };
+  }
+
   // 设置地图中心
-  currentEngine.setCenter(result.lat, result.lng);
+  currentEngine.setCenter(convertedCoord.lat, convertedCoord.lng);
 
   // 设置标记
-  setMarker({ lat: result.lat, lng: result.lng });
+  setMarker(convertedCoord);
 
   // 触发事件
-  emit('update:modelValue', { lat: result.lat, lng: result.lng });
+  emit('update:modelValue', convertedCoord);
   emit('addressSelected', {
     address: result.address,
-    lat: result.lat,
-    lng: result.lng
+    lat: convertedCoord.lat,
+    lng: convertedCoord.lng
   });
 
   // 清除搜索结果
