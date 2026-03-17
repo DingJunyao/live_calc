@@ -5,6 +5,10 @@ import router from './router'
 import { useUserStore } from './stores/user'
 import '@mdi/font/css/materialdesignicons.css'
 
+// 预先加载地图相关库（解决百度地图 CRS 问题）
+import 'proj4leaflet'
+import 'leaflet.chinatmsproviders'
+
 const app = createApp(App)
 const pinia = createPinia()
 
