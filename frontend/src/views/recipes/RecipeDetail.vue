@@ -249,7 +249,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { api } from '@/api/client'
+import { api, recipeAPI, type CostRangeRecord } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import NutritionProgressBar from '@/components/NutritionProgressBar.vue'
 import CostChartSection from './components/CostChartSection.vue'
@@ -280,15 +280,14 @@ const nutrientTooltip = ref({
 }) as any
 
 // 成本历史数据
-const costHistoryRecords = ref<any[]>([])
+const costHistoryRecords = ref<CostRangeRecord[]>([])
 const loadingCostHistory = ref(false)
 
 // 加载成本历史数据
 async function loadCostHistory(recipeId: string) {
   loadingCostHistory.value = true
   try {
-    const response: any[] = await api.get(`/recipes/${recipeId}/cost-history`)
-    costHistoryRecords.value = response || []
+    costHistoryRecords.value = await recipeAPI.getCostHistoryRange(Number(recipeId), 90)
     console.log('成本历史数据:', costHistoryRecords.value)
   } catch (error) {
     console.error('Failed to load cost history:', error)
