@@ -1,11 +1,12 @@
 /**
  * 腾讯地图引擎
- * 支持官方 API 和 Leaflet 瓦片两种模式
+ * 使用 leaflet.chinatmsproviders 插件加载瓦片
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.chinatmsproviders';
 
 export class TencentMapEngine implements MapEngine {
   name: MapEngineType = 'tencent';
@@ -15,11 +16,9 @@ export class TencentMapEngine implements MapEngine {
   private markers: Map<any, L.Marker> = new Map();
   private config: MapConfig;
   private eventHandlers: Map<string, Set<Function>> = new Map();
-  private useOfficialApi: boolean = false;
 
   constructor(config: MapConfig) {
     this.config = config;
-    this.useOfficialApi = !!config.mapApiKeys?.tencent;
   }
 
   init(container: HTMLElement, options: MapOptions): void {
@@ -30,25 +29,14 @@ export class TencentMapEngine implements MapEngine {
     const center = options.center || [39.9042, 116.4074];
     const zoom = options.zoom || 13;
 
-    if (this.useOfficialApi) {
-      this.initOfficialApi(container, center, zoom, options);
-    } else {
-      this.initLeaflet(container, center, zoom, options);
-    }
-  }
-
-  // 使用 Leaflet + 腾讯瓦片
-  private initLeaflet(container: HTMLElement, center: [number, number], zoom: number, options: MapOptions): void {
     this.map = L.map(container, {
       center: center,
       zoom: zoom,
       zoomControl: true
     });
 
-    // 添加腾讯瓦片
-    const tencentLayer = L.tileLayer('https://rt{s}.map.gtimg.com/tile?z={z}&x={x}&y={y}&style=6', {
-      subdomains: '0123',
-      attribution: '&copy; 腾讯地图',
+    // 使用 leaflet.chinatmsproviders 插件加载腾讯瓦片
+    const tencentLayer = L.tileLayer.chinatmsprovider('Tencent.Normal', {
       maxZoom: 18
     }).addTo(this.map);
 
@@ -60,12 +48,6 @@ export class TencentMapEngine implements MapEngine {
         });
       });
     }
-  }
-
-  // 使用腾讯官方 API
-  private initOfficialApi(container: HTMLElement, center: [number, number], zoom: number, options: MapOptions): void {
-    console.log('TencentMap: Using official API requires additional SDK loading');
-    this.initLeaflet(container, center, zoom, options);
   }
 
   setCenter(lat: number, lng: number): void {
@@ -142,7 +124,6 @@ export class TencentMapEngine implements MapEngine {
       }
     }
 
-    // 回退到 Nominatim
     return this.fallbackSearch(query);
   }
 
@@ -213,7 +194,7 @@ export class TencentMapEngine implements MapEngine {
   private emit(event: string, data: any): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
-      handlers.forEach(handler => handler(data));
+      handlers.forEach(h => h(data));
     }
   }
 }

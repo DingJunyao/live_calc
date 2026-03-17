@@ -1,11 +1,12 @@
 /**
  * 高德地图引擎
- * 支持官方 API 和 Leaflet 瓦片两种模式
+ * 使用 leaflet.chinatmsproviders 插件加载瓦片
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.chinatmsproviders';
 
 export class AMapEngine implements MapEngine {
   name: MapEngineType = 'amap';
@@ -15,14 +16,9 @@ export class AMapEngine implements MapEngine {
   private markers: Map<any, L.Marker> = new Map();
   private config: MapConfig;
   private eventHandlers: Map<string, Set<Function>> = new Map();
-  private useOfficialApi: boolean = false;
-  private officialMap: any = null;
-  private markerObj: any = null;
 
   constructor(config: MapConfig) {
     this.config = config;
-    // 检查是否有 API Key
-    this.useOfficialApi = !!config.mapApiKeys?.amap;
   }
 
   init(container: HTMLElement, options: MapOptions): void {
@@ -33,26 +29,16 @@ export class AMapEngine implements MapEngine {
     const center = options.center || [39.9042, 116.4074];
     const zoom = options.zoom || 13;
 
-    if (this.useOfficialApi) {
-      this.initOfficialApi(container, center, zoom, options);
-    } else {
-      this.initLeaflet(container, center, zoom, options);
-    }
-  }
-
-  // 使用 Leaflet + 高德瓦片
-  private initLeaflet(container: HTMLElement, center: [number, number], zoom: number, options: MapOptions): void {
     this.map = L.map(container, {
       center: center,
       zoom: zoom,
       zoomControl: true
     });
 
-    // 添加高德瓦片（使用 leaflet.chinatmsproviders 插件风格）
-    const gaodeLayer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-      subdomains: '1234',
-      attribution: '&copy; 高德地图',
-      maxZoom: 18
+    // 使用 leaflet.chinatmsproviders 插件加载高德瓦片
+    const gaodeLayer = L.tileLayer.chinatmsprovider('GaoDe.Normal', {
+      maxZoom: 18,
+      subdomains: '1234'
     }).addTo(this.map);
 
     if (options.enableClick !== false) {
@@ -63,14 +49,6 @@ export class AMapEngine implements MapEngine {
         });
       });
     }
-  }
-
-  // 使用高德官方 API
-  private initOfficialApi(container: HTMLElement, center: [number, number], zoom: number, options: MapOptions): void {
-    // 如果使用官方 API，需要加载高德 SDK
-    // 这里我们先使用 Leaflet 方式，官方 API 后续可以扩展
-    console.log('AMap: Using official API requires additional SDK loading');
-    this.initLeaflet(container, center, zoom, options);
   }
 
   setCenter(lat: number, lng: number): void {
@@ -125,7 +103,6 @@ export class AMapEngine implements MapEngine {
   }
 
   async searchAddress(query: string): Promise<SearchResult[]> {
-    // 使用高德地理编码 API
     const apiKey = this.config.mapApiKeys?.amap;
     const useApi = !!apiKey;
 
@@ -148,11 +125,10 @@ export class AMapEngine implements MapEngine {
       }
     }
 
-    // 如果没有 API Key 或请求失败，使用 Nominatim 作为回退
+    // 使用 Nominatim 作为回退
     return this.fallbackSearch(query);
   }
 
-  // 回退到 Nominatim
   private async fallbackSearch(query: string): Promise<SearchResult[]> {
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
@@ -220,7 +196,7 @@ export class AMapEngine implements MapEngine {
   private emit(event: string, data: any): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
-      handlers.forEach(handler => handler(data));
+      handlers.forEach(h => h(data));
     }
   }
 }

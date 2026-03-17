@@ -1,11 +1,12 @@
 /**
  * 天地图引擎
- * 必须使用 API Key
+ * 使用 leaflet.chinatmsproviders 插件加载瓦片（需要 Token）
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.chinatmsproviders';
 
 export class TiandituEngine implements MapEngine {
   name: MapEngineType = 'tianditu';
@@ -43,14 +44,14 @@ export class TiandituEngine implements MapEngine {
       zoomControl: true
     });
 
-    // 添加天地图瓦片
+    // 使用 leaflet.chinatmsproviders 插件加载天地图瓦片
+    // 支持两种类型：'Tianditu.Normal' (矢量) 或 'Tianditu.Satellite' (影像)
     const mapType = this.config.mapApiKeys?.tianditu?.type || 'vec';
-    const layerType = mapType === 'img' ? 'img' : 'vec';
+    const layerType = mapType === 'img' ? 'Tianditu.Satellite' : 'Tianditu.Normal';
 
-    const tiandituLayer = L.tileLayer(`https://t{s}.tianditu.gov.cn/${layerType}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layerType}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${this.token}`, {
-      subdomains: '01234567',
-      attribution: '天地图',
-      maxZoom: 18
+    const tiandituLayer = L.tileLayer.chinatmsprovider(layerType, {
+      maxZoom: 18,
+      key: this.token
     }).addTo(this.map);
 
     if (options.enableClick !== false) {
