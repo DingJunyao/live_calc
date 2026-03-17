@@ -23,6 +23,7 @@ export class TiandituEngine implements MapEngine {
     // 支持新旧配置结构
     const tiandituConfig = config.mapApiKeys as any;
     this.token = tiandituConfig?.tianditu?.token || tiandituConfig?.tiandituToken || '';
+    console.log('[TiandituEngine] 初始化, config.mapApiKeys:', config.mapApiKeys, 'token:', this.token);
   }
 
   init(container: HTMLElement, options: MapOptions): void {
