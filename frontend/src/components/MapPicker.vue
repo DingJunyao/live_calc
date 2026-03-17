@@ -3,6 +3,7 @@
     <!-- 地图切换按钮 -->
     <div v-if="showSwitcher && availableMaps.length > 1" class="map-switcher">
       <button
+        type="button"
         v-for="map in availableMaps"
         :key="map"
         :class="['map-btn', { active: currentMap === map }]"

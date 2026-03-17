@@ -67,7 +67,7 @@
             <label for="address">地址:</label>
             <div class="address-input-group">
               <input v-model="newMerchant.address" type="text" id="address" class="address-input" />
-              <button @click="searchAddressFromInput" class="search-address-btn" :disabled="!newMerchant.address.trim()">
+              <button type="button" @click="searchAddressFromInput" class="search-address-btn" :disabled="!newMerchant.address.trim()">
                 搜索地址
               </button>
             </div>
