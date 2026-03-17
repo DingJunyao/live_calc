@@ -1,6 +1,6 @@
 /**
  * 高德地图引擎
- * 使用 leaflet.chinatmsproviders 插件加载瓦片
+ * 使用 leaflet.chinaProvider 加载瓦片
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
@@ -35,10 +35,10 @@ export class AMapEngine implements MapEngine {
       zoomControl: true
     });
 
-    // 使用 leaflet.chinatmsproviders 插件加载高德瓦片
-    const gaodeLayer = L.tileLayer.chinatmsprovider('GaoDe.Normal', {
+    // 使用 chinaProvider 加载高德瓦片
+    const gaodeLayer = L.tileLayer.chinaProvider('GaoDe.Normal.Map', {
       maxZoom: 18,
-      subdomains: '1234'
+      minZoom: 5
     }).addTo(this.map);
 
     if (options.enableClick !== false) {
@@ -125,7 +125,6 @@ export class AMapEngine implements MapEngine {
       }
     }
 
-    // 使用 Nominatim 作为回退
     return this.fallbackSearch(query);
   }
 

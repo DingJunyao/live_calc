@@ -1,6 +1,6 @@
 /**
  * 腾讯地图引擎
- * 使用 leaflet.chinatmsproviders 插件加载瓦片
+ * 使用 leaflet.chinaProvider 加载瓦片
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
@@ -35,9 +35,10 @@ export class TencentMapEngine implements MapEngine {
       zoomControl: true
     });
 
-    // 使用 leaflet.chinatmsproviders 插件加载腾讯瓦片
-    const tencentLayer = L.tileLayer.chinatmsprovider('Tencent.Normal', {
-      maxZoom: 18
+    // 使用 chinaProvider 加载腾讯瓦片
+    const tencentLayer = L.tileLayer.chinaProvider('Tencent.Normal.Map', {
+      maxZoom: 18,
+      minZoom: 5
     }).addTo(this.map);
 
     if (options.enableClick !== false) {

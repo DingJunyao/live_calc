@@ -1,6 +1,6 @@
 /**
  * 天地图引擎
- * 使用 leaflet.chinatmsproviders 插件加载瓦片（需要 Token）
+ * 使用 leaflet.chinaProvider 加载瓦片（需要 Token）
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
@@ -44,13 +44,22 @@ export class TiandituEngine implements MapEngine {
       zoomControl: true
     });
 
-    // 使用 leaflet.chinatmsproviders 插件加载天地图瓦片
-    // 支持两种类型：'Tianditu.Normal' (矢量) 或 'Tianditu.Satellite' (影像)
+    // 使用 chinaProvider 加载天地图瓦片
+    // 支持 'TianDiTu.Normal.Map' (矢量) 或 'TianDiTu.Satellite.Map' (影像)
     const mapType = this.config.mapApiKeys?.tianditu?.type || 'vec';
-    const layerType = mapType === 'img' ? 'Tianditu.Satellite' : 'Tianditu.Normal';
+    const providerType = mapType === 'img' ? 'TianDiTu.Satellite.Map' : 'TianDiTu.Normal.Map';
 
-    const tiandituLayer = L.tileLayer.chinatmsprovider(layerType, {
+    const tiandituLayer = L.tileLayer.chinaProvider(providerType, {
       maxZoom: 18,
+      minZoom: 5,
+      key: this.token
+    }).addTo(this.map);
+
+    // 添加注记层
+    const annotationType = mapType === 'img' ? 'TianDiTu.Satellite.Annotion' : 'TianDiTu.Normal.Annotion';
+    L.tileLayer.chinaProvider(annotationType, {
+      maxZoom: 18,
+      minZoom: 5,
       key: this.token
     }).addTo(this.map);
 
