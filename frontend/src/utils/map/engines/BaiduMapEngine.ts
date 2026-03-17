@@ -1,11 +1,12 @@
 /**
  * 百度地图引擎
- * 支持官方 API 和 Leaflet 瓦片两种模式
+ * 使用 leaflet.chinatmsproviders 插件加载瓦片
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.chinatmsproviders';
 
 export class BaiduMapEngine implements MapEngine {
   name: MapEngineType = 'baidu';
@@ -15,11 +16,9 @@ export class BaiduMapEngine implements MapEngine {
   private markers: Map<any, L.Marker> = new Map();
   private config: MapConfig;
   private eventHandlers: Map<string, Set<Function>> = new Map();
-  private useOfficialApi: boolean = false;
 
   constructor(config: MapConfig) {
     this.config = config;
-    this.useOfficialApi = !!config.mapApiKeys?.baidu;
   }
 
   init(container: HTMLElement, options: MapOptions): void {
@@ -30,44 +29,26 @@ export class BaiduMapEngine implements MapEngine {
     const center = options.center || [39.9042, 116.4074];
     const zoom = options.zoom || 13;
 
-    if (this.useOfficialApi) {
-      this.initOfficialApi(container, center, zoom, options);
-    } else {
-      this.initLeaflet(container, center, zoom, options);
-    }
-  }
-
-  // 使用 Leaflet + 百度瓦片
-  private initLeaflet(container: HTMLElement, center: [number, number], zoom: number, options: MapOptions): void {
     this.map = L.map(container, {
       center: center,
       zoom: zoom,
       zoomControl: true
     });
 
-    // 添加百度瓦片（使用 leaflet.chinatmsproviders 插件风格）
-    const baiduLayer = L.tileLayer('https://maponline0{s}.bdimg.com/tile/?qt=tile&x={x}&y={y}&z={z}&scale=1&style=6', {
-      subdomains: '0123456789',
-      attribution: '&copy; 百度地图',
+    // 使用 leaflet.chinatmsproviders 插件加载百度瓦片
+    // 注意：百度地图使用的是 BD09 坐标系
+    const baiduLayer = L.tileLayer.chinatmsprovider('Baidu.Normal', {
       maxZoom: 18
     }).addTo(this.map);
 
     if (options.enableClick !== false) {
       this.map.on('click', (e: L.LeafletMouseEvent) => {
-        // 注意：百度地图使用 BD09 坐标系，需要转换
-        // 这里先返回原始坐标，后续可以添加坐标系转换
         this.emit('click', {
           lat: e.latlng.lat,
           lng: e.latlng.lng
         });
       });
     }
-  }
-
-  // 使用百度官方 API
-  private initOfficialApi(container: HTMLElement, center: [number, number], zoom: number, options: MapOptions): void {
-    console.log('BaiduMap: Using official API requires additional SDK loading');
-    this.initLeaflet(container, center, zoom, options);
   }
 
   setCenter(lat: number, lng: number): void {
@@ -144,7 +125,6 @@ export class BaiduMapEngine implements MapEngine {
       }
     }
 
-    // 回退到 Nominatim
     return this.fallbackSearch(query);
   }
 
@@ -215,7 +195,7 @@ export class BaiduMapEngine implements MapEngine {
   private emit(event: string, data: any): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
-      handlers.forEach(handler => handler(data));
+      handlers.forEach(h => h(data));
     }
   }
 }
