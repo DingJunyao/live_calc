@@ -95,13 +95,6 @@
             :class="{ 'error': !config.mapApiKeys.tiandituToken }"
           />
         </div>
-        <div class="form-group">
-          <label>地图类型</label>
-          <select v-model="config.mapApiKeys.tiandituType">
-            <option value="vec">矢量图</option>
-            <option value="img">影像图</option>
-          </select>
-        </div>
       </div>
     </div>
 
@@ -232,8 +225,7 @@ const config = ref({
     amapSecurity: '',
     baidu: '',
     tencent: '',
-    tiandituToken: '',
-    tiandituType: 'vec'
+    tiandituToken: ''
   },
   geocoding: {
     enabledService: 'amap',
@@ -265,8 +257,7 @@ async function loadConfig() {
           amapSecurity: data.map_api_keys?.amap_security || '',
           baidu: data.map_api_keys?.baidu || '',
           tencent: data.map_api_keys?.tencent || '',
-          tiandituToken: data.map_api_keys?.tianditu?.token || '',
-          tiandituType: data.map_api_keys?.tianditu?.type || 'vec'
+          tiandituToken: data.map_api_keys?.tianditu?.token || ''
         },
         geocoding: {
           enabledService: data.geocoding?.enabled_service || 'amap',
@@ -302,7 +293,7 @@ async function saveConfig() {
         tencent: config.value.mapApiKeys.tencent || null,
         tianditu: {
           token: config.value.mapApiKeys.tiandituToken,
-          type: config.value.mapApiKeys.tiandituType
+          type: 'vec'
         }
       },
       geocoding: {

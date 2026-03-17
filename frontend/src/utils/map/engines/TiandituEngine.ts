@@ -20,7 +20,9 @@ export class TiandituEngine implements MapEngine {
   constructor(config: MapConfig) {
     this.config = config;
     // 天地图必须配置 Token
-    this.token = config.mapApiKeys?.tianditu?.token || '';
+    // 支持新旧配置结构
+    const tiandituConfig = config.mapApiKeys as any;
+    this.token = tiandituConfig?.tianditu?.token || tiandituConfig?.tiandituToken || '';
   }
 
   init(container: HTMLElement, options: MapOptions): void {
@@ -45,7 +47,9 @@ export class TiandituEngine implements MapEngine {
 
     // 使用 chinaProvider 加载天地图瓦片
     // 支持 'TianDiTu.Normal.Map' (矢量) 或 'TianDiTu.Satellite.Map' (影像)
-    const mapType = this.config.mapApiKeys?.tianditu?.type || 'vec';
+    // 获取地图类型，支持新旧配置结构
+    const tiandituConfig = this.config.mapApiKeys as any;
+    const mapType = tiandituConfig?.tianditu?.type || tiandituConfig?.tiandituType || 'vec';
     const providerType = mapType === 'img' ? 'TianDiTu.Satellite.Map' : 'TianDiTu.Normal.Map';
 
     const tiandituLayer = L.tileLayer.chinaProvider(providerType, {
