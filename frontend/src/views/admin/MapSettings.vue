@@ -33,49 +33,81 @@
     </div>
 
     <div class="settings-section">
-      <h3>API 配置</h3>
+      <h3>地图 API 配置</h3>
+      <p class="help-text">各地图服务商的 API 凭证配置（可选，不填使用免费瓦片）</p>
 
-      <div class="form-group">
-        <label>高德地图 Web 服务 Key</label>
-        <input
-          v-model="config.mapApiKeys.amap"
-          type="text"
-          placeholder="填写高德地图 Key（可选，不填使用免费瓦片）"
-        />
+      <!-- 高德地图 -->
+      <div class="map-config-card">
+        <h4>高德地图</h4>
+        <div class="form-group">
+          <label>API Key (JS API Key)</label>
+          <input
+            v-model="config.mapApiKeys.amap"
+            type="text"
+            placeholder="高德地图 JS API Key"
+          />
+        </div>
+        <div class="form-group">
+          <label>安全密钥 (security_js_code)</label>
+          <input
+            v-model="config.mapApiKeys.amapSecurity"
+            type="text"
+            placeholder="高德地图安全密钥（可选）"
+          />
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>百度地图 AK</label>
-        <input
-          v-model="config.mapApiKeys.baidu"
-          type="text"
-          placeholder="填写百度地图 AK（可选，不填使用免费瓦片）"
-        />
+      <!-- 百度地图 -->
+      <div class="map-config-card">
+        <h4>百度地图</h4>
+        <div class="form-group">
+          <label>AK (API Key)</label>
+          <input
+            v-model="config.mapApiKeys.baidu"
+            type="text"
+            placeholder="百度地图 AK"
+          />
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>腾讯地图 Key</label>
-        <input
-          v-model="config.mapApiKeys.tencent"
-          type="text"
-          placeholder="填写腾讯地图 Key（可选，不填使用免费瓦片）"
-        />
+      <!-- 腾讯地图 -->
+      <div class="map-config-card">
+        <h4>腾讯地图</h4>
+        <div class="form-group">
+          <label>API Key</label>
+          <input
+            v-model="config.mapApiKeys.tencent"
+            type="text"
+            placeholder="腾讯地图 API Key"
+          />
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>天地图 Token (必填)</label>
-        <input
-          v-model="tiandituToken"
-          type="text"
-          placeholder="填写天地图 Token（必填）"
-          :class="{ 'error': !tiandituToken }"
-        />
-        <span class="help-text">天地图必须配置 Token 才能使用</span>
+      <!-- 天地图 -->
+      <div class="map-config-card">
+        <h4>天地图 (必填)</h4>
+        <div class="form-group">
+          <label>Token (tk)</label>
+          <input
+            v-model="config.mapApiKeys.tiandituToken"
+            type="text"
+            placeholder="天地图 Token（必填）"
+            :class="{ 'error': !config.mapApiKeys.tiandituToken }"
+          />
+        </div>
+        <div class="form-group">
+          <label>地图类型</label>
+          <select v-model="config.mapApiKeys.tiandituType">
+            <option value="vec">矢量图</option>
+            <option value="img">影像图</option>
+          </select>
+        </div>
       </div>
     </div>
 
     <div class="settings-section">
-      <h3>反向地理编码</h3>
+      <h3>反向地理编码配置</h3>
+      <p class="help-text">地址转坐标（根据地址查询经纬度）使用的服务</p>
 
       <div class="form-group">
         <label>启用的服务</label>
@@ -89,24 +121,21 @@
             高德地图
           </label>
           <label>
-            <input
-              type="radio"
+            <input type="radio"
               value="baidu"
               v-model="config.geocoding.enabledService"
             />
             百度地图
           </label>
           <label>
-            <input
-              type="radio"
+            <input type="radio"
               value="tencent"
               v-model="config.geocoding.enabledService"
             />
             腾讯地图
           </label>
           <label>
-            <input
-              type="radio"
+            <input type="radio"
               value="nominatim"
               v-model="config.geocoding.enabledService"
             />
@@ -115,14 +144,60 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Nominatim 服务器 URL</label>
-        <input
-          v-model="config.geocoding.nominatimUrl"
-          type="text"
-          placeholder="如：https://nominatim.example.com（使用官方服务器留空）"
-        />
-        <span class="help-text">使用自部署的 Nominatim 服务器，官方服务器有请求频率限制</span>
+      <!-- 高德反向地理编码配置 -->
+      <div v-if="config.geocoding.enabledService === 'amap'" class="geocoding-config">
+        <div class="form-group">
+          <label>高德地图 API Key (Web 服务 API Key)</label>
+          <input
+            v-model="config.geocoding.amapKey"
+            type="text"
+            placeholder="高德地图 Web 服务 API Key"
+          />
+        </div>
+      </div>
+
+      <!-- 百度反向地理编码配置 -->
+      <div v-if="config.geocoding.enabledService === 'baidu'" class="geocoding-config">
+        <div class="form-group">
+          <label>百度地图 AK</label>
+          <input
+            v-model="config.geocoding.baiduKey"
+            type="text"
+            placeholder="百度地图 AK"
+          />
+        </div>
+      </div>
+
+      <!-- 腾讯反向地理编码配置 -->
+      <div v-if="config.geocoding.enabledService === 'tencent'" class="geocoding-config">
+        <div class="form-group">
+          <label>腾讯地图 Key</label>
+          <input
+            v-model="config.geocoding.tencentKey"
+            type="text"
+            placeholder="腾讯地图 Key"
+          />
+        </div>
+      </div>
+
+      <!-- Nominatim 配置 -->
+      <div v-if="config.geocoding.enabledService === 'nominatim'" class="geocoding-config">
+        <div class="form-group">
+          <label>服务器 URL</label>
+          <input
+            v-model="config.geocoding.nominatimUrl"
+            type="text"
+            placeholder="https://nominatim.example.com（使用官方留空）"
+          />
+        </div>
+        <div class="form-group">
+          <label>联系邮箱 (Email)</label>
+          <input
+            v-model="config.geocoding.nominatimEmail"
+            type="email"
+            placeholder="用于 Nominatim 服务请求头（可选）"
+          />
+        </div>
       </div>
     </div>
 
@@ -136,11 +211,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
 import { api } from '@/api/client'
-
-const router = useRouter()
 
 // 选项配置
 const allMaps = [
@@ -157,25 +229,25 @@ const config = ref({
   defaultMap: 'amap',
   mapApiKeys: {
     amap: '',
+    amapSecurity: '',
     baidu: '',
     tencent: '',
-    tianditu: { token: '', type: 'vec' }
+    tiandituToken: '',
+    tiandituType: 'vec'
   },
   geocoding: {
     enabledService: 'amap',
-    apiKeys: {
-      amap: '',
-      baidu: '',
-      tencent: ''
-    },
-    nominatimUrl: ''
+    amapKey: '',
+    baiduKey: '',
+    tencentKey: '',
+    nominatimUrl: '',
+    nominatimEmail: ''
   }
 })
 
-const tiandituToken = ref('')
 const saving = ref(false)
 
-// 可用于默认地图选择（必须在 availableMaps 中）
+// 可用于默认地图选择
 const availableMapsForSelect = computed(() => {
   return allMaps.filter(m => config.value.availableMaps.includes(m.value))
 })
@@ -190,21 +262,21 @@ async function loadConfig() {
         defaultMap: data.default_map || 'amap',
         mapApiKeys: {
           amap: data.map_api_keys?.amap || '',
+          amapSecurity: data.map_api_keys?.amap_security || '',
           baidu: data.map_api_keys?.baidu || '',
           tencent: data.map_api_keys?.tencent || '',
-          tianditu: { token: '', type: 'vec' }
+          tiandituToken: data.map_api_keys?.tianditu?.token || '',
+          tiandituType: data.map_api_keys?.tianditu?.type || 'vec'
         },
         geocoding: {
           enabledService: data.geocoding?.enabled_service || 'amap',
-          apiKeys: {
-            amap: data.geocoding?.api_keys?.amap || '',
-            baidu: data.geocoding?.api_keys?.baidu || '',
-            tencent: data.geocoding?.api_keys?.tencent || ''
-          },
-          nominatimUrl: data.geocoding?.nominatim_url || ''
+          amapKey: data.geocoding?.amap_key || '',
+          baiduKey: data.geocoding?.baidu_key || '',
+          tencentKey: data.geocoding?.tencent_key || '',
+          nominatimUrl: data.geocoding?.nominatim_url || '',
+          nominatimEmail: data.geocoding?.nominatim_email || ''
         }
       }
-      tiandituToken.value = data.map_api_keys?.tianditu?.token || ''
     }
   } catch (error) {
     console.error('Failed to load map config:', error)
@@ -213,7 +285,7 @@ async function loadConfig() {
 
 // 保存配置
 async function saveConfig() {
-  if (!tiandituToken.value) {
+  if (!config.value.mapApiKeys.tiandituToken) {
     alert('天地图 Token 为必填项')
     return
   }
@@ -225,21 +297,21 @@ async function saveConfig() {
       default_map: config.value.defaultMap,
       map_api_keys: {
         amap: config.value.mapApiKeys.amap || null,
+        amap_security: config.value.mapApiKeys.amapSecurity || null,
         baidu: config.value.mapApiKeys.baidu || null,
         tencent: config.value.mapApiKeys.tencent || null,
         tianditu: {
-          token: tiandituToken.value,
-          type: 'vec'
+          token: config.value.mapApiKeys.tiandituToken,
+          type: config.value.mapApiKeys.tiandituType
         }
       },
       geocoding: {
         enabled_service: config.value.geocoding.enabledService,
-        api_keys: {
-          amap: config.value.geocoding.apiKeys.amap || null,
-          baidu: config.value.geocoding.apiKeys.baidu || null,
-          tencent: config.value.geocoding.apiKeys.tencent || null
-        },
-        nominatim_url: config.value.geocoding.nominatimUrl
+        amap_key: config.value.geocoding.amapKey || null,
+        baidu_key: config.value.geocoding.baiduKey || null,
+        tencent_key: config.value.geocoding.tencentKey || null,
+        nominatim_url: config.value.geocoding.nominatimUrl,
+        nominatim_email: config.value.geocoding.nominatimEmail || null
       }
     }
 
@@ -261,7 +333,7 @@ onMounted(() => {
 <style scoped>
 .map-settings {
   padding: 1rem;
-  max-width: 600px;
+  max-width: 700px;
 }
 
 .settings-section {
@@ -299,8 +371,25 @@ onMounted(() => {
   cursor: pointer;
 }
 
+.map-config-card {
+  background: #f9f9f9;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.map-config-card h4 {
+  margin: 0 0 0.75rem 0;
+  color: #333;
+  font-size: 1rem;
+}
+
 .form-group {
   margin-bottom: 1rem;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
 }
 
 .form-group label {
@@ -308,9 +397,12 @@ onMounted(() => {
   margin-bottom: 0.5rem;
   color: #555;
   font-weight: 500;
+  font-size: 0.875rem;
 }
 
-.form-group input[type="text"] {
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group select {
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #ddd;
@@ -319,8 +411,15 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
-.form-group input[type="text"].error {
+.form-group input.error {
   border-color: #de350b;
+}
+
+.geocoding-config {
+  background: #f0f7ff;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin-top: 1rem;
 }
 
 .actions {

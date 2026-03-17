@@ -8,7 +8,7 @@ from app.models.recipe import Recipe
 from app.models.merchant import Merchant
 from app.schemas.auth import UserResponse
 from pydantic import BaseModel
-from typing import Optional, Dict, List
+from typing import Optional, List
 from app.services.recipe_import_service import RecipeImportService
 
 
@@ -19,21 +19,19 @@ class TiandituConfig(BaseModel):
 
 class MapApiKeys(BaseModel):
     amap: Optional[str] = None
+    amap_security: Optional[str] = None
     baidu: Optional[str] = None
     tencent: Optional[str] = None
     tianditu: Optional[TiandituConfig] = None
 
 
-class GeocodingApiKeys(BaseModel):
-    amap: Optional[str] = None
-    baidu: Optional[str] = None
-    tencent: Optional[str] = None
-
-
 class GeocodingConfig(BaseModel):
     enabled_service: str = 'amap'
-    api_keys: GeocodingApiKeys = GeocodingApiKeys()
+    amap_key: Optional[str] = None
+    baidu_key: Optional[str] = None
+    tencent_key: Optional[str] = None
     nominatim_url: str = ''
+    nominatim_email: Optional[str] = None
 
 
 class MapConfig(BaseModel):
