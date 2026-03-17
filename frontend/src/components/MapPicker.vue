@@ -64,6 +64,7 @@ import { mapEngineNames, defaultMapConfig } from '@/utils/mapTypes';
 import { mapEngineManager } from '@/utils/mapEngineManager';
 import { getCurrentMapEngine, getUserMapPreference } from '@/utils/mapConfig';
 import { convertCoordinate, getCoordinateSystem } from '@/utils/coordinateTransform';
+import { api } from '@/api/client';
 
 // Props
 interface Props {
@@ -137,6 +138,15 @@ onUnmounted(() => {
 async function initMap(initialCoord?: Coordinate) {
   if (!mapContainer.value) return;
 
+  // 从后端获取地图配置
+  let backendMapConfig: any = null;
+  try {
+    backendMapConfig = await api.get('/admin/map-config');
+    console.log('[MapPicker] 获取到的后端配置:', backendMapConfig);
+  } catch (e) {
+    console.warn('[MapPicker] 获取地图配置失败，使用默认配置:', e);
+  }
+
   // 确定使用的坐标
   const coord = initialCoord || props.modelValue;
 
@@ -145,9 +155,11 @@ async function initMap(initialCoord?: Coordinate) {
     ...defaultMapConfig,
     availableMaps: availableMaps.value,
     defaultMap: currentMap.value,
-    mapApiKeys: {}
+    // 优先使用后端配置，如果没有则为空
+    mapApiKeys: backendMapConfig?.map_api_keys || {}
   };
 
+  console.log('[MapPicker] 最终配置 mapApiKeys:', config.mapApiKeys);
   mapEngineManager.setConfig(config);
 
   // 加载引擎
