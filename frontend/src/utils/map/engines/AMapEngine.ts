@@ -6,7 +6,6 @@
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet.chinatmsproviders';
 
 export class AMapEngine implements MapEngine {
   name: MapEngineType = 'amap';

@@ -6,11 +6,7 @@
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-
-// 先导入 proj4leaflet
-import 'proj4leaflet';
-// 再导入 chinatmsproviders（它会检查 L.Proj.CRS）
-import 'leaflet.chinatmsproviders';
+// proj4leaflet 和 chinatmsproviders 已在 main.ts 中全局导入
 
 export class BaiduMapEngine implements MapEngine {
   name: MapEngineType = 'baidu';
@@ -36,7 +32,7 @@ export class BaiduMapEngine implements MapEngine {
     // 检查 Baidu CRS 是否可用
     const baiduCrs = (L as any).CRS.Baidu;
     if (!baiduCrs) {
-      console.error('Baidu CRS not available, make sure proj4leaflet is loaded');
+      console.error('Baidu CRS not available');
       container.textContent = '百度地图加载失败，请刷新页面重试';
       return;
     }
