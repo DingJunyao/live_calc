@@ -8,7 +8,39 @@ from app.models.recipe import Recipe
 from app.models.merchant import Merchant
 from app.schemas.auth import UserResponse
 from pydantic import BaseModel
+from typing import Optional, Dict, List
 from app.services.recipe_import_service import RecipeImportService
+
+
+class TiandituConfig(BaseModel):
+    token: str
+    type: str = 'vec'
+
+
+class MapApiKeys(BaseModel):
+    amap: Optional[str] = None
+    baidu: Optional[str] = None
+    tencent: Optional[str] = None
+    tianditu: Optional[TiandituConfig] = None
+
+
+class GeocodingApiKeys(BaseModel):
+    amap: Optional[str] = None
+    baidu: Optional[str] = None
+    tencent: Optional[str] = None
+
+
+class GeocodingConfig(BaseModel):
+    enabled_service: str = 'amap'
+    api_keys: GeocodingApiKeys = GeocodingApiKeys()
+    nominatim_url: str = ''
+
+
+class MapConfig(BaseModel):
+    available_maps: List[str] = ['amap', 'baidu', 'tencent', 'tianditu', 'osm']
+    default_map: str = 'amap'
+    map_api_keys: MapApiKeys = MapApiKeys()
+    geocoding: GeocodingConfig = GeocodingConfig()
 
 
 class AdminStatsResponse(BaseModel):
@@ -19,6 +51,47 @@ class AdminStatsResponse(BaseModel):
 
 
 router = APIRouter()
+
+# 地图配置存储（实际项目中应该存储到数据库）
+_map_config: Optional[MapConfig] = None
+
+
+@router.get("/map-config", response_model=MapConfig)
+async def get_map_config(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """获取地图配置 - 仅限管理员"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="仅限管理员访问"
+        )
+
+    global _map_config
+    if _map_config is None:
+        _map_config = MapConfig()
+
+    return _map_config
+
+
+@router.put("/map-config", response_model=MapConfig)
+async def update_map_config(
+    config: MapConfig,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """更新地图配置 - 仅限管理员"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="仅限管理员访问"
+        )
+
+    global _map_config
+    _map_config = config
+
+    return _map_config
 
 
 @router.get("/stats", response_model=AdminStatsResponse)
