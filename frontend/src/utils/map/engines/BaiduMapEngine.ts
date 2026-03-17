@@ -1,6 +1,6 @@
 /**
  * 百度地图引擎
- * 使用 leaflet.chinaProvider 加载瓦片
+ * 使用 leaflet.chinaProvider 加载瓦片，需要设置 Baidu CRS
  */
 
 import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
@@ -29,10 +29,12 @@ export class BaiduMapEngine implements MapEngine {
     const center = options.center || [39.9042, 116.4074];
     const zoom = options.zoom || 13;
 
+    // 百度地图需要使用 Baidu CRS
     this.map = L.map(container, {
       center: center,
       zoom: zoom,
-      zoomControl: true
+      zoomControl: true,
+      crs: (L as any).CRS.Baidu
     });
 
     // 使用 chinaProvider 加载百度瓦片
