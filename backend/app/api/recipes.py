@@ -14,13 +14,15 @@ from app.schemas.recipe import (
     RecipeCostResponse,
     RecipeNutritionResponse,
     RecipeIngredientDetail,
-    RecipeCostHistoryResponse
+    RecipeCostHistoryResponse,
+    RecipeCostRangeResponse
 )
 from app.schemas.common import PaginatedResponse
 from app.services.recipe_service import (
     calculate_recipe_cost,
     calculate_recipe_nutrition,
-    calculate_recipe_cost_trend
+    calculate_recipe_cost_trend,
+    calculate_recipe_cost_range_trend
 )
 from app.services.recipe_import_service import RecipeImportService
 import shutil
@@ -481,3 +483,53 @@ async def get_recipe_cost_history(
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取成本历史失败：{str(e)}")
+
+
+@router.get("/{recipe_id}/cost-history-range", response_model=List[RecipeCostRangeResponse])
+async def get_recipe_cost_history_range(
+    recipe_id: int,
+    days: int = Query(90, ge=7, le=365, description="查询天数"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取菜谱成本区间趋势
+
+    返回菜谱在指定日期范围内的成本区间数据（最小值、最大值、平均值）。
+    反映当天不同商家价格波动对菜谱总成本的影响。
+
+    计算规则：
+    - 区间最大值：每道食材在当天的最高价格之和
+    - 区间最小值：每道食材在当天的最低价格之和
+    - 平均值：每道食材在当天的平均价格之和
+
+    使用前向填充机制处理缺失的价格记录。
+    """
+    try:
+        # 验证菜谱存在且属于当前用户
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
+
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+
+        # 计算成本区间趋势
+        cost_range_trend = calculate_recipe_cost_range_trend(recipe_id, current_user.id, db, days)
+
+        # 转换为响应模型（按时间倒序）
+        return [
+            RecipeCostRangeResponse(
+                id=i,  # 使用索引作为临时 ID
+                recipe_id=recipe_id,
+                recipe_name=recipe.name,
+                min_cost=item["min_cost"],
+                max_cost=item["max_cost"],
+                avg_cost=item["avg_cost"],
+                date=item["date"],
+                recorded_at=item["recorded_at"]
+            )
+            for i, item in enumerate(reversed(cost_range_trend))
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取成本区间历史失败：{str(e)}")
