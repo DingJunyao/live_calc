@@ -470,14 +470,37 @@ def calculate_recipe_cost_range_as_of(
 
         # 如果当天无记录，使用前向填充
         if not day_records:
-            fallback_record = _get_price_record_with_fallback(
-                db=db,
-                user_id=user_id,
-                product_id=product.id,
-                as_of_date=as_of_date
-            )
-            if fallback_record:
-                day_records = [fallback_record]
+            # 先尝试使用食材回退机制
+            fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
+            if fallback_result:
+                fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
+                # 查找回退食材对应的商品
+                fallback_product = db.query(Product).filter(
+                    Product.ingredient_id == fallback_ingredient.id,
+                    Product.is_active == True
+                ).first()
+
+                if fallback_product:
+                    # 查找回退食材的价格记录（前向填充）
+                    fallback_record = _get_price_record_with_fallback(
+                        db=db,
+                        user_id=user_id,
+                        product_id=fallback_product.id,
+                        as_of_date=as_of_date
+                    )
+                    if fallback_record:
+                        day_records = [fallback_record]
+
+            # 如果食材回退也没有，使用原食材前向填充
+            if not day_records:
+                fallback_record = _get_price_record_with_fallback(
+                    db=db,
+                    user_id=user_id,
+                    product_id=product.id,
+                    as_of_date=as_of_date
+                )
+                if fallback_record:
+                    day_records = [fallback_record]
 
         # 如果仍然没有记录，跳过该食材
         if not day_records:
