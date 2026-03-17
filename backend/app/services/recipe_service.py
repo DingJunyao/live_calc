@@ -63,6 +63,48 @@ def _get_price_record_with_fallback(
     return earliest_record
 
 
+def _get_price_records_for_date(
+    db: Session,
+    user_id: int,
+    ingredient_id: int,
+    as_of_date: datetime
+) -> List[ProductRecord]:
+    """
+    获取某食材在指定日期的所有价格记录
+
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        ingredient_id: 食材ID
+        as_of_date: 指定日期
+
+    Returns:
+        当天的所有价格记录列表
+    """
+    # 计算当天的开始和结束时间
+    day_start = as_of_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1) - timedelta(microseconds=1)
+
+    # 获取食材对应的商品
+    product = db.query(Product).filter(
+        Product.ingredient_id == ingredient_id,
+        Product.is_active == True
+    ).first()
+
+    if not product:
+        return []
+
+    # 查询当天的所有价格记录
+    records = db.query(ProductRecord).filter(
+        ProductRecord.user_id == user_id,
+        ProductRecord.product_id == product.id,
+        ProductRecord.recorded_at >= day_start,
+        ProductRecord.recorded_at <= day_end
+    ).all()
+
+    return records
+
+
 def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, visited: Optional[List[int]] = None) -> Optional[tuple[Ingredient, ProductRecord, str]]:
     """
     获取食材的回退链中的第一个有价格的食材
