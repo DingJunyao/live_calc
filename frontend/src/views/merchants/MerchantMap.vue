@@ -65,15 +65,19 @@
           </div>
           <div class="form-group">
             <label for="address">地址:</label>
-            <input v-model="newMerchant.address" type="text" id="address" />
+            <div class="address-input-group">
+              <input v-model="newMerchant.address" type="text" id="address" />
+            </div>
           </div>
           <div class="form-group">
-            <label for="latitude">纬度:</label>
-            <input v-model.number="newMerchant.latitude" type="number" id="latitude" step="any" required />
-          </div>
-          <div class="form-group">
-            <label for="longitude">经度:</label>
-            <input v-model.number="newMerchant.longitude" type="number" id="longitude" step="any" required />
+            <label>地图位置:</label>
+            <MapPicker
+              v-model="merchantCoordinate"
+              height="300px"
+              :show-search="true"
+              :show-switcher="true"
+              @address-selected="handleAddressSelected"
+            />
           </div>
           <div class="form-actions">
             <button type="button" @click="closeModal" class="btn-secondary">取消</button>
@@ -86,10 +90,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
+import MapPicker from '@/components/MapPicker.vue'
+import type { Coordinate } from '@/utils/mapTypes'
 
 const merchants = ref<any[]>([])
 const loading = ref(false)
@@ -101,6 +107,29 @@ const newMerchant = ref({
   address: '',
   latitude: 0,
   longitude: 0
+})
+
+// 商家的坐标（用于 MapPicker v-model）
+const merchantCoordinate = ref<Coordinate>({ lat: 39.9042, lng: 116.4074 })
+
+// 处理地址选择（反向地理编码结果）
+function handleAddressSelected(data: { address: string; lat: number; lng: number }) {
+  newMerchant.value.address = data.address
+  newMerchant.value.latitude = data.lat
+  newMerchant.value.longitude = data.lng
+}
+
+// 监听 MapPicker 坐标变化
+function handleCoordinateChange(coord: Coordinate) {
+  newMerchant.value.latitude = coord.lat
+  newMerchant.value.longitude = coord.lng
+}
+
+// 监听坐标变化
+watch(merchantCoordinate, (newCoord) => {
+  if (newCoord) {
+    handleCoordinateChange(newCoord)
+  }
 })
 
 // 分页相关
@@ -156,17 +185,23 @@ function openAddModal() {
     latitude: 0,
     longitude: 0
   }
+  // 设置默认坐标（北京）
+  merchantCoordinate.value = { lat: 39.9042, lng: 116.4074 }
   showAddModal.value = true
 }
 
 function editMerchant(merchant: any) {
   editingMerchant.value = merchant
+  const lat = merchant.latitude || 0
+  const lng = merchant.longitude || 0
   newMerchant.value = {
     name: merchant.name,
     address: merchant.address || '',
-    latitude: merchant.latitude || 0,
-    longitude: merchant.longitude || 0
+    latitude: lat,
+    longitude: lng
   }
+  // 设置当前坐标
+  merchantCoordinate.value = lat && lng ? { lat, lng } : { lat: 39.9042, lng: 116.4074 }
   showAddModal.value = true
 }
 
