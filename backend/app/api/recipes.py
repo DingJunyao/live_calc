@@ -517,7 +517,7 @@ async def get_recipe_cost_history_range(
         # 计算成本区间趋势
         cost_range_trend = calculate_recipe_cost_range_trend(recipe_id, current_user.id, db, days)
 
-        # 转换为响应模型（按时间倒序）
+        # 转换为响应模型（按时间顺序）
         return [
             RecipeCostRangeResponse(
                 id=i,  # 使用索引作为临时 ID
@@ -529,7 +529,7 @@ async def get_recipe_cost_history_range(
                 date=item["date"],
                 recorded_at=item["recorded_at"]
             )
-            for i, item in enumerate(reversed(cost_range_trend))
+            for i, item in enumerate(cost_range_trend)
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取成本区间历史失败：{str(e)}")
