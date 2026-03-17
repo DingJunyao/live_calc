@@ -44,78 +44,19 @@ function initChart() {
   window.addEventListener('resize', handleResize)
 }
 
-// 按日期聚合成本数据
-function aggregateDailyCosts(records: CostHistoryRecord[]) {
-  const dailyMap = new Map<string, number[]>()
-
-  // 将记录按日期分组
-  for (const record of records) {
-    const date = new Date(record.recorded_at * 1000)
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const dateKey = `${year}-${month}-${day}`
-
-    if (!dailyMap.has(dateKey)) {
-      dailyMap.set(dateKey, [])
-    }
-    // 后端返回的成本单位为分，需要转换为元
-    dailyMap.get(dateKey)!.push(record.total_cost / 100)
-  }
-
-  // 计算每日统计值并按日期排序
-  const dailyData = Array.from(dailyMap.entries())
-    .map(([dateKey, costs]) => {
-      if (!costs || costs.length === 0) {
-        return {
-          date: dateKey,
-          dateObj: new Date(`${dateKey}T00:00:00`),
-          min: 0,
-          max: 0,
-          avg: 0,
-          count: 0
-        }
-      }
-
-      const numericCosts = costs.map(c => Number(c)).filter(c => !isNaN(c) && c !== null && c !== undefined)
-
-      if (numericCosts.length === 0) {
-        return {
-          date: dateKey,
-          dateObj: new Date(`${dateKey}T00:00:00`),
-          min: 0,
-          max: 0,
-          avg: 0,
-          count: costs.length
-        }
-      }
-
-      const sortedCosts = numericCosts.sort((a, b) => a - b)
-      const minCost = sortedCosts[0]
-      const maxCost = sortedCosts[sortedCosts.length - 1]
-
-      const sum = sortedCosts.reduce((acc, c) => acc + c, 0)
-      const avgCost = sum / sortedCosts.length
-
-      return {
-        date: dateKey,
-        dateObj: new Date(`${dateKey}T00:00:00`),
-        min: minCost,
-        max: maxCost,
-        avg: avgCost,
-        count: costs.length
-      }
-    })
-    .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())
-
-  return dailyData
-}
-
 // 更新图表数据
 function updateChart() {
   if (!chart) return
 
-  const dailyData = aggregateDailyCosts(props.records)
+  // 直接使用后端返回的数据，无需聚合计算
+  const dailyData = props.records.map(record => ({
+    date: record.date,
+    dateObj: new Date(`${record.date}T00:00:00`),
+    min: record.min_cost,
+    max: record.max_cost,
+    avg: record.avg_cost,
+    count: 1  // 固定为1，因为是API已计算好的区间
+  }))
 
   if (dailyData.length === 0) {
     chart.setOption({
