@@ -21,6 +21,8 @@
     "leaflet": "^1.9.4",
     "leaflet.chinatmsproviders": "^3.0.6",
     "pinia": "^2.1.7",
+    "proj4": "^2.20.4",
+    "proj4leaflet": "^1.0.2",
     "vue": "^3.4.0",
     "vue-router": "^4.2.5"
   },
