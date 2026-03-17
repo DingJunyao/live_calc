@@ -21,13 +21,13 @@ import { TitleComponent, TooltipComponent, GridComponent } from 'echarts/compone
 import { UniversalTransition } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsOption } from 'echarts'
-import type { CostHistoryRecord } from '../types'
+import type { CostRangeRecord } from '@/api/client'
 
 // 注册必需的组件
 echarts.use([LineChart, TitleComponent, TooltipComponent, GridComponent, UniversalTransition, CanvasRenderer])
 
 const props = defineProps<{
-  records: CostHistoryRecord[]
+  records: CostRangeRecord[]
 }>()
 
 const chartRef = ref<HTMLElement>()
