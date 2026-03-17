@@ -65,12 +65,6 @@
         <div class="product-header">
           <h3>{{ product.product_name }}</h3>
           <div class="product-actions">
-            <button @click="editProduct(product)" class="btn-edit" title="编辑">
-              <i class="mdi mdi-pencil"></i>
-            </button>
-            <button @click="viewNutrition(product)" class="btn-nutrition" title="查看营养">
-              <i class="mdi mdi-food"></i>
-            </button>
             <button @click="deleteProduct(product)" class="btn-delete" title="删除">
               <i class="mdi mdi-delete"></i>
             </button>

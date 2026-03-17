@@ -215,6 +215,10 @@ export const productAPI = {
 
   delete: async (id: number) => {
     return api.delete(`/products/entity/${id}`)
+  },
+
+  getLatestPrice: async (id: number) => {
+    return api.get(`/products/entity/${id}/latest-price`)
   }
 }
 

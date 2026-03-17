@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, BackgroundTasks
 from sqlalchemy.orm import Session, load_only
+from sqlalchemy import or_
 from typing import List, Optional
 import json
 from app.core.database import get_db
@@ -494,6 +495,146 @@ async def get_ingredient_nutrition_base(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
+@router.get("/ingredients/{ingredient_id}/recipes")
+async def get_ingredient_recipes(
+    ingredient_id: int,
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(50, ge=1, le=100, description="每页记录数"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取包含指定食材的菜谱列表
+
+    - **ingredient_id**: 食材ID
+    - **skip**: 跳过记录数（分页）
+    - **limit**: 每页记录数
+    """
+    try:
+        from app.models.recipe import Recipe, RecipeIngredient
+
+        # 查询包含该食材的菜谱ID
+        recipe_ingredients_query = db.query(RecipeIngredient).filter(
+            RecipeIngredient.ingredient_id == ingredient_id
+        )
+
+        total = recipe_ingredients_query.count()
+
+        # 分页查询
+        recipe_ingredients = recipe_ingredients_query.offset(skip).limit(limit).all()
+
+        # 提取菜谱ID列表
+        recipe_ids = [ri.recipe_id for ri in recipe_ingredients]
+
+        if not recipe_ids:
+            return {
+                "items": [],
+                "total": 0,
+                "page": skip // limit + 1,
+                "page_size": limit
+            }
+
+        # 查询菜谱详情（当前用户的菜谱和公共导入的菜谱）
+        recipes = db.query(Recipe).filter(
+            Recipe.id.in_(recipe_ids),
+            or_(
+                Recipe.user_id == current_user.id,
+                Recipe.source != None
+            )
+        ).all()
+
+        # 构建返回数据
+        items = []
+        for recipe in recipes:
+            items.append({
+                "id": recipe.id,
+                "name": recipe.name,
+                "source": recipe.source,
+                "category": recipe.category,
+                "servings": recipe.servings,
+                "total_time_minutes": recipe.total_time_minutes,
+                "difficulty": recipe.difficulty,
+                "tags": recipe.tags or [],
+                "created_at": recipe.created_at,
+                "updated_at": recipe.updated_at
+            })
+
+        return {
+            "items": items,
+            "total": total,
+            "page": skip // limit + 1,
+            "page_size": limit
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取关联菜谱失败: {str(e)}")
+
+
+@router.get("/ingredients/{ingredient_id}/latest-price")
+async def get_ingredient_latest_price(
+    ingredient_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取原料的最近一天平均价格
+
+    - **ingredient_id**: 食材ID
+
+    返回该原料关联商品在最近一天的平均价格
+    """
+    try:
+        from app.models.product import ProductRecord
+        from datetime import datetime, timedelta
+
+        # 计算最近一天的时间范围
+        now = datetime.utcnow()
+        one_day_ago = now - timedelta(days=1)
+
+        # 查询该原料关联的商品
+        products = db.query(Product).filter(
+            Product.ingredient_id == ingredient_id
+        ).all()
+
+        if not products:
+            return {"average_price": None, "unit": None}
+
+        product_ids = [p.id for p in products]
+
+        # 查询这些商品在最近一天的价格记录
+        recent_records = db.query(ProductRecord).filter(
+            ProductRecord.product_id.in_(product_ids),
+            ProductRecord.recorded_at >= one_day_ago
+        ).all()
+
+        if not recent_records:
+            return {"average_price": None, "unit": None}
+
+        # 计算平均价格
+        total_price = sum(record.price for record in recent_records if record.price is not None)
+        valid_prices = [record.price for record in recent_records if record.price is not None]
+
+        if not valid_prices:
+            return {"average_price": None, "unit": None}
+
+        average_price = total_price / len(valid_prices)
+
+        # 获取最常见的单位名称
+        from collections import Counter
+        units = [record.original_unit.name if record.original_unit else None for record in recent_records]
+        units = [u for u in units if u is not None]
+        if units:
+            most_common_unit = Counter(units).most_common(1)[0][0]
+        else:
+            most_common_unit = None
+
+        return {
+            "average_price": round(average_price, 2),
+            "unit": most_common_unit
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")
 
 
 @router.get("/recipes/{recipe_id}/nutrition", response_model=RecipeNutritionResponse)

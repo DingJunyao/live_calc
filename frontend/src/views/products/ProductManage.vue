@@ -54,21 +54,6 @@
           </h3>
           <div class="product-actions">
             <button
-              @click.stop="viewProduct(product)"
-              class="btn-view"
-              title="查看"
-            >
-              <i class="mdi mdi-eye"></i>
-            </button>
-            <button
-              @click.stop="viewNutrition(product)"
-              class="btn-nutrition"
-              title="查看营养"
-              v-if="hasNutritionInfo(product)"
-            >
-              <i class="mdi mdi-apple"></i>
-            </button>
-            <button
               @click.stop="openEditModal(product)"
               class="btn-edit"
               title="编辑"
@@ -95,8 +80,17 @@
         </div>
 
         <div class="product-info">
+          <p v-if="productPrices.get(product.id)?.price">
+            <strong>价格：</strong>¥{{ productPrices.get(product.id)?.price }}
+            <span v-if="productPrices.get(product.id)?.original_quantity">
+              / {{ productPrices.get(product.id)?.original_quantity }} {{ productPrices.get(product.id)?.original_unit }}
+            </span>
+          </p>
+          <p v-else style="color: #333;">
+            <strong>价格：</strong>暂无价格
+          </p>
           <p v-if="product.ingredient_name">
-            <i class="mdi mdi-grain"></i> {{ product.ingredient_name }}
+            <strong>关联原料：</strong>{{ product.ingredient_name }}
           </p>
           <p v-if="product.barcode">
             <i class="mdi mdi-barcode"></i> {{ product.barcode }}
@@ -255,6 +249,15 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 
+// 存储商品的最近价格
+const productPrices = ref<Map<number, {
+  price: number | null
+  original_quantity: number | null
+  original_unit: string | null
+  merchant_name: string | null
+  recorded_at: string | null
+}>>(new Map())
+
 // 模态框相关
 const editingProduct = ref<Product | null>(null)
 const newProduct = ref({
@@ -317,6 +320,9 @@ async function loadProducts() {
 
     products.value = items
     total.value = totalCount
+
+    // 加载商品的最近价格
+    await loadProductPrices(products.value.map((p: Product) => p.id))
   } catch (error) {
     console.error('Failed to load products:', error)
   } finally {
@@ -527,6 +533,31 @@ function handleIngredientKeydown(event: KeyboardEvent) {
 function getIngredientName(ingredientId: number): string {
   const ing = ingredients.value.find(i => i.id === ingredientId)
   return ing ? ing.name : ''
+}
+
+// 加载商品的最近价格
+async function loadProductPrices(productIds: number[]) {
+  try {
+    // 并行请求所有商品的价格
+    const pricePromises = productIds.map(id =>
+      productAPI.getLatestPrice(id).catch(() => ({
+        price: null,
+        original_quantity: null,
+        original_unit: null,
+        merchant_name: null,
+        recorded_at: null
+      }))
+    )
+
+    const priceResults = await Promise.all(pricePromises)
+
+    // 更新价格数据
+    productIds.forEach((id, index) => {
+      productPrices.value.set(id, priceResults[index])
+    })
+  } catch (error) {
+    console.error('加载商品价格失败:', error)
+  }
 }
 
 // 价格记录和删除
@@ -877,11 +908,17 @@ async function deleteProduct(product: Product) {
   }
 
   .product-card h3 {
-    font-size: 0.875rem;
+    font-size: 1rem;
   }
 
   .product-info p {
-    font-size: 0.8125rem;
+    margin: 0.5rem 0;
+    color: #666;
+    line-height: 1.4;
+  }
+
+  .product-info strong {
+    color: #333;
   }
 
   .product-actions button {
