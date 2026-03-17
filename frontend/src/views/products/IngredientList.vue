@@ -115,6 +115,9 @@ const selectedIngredient = ref<Ingredient | null>(null)
 const hierarchyData = ref<HierarchyData | null>(null)
 const alternativesData = ref<Alternative[]>([])
 
+// 存储原料的最近价格
+const ingredientPrices = ref<Map<number, { average_price: number | null; unit: string | null }>>(new Map())
+
 // 计算名称输入框是否禁用
 // 导入的原料只有管理员可以编辑名称
 const isNameInputDisabled = computed(() => {
@@ -329,6 +332,9 @@ async function loadIngredients() {
       category_name: getCategoryName(item.category_id)
     }))
     total.value = totalCount
+
+    // 加载原料的最近价格
+    await loadIngredientPrices(ingredients.value.map((ing: Ingredient) => ing.id))
   } catch (error) {
     console.error('Failed to load ingredients:', error)
     ingredients.value = []
@@ -344,6 +350,25 @@ function getCategoryName(categoryId?: number) {
   if (!categoryId) return ''
   const category = categories.value.find(cat => cat.id === categoryId)
   return category ? category.display_name : ''
+}
+
+// 加载原料的最近价格
+async function loadIngredientPrices(ingredientIds: number[]) {
+  try {
+    // 并行请求所有原料的价格
+    const pricePromises = ingredientIds.map(id =>
+      api.get(`/nutrition/ingredients/${id}/latest-price`).catch(() => ({ average_price: null, unit: null }))
+    )
+
+    const priceResults = await Promise.all(pricePromises)
+
+    // 更新价格数据
+    ingredientIds.forEach((id, index) => {
+      ingredientPrices.value.set(id, priceResults[index])
+    })
+  } catch (error) {
+    console.error('加载原料价格失败:', error)
+  }
 }
 
 function formatDate(dateString: string) {
@@ -684,12 +709,6 @@ async function deleteHierarchyRelation(relationId: number) {
             <span v-if="ingredient.default_unit" class="unit-tag">{{ ingredient.default_unit }}</span>
           </h3>
           <div class="ingredient-actions">
-            <button @click="editIngredient(ingredient)" class="btn-edit" title="编辑">
-              <i class="mdi mdi-pencil"></i>
-            </button>
-            <button @click="viewNutrition(ingredient)" class="btn-nutrition" title="营养信息">
-              <i class="mdi mdi-food-variant"></i>
-            </button>
             <button @click="deleteIngredient(ingredient)" class="btn-delete" title="删除">
               <i class="mdi mdi-trash-can"></i>
             </button>
@@ -704,27 +723,14 @@ async function deleteHierarchyRelation(relationId: number) {
             <strong>密度：</strong>{{ ingredient.density }} g/ml
           </p>
           <p>
-            <strong>创建时间：</strong>{{ formatDate(ingredient.created_at) }}
+            <strong>价格：</strong>
+            <span v-if="ingredientPrices.get(ingredient.id)?.average_price">
+              ¥{{ ingredientPrices.get(ingredient.id)?.average_price }} / {{ ingredientPrices.get(ingredient.id)?.unit }}
+            </span>
+            <span v-else style="color: #333;">暂无价格</span>
           </p>
         </div>
 
-        <div class="ingredient-actions-secondary">
-          <button @click="showHierarchy(ingredient)" class="btn-action">
-            <i class="mdi mdi-sitemap"></i> 查看层级关系
-          </button>
-          <button @click="showManageHierarchyModalFunc(ingredient)" class="btn-action">
-            <i class="mdi mdi-sitemap"></i> 管理层级关系
-          </button>
-          <button @click="showAlternatives(ingredient)" class="btn-action">
-            <i class="mdi mdi-link-variant"></i> 替代品
-          </button>
-          <button @click="showMergeModal(ingredient)" class="btn-action" title="合并原料">
-              <i class="mdi mdi-scale"></i> 合并
-          </button>
-          <button @click="showConvertUnits(ingredient)" class="btn-action">
-            <i class="mdi mdi-transfer"></i> 单位转换
-          </button>
-        </div>
       </div>
     </div>
 
@@ -1319,7 +1325,6 @@ async function deleteHierarchyRelation(relationId: number) {
 .ingredient-info p {
   margin: 0.5rem 0;
   color: #666;
-  font-size: 0.875rem;
   line-height: 1.4;
 }
 

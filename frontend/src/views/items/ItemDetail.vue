@@ -56,18 +56,18 @@
         @edit-strength="handleEditStrength"
       />
 
-      <!-- 归属关系（仅原料） -->
-      <div v-if="item" style="background: #f0f0f0; padding: 8px; margin-bottom: 12px; border-radius: 4px; font-size: 12px;">
-        <div>调试信息：</div>
-        <div>当前类型: {{ type }}</div>
-        <div>关联数据长度: {{ associations.length }}</div>
-        <div>关联数据: {{ JSON.stringify(associations) }}</div>
-      </div>
+      <!-- 关联商品（仅原料） -->
       <AssociationList v-if="item && type === 'ingredient' && associations.length > 0"
         :associations="associations"
         :type="type"
         @edit="goToAssociationManage"
         @click="handleAssociationClick"
+      />
+
+      <!-- 关联菜谱（仅原料） -->
+      <RecipeList v-if="item && type === 'ingredient'"
+        :recipes="recipes"
+        @click="handleRecipeClick"
       />
     </template>
   </div>
@@ -151,6 +151,7 @@ import PriceHistoryList from './components/PriceHistoryList.vue'
 import NutritionDisplaySection from './components/NutritionDisplaySection.vue'
 import HierarchyTreeSection from './components/HierarchyTreeSection.vue'
 import AssociationList from './components/AssociationList.vue'
+import RecipeList from './components/RecipeList.vue'
 import { api } from '@/api/client'
 import type { Item, PriceRecord, NutritionData, HierarchyRelations, Association } from './types'
 
@@ -168,6 +169,7 @@ const priceRecords = ref<PriceRecord[]>([])
 const nutritionData = ref<NutritionData | null>(null)
 const hierarchyRelations = ref<HierarchyRelations | null>(null)
 const associations = ref<Association[]>([])
+const recipes = ref<any[]>([])
 
 const priceFilter = ref<'week' | 'month' | 'quarter' | 'year'>('month')
 const pricePagination = ref({ page: 1, pageSize: 20, total: 0 })
@@ -202,7 +204,8 @@ async function loadItemData() {
       loadNutritionData(),
       loadHierarchyRelations(),
       loadAssociations(),
-      loadPriceHistory()
+      loadPriceHistory(),
+      loadRecipes()
     ])
   } catch (e) {
     error.value = '加载数据失败，请重试'
@@ -417,6 +420,32 @@ async function loadAssociations() {
   }
 }
 
+// 加载关联菜谱（仅原料）
+async function loadRecipes() {
+  if (type.value !== 'ingredient') return
+
+  try {
+    const params = new URLSearchParams({
+      skip: '0',
+      limit: '50'
+    })
+    const response = await api.get(`/nutrition/ingredients/${itemId.value}/recipes?${params.toString()}`)
+    console.log('原料关联菜谱响应:', response)
+
+    // 处理不同的响应格式
+    if (response && response.items) {
+      recipes.value = response.items
+    } else if (Array.isArray(response)) {
+      recipes.value = response
+    } else {
+      recipes.value = []
+    }
+  } catch (e) {
+    console.error('加载关联菜谱失败:', e)
+    recipes.value = []
+  }
+}
+
 // 事件处理
 function handleFilterChange(filter: 'week' | 'month' | 'quarter' | 'year') {
   priceFilter.value = filter
@@ -565,6 +594,19 @@ function handleAssociationClick(assoc: Association) {
   router.push({
     name: 'item-detail',
     params: { type: assoc.type, id: assoc.id }
+  }).then(() => {
+    console.log('路由跳转成功')
+  }).catch(err => {
+    console.error('路由跳转失败:', err)
+  })
+}
+
+function handleRecipeClick(recipe: any) {
+  console.log('点击菜谱:', recipe)
+  // 跳转到菜谱详情页面
+  router.push({
+    name: 'recipe-detail',
+    params: { id: recipe.id }
   }).then(() => {
     console.log('路由跳转成功')
   }).catch(err => {

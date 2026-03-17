@@ -329,4 +329,42 @@ def delete_product_barcode(
     barcode.updated_by = current_user.id
     db.commit()
 
+
+@router.get("/products/entity/{product_id}/latest-price")
+def get_product_latest_price(
+    product_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    获取商品的最近价格
+
+    - **product_id**: 商品ID
+
+    返回该商品的最近一条价格记录
+    """
+    try:
+        # 查询该商品的最近一条价格记录
+        latest_record = db.query(ProductRecord).filter(
+            ProductRecord.product_id == product_id
+        ).order_by(ProductRecord.recorded_at.desc()).first()
+
+        if not latest_record:
+            return {
+                "price": None,
+                "original_quantity": None,
+                "original_unit": None,
+                "merchant_name": None,
+                "recorded_at": None
+            }
+
+        return {
+            "price": latest_record.price,
+            "original_quantity": latest_record.original_quantity,
+            "original_unit": latest_record.original_unit.name if latest_record.original_unit else None,
+            "merchant_name": latest_record.merchant.name if latest_record.merchant else None,
+            "recorded_at": latest_record.recorded_at
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")
+
     return {"message": "Barcode deleted successfully"}
