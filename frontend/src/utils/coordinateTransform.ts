@@ -42,8 +42,8 @@ export function bd09ToGcj02(lat: number, lng: number): { lat: number; lng: numbe
  */
 export function wgs84ToGcj02(lat: number, lng: number): { lat: number; lng: number } {
   // 转换阈值
-  const dlat = transformLat(lng - 105.0, lat - 35.0);
-  const dlng = transformLng(lng - 105.0, lat - 35.0);
+  let dlat = transformLat(lng - 105.0, lat - 35.0);
+  let dlng = transformLng(lng - 105.0, lat - 35.0);
   const radlat = (lat / 180.0) * PI;
   let magic = Math.sin(radlat);
   magic = 1 - 0.006693421622965943 * magic * magic;
