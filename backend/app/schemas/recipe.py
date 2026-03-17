@@ -117,3 +117,15 @@ class RecipeCostHistoryResponse(BaseModel):
     total_cost: int
     recorded_at: int
     exchange_rate: int
+
+
+class RecipeCostRangeResponse(BaseModel):
+    """菜谱成本区间响应模型"""
+    id: int
+    recipe_id: int
+    recipe_name: str
+    date: str  # 日期 (YYYY-MM-DD)
+    min_cost: float  # 最小成本（元）
+    max_cost: float  # 最大成本（元）
+    avg_cost: float  # 平均成本（元）
+    recorded_at: int  # Unix 时间戳（秒）
