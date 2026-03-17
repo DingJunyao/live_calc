@@ -249,3 +249,53 @@ export const preferenceAPI = {
     return api.delete(`/preferences/${ingredient_id}`)
   }
 }
+
+// Cost Range Record 接口
+export interface CostRangeRecord {
+  id: number
+  recipe_id: number
+  recipe_name: string
+  date: string
+  min_cost: number
+  max_cost: number
+  avg_cost: number
+  recorded_at: number
+}
+
+// Recipe APIs
+export const recipeAPI = {
+  list: async (params?: {
+    skip?: number
+    limit?: number
+    tag?: string
+    search?: string
+    include_cost?: boolean
+  }) => {
+    const query = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          query.append(key, String(value))
+        }
+      })
+    }
+    const queryString = query.toString()
+    return api.get(`/recipes${queryString ? `?${queryString}` : ''}`)
+  },
+
+  get: async (id: number) => {
+    return api.get(`/recipes/${id}`)
+  },
+
+  getCostHistory: async (id: number, days: number = 90) => {
+    return api.get(`/recipes/${id}/cost-history?days=${days}`)
+  },
+
+  getCostHistoryRange: async (
+    id: number,
+    days: number = 90
+  ): Promise<CostRangeRecord[]> => {
+    return api.get<CostRangeRecord[]>(`/recipes/${id}/cost-history-range?days=${days}`)
+  }
+}
+
