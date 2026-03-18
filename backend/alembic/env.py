@@ -27,6 +27,7 @@ from app.models import (
     product_ingredient_link,
     product_entity,
     user_ingredient_preference,
+    map_config,
 )  # noqa: F401
 
 # Alembic 配置

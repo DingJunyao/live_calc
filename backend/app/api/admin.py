@@ -6,6 +6,7 @@ from app.models.user import User
 from app.models.product import ProductRecord
 from app.models.recipe import Recipe
 from app.models.merchant import Merchant
+from app.models.map_config import MapConfiguration
 from app.schemas.auth import UserResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -50,8 +51,55 @@ class AdminStatsResponse(BaseModel):
 
 router = APIRouter()
 
-# 地图配置存储（实际项目中应该存储到数据库）
-_map_config: Optional[MapConfig] = None
+# 默认地图配置
+DEFAULT_MAP_CONFIG = {
+    "available_maps": ['amap', 'baidu', 'tencent', 'tianditu', 'osm'],
+    "default_map": 'amap',
+    "map_api_keys": {
+        "amap": None,
+        "amap_security": None,
+        "baidu": None,
+        "tencent": None,
+        "tianditu": {"token": "", "type": "vec"}
+    },
+    "geocoding": {
+        "enabled_service": 'amap',
+        "amap_key": None,
+        "baidu_key": None,
+        "tencent_key": None,
+        "nominatim_url": '',
+        "nominatim_email": None
+    }
+}
+
+
+def get_stored_map_config(db: Session) -> MapConfiguration:
+    """从数据库获取地图配置，如果不存在则创建默认配置"""
+    config = db.query(MapConfiguration).first()
+    if not config:
+        # 如果没有配置，创建默认配置
+        config = MapConfiguration(**DEFAULT_MAP_CONFIG)
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
+
+def update_stored_map_config(db: Session, config_data: dict) -> MapConfiguration:
+    """更新数据库中的地图配置"""
+    config = db.query(MapConfiguration).first()
+    if not config:
+        # 如果没有配置，创建新配置
+        config = MapConfiguration(**config_data)
+        db.add(config)
+    else:
+        # 更新现有配置
+        for attr, value in config_data.items():
+            setattr(config, attr, value)
+
+    db.commit()
+    db.refresh(config)
+    return config
 
 
 @router.get("/map-config", response_model=MapConfig)
@@ -66,11 +114,8 @@ async def get_map_config(
             detail="仅限管理员访问"
         )
 
-    global _map_config
-    if _map_config is None:
-        _map_config = MapConfig()
-
-    return _map_config
+    stored_config = get_stored_map_config(db)
+    return MapConfig(**stored_config.to_dict())
 
 
 @router.put("/map-config", response_model=MapConfig)
@@ -86,10 +131,16 @@ async def update_map_config(
             detail="仅限管理员访问"
         )
 
-    global _map_config
-    _map_config = config
+    # 将 Pydantic 模型转换为字典并适配数据库字段
+    config_data = {
+        "available_maps": config.available_maps,
+        "default_map": config.default_map,
+        "map_api_keys": config.map_api_keys.dict(),
+        "geocoding": config.geocoding.dict()
+    }
 
-    return _map_config
+    updated_config = update_stored_map_config(db, config_data)
+    return MapConfig(**updated_config.to_dict())
 
 
 @router.get("/stats", response_model=AdminStatsResponse)

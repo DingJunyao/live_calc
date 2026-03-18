@@ -138,7 +138,7 @@ live_calc/
 
 ### 前端
 
-技术栈：TypeScrpt + Vue + Vite
+技术栈：TypeScrPt + Vue + Vite
 
 目录：`frontend`，所有前端相关操作均在此目录下进行。
 
@@ -207,3 +207,6 @@ live_calc/
 ### 最新修复记录
 - 移动端优化和功能修复：详见 [BUGFIX_移动端优化和功能修复.md](cc/BUGFIX_移动端优化和功能修复.md) - 记录了移动端输入框放大、菜谱搜索功能、菜谱成本更新和商品自动完成功能的修复
 - None值处理修复：详见 [NONE_VALUE_FIXES.md](cc/NONE_VALUE_FIXES.md) - 修复了在计算菜谱成本和营养素时未将None值视为0的问题
+- 地图配置持久化：实现了地图配置的数据库存储功能，解决了地图API密钥等配置重启后丢失的问题。详细信息请见 [MAP_CONFIG_PERSISTENCE.md](cc/MAP_CONFIG_PERSISTENCE.md)
+
+### 功能实现记录
