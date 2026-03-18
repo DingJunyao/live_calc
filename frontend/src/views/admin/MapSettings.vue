@@ -274,6 +274,9 @@ async function loadConfig() {
   }
 }
 
+// 预定义的地图顺序
+const MAP_ORDER = ['amap', 'baidu', 'tencent', 'tianditu', 'osm']
+
 // 保存配置
 async function saveConfig() {
   if (!config.value.mapApiKeys.tiandituToken) {
@@ -283,8 +286,13 @@ async function saveConfig() {
 
   saving.value = true
   try {
+    // 按照预定义顺序排序 availableMaps
+    const sortedAvailableMaps = MAP_ORDER.filter(map =>
+      config.value.availableMaps.includes(map)
+    )
+
     const payload = {
-      available_maps: config.value.availableMaps,
+      available_maps: sortedAvailableMaps,
       default_map: config.value.defaultMap,
       map_api_keys: {
         amap: config.value.mapApiKeys.amap || null,

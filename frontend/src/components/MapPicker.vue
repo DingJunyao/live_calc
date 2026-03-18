@@ -22,8 +22,8 @@
         class="search-input"
         @keyup.enter="searchAddress"
       />
-      <button @click="searchAddress" class="search-btn" :disabled="!searchQuery.trim()">
-        搜索地址
+      <button @click="searchAddress" class="search-btn" :disabled="!searchQuery.trim() || searchLoading">
+        {{ searchLoading ? '搜索中...' : '搜索地址' }}
       </button>
     </div>
 
@@ -40,17 +40,50 @@
       </div>
     </div>
 
-    <!-- 地图容器 -->
+    <!-- 地图容器 - 根据 API Key 动态选择引擎 -->
+    <!-- 高德地图 SDK -->
+    <AMapPicker
+      v-if="useAMapSDK"
+      ref="sdkMapRef"
+      :model-value="displayCoordinate"
+      :height="height"
+      :readonly="readonly"
+      :api-key="apiKeys.amap || ''"
+      :security-code="apiKeys.amapSecurity || ''"
+      @update:model-value="handleSDKCoordinateUpdate"
+    />
+    <!-- 百度地图 SDK -->
+    <BMapPicker
+      v-else-if="useBMapSDK"
+      ref="sdkMapRef"
+      :model-value="displayCoordinate"
+      :height="height"
+      :readonly="readonly"
+      :api-key="apiKeys.baidu || ''"
+      @update:model-value="handleSDKCoordinateUpdate"
+    />
+    <!-- 腾讯地图 SDK -->
+    <TencentMapPicker
+      v-else-if="useTencentMapSDK"
+      ref="sdkMapRef"
+      :model-value="displayCoordinate"
+      :height="height"
+      :readonly="readonly"
+      :api-key="apiKeys.tencent || ''"
+      @update:model-value="handleSDKCoordinateUpdate"
+    />
+    <!-- Leaflet 引擎（默认回退） -->
     <div
-      ref="mapContainer"
+      v-else
+      ref="leafletContainer"
       class="map-container"
       :style="{ height: height }"
     ></div>
 
-    <!-- 坐标显示 -->
+    <!-- 坐标显示（始终显示 WGS84 坐标） -->
     <div class="coordinate-display">
-      <span v-if="currentCoordinate">
-        纬度: {{ currentCoordinate.lat.toFixed(6) }}, 经度: {{ currentCoordinate.lng.toFixed(6) }}
+      <span v-if="wgs84Coordinate">
+        纬度: {{ wgs84Coordinate.lat.toFixed(6) }}, 经度: {{ wgs84Coordinate.lng.toFixed(6) }}
       </span>
       <span v-else class="no-coordinate">点击地图选择位置</span>
     </div>
@@ -58,23 +91,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
-import type { MapEngineType, Coordinate, SearchResult as SearchResultType, MapConfig } from '@/utils/mapTypes';
-import { mapEngineNames, defaultMapConfig } from '@/utils/mapTypes';
-import { mapEngineManager } from '@/utils/mapEngineManager';
-import { getCurrentMapEngine, getUserMapPreference } from '@/utils/mapConfig';
-import { convertCoordinate, getCoordinateSystem } from '@/utils/coordinateTransform';
-import { api } from '@/api/client';
+import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import type { MapEngineType, Coordinate, SearchResult as SearchResultType, MapConfig } from '@/utils/mapTypes'
+import { mapEngineNames, defaultMapConfig } from '@/utils/mapTypes'
+import { mapEngineManager } from '@/utils/mapEngineManager'
+import { getUserMapPreference } from '@/utils/mapConfig'
+import { convertCoordinate, getCoordinateSystem } from '@/utils/coordinateTransform'
+import { api } from '@/api/client'
+
+// 引入 SDK 地图组件
+import AMapPicker from './map/AMapPicker.vue'
+import BMapPicker from './map/BMapPicker.vue'
+import TencentMapPicker from './map/TencentMapPicker.vue'
 
 // Props
 interface Props {
-  modelValue?: Coordinate;
-  height?: string;
-  readonly?: boolean;
-  showSearch?: boolean;
-  showSwitcher?: boolean;
-  availableMapsProp?: MapEngineType[];
-  defaultMapProp?: MapEngineType;
+  modelValue?: Coordinate
+  height?: string
+  readonly?: boolean
+  showSearch?: boolean
+  showSwitcher?: boolean
+  availableMapsProp?: MapEngineType[]
+  defaultMapProp?: MapEngineType
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -85,234 +123,324 @@ const props = withDefaults(defineProps<Props>(), {
   showSwitcher: true,
   availableMapsProp: () => ['amap', 'baidu', 'tencent', 'tianditu', 'osm'],
   defaultMapProp: 'amap'
-});
+})
 
 // Emits
 const emit = defineEmits<{
-  'update:modelValue': [coordinate: Coordinate];
-  'addressSelected': [result: { address: string; lat: number; lng: number }];
-  'mapChange': [mapEngine: MapEngineType];
-}>();
+  'update:modelValue': [coordinate: Coordinate]
+  'addressSelected': [result: { address: string; lat: number; lng: number }]
+  'mapChange': [mapEngine: MapEngineType]
+}>()
 
 // 响应式数据
-const mapContainer = ref<HTMLElement | null>(null);
-const currentMap = ref<MapEngineType>('amap');
-const currentCoordinate = ref<Coordinate | null>(null);
-const searchQuery = ref('');
-const searchResults = ref<SearchResultType[]>([]);
-const searchLoading = ref(false);
-const availableMaps = ref<MapEngineType[]>(props.availableMapsProp);
+const leafletContainer = ref<HTMLElement | null>(null)
+const sdkMapRef = ref<any>(null)
+const currentMap = ref<MapEngineType>('amap')
+const searchQuery = ref('')
+const searchResults = ref<SearchResultType[]>([])
+const searchLoading = ref(false)
+const availableMaps = ref<MapEngineType[]>(props.availableMapsProp)
+const apiKeys = ref<{
+  amap?: string
+  amapSecurity?: string
+  baidu?: string
+  tencent?: string
+  tianditu?: { token: string; type: 'vec' | 'img' }
+}>({})
 
-// 标记引用
-let markerId: any = null;
-let currentEngine: any = null;
+// 核心坐标状态：始终使用 WGS84 坐标系
+const wgs84Coordinate = ref<Coordinate | null>(null)
+
+// Leaflet 引擎相关
+let markerId: any = null
+let currentLeafletEngine: any = null
+
+// 配置加载状态
+const configLoaded = ref(false)
+
+// 计算是否使用 SDK
+const useAMapSDK = computed(() => {
+  return currentMap.value === 'amap' && !!apiKeys.value.amap
+})
+
+const useBMapSDK = computed(() => {
+  return currentMap.value === 'baidu' && !!apiKeys.value.baidu
+})
+
+const useTencentMapSDK = computed(() => {
+  return currentMap.value === 'tencent' && !!apiKeys.value.tencent
+})
+
+const useLeaflet = computed(() => {
+  return !useAMapSDK.value && !useBMapSDK.value && !useTencentMapSDK.value
+})
+
+// 计算当前地图需要显示的坐标（从 WGS84 转换到当前地图坐标系）
+const displayCoordinate = computed(() => {
+  if (!wgs84Coordinate.value) {
+    return props.modelValue || { lat: 39.9042, lng: 116.4074 }
+  }
+
+  const coordSystem = getCoordinateSystem(currentMap.value)
+  if (coordSystem === 'wgs84') {
+    // WGS84 地图，直接返回
+    return wgs84Coordinate.value
+  } else if (coordSystem === 'gcj02') {
+    // 转换为 GCJ02（高德/腾讯）
+    return convertCoordinate(
+      wgs84Coordinate.value.lat,
+      wgs84Coordinate.value.lng,
+      'wgs84',
+      'gcj02'
+    )
+  } else {
+    // 转换为 BD09（百度）
+    return convertCoordinate(
+      wgs84Coordinate.value.lat,
+      wgs84Coordinate.value.lng,
+      'wgs84',
+      'bd09'
+    )
+  }
+})
+
+// 将当前地图坐标转换为 WGS84
+function convertToWGS84(coord: Coordinate): Coordinate {
+  const coordSystem = getCoordinateSystem(currentMap.value)
+  if (coordSystem === 'wgs84') {
+    return coord
+  } else if (coordSystem === 'gcj02') {
+    return convertCoordinate(coord.lat, coord.lng, 'gcj02', 'wgs84')
+  } else {
+    return convertCoordinate(coord.lat, coord.lng, 'bd09', 'wgs84')
+  }
+}
 
 // 初始化
 onMounted(async () => {
+  // 从后端获取配置
+  await loadMapConfig()
+
   // 获取用户偏好
-  const preference = getUserMapPreference();
-  const userMap = preference?.currentMap;
+  const preference = getUserMapPreference()
+  const userMap = preference?.currentMap
 
   // 确定使用的地图
   if (userMap && availableMaps.value.includes(userMap)) {
-    currentMap.value = userMap;
+    currentMap.value = userMap
   } else {
-    currentMap.value = props.defaultMapProp;
+    currentMap.value = props.defaultMapProp
   }
 
-  // 初始化地图
-  await initMap();
-
-  // 如果有初始坐标，显示标记
+  // 初始化 WGS84 坐标
   if (props.modelValue && props.modelValue.lat && props.modelValue.lng) {
-    setMarker(props.modelValue);
+    wgs84Coordinate.value = props.modelValue
   }
-});
+
+  // 如果使用 Leaflet，初始化 Leaflet 地图
+  if (useLeaflet.value) {
+    await nextTick()
+    await initLeafletMap()
+  }
+})
 
 // 卸载时销毁
 onUnmounted(() => {
-  mapEngineManager.destroy();
-});
+  mapEngineManager.destroy()
+})
 
-// 初始化地图
-async function initMap(initialCoord?: Coordinate) {
-  if (!mapContainer.value) return;
-
-  // 从后端获取地图配置
-  let backendMapConfig: any = null;
+// 从后端加载地图配置
+async function loadMapConfig() {
   try {
-    backendMapConfig = await api.get('/admin/map-config');
-    console.log('[MapPicker] 获取到的后端配置:', backendMapConfig);
+    const backendMapConfig = await api.get('/admin/map-config')
+    console.log('[MapPicker] 获取到的后端配置:', backendMapConfig)
+
+    if (backendMapConfig) {
+      availableMaps.value = backendMapConfig.available_maps || props.availableMapsProp
+      apiKeys.value = {
+        amap: backendMapConfig.map_api_keys?.amap || undefined,
+        amapSecurity: backendMapConfig.map_api_keys?.amap_security || undefined,
+        baidu: backendMapConfig.map_api_keys?.baidu || undefined,
+        tencent: backendMapConfig.map_api_keys?.tencent || undefined,
+        tianditu: backendMapConfig.map_api_keys?.tianditu || undefined
+      }
+    }
   } catch (e) {
-    console.warn('[MapPicker] 获取地图配置失败，使用默认配置:', e);
+    console.warn('[MapPicker] 获取地图配置失败，使用默认配置:', e)
+  } finally {
+    configLoaded.value = true
   }
+}
 
-  // 确定使用的坐标
-  const coord = initialCoord || props.modelValue;
+// 初始化 Leaflet 地图
+async function initLeafletMap() {
+  if (!leafletContainer.value) return
 
-  // 创建配置
+  const coord = displayCoordinate.value
+
   const config: MapConfig = {
     ...defaultMapConfig,
     availableMaps: availableMaps.value,
     defaultMap: currentMap.value,
-    // 优先使用后端配置，如果没有则为空
-    mapApiKeys: backendMapConfig?.map_api_keys || {}
-  };
+    mapApiKeys: apiKeys.value
+  }
 
-  console.log('[MapPicker] 最终配置 mapApiKeys:', config.mapApiKeys);
-  mapEngineManager.setConfig(config);
+  mapEngineManager.setConfig(config)
 
   // 加载引擎
-  currentEngine = await mapEngineManager.loadEngine(
+  currentLeafletEngine = await mapEngineManager.loadEngine(
     currentMap.value,
-    mapContainer.value,
+    leafletContainer.value,
     {
-      center: coord && coord.lat && coord.lng ? [coord.lat, coord.lng] : [39.9042, 116.4074],
+      center: [coord.lat, coord.lng],
       zoom: 13,
       enableClick: !props.readonly,
       enableDrag: !props.readonly
     }
-  );
+  )
 
   // 绑定事件
-  currentEngine.on('click', handleMapClick);
-  currentEngine.on('markerDragend', handleMarkerDrag);
-}
+  currentLeafletEngine.on('click', handleLeafletClick)
+  currentLeafletEngine.on('markerDragend', handleLeafletMarkerDrag)
 
-// 切换地图
-async function switchMap(mapType: MapEngineType) {
-  if (mapType === currentMap.value || !mapContainer.value) return;
-
-  // 获取当前坐标和目标坐标系的转换
-  const currentCoord = currentCoordinate.value || props.modelValue;
-  const fromSystem = getCoordinateSystem(currentMap.value);
-  const toSystem = getCoordinateSystem(mapType);
-
-  // 转换坐标到新坐标系
-  let convertedCoord: Coordinate | undefined;
-  if (currentCoord && currentCoord.lat && currentCoord.lng) {
-    convertedCoord = convertCoordinate(
-      currentCoord.lat,
-      currentCoord.lng,
-      fromSystem,
-      toSystem
-    );
+  // 设置初始标记
+  if (wgs84Coordinate.value) {
+    setLeafletMarker(displayCoordinate.value)
   }
-
-  currentMap.value = mapType;
-
-  // 重新初始化地图，使用转换后的坐标
-  await initMap(convertedCoord);
-
-  // 恢复标记
-  if (convertedCoord && convertedCoord.lat && convertedCoord.lng) {
-    setMarker(convertedCoord);
-    currentCoordinate.value = convertedCoord;
-  }
-
-  // 触发地图切换事件
-  emit('mapChange', mapType);
 }
 
-// 处理地图点击
-function handleMapClick(data: { lat: number; lng: number }) {
-  if (props.readonly) return;
+// 处理 Leaflet 地图点击
+function handleLeafletClick(data: { lat: number; lng: number }) {
+  if (props.readonly) return
 
-  setMarker({ lat: data.lat, lng: data.lng });
-  emit('update:modelValue', { lat: data.lat, lng: data.lng });
+  // Leaflet 返回的坐标可能是当前地图坐标系，需要转换为 WGS84
+  const wgs84 = convertToWGS84({ lat: data.lat, lng: data.lng })
+  wgs84Coordinate.value = wgs84
+  setLeafletMarker({ lat: data.lat, lng: data.lng })
+  emit('update:modelValue', wgs84)
 }
 
-// 处理标记拖拽
-function handleMarkerDrag(data: { lat: number; lng: number }) {
-  if (props.readonly) return;
+// 处理 Leaflet 标记拖拽
+function handleLeafletMarkerDrag(data: { lat: number; lng: number }) {
+  if (props.readonly) return
 
-  currentCoordinate.value = { lat: data.lat, lng: data.lng };
-  emit('update:modelValue', { lat: data.lat, lng: data.lng });
+  const wgs84 = convertToWGS84({ lat: data.lat, lng: data.lng })
+  wgs84Coordinate.value = wgs84
+  emit('update:modelValue', wgs84)
 }
 
-// 设置标记
-function setMarker(coord: Coordinate) {
-  if (!currentEngine || !currentEngine.getMap()) return;
+// 设置 Leaflet 标记
+function setLeafletMarker(coord: Coordinate) {
+  if (!currentLeafletEngine || !currentLeafletEngine.getMap()) return
 
   // 移除旧标记
   if (markerId) {
-    currentEngine.removeMarker(markerId);
+    currentLeafletEngine.removeMarker(markerId)
   }
 
   // 添加新标记
-  markerId = currentEngine.addMarker(coord.lat, coord.lng, {
+  markerId = currentLeafletEngine.addMarker(coord.lat, coord.lng, {
     draggable: !props.readonly
-  });
+  })
+}
 
-  // 更新坐标显示
-  currentCoordinate.value = coord;
+// 处理 SDK 地图坐标更新（SDK 返回的是当前地图坐标系坐标）
+function handleSDKCoordinateUpdate(coord: Coordinate) {
+  if (props.readonly) return
+
+  // 转换为 WGS84
+  const wgs84 = convertToWGS84(coord)
+  wgs84Coordinate.value = wgs84
+  emit('update:modelValue', wgs84)
+}
+
+// 切换地图（不改变 WGS84 坐标）
+async function switchMap(mapType: MapEngineType) {
+  if (mapType === currentMap.value) return
+
+  // 销毁 Leaflet 引擎（如果存在）
+  if (currentLeafletEngine) {
+    mapEngineManager.destroy()
+    currentLeafletEngine = null
+    markerId = null
+  }
+
+  currentMap.value = mapType
+
+  // 等待视图更新
+  await nextTick()
+
+  // 如果使用 Leaflet，初始化 Leaflet 地图
+  if (useLeaflet.value) {
+    await initLeafletMap()
+  }
+
+  // 触发地图切换事件
+  emit('mapChange', mapType)
 }
 
 // 搜索地址
 async function searchAddress() {
-  if (!searchQuery.value.trim() || !currentEngine) return;
+  if (!searchQuery.value.trim()) return
 
-  searchLoading.value = true;
-  searchResults.value = [];
+  searchLoading.value = true
+  searchResults.value = []
 
   try {
-    const results = await currentEngine.searchAddress(searchQuery.value);
-    searchResults.value = results;
+    let results: SearchResultType[] = []
+
+    // 优先使用 SDK 地图的搜索
+    if (sdkMapRef.value && sdkMapRef.value.searchAddress) {
+      results = await sdkMapRef.value.searchAddress(searchQuery.value)
+    } else if (currentLeafletEngine) {
+      // 使用 Leaflet 引擎的搜索
+      results = await currentLeafletEngine.searchAddress(searchQuery.value)
+    }
+
+    searchResults.value = results
   } catch (error) {
-    console.error('Search error:', error);
+    console.error('[MapPicker] 搜索失败:', error)
   } finally {
-    searchLoading.value = false;
+    searchLoading.value = false
   }
 }
 
-// 选择搜索结果
+// 选择搜索结果（搜索结果通常是 WGS84 坐标）
 function selectSearchResult(result: SearchResultType) {
-  // 搜索结果通常是 WGS84 坐标，需要转换为当前地图的坐标系
-  const coordSystem = getCoordinateSystem(currentMap.value);
-  let convertedCoord: Coordinate;
-
-  if (coordSystem === 'wgs84') {
-    // 当前地图使用 WGS84，不需要转换
-    convertedCoord = { lat: result.lat, lng: result.lng };
-  } else if (coordSystem === 'gcj02') {
-    // 转换为 GCJ02（高德/腾讯）
-    const converted = convertCoordinate(result.lat, result.lng, 'wgs84', 'gcj02');
-    convertedCoord = { lat: converted.lat, lng: converted.lng };
-  } else {
-    // 转换为 BD09（百度）
-    const converted = convertCoordinate(result.lat, result.lng, 'wgs84', 'bd09');
-    convertedCoord = { lat: converted.lat, lng: converted.lng };
-  }
-
-  // 设置地图中心
-  currentEngine.setCenter(convertedCoord.lat, convertedCoord.lng);
-
-  // 设置标记
-  setMarker(convertedCoord);
-
-  // 触发事件
-  emit('update:modelValue', convertedCoord);
+  // 搜索结果通常是 WGS84 坐标，直接使用
+  const wgs84 = { lat: result.lat, lng: result.lng }
+  wgs84Coordinate.value = wgs84
+  emit('update:modelValue', wgs84)
   emit('addressSelected', {
     address: result.address,
-    lat: convertedCoord.lat,
-    lng: convertedCoord.lng
-  });
+    lat: wgs84.lat,
+    lng: wgs84.lng
+  })
+
+  // 设置标记（需要转换为当前地图坐标系）
+  if (useLeaflet.value && currentLeafletEngine) {
+    setLeafletMarker(displayCoordinate.value)
+    currentLeafletEngine.setCenter(displayCoordinate.value.lat, displayCoordinate.value.lng)
+  }
 
   // 清除搜索结果
-  searchResults.value = [];
-  searchQuery.value = '';
+  searchResults.value = []
+  searchQuery.value = ''
 }
 
-// 监听 v-model 变化
+// 监听 v-model 变化（外部传入的应该是 WGS84 坐标）
 watch(() => props.modelValue, (newVal) => {
   if (newVal && newVal.lat && newVal.lng) {
-    if (!currentCoordinate.value ||
-        currentCoordinate.value.lat !== newVal.lat ||
-        currentCoordinate.value.lng !== newVal.lng) {
-      setMarker(newVal);
+    if (!wgs84Coordinate.value ||
+        wgs84Coordinate.value.lat !== newVal.lat ||
+        wgs84Coordinate.value.lng !== newVal.lng) {
+      wgs84Coordinate.value = newVal
+      if (useLeaflet.value && currentLeafletEngine) {
+        setLeafletMarker(displayCoordinate.value)
+      }
     }
   }
-}, { deep: true });
+}, { deep: true })
 </script>
 
 <style scoped>
