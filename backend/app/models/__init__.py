@@ -15,6 +15,7 @@ from app.models.product_ingredient_link import ProductIngredientLink
 from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
 from app.models.user_ingredient_preference import UserIngredientPreference
+from app.models.map_config import MapConfiguration
 
 __all__ = [
     "User", "Merchant", "FavoriteMerchant", "ProductRecord", "RecordType",
@@ -29,5 +30,6 @@ __all__ = [
     "ProductIngredientLink",
     "Product",
     "ProductBarcode",
-    "UserIngredientPreference"
+    "UserIngredientPreference",
+    "MapConfiguration"
 ]
