@@ -80,10 +80,10 @@
         </div>
 
         <div class="product-info">
-          <p v-if="productPrices.get(product.id)?.price">
-            <strong>价格：</strong>¥{{ productPrices.get(product.id)?.price }}
-            <span v-if="productPrices.get(product.id)?.original_quantity">
-              / {{ productPrices.get(product.id)?.original_quantity }} {{ productPrices.get(product.id)?.original_unit }}
+          <p v-if="productPrices.get(product.id)?.average_price">
+            <strong>价格：</strong>
+            <span>
+              ¥{{ productPrices.get(product.id)?.average_price }} / {{ productPrices.get(product.id)?.unit }}
             </span>
           </p>
           <p v-else style="color: #333;">
@@ -251,11 +251,8 @@ const total = ref(0)
 
 // 存储商品的最近价格
 const productPrices = ref<Map<number, {
-  price: number | null
-  original_quantity: number | null
-  original_unit: string | null
-  merchant_name: string | null
-  recorded_at: string | null
+  average_price: number | null
+  unit: string | null
 }>>(new Map())
 
 // 模态框相关
@@ -300,7 +297,8 @@ async function loadProducts() {
     const response = await productAPI.list({
       skip: (currentPage.value - 1) * pageSize.value,
       limit: pageSize.value,
-      search: searchTerm.value || undefined
+      search: searchTerm.value || undefined,
+      sort_by: 'price_records'  // 按价格记录数量排序
     })
 
     let items: Product[]
@@ -541,11 +539,8 @@ async function loadProductPrices(productIds: number[]) {
     // 并行请求所有商品的价格
     const pricePromises = productIds.map(id =>
       productAPI.getLatestPrice(id).catch(() => ({
-        price: null,
-        original_quantity: null,
-        original_unit: null,
-        merchant_name: null,
-        recorded_at: null
+        average_price: null,
+        unit: null
       }))
     )
 

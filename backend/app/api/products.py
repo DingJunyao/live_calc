@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, text
 from typing import List, Optional
 from datetime import datetime, timedelta
 from app.core.database import get_db
@@ -188,6 +189,7 @@ async def get_product_records(
     start_date: Optional[datetime] = Query(None, description="开始日期"),
     end_date: Optional[datetime] = Query(None, description="结束日期"),
     target_unit: Optional[str] = Query(None, description="目标单位（用于价格单位转换）"),
+    sort_by: str = Query("created_at", enum=["created_at", "updated_at", "price_records"], description="排序方式"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -195,48 +197,146 @@ async def get_product_records(
 
     target_unit: 目标单位（如 'g', 'L'），价格将按此单位显示
     如果不指定，使用标准单位（重量为 g，体积为 ml）
+
+    sort_by: 排序方式
+        - created_at: 按创建时间排序（默认，即按记录时间倒序）
+        - updated_at: 按更新时间排序
+        - price_records: 按商品的价格记录数量排序
     """
-    query = db.query(ProductRecord).options(
-        joinedload(ProductRecord.original_unit),
-        joinedload(ProductRecord.standard_unit),
-        joinedload(ProductRecord.merchant)
-    ).filter(ProductRecord.user_id == current_user.id)
+    from sqlalchemy import func
 
-    # 优先使用 ingredient_id 过滤（通过关联商品）
-    if ingredient_id:
-        # 通过 ingredient_id 查找所有关联的商品
-        from app.models.product_entity import Product
-        product_ids = db.query(Product.id).filter(
-            Product.ingredient_id == ingredient_id,
-            Product.is_active == True
-        ).all()
-        product_ids = [pid[0] for pid in product_ids]
-        query = query.filter(ProductRecord.product_id.in_(product_ids))
-    # 然后使用 product_id 过滤
-    elif product_id:
-        query = query.filter(ProductRecord.product_id == product_id)
-    # 最后使用search参数（优先）或product_name参数进行过滤
+    # 根据排序方式构建查询
+    if sort_by == "price_records":
+        # 按价格记录数量排序：将记录按其所属商品的总记录数量进行排序
+        # 为此，我们将查询每个记录及其所属商品的记录数量
+
+        # 子查询：计算每个商品的价格记录数量
+        record_counts = db.query(
+            ProductRecord.product_id,
+            func.count(ProductRecord.id).label('record_count')
+        ).filter(
+            ProductRecord.user_id == current_user.id
+        )
+
+        # 应用过滤条件
+        if ingredient_id:
+            from app.models.product_entity import Product
+            product_ids = db.query(Product.id).filter(
+                Product.ingredient_id == ingredient_id,
+                Product.is_active == True
+            ).all()
+            product_ids = [pid[0] for pid in product_ids]
+            record_counts = record_counts.filter(ProductRecord.product_id.in_(product_ids))
+        elif product_id:
+            record_counts = record_counts.filter(ProductRecord.product_id == product_id)
+        else:
+            search_term = search or product_name
+            if search_term:
+                record_counts = record_counts.join(ProductRecord.product).filter(
+                    ProductRecord.product_name.contains(search_term)
+                )
+
+        # 添加日期范围过滤
+        if start_date:
+            if start_date.tzinfo:
+                start_date = datetime.fromtimestamp(start_date.timestamp())
+            record_counts = record_counts.filter(ProductRecord.recorded_at >= start_date)
+        if end_date:
+            if end_date.tzinfo:
+                end_date = datetime.fromtimestamp(end_date.timestamp())
+            record_counts = record_counts.filter(ProductRecord.recorded_at <= end_date)
+
+        record_counts = record_counts.group_by(ProductRecord.product_id).subquery()
+
+        # 主查询：获取记录，并关联商品的记录数量
+        query = db.query(ProductRecord).outerjoin(
+            record_counts, ProductRecord.product_id == record_counts.c.product_id
+        ).options(
+            joinedload(ProductRecord.original_unit),
+            joinedload(ProductRecord.standard_unit),
+            joinedload(ProductRecord.merchant)
+        ).filter(
+            ProductRecord.user_id == current_user.id
+        )
+
+        # 应用过滤条件到主查询
+        if ingredient_id:
+            from app.models.product_entity import Product
+            product_ids = db.query(Product.id).filter(
+                Product.ingredient_id == ingredient_id,
+                Product.is_active == True
+            ).all()
+            product_ids = [pid[0] for pid in product_ids]
+            query = query.filter(ProductRecord.product_id.in_(product_ids))
+        elif product_id:
+            query = query.filter(ProductRecord.product_id == product_id)
+        else:
+            search_term = search or product_name
+            if search_term:
+                query = query.filter(ProductRecord.product_name.contains(search_term))
+
+        # 添加日期范围过滤
+        if start_date:
+            if start_date.tzinfo:
+                start_date = datetime.fromtimestamp(start_date.timestamp())
+            query = query.filter(ProductRecord.recorded_at >= start_date)
+        if end_date:
+            if end_date.tzinfo:
+                end_date = datetime.fromtimestamp(end_date.timestamp())
+            query = query.filter(ProductRecord.recorded_at <= end_date)
+
+        total = query.count()
+
+        # 按商品的价格记录数量排序，然后按记录时间排序（为了稳定性）
+        records = query.order_by(record_counts.c.record_count.desc(), ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
     else:
-        search_term = search or product_name
-        if search_term:
-            query = query.filter(ProductRecord.product_name.contains(search_term))
+        # 使用原有逻辑
+        query = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit),
+            joinedload(ProductRecord.standard_unit),
+            joinedload(ProductRecord.merchant)
+        ).filter(ProductRecord.user_id == current_user.id)
 
-    # 添加日期范围过滤
-    if start_date:
-        # 如果输入时间带有时区信息，转换为本地时间（naive datetime）
-        if start_date.tzinfo:
-            # 先转换为时间戳，再转换为本地时间
-            start_date = datetime.fromtimestamp(start_date.timestamp())
-        query = query.filter(ProductRecord.recorded_at >= start_date)
-    if end_date:
-        # 如果输入时间带有时区信息，转换为本地时间（naive datetime）
-        if end_date.tzinfo:
-            # 先转换为时间戳，再转换为本地时间
-            end_date = datetime.fromtimestamp(end_date.timestamp())
-        query = query.filter(ProductRecord.recorded_at <= end_date)
+        # 优先使用 ingredient_id 过滤（通过关联商品）
+        if ingredient_id:
+            # 通过 ingredient_id 查找所有关联的商品
+            from app.models.product_entity import Product
+            product_ids = db.query(Product.id).filter(
+                Product.ingredient_id == ingredient_id,
+                Product.is_active == True
+            ).all()
+            product_ids = [pid[0] for pid in product_ids]
+            query = query.filter(ProductRecord.product_id.in_(product_ids))
+        # 然后使用 product_id 过滤
+        elif product_id:
+            query = query.filter(ProductRecord.product_id == product_id)
+        # 最后使用search参数（优先）或product_name参数进行过滤
+        else:
+            search_term = search or product_name
+            if search_term:
+                query = query.filter(ProductRecord.product_name.contains(search_term))
 
-    total = query.count()
-    records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
+        # 添加日期范围过滤
+        if start_date:
+            # 如果输入时间带有时区信息，转换为本地时间（naive datetime）
+            if start_date.tzinfo:
+                # 先转换为时间戳，再转换为本地时间
+                start_date = datetime.fromtimestamp(start_date.timestamp())
+            query = query.filter(ProductRecord.recorded_at >= start_date)
+        if end_date:
+            # 如果输入时间带有时区信息，转换为本地时间（naive datetime）
+            if end_date.tzinfo:
+                # 先转换为时间戳，再转换为本地时间
+                end_date = datetime.fromtimestamp(end_date.timestamp())
+            query = query.filter(ProductRecord.recorded_at <= end_date)
+
+        total = query.count()
+
+        # 按时间排序
+        if sort_by == "updated_at":
+            records = query.order_by(ProductRecord.updated_at.desc()).offset(skip).limit(limit).all()
+        else:  # 默认按创建时间排序
+            records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
     page = skip // limit + 1
 
     # 手动构造响应列表，将 Unit 对象转换为字符串

@@ -470,30 +470,94 @@ async def get_ingredients(
     limit: int = Query(100, ge=1, le=1000),
     search: str = Query(None, alias="q"),
     category_id: Optional[int] = Query(None),
+    sort_by: str = Query("created_at", enum=["name", "created_at", "price_records"], description="排序方式"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """获取食材列表（分页）"""
     try:
-        query = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit)
-        ).filter(Ingredient.is_active == True)
+        from app.models.product_entity import Product
+        from app.models.product import ProductRecord
+        from sqlalchemy import func
 
-        if search:
-            # 搜索名称或别名
-            query = query.filter(
-                (Ingredient.name.contains(search)) |
-                (Ingredient.aliases.contains(f'"{search}"'))  # JSON 数组搜索
-            )
+        # 根据排序方式进行查询
+        if sort_by == "price_records":
+            # 按价格记录数量排序
+            subquery = db.query(
+                Ingredient.id.label('ingredient_id'),
+                func.coalesce(func.count(ProductRecord.id), 0).label('record_count')
+            ).outerjoin(
+                Product, Ingredient.id == Product.ingredient_id
+            ).outerjoin(
+                ProductRecord, Product.id == ProductRecord.product_id
+            ).filter(Ingredient.is_active == True)
 
-        if category_id:
-            query = query.filter(Ingredient.category_id == category_id)
+            if search is not None:
+                subquery = subquery.filter(Ingredient.name.contains(search))
 
-        # 获取总数
-        total = query.count()
+            if category_id:
+                subquery = subquery.filter(Ingredient.category_id == category_id)
 
-        # 获取分页数据
-        ingredients = query.offset(skip).limit(limit).all()
+            subquery = subquery.group_by(Ingredient.id).subquery()
+
+            # 然后将此子查询与主查询连接，并按记录数量排序
+            query = db.query(Ingredient).options(
+                joinedload(Ingredient.default_unit)
+            ).join(
+                subquery, Ingredient.id == subquery.c.ingredient_id
+            ).filter(Ingredient.is_active == True)
+
+            if search is not None:
+                query = query.filter(Ingredient.name.contains(search))
+
+            if category_id:
+                query = query.filter(Ingredient.category_id == category_id)
+
+            # 按价格记录数量降序排列
+            ingredients = query.order_by(
+                subquery.c.record_count.desc(),  # 按记录数量降序排列
+                Ingredient.id  # 按ID确保排序稳定性
+            ).offset(skip).limit(limit).all()
+
+            # 需要单独查询总数
+            total_query = db.query(Ingredient.id).join(
+                subquery, Ingredient.id == subquery.c.ingredient_id
+            ).filter(Ingredient.is_active == True)
+
+            if search is not None:
+                total_query = total_query.filter(Ingredient.name.contains(search))
+
+            if category_id:
+                total_query = total_query.filter(Ingredient.category_id == category_id)
+
+            total = total_query.count()
+        else:
+            # 按名称或创建时间排序
+            query = db.query(Ingredient).options(
+                joinedload(Ingredient.default_unit)
+            ).filter(Ingredient.is_active == True)
+
+            if search is not None:
+                # 搜索名称或别名
+                query = query.filter(
+                    (Ingredient.name.contains(search)) |
+                    (Ingredient.aliases.contains(f'"{search}"'))  # JSON 数组搜索
+                )
+
+            if category_id:
+                query = query.filter(Ingredient.category_id == category_id)
+
+            # 按指定字段排序
+            if sort_by == "name":
+                query = query.order_by(Ingredient.name)
+            elif sort_by == "created_at":
+                query = query.order_by(Ingredient.created_at.desc())
+
+            # 获取总数
+            total = query.count()
+
+            # 获取分页数据
+            ingredients = query.offset(skip).limit(limit).all()
 
         items = [{
             "id": ing.id,

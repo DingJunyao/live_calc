@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, BackgroundTasks
+from app.schemas.common import PaginatedResponse
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, load_only
-from sqlalchemy import or_
 from typing import List, Optional
 import json
 from app.core.database import get_db
@@ -8,6 +9,7 @@ from app.core.security import get_current_user
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
 from app.models.product_entity import Product
+from app.models.product import ProductRecord
 from app.schemas.nutrition import (
     IngredientResponse,
     NutritionDataResponse,
@@ -80,7 +82,7 @@ class NutrientStatisticsResponse(BaseModel):
     nutrient_coverage: dict
 
 
-@router.get("/ingredients", response_model=List[IngredientResponse])
+@router.get("/ingredients", response_model=PaginatedResponse[IngredientResponse])
 async def get_ingredients(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -91,10 +93,6 @@ async def get_ingredients(
 ):
     """获取原料列表"""
     try:
-        from sqlalchemy import func
-        from app.models.product import ProductRecord
-        from app.models.product_entity import Product
-
         # 构建基础查询
         base_query = db.query(Ingredient).options(
             load_only(
@@ -107,29 +105,41 @@ async def get_ingredients(
             )
         ).filter(Ingredient.is_active == True)
 
-        if search:
+        if search is not None:
             base_query = base_query.filter(Ingredient.name.contains(search))
 
         # 根据排序方式进行查询
         if sort_by == "price_records":
             # 按价格记录数量排序
-            query = db.query(
-                Ingredient,
-                func.count(ProductRecord.id).label('record_count')
+            subquery = db.query(
+                Ingredient.id.label('ingredient_id'),
+                func.coalesce(func.count(ProductRecord.id), 0).label('record_count')
             ).outerjoin(
                 Product, Ingredient.id == Product.ingredient_id
             ).outerjoin(
                 ProductRecord, Product.id == ProductRecord.product_id
             ).filter(Ingredient.is_active == True)
 
-            if search:
+            # 显式检查search是否为None
+            if search is not None:
+                subquery = subquery.filter(Ingredient.name.contains(search))
+
+            subquery = subquery.group_by(Ingredient.id).subquery()
+
+            # 然后将此子查询与主查询连接，并按记录数量排序
+            query = db.query(Ingredient).join(
+                subquery, Ingredient.id == subquery.c.ingredient_id
+            ).filter(Ingredient.is_active == True)
+
+            # 显式检查search是否为None
+            if search is not None:
                 query = query.filter(Ingredient.name.contains(search))
 
-            query = query.group_by(Ingredient.id).order_by(func.count(ProductRecord.id).desc())
-
-            # 获取结果
-            results = query.offset(skip).limit(limit).all()
-            ingredients = [result[0] for result in results]  # 只取Ingredient对象
+            # 按价格记录数量降序排列，没有记录的排在后面，然后按ID确保一致性
+            ingredients = query.order_by(
+                subquery.c.record_count.desc(),  # 按记录数量降序排列
+                Ingredient.id  # 按ID确保排序稳定性
+            ).offset(skip).limit(limit).all()
         else:
             # 按名称或创建时间排序
             query = base_query
@@ -140,13 +150,35 @@ async def get_ingredients(
 
             ingredients = query.offset(skip).limit(limit).all()
 
-        # 使用 Pydantic schema 序列化
-        return [IngredientResponse(
-            id=ing.id,
-            name=ing.name,
-            aliases=ing.aliases or [],
-            created_at=ing.created_at
-        ) for ing in ingredients]
+        # 使用 Pydantic schema 序列化并返回分页响应
+        total = len(ingredients)  # 由于我们使用了 limit，这里只是当前页的数量
+        page = skip // limit + 1
+
+        # 需要重新查询总数以获取真正的总数
+        if sort_by == "price_records":
+            # 为 price_records 排序方式查询总数量
+            total_query = db.query(Ingredient.id).filter(Ingredient.is_active == True)
+            if search is not None:
+                total_query = total_query.filter(Ingredient.name.contains(search))
+            total = total_query.count()
+        else:
+            # 为其他排序方式查询总数量
+            total_query = base_query
+            if search is not None:
+                total_query = total_query.filter(Ingredient.name.contains(search))
+            total = total_query.count()
+
+        return PaginatedResponse.create(
+            items=[IngredientResponse(
+                id=ing.id,
+                name=ing.name,
+                aliases=ing.aliases or [],
+                created_at=ing.created_at
+            ) for ing in ingredients],
+            total=total,
+            page=page,
+            page_size=limit
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取原料列表失败: {str(e)}")
 
