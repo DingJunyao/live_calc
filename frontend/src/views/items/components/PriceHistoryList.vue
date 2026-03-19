@@ -16,7 +16,7 @@
             <th v-if="type === 'ingredient'">商品</th>
             <th>日期</th>
             <th>商家</th>
-            <th>价格</th>
+            <th>单价</th>
             <th>数量</th>
             <th>单位</th>
           </tr>
@@ -26,7 +26,10 @@
             <td v-if="type === 'ingredient'" class="product-name-cell">{{ record.product_name }}</td>
             <td>{{ formatDate(record.recorded_at) }}</td>
             <td>{{ record.merchant_name || '-' }}</td>
-            <td class="price-cell">¥{{ formatPrice(record.price) }}</td>
+            <td class="price-cell">
+              <div class="unit-price">¥{{ formatPrice(calculateUnitPrice(record)) }}/{{ record.original_unit }}</div>
+              <div class="total-price">总计: ¥{{ formatPrice(record.price) }}</div>
+            </td>
             <td>{{ record.original_quantity }}</td>
             <td>{{ record.original_unit }}</td>
           </tr>
@@ -90,6 +93,13 @@ function formatPrice(price: any): string {
   if (isNaN(numPrice)) return '-'
   return numPrice.toFixed(2)
 }
+
+function calculateUnitPrice(record: PriceRecord): number {
+  if (record.original_quantity && record.original_quantity > 0) {
+    return record.price / record.original_quantity
+  }
+  return record.price
+}
 </script>
 
 <style scoped>
@@ -147,6 +157,17 @@ function formatPrice(price: any): string {
 .price-cell {
   font-weight: 600;
   color: #42b883;
+  vertical-align: top;
+}
+
+.unit-price {
+  margin-bottom: 4px;
+}
+
+.total-price {
+  font-size: 12px;
+  color: #999;
+  font-weight: normal;
 }
 
 .product-name-cell {

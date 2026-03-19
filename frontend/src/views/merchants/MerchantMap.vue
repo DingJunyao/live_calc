@@ -1079,6 +1079,25 @@ onUnmounted(() => {
   display: inline;
 }
 
+.add-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #42b883;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0;
+}
+
+.add-btn:hover {
+  background: #36966d;
+}
+
 /* 移动端适配 */
 @media (max-width: 768px) {
   .merchant-map-page {
@@ -1114,6 +1133,48 @@ onUnmounted(() => {
 
   .merchant-actions {
     opacity: 1;
+  }
+
+  .add-btn {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.875rem;
+  }
+}
+
+/* 超小屏幕适配 */
+@media (max-width: 480px) {
+  .merchant-map-page {
+    padding: 0 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .merchant-list-panel {
+    height: 40vh;
+    min-height: 250px;
+  }
+
+  .merchant-map-panel {
+    height: 40vh;
+    min-height: 250px;
+  }
+
+  .search-filter {
+    padding: 0.5rem;
+  }
+
+  .search-input {
+    font-size: 16px;
+  }
+
+  .modal-content {
+    padding: 1rem;
+  }
+
+  .add-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.8125rem;
   }
 }
 
