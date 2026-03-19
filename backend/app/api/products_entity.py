@@ -1,7 +1,7 @@
 """商品实体 API 路由"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, and_
+from sqlalchemy import desc, and_, or_
 from typing import List, Optional
 from datetime import datetime
 from app.core.database import get_db
@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
 from app.models.product import ProductRecord
+from app.models.nutrition import Ingredient
 from app.schemas.product_entity import (
     ProductCreate, ProductUpdate, ProductResponse, ProductWithDetails,
     ProductBarcodeCreate, ProductBarcodeUpdate, ProductBarcodeResponse
@@ -63,11 +64,15 @@ def list_products(
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     ingredient_id: Optional[int] = Query(None, description="原料ID过滤"),
-    search: Optional[str] = Query(None, description="搜索关键词"),
+    search: Optional[str] = Query(None, description="搜索关键词（商品名称或食材别名）"),
     sort_by: str = Query("created_at", enum=["created_at", "updated_at", "price_records"], description="排序方式"),
     db: Session = Depends(get_db)
 ):
-    """获取商品列表（分页）"""
+    """获取商品列表（分页）
+
+    支持通过商品名称或关联食材的别名搜索。
+    例如：搜索"西"可以找到商品"番茄"（如果其关联食材有别名"西红柿"）
+    """
     from sqlalchemy import func
 
     # 根据排序方式构建查询
@@ -81,7 +86,9 @@ def list_products(
         ).filter(Product.is_active == True).group_by(Product.id).subquery()
 
         # 然后将此子查询与主查询连接
-        query = db.query(Product).join(
+        query = db.query(Product).options(
+            joinedload(Product.ingredient)
+        ).join(
             subquery, Product.id == subquery.c.product_id
         ).filter(Product.is_active == True)
 
@@ -89,7 +96,17 @@ def list_products(
             query = query.filter(Product.ingredient_id == ingredient_id)
 
         if search:
-            query = query.filter(Product.name.contains(search))
+            # 搜索商品名称或食材别名
+            search_filter = or_(
+                Product.name.contains(search),
+                Product.ingredient.has(
+                    or_(
+                        Ingredient.name.contains(search),
+                        Ingredient.aliases.contains(f'"{search}"')
+                    )
+                )
+            )
+            query = query.filter(search_filter)
 
         total = query.count()
 
@@ -97,13 +114,25 @@ def list_products(
         products = query.order_by(desc(subquery.c.record_count), desc(Product.created_at)).offset(skip).limit(limit).all()
     else:
         # 使用原有逻辑
-        query = db.query(Product).filter(Product.is_active == True)
+        query = db.query(Product).options(
+            joinedload(Product.ingredient)
+        ).filter(Product.is_active == True)
 
         if ingredient_id:
             query = query.filter(Product.ingredient_id == ingredient_id)
 
         if search:
-            query = query.filter(Product.name.contains(search))
+            # 搜索商品名称或食材别名
+            search_filter = or_(
+                Product.name.contains(search),
+                Product.ingredient.has(
+                    or_(
+                        Ingredient.name.contains(search),
+                        Ingredient.aliases.contains(f'"{search}"')
+                    )
+                )
+            )
+            query = query.filter(search_filter)
 
         total = query.count()
 
@@ -441,3 +470,68 @@ def get_product_latest_price(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")
+
+
+@router.get("/products/autocomplete")
+@router.get("/products/autocomplete/")
+def product_autocomplete(
+    q: str = Query(..., min_length=1, description="搜索关键词"),
+    limit: int = Query(20, ge=1, le=100, description="返回结果数量限制"),
+    db: Session = Depends(get_db)
+):
+    """商品自动完成搜索
+
+    支持通过商品名称或关联食材的别名搜索。
+    返回结果包含匹配的别名信息，用于前端显示。
+
+    例如：搜索"西"可以找到：
+    - 商品"番茄"（别名"西红柿"匹配）
+    - 商品"西瓜"（名称匹配）
+    """
+    try:
+        search_lower = q.lower()
+
+        # 查询所有活跃的商品，预加载关联的食材
+        products = db.query(Product).options(
+            joinedload(Product.ingredient)
+        ).filter(Product.is_active == True).all()
+
+        results = []
+        for product in products:
+            matched_alias = None
+            match_type = None
+
+            # 检查商品名称是否匹配
+            if search_lower in product.name.lower():
+                match_type = "name"
+            # 检查关联食材的名称是否匹配
+            elif product.ingredient:
+                if search_lower in product.ingredient.name.lower():
+                    match_type = "ingredient_name"
+                # 检查食材别名是否匹配
+                elif product.ingredient.aliases:
+                    for alias in product.ingredient.aliases:
+                        if search_lower in alias.lower():
+                            matched_alias = alias
+                            match_type = "alias"
+                            break
+
+            if match_type:
+                results.append({
+                    "id": product.id,
+                    "name": product.name,
+                    "brand": product.brand,
+                    "ingredient_id": product.ingredient_id,
+                    "ingredient_name": product.ingredient.name if product.ingredient else None,
+                    "match_type": match_type,
+                    "matched_alias": matched_alias
+                })
+
+        # 按匹配类型排序：名称匹配 > 食材名称匹配 > 别名匹配
+        match_order = {"name": 0, "ingredient_name": 1, "alias": 2}
+        results.sort(key=lambda x: (match_order.get(x["match_type"], 3), x["name"]))
+
+        return results[:limit]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"商品自动完成搜索失败: {str(e)}")

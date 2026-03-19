@@ -546,17 +546,29 @@ async function saveEdit() {
     console.log('saveEdit - API 调用完成')
 
     // 直接更新 item 数据
-    if (item.value && type.value === 'ingredient') {
-      item.value.default_unit_id = data.default_unit_id
-      // 重新获取单位名称
-      if (data.default_unit_id) {
-        const unit = units.value.find((u: any) => u.id === data.default_unit_id)
-        item.value.default_unit_name = unit?.name || ''
-      } else {
-        item.value.default_unit_name = ''
+    if (item.value) {
+      // 更新名称
+      item.value.name = data.name
+
+      if (type.value === 'ingredient') {
+        item.value.default_unit_id = data.default_unit_id
+        // 重新获取单位名称
+        if (data.default_unit_id) {
+          const unit = units.value.find((u: any) => u.id === data.default_unit_id)
+          item.value.default_unit_name = unit?.name || ''
+        } else {
+          item.value.default_unit_name = ''
+        }
+        // 更新别名
+        item.value.aliases = aliases
+        // 更新分类
+        if (data.category_id !== undefined) {
+          (item.value as any).category_id = data.category_id
+        }
+        console.log('saveEdit - 更新后的 item.default_unit_id:', item.value.default_unit_id)
+        console.log('saveEdit - 更新后的 item.default_unit_name:', item.value.default_unit_name)
+        console.log('saveEdit - 更新后的 item.aliases:', item.value.aliases)
       }
-      console.log('saveEdit - 更新后的 item.default_unit_id:', item.value.default_unit_id)
-      console.log('saveEdit - 更新后的 item.default_unit_name:', item.value.default_unit_name)
     }
 
     alert('更新成功')

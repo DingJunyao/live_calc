@@ -170,8 +170,9 @@
                   :class="{ 'suggestion-selected': index === selectedIngredientIndex }"
                   @click="selectIngredient(suggestion)"
                 >
-                  {{ suggestion.name }}
-                  <span v-if="suggestion.category_name" class="category-hint">({{ suggestion.category_name }})</span>
+                  <span class="suggestion-name">{{ suggestion.name }}</span>
+                  <span v-if="suggestion.matched_alias" class="alias-hint">({{ suggestion.matched_alias }})</span>
+                  <span v-else-if="suggestion.category_name" class="category-hint">({{ suggestion.category_name }})</span>
                 </li>
               </ul>
             </div>
@@ -227,6 +228,7 @@ interface Ingredient {
   density?: number
   default_unit?: string
   aliases?: string[]
+  matched_alias?: string  // 匹配的别名
 }
 
 interface Merchant {
@@ -491,14 +493,41 @@ function searchIngredients() {
 
 function filterIngredients() {
   if (!ingredientSearchTerm.value.trim()) {
-    ingredientSuggestions.value = ingredients.value.slice(0, 10)
+    // 清除匹配别名
+    ingredientSuggestions.value = ingredients.value.slice(0, 10).map(ing => ({
+      ...ing,
+      matched_alias: undefined
+    }))
   } else {
     const search = ingredientSearchTerm.value.toLowerCase()
     ingredientSuggestions.value = ingredients.value
-      .filter(ing =>
-        ing.name.toLowerCase().includes(search) ||
-        (ing.aliases && ing.aliases.some(alias => alias.toLowerCase().includes(search)))
-      )
+      .filter(ing => {
+        // 匹配名称
+        if (ing.name.toLowerCase().includes(search)) {
+          return true
+        }
+        // 匹配别名
+        if (ing.aliases && ing.aliases.some(alias => alias.toLowerCase().includes(search))) {
+          return true
+        }
+        return false
+      })
+      .map(ing => {
+        // 计算匹配的别名
+        let matchedAlias: string | undefined = undefined
+        if (ing.aliases) {
+          for (const alias of ing.aliases) {
+            if (alias.toLowerCase().includes(search)) {
+              matchedAlias = alias
+              break
+            }
+          }
+        }
+        return {
+          ...ing,
+          matched_alias: matchedAlias
+        }
+      })
       .slice(0, 10)
   }
   showIngredientSuggestions.value = ingredientSuggestions.value.length > 0
@@ -876,6 +905,16 @@ async function deleteProduct(product: Product) {
   color: #999;
   font-size: 0.8125rem;
   margin-left: 0.5rem;
+}
+
+.alias-hint {
+  color: #888;
+  font-size: 0.8125rem;
+  margin-left: 0.5rem;
+}
+
+.suggestion-name {
+  /* 名称默认样式 */
 }
 
 .selected-hint {
