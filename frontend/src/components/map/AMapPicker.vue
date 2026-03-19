@@ -10,12 +10,21 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { Coordinate, SearchResult } from '@/utils/mapTypes'
 
 // Props
+interface MarkerData {
+  id: number | string
+  lat: number
+  lng: number
+  name: string
+  selected?: boolean
+}
+
 interface Props {
   modelValue?: Coordinate
   height?: string
   readonly?: boolean
   apiKey?: string
   securityCode?: string
+  markers?: MarkerData[]  // 多标记支持（用于地图展示多个点）
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -23,7 +32,8 @@ const props = withDefaults(defineProps<Props>(), {
   height: '300px',
   readonly: false,
   apiKey: '',
-  securityCode: ''
+  securityCode: '',
+  markers: () => []
 })
 
 // Emits
@@ -39,11 +49,13 @@ const currentCoordinate = ref<Coordinate | null>(null)
 // 地图实例和标记
 let mapInstance: any = null
 let markerInstance: any = null
+let multiMarkers: any[] = []  // 多标记数组
 let isMapReady = false
 
 // 加载高德地图 JS API
 async function loadAMapScript(): Promise<void> {
   return new Promise((resolve, reject) => {
+    // 使用 v1.4 版本，更稳定
     if ((window as any).AMap) {
       resolve()
       return
@@ -65,7 +77,8 @@ async function loadAMapScript(): Promise<void> {
       }
     }
 
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${props.apiKey}`
+    // 使用 v1.4.15 版本（更稳定）
+    script.src = `https://webapi.amap.com/maps?v=1.4.15&key=${props.apiKey}`
     script.onload = () => resolve()
     script.onerror = () => reject(new Error('Failed to load AMap script'))
 
@@ -89,28 +102,46 @@ function waitForAMap(): Promise<void> {
 
 // 初始化地图
 async function initMap() {
-  if (!mapContainer.value) return
+  if (!mapContainer.value) {
+    console.log('[AMapPicker] 容器不存在')
+    return
+  }
+
+  console.log('[AMapPicker] 开始初始化...')
+  console.log('[AMapPicker] apiKey:', props.apiKey)
+  console.log('[AMapPicker] modelValue:', props.modelValue)
+  console.log('[AMapPicker] markers:', props.markers)
 
   try {
     await loadAMapScript()
     await waitForAMap()
 
+    console.log('[AMapPicker] AMap 脚本加载完成')
+
+    // 检查容器尺寸
+    const rect = mapContainer.value.getBoundingClientRect()
+    console.log('[AMapPicker] 容器尺寸:', rect.width, 'x', rect.height)
+
     const AMap = (window as any).AMap
-    const center = props.modelValue && props.modelValue.lat && props.modelValue.lng
-      ? [props.modelValue.lng, props.modelValue.lat]  // 高德使用 [lng, lat]
-      : [116.4074, 39.9042]
+
+    // 使用固定的默认中心点
+    const centerLng = 116.4074
+    const centerLat = 39.9042
+
+    console.log('[AMapPicker] 创建地图实例，中心点:', centerLng, centerLat)
 
     // 创建地图实例
     mapInstance = new AMap.Map(mapContainer.value, {
       zoom: 13,
-      center: center,
+      center: [centerLng, centerLat],
       viewMode: '2D'
     })
+
+    console.log('[AMapPicker] 地图实例创建成功')
 
     // 添加点击事件
     mapInstance.on('click', (e: any) => {
       if (props.readonly) return
-
       const coord = { lat: e.lnglat.lat, lng: e.lnglat.lng }
       setMarker(coord)
       currentCoordinate.value = coord
@@ -119,15 +150,14 @@ async function initMap() {
 
     isMapReady = true
 
-    // 如果有初始坐标，显示标记
-    if (props.modelValue && props.modelValue.lat && props.modelValue.lng) {
-      setMarker(props.modelValue)
-      currentCoordinate.value = props.modelValue
+    // 渲染多标记（如果有）
+    if (props.markers && props.markers.length > 0) {
+      console.log('[AMapPicker] 渲染多标记:', props.markers.length, '个')
+      updateMarkers(props.markers)
     }
   } catch (error) {
     console.error('[AMapPicker] 初始化地图失败:', error)
     if (mapContainer.value) {
-      // 使用 textContent 替代 innerHTML 避免安全问题
       mapContainer.value.textContent = '高德地图加载失败'
       mapContainer.value.style.cssText = 'padding: 20px; color: #999; text-align: center;'
     }
@@ -168,6 +198,103 @@ function setMarker(coord: Coordinate) {
 
   // 移动地图中心
   mapInstance.setCenter([coord.lng, coord.lat])
+}
+
+// 更新多标记（用于商家地图等场景）
+function updateMarkers(markers: MarkerData[]) {
+  if (!mapInstance || !isMapReady) {
+    console.log('[AMapPicker] updateMarkers: 地图未就绪')
+    return
+  }
+
+  const AMap = (window as any).AMap
+
+  // 清除旧的多标记
+  multiMarkers.forEach(m => mapInstance.remove(m))
+  multiMarkers = []
+
+  console.log('[AMapPicker] updateMarkers: 处理', markers.length, '个标记')
+
+  // 添加新标记 - 使用简单的默认标记
+  markers.forEach(marker => {
+    console.log('[AMapPicker] 处理标记:', marker.name, marker.lat, marker.lng)
+
+    // 检查坐标有效性
+    if (!isValidCoordinate(marker.lat, marker.lng)) {
+      console.warn('[AMapPicker] 无效坐标，跳过:', marker.name, marker.lat, marker.lng)
+      return
+    }
+
+    // 使用简单的默认标记，不带自定义 HTML
+    const markerObj = new AMap.Marker({
+      position: [marker.lng, marker.lat],
+      title: marker.name  // 使用 title 而非 setContent
+    })
+
+    mapInstance.add(markerObj)
+    multiMarkers.push(markerObj)
+  })
+
+  console.log('[AMapPicker] 成功添加', multiMarkers.length, '个标记')
+}
+
+// 检查坐标是否有效
+function isValidCoordinate(lat: number, lng: number): boolean {
+  return typeof lat === 'number' && typeof lng === 'number' &&
+         !isNaN(lat) && !isNaN(lng) &&
+         lat !== 0 && lng !== 0
+}
+
+// 缩放到所有标记范围
+function fitMarkers() {
+  console.log('[AMapPicker] fitMarkers 被调用')
+
+  if (!mapInstance || !isMapReady) {
+    console.log('[AMapPicker] fitMarkers: 地图未就绪')
+    return
+  }
+
+  // 使用 multiMarkers 中已添加的标记来计算范围，而不是 props.markers
+  if (multiMarkers.length === 0) {
+    console.log('[AMapPicker] fitMarkers: 没有标记')
+    return
+  }
+
+  console.log('[AMapPicker] fitMarkers: 缩放到', multiMarkers.length, '个标记')
+
+  try {
+    // 获取所有标记的位置并构建 bounds
+    let minLng = Infinity, maxLng = -Infinity
+    let minLat = Infinity, maxLat = -Infinity
+
+    multiMarkers.forEach(marker => {
+      const pos = marker.getPosition()
+      console.log('[AMapPicker] 标记位置:', pos)
+      // 高德地图 getPosition 返回 {lng, lat}
+      if (pos && typeof pos.lng === 'number' && typeof pos.lat === 'number' &&
+          !isNaN(pos.lng) && !isNaN(pos.lat)) {
+        minLng = Math.min(minLng, pos.lng)
+        maxLng = Math.max(maxLng, pos.lng)
+        minLat = Math.min(minLat, pos.lat)
+        maxLat = Math.max(maxLat, pos.lat)
+      }
+    })
+
+    if (minLng === Infinity) {
+      console.log('[AMapPicker] fitMarkers: 没有有效坐标')
+      return
+    }
+
+    console.log('[AMapPicker] fitMarkers: 范围', minLng, minLat, '-', maxLng, maxLat)
+
+    // 使用 setZoomAndCenter 设置范围
+    const centerLng = (minLng + maxLng) / 2
+    const centerLat = (minLat + maxLat) / 2
+    mapInstance.setZoomAndCenter(14, [centerLng, centerLat])
+    console.log('[AMapPicker] fitMarkers: 成功')
+  } catch (e) {
+    console.error('[AMapPicker] fitMarkers 失败:', e)
+  }
 }
 
 // 搜索地址
@@ -222,6 +349,10 @@ function setCenter(lat: number, lng: number) {
 
 // 销毁地图
 function destroyMap() {
+  // 清除多标记
+  multiMarkers.forEach(m => mapInstance?.remove(m))
+  multiMarkers = []
+  // 清除单标记
   if (markerInstance) {
     mapInstance?.remove(markerInstance)
     markerInstance = null
@@ -246,15 +377,27 @@ watch(() => props.modelValue, (newVal) => {
 
 // 监听 apiKey 变化
 watch(() => props.apiKey, (newVal, oldVal) => {
+  console.log('[AMapPicker] apiKey 变化:', oldVal, '->', newVal)
   if (newVal && newVal !== oldVal) {
     destroyMap()
     nextTick(() => initMap())
   }
 })
 
+// 监听 markers 变化
+watch(() => props.markers, (newVal) => {
+  console.log('[AMapPicker] markers 变化:', newVal?.length, '个')
+  if (isMapReady && newVal && newVal.length > 0) {
+    // 延迟更新标记
+    setTimeout(() => updateMarkers(newVal), 100)
+  }
+}, { deep: true })
+
 onMounted(() => {
+  console.log('[AMapPicker] onMounted, apiKey:', props.apiKey)
   if (props.apiKey) {
-    initMap()
+    // 延迟初始化，确保 DOM 完全渲染
+    setTimeout(() => initMap(), 300)
   }
 })
 
@@ -267,7 +410,9 @@ defineExpose({
   searchAddress,
   reverseGeocode,
   setCenter,
-  setMarker
+  setMarker,
+  updateMarkers,
+  fitMarkers
 })
 </script>
 
@@ -275,10 +420,14 @@ defineExpose({
 .amap-picker {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
 }
 
 .map-container {
   width: 100%;
+  height: 100%;
+  min-height: 200px;
   border-radius: 0.5rem;
   overflow: hidden;
   border: 1px solid #ddd;
