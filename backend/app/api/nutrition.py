@@ -85,13 +85,18 @@ async def get_ingredients(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     search: str = Query(None, alias="q"),
+    sort_by: str = Query("price_records", enum=["name", "created_at", "price_records"], description="排序方式"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """获取原料列表"""
     try:
-        # 明确只加载需要的字段，避免加载 relationship
-        query = db.query(Ingredient).options(
+        from sqlalchemy import func
+        from app.models.product import ProductRecord
+        from app.models.product_entity import Product
+
+        # 构建基础查询
+        base_query = db.query(Ingredient).options(
             load_only(
                 Ingredient.id,
                 Ingredient.name,
@@ -103,9 +108,37 @@ async def get_ingredients(
         ).filter(Ingredient.is_active == True)
 
         if search:
-            query = query.filter(Ingredient.name.contains(search))
+            base_query = base_query.filter(Ingredient.name.contains(search))
 
-        ingredients = query.offset(skip).limit(limit).all()
+        # 根据排序方式进行查询
+        if sort_by == "price_records":
+            # 按价格记录数量排序
+            query = db.query(
+                Ingredient,
+                func.count(ProductRecord.id).label('record_count')
+            ).outerjoin(
+                Product, Ingredient.id == Product.ingredient_id
+            ).outerjoin(
+                ProductRecord, Product.id == ProductRecord.product_id
+            ).filter(Ingredient.is_active == True)
+
+            if search:
+                query = query.filter(Ingredient.name.contains(search))
+
+            query = query.group_by(Ingredient.id).order_by(func.count(ProductRecord.id).desc())
+
+            # 获取结果
+            results = query.offset(skip).limit(limit).all()
+            ingredients = [result[0] for result in results]  # 只取Ingredient对象
+        else:
+            # 按名称或创建时间排序
+            query = base_query
+            if sort_by == "name":
+                query = query.order_by(Ingredient.name)
+            elif sort_by == "created_at":
+                query = query.order_by(Ingredient.created_at.desc())
+
+            ingredients = query.offset(skip).limit(limit).all()
 
         # 使用 Pydantic schema 序列化
         return [IngredientResponse(

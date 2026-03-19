@@ -297,6 +297,7 @@ async function loadIngredients() {
     const params = new URLSearchParams()
     params.append('skip', String((currentPage.value - 1) * pageSize.value))
     params.append('limit', String(pageSize.value))
+    params.append('sort_by', 'price_records')  // 按价格记录数量排序
     if (searchTerm.value) {
       params.append('q', searchTerm.value)
     }
