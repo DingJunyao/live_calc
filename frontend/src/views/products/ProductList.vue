@@ -65,6 +65,9 @@
         <div class="product-header">
           <h3>{{ product.product_name }}</h3>
           <div class="product-actions">
+            <button @click="editProduct(product)" class="btn-edit" title="编辑">
+              <i class="mdi mdi-pencil"></i>
+            </button>
             <button @click="deleteProduct(product)" class="btn-delete" title="删除">
               <i class="mdi mdi-delete"></i>
             </button>
@@ -1033,6 +1036,16 @@ function editProduct(product: PriceRecord) {
   showMerchantCreateOption.value = false
 
   showAddModal.value = true
+
+  // 在模态框显示后，需要一点延迟才能确保DOM已更新
+  setTimeout(() => {
+    // 检查是否有焦点元素，如果有则保持焦点；否则将焦点设置到商品输入框
+    if (!document.activeElement || !document.activeElement.classList.contains('datalist-input')) {
+      if (productInputRef.value) {
+        productInputRef.value.focus();
+      }
+    }
+  }, 100);
 }
 
 function closeModal() {
@@ -1233,6 +1246,18 @@ function selectProduct(product: ProductSuggestion) {
   showProductSuggestions.value = false
   selectedIndex.value = -1
   productSuggestionsStyle.value = {}
+
+  // 在选择商品后，将焦点移到商家输入框，这样用户可以看到商家下拉框
+  setTimeout(() => {
+    if (locationInputRef.value) {
+      locationInputRef.value.focus()
+
+      // 手动触发商家输入框的焦点处理函数以显示下拉框
+      setTimeout(() => {
+        handleLocationFocus()
+      }, 50)
+    }
+  }, 100)
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -1308,6 +1333,13 @@ function selectLocation(location: Merchant) {
   showLocationSuggestions.value = false
   selectedLocationIndex.value = -1
   locationSuggestionsStyle.value = {}
+
+  // 在选择商家后，将焦点移回商品输入框，这样用户可以继续输入其他商品
+  setTimeout(() => {
+    if (productInputRef.value) {
+      productInputRef.value.focus();
+    }
+  }, 100)
 }
 
 // 创建新商品处理

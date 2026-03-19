@@ -588,10 +588,6 @@ async def get_ingredient_latest_price(
         from app.models.product import ProductRecord
         from datetime import datetime, timedelta
 
-        # 计算最近一天的时间范围
-        now = datetime.utcnow()
-        one_day_ago = now - timedelta(days=1)
-
         # 查询该原料关联的商品
         products = db.query(Product).filter(
             Product.ingredient_id == ingredient_id
@@ -602,23 +598,48 @@ async def get_ingredient_latest_price(
 
         product_ids = [p.id for p in products]
 
-        # 查询这些商品在最近一天的价格记录
+        # 首先尝试获取最近24小时内的记录
+        from sqlalchemy import func
+        now = datetime.utcnow()
+        one_day_ago = now - timedelta(days=1)
+
         recent_records = db.query(ProductRecord).filter(
             ProductRecord.product_id.in_(product_ids),
             ProductRecord.recorded_at >= one_day_ago
-        ).all()
+        ).order_by(ProductRecord.recorded_at.desc()).all()
+
+        # 如果最近24小时内没有记录，则查找最近一次记录的那一天的所有记录
+        if not recent_records:
+            # 查找最近一次记录
+            latest_record = db.query(ProductRecord).filter(
+                ProductRecord.product_id.in_(product_ids)
+            ).order_by(ProductRecord.recorded_at.desc()).first()
+
+            if not latest_record:
+                return {"average_price": None, "unit": None}
+
+            # 获取与最近记录同一天的所有记录
+            latest_date = latest_record.recorded_at.date()
+            recent_records = db.query(ProductRecord).filter(
+                ProductRecord.product_id.in_(product_ids),
+                func.date(ProductRecord.recorded_at) == latest_date
+            ).all()
 
         if not recent_records:
             return {"average_price": None, "unit": None}
 
-        # 计算平均价格
-        total_price = sum(record.price for record in recent_records if record.price is not None)
-        valid_prices = [record.price for record in recent_records if record.price is not None]
+        # 计算平均价格 - 使用单价而非总价
+        unit_prices = []
+        for record in recent_records:
+            if record.price is not None and record.original_quantity is not None and record.original_quantity > 0:
+                # 计算单价：总价 / 数量
+                unit_price = record.price / record.original_quantity
+                unit_prices.append(unit_price)
 
-        if not valid_prices:
+        if not unit_prices:
             return {"average_price": None, "unit": None}
 
-        average_price = total_price / len(valid_prices)
+        average_price = sum(unit_prices) / len(unit_prices)
 
         # 获取最常见的单位名称
         from collections import Counter
