@@ -819,7 +819,7 @@ async function loadProducts() {
   loading.value = true
   try {
     const skip = (currentPage.value - 1) * pageSize.value
-    let url = `/products?skip=${skip}&limit=${pageSize.value}`
+    let url = `/products?skip=${skip}&limit=${pageSize.value}&sort_by=price_records`  // 按价格记录数量排序
     if (selectedProduct.value) {
       url += `&product_id=${selectedProduct.value}`
     }

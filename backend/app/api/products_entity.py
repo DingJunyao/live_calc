@@ -64,19 +64,54 @@ def list_products(
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     ingredient_id: Optional[int] = Query(None, description="原料ID过滤"),
     search: Optional[str] = Query(None, description="搜索关键词"),
+    sort_by: str = Query("created_at", enum=["created_at", "updated_at", "price_records"], description="排序方式"),
     db: Session = Depends(get_db)
 ):
     """获取商品列表（分页）"""
-    query = db.query(Product).filter(Product.is_active == True)
+    from sqlalchemy import func
 
-    if ingredient_id:
-        query = query.filter(Product.ingredient_id == ingredient_id)
+    # 根据排序方式构建查询
+    if sort_by == "price_records":
+        # 按价格记录数量排序：计算每个商品的价格记录数量，然后按数量排序
+        subquery = db.query(
+            Product.id.label('product_id'),
+            func.count(ProductRecord.id).label('record_count')
+        ).outerjoin(
+            ProductRecord, Product.id == ProductRecord.product_id
+        ).filter(Product.is_active == True).group_by(Product.id).subquery()
 
-    if search:
-        query = query.filter(Product.name.contains(search))
+        # 然后将此子查询与主查询连接
+        query = db.query(Product).join(
+            subquery, Product.id == subquery.c.product_id
+        ).filter(Product.is_active == True)
 
-    total = query.count()
-    products = query.order_by(desc(Product.created_at)).offset(skip).limit(limit).all()
+        if ingredient_id:
+            query = query.filter(Product.ingredient_id == ingredient_id)
+
+        if search:
+            query = query.filter(Product.name.contains(search))
+
+        total = query.count()
+
+        # 按价格记录数量排序，然后按商品创建时间排序以确保一致性
+        products = query.order_by(desc(subquery.c.record_count), desc(Product.created_at)).offset(skip).limit(limit).all()
+    else:
+        # 使用原有逻辑
+        query = db.query(Product).filter(Product.is_active == True)
+
+        if ingredient_id:
+            query = query.filter(Product.ingredient_id == ingredient_id)
+
+        if search:
+            query = query.filter(Product.name.contains(search))
+
+        total = query.count()
+
+        # 按时间排序
+        if sort_by == "updated_at":
+            products = query.order_by(desc(Product.updated_at)).offset(skip).limit(limit).all()
+        else:  # 默认按创建时间排序
+            products = query.order_by(desc(Product.created_at)).offset(skip).limit(limit).all()
     page = skip // limit + 1
 
     # 反序列化 tags 并填充 ingredient_name，然后构造响应对象
@@ -336,35 +371,73 @@ def get_product_latest_price(
     db: Session = Depends(get_db)
 ):
     """
-    获取商品的最近价格
+    获取商品的最近价格 - 计算平均单价
 
     - **product_id**: 商品ID
 
-    返回该商品的最近一条价格记录
+    返回该商品关联的最近一天所有价格记录的平均单价
     """
     try:
-        # 查询该商品的最近一条价格记录
-        latest_record = db.query(ProductRecord).filter(
-            ProductRecord.product_id == product_id
-        ).order_by(ProductRecord.recorded_at.desc()).first()
+        from datetime import datetime, timedelta
+        from sqlalchemy import func
+        from collections import Counter
 
-        if not latest_record:
+        # 查询该商品的所有价格记录
+        all_records = db.query(ProductRecord).filter(
+            ProductRecord.product_id == product_id
+        ).order_by(ProductRecord.recorded_at.desc()).all()
+
+        if not all_records:
             return {
-                "price": None,
-                "original_quantity": None,
-                "original_unit": None,
-                "merchant_name": None,
-                "recorded_at": None
+                "average_price": None,
+                "unit": None
             }
 
+        # 首先尝试获取最近24小时内的记录
+        now = datetime.utcnow()
+        one_day_ago = now - timedelta(days=1)
+
+        recent_records = [r for r in all_records if r.recorded_at >= one_day_ago]
+
+        # 如果最近24小时内没有记录，则查找最近一次记录的那一天的所有记录
+        if not recent_records:
+            # 最近一次记录的日期
+            latest_date = all_records[0].recorded_at.date()
+            recent_records = [r for r in all_records if r.recorded_at.date() == latest_date]
+
+        if not recent_records:
+            return {
+                "average_price": None,
+                "unit": None
+            }
+
+        # 计算平均价格 - 使用单价而非总价
+        unit_prices = []
+        for record in recent_records:
+            if record.price is not None and record.original_quantity is not None and record.original_quantity > 0:
+                # 计算单价：总价 / 数量
+                unit_price = record.price / record.original_quantity
+                unit_prices.append(unit_price)
+
+        if not unit_prices:
+            return {
+                "average_price": None,
+                "unit": None
+            }
+
+        average_price = sum(unit_prices) / len(unit_prices)
+
+        # 获取最常见的单位名称
+        units = [record.original_unit.name if record.original_unit else None for record in recent_records]
+        units = [u for u in units if u is not None]
+        if units:
+            most_common_unit = Counter(units).most_common(1)[0][0]
+        else:
+            most_common_unit = None
+
         return {
-            "price": latest_record.price,
-            "original_quantity": latest_record.original_quantity,
-            "original_unit": latest_record.original_unit.name if latest_record.original_unit else None,
-            "merchant_name": latest_record.merchant.name if latest_record.merchant else None,
-            "recorded_at": latest_record.recorded_at
+            "average_price": round(average_price, 2),
+            "unit": most_common_unit
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")
-
-    return {"message": "Barcode deleted successfully"}
