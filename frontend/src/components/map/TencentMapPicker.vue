@@ -10,18 +10,28 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { Coordinate, SearchResult } from '@/utils/mapTypes'
 
 // Props
+interface MarkerData {
+  id: number | string
+  lat: number
+  lng: number
+  name: string
+  selected?: boolean
+}
+
 interface Props {
   modelValue?: Coordinate
   height?: string
   readonly?: boolean
   apiKey?: string
+  markers?: MarkerData[]  // 多标记支持（用于地图展示多个点）
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: () => ({ lat: 39.9042, lng: 116.4074 }),
   height: '300px',
   readonly: false,
-  apiKey: ''
+  apiKey: '',
+  markers: () => []
 })
 
 // Emits
@@ -37,6 +47,7 @@ const currentCoordinate = ref<Coordinate | null>(null)
 // 地图实例和标记
 let mapInstance: any = null
 let markerInstance: any = null
+let multiMarkers: any[] = []  // 多标记数组（InfoWindow）
 let isMapReady = false
 
 // 加载腾讯地图 JS API
@@ -79,22 +90,44 @@ function waitForTMap(): Promise<void> {
 
 // 初始化地图
 async function initMap() {
-  if (!mapContainer.value) return
+  if (!mapContainer.value) {
+    console.log('[TencentMapPicker] 容器不存在')
+    return
+  }
+
+  console.log('[TencentMapPicker] 开始初始化...')
+  console.log('[TencentMapPicker] apiKey:', props.apiKey)
+
+  // 检查容器尺寸
+  const rect = mapContainer.value.getBoundingClientRect()
+  console.log('[TencentMapPicker] 容器尺寸:', rect.width, 'x', rect.height)
+
+  if (rect.width === 0 || rect.height === 0) {
+    console.warn('[TencentMapPicker] 容器尺寸为 0，延迟初始化')
+    setTimeout(() => initMap(), 200)
+    return
+  }
 
   try {
     await loadTMapScript()
     await waitForTMap()
 
-    const TMap = (window as any).TMap
-    const center = props.modelValue && props.modelValue.lat && props.modelValue.lng
-      ? new TMap.LatLng(props.modelValue.lat, props.modelValue.lng)
-      : new TMap.LatLng(39.9042, 116.4074)
+    console.log('[TencentMapPicker] TMap 脚本加载完成')
 
-    // 创建地图实例
+    const TMap = (window as any).TMap
+
+    // 使用固定默认中心点
+    const centerLat = 39.9042
+    const centerLng = 116.4074
+
+    console.log('[TencentMapPicker] 创建地图实例')
+
+    // 创建地图实例 - 隐藏默认控件以避免冲突
     mapInstance = new TMap.Map(mapContainer.value, {
       zoom: 13,
-      center: center,
-      viewMode: '2D'
+      center: new TMap.LatLng(centerLat, centerLng),
+      viewMode: '2D',
+      showControl: true  // 显示控件
     })
 
     // 添加点击事件
@@ -108,11 +141,12 @@ async function initMap() {
     })
 
     isMapReady = true
+    console.log('[TencentMapPicker] 地图初始化成功')
 
-    // 如果有初始坐标，显示标记
-    if (props.modelValue && props.modelValue.lat && props.modelValue.lng) {
-      setMarker(props.modelValue)
-      currentCoordinate.value = props.modelValue
+    // 渲染多标记（如果有）
+    if (props.markers && props.markers.length > 0) {
+      console.log('[TencentMapPicker] 渲染多标记:', props.markers.length, '个')
+      updateMarkers(props.markers)
     }
   } catch (error) {
     console.error('[TencentMapPicker] 初始化地图失败:', error)
@@ -157,6 +191,114 @@ function setMarker(coord: Coordinate) {
 
   // 移动地图中心
   mapInstance.setCenter(new TMap.LatLng(coord.lat, coord.lng))
+}
+
+// 更新多标记（用于商家地图等场景）
+function updateMarkers(markers: MarkerData[]) {
+  if (!mapInstance || !isMapReady) {
+    console.log('[TencentMapPicker] updateMarkers: 地图未就绪')
+    return
+  }
+
+  console.log('[TencentMapPicker] updateMarkers: 处理', markers.length, '个标记')
+
+  const TMap = (window as any).TMap
+
+  // 清除旧的多标记
+  multiMarkers.forEach(m => {
+    if (m.setMap) m.setMap(null)
+  })
+  multiMarkers = []
+
+  // 使用 MultiMarker 创建标记（更高效）
+  const geometries: any[] = []
+  markers.forEach(marker => {
+    console.log('[TencentMapPicker] 处理标记:', marker.name, marker.lat, marker.lng)
+
+    if (!isValidCoordinate(marker.lat, marker.lng)) {
+      console.warn('[TencentMapPicker] 无效坐标，跳过:', marker.name)
+      return
+    }
+
+    geometries.push({
+      id: `marker_${marker.id}`,
+      styleId: 'marker',
+      position: new TMap.LatLng(marker.lat, marker.lng)
+    })
+  })
+
+  if (geometries.length > 0) {
+    const multiMarker = new TMap.MultiMarker({
+      map: mapInstance,
+      styles: {
+        'marker': new TMap.MarkerStyle({
+          width: 25,
+          height: 35,
+          anchor: { x: 12.5, y: 35 }
+        })
+      },
+      geometries: geometries
+    })
+    multiMarkers.push(multiMarker)
+  }
+
+  console.log('[TencentMapPicker] 成功添加', geometries.length, '个标记')
+}
+
+// 缩放到所有标记范围
+function fitMarkers() {
+  console.log('[TencentMapPicker] fitMarkers 被调用')
+
+  if (!mapInstance || !isMapReady) {
+    console.log('[TencentMapPicker] fitMarkers: 地图未就绪')
+    return
+  }
+
+  // 使用 multiMarkers 中已添加的标记来计算范围
+  if (multiMarkers.length === 0) {
+    console.log('[TencentMapPicker] fitMarkers: 没有标记')
+    return
+  }
+
+  console.log('[TencentMapPicker] fitMarkers: 缩放')
+
+  try {
+    const TMap = (window as any).TMap
+    const bounds = new TMap.LatLngBounds()
+
+    // 从 multiMarkers 获取位置（MultiMarker 的 geometries）
+    let hasValidCoord = false
+
+    // 尝试从每个 MultiMarker 获取几何信息
+    multiMarkers.forEach((multiMarker: any) => {
+      if (multiMarker.getGeometries) {
+        const geometries = multiMarker.getGeometries()
+        geometries.forEach((geo: any) => {
+          if (geo.position) {
+            bounds.extend(geo.position)
+            hasValidCoord = true
+          }
+        })
+      }
+    })
+
+    if (!hasValidCoord) {
+      console.log('[TencentMapPicker] fitMarkers: 没有有效坐标')
+      return
+    }
+
+    mapInstance.fitBounds(bounds, { padding: 50 })
+    console.log('[TencentMapPicker] fitMarkers: 成功')
+  } catch (e) {
+    console.error('[TencentMapPicker] fitMarkers 失败:', e)
+  }
+}
+
+// 检查坐标是否有效
+function isValidCoordinate(lat: number, lng: number): boolean {
+  return typeof lat === 'number' && typeof lng === 'number' &&
+         !isNaN(lat) && !isNaN(lng) &&
+         lat !== 0 && lng !== 0
 }
 
 // 搜索地址
@@ -212,6 +354,12 @@ function setCenter(lat: number, lng: number) {
 
 // 销毁地图
 function destroyMap() {
+  // 清除多标记
+  multiMarkers.forEach(m => {
+    if (m.setMap) m.setMap(null)
+  })
+  multiMarkers = []
+  // 清除单标记
   if (markerInstance) {
     markerInstance.setMap(null)
     markerInstance = null
@@ -236,15 +384,25 @@ watch(() => props.modelValue, (newVal) => {
 
 // 监听 apiKey 变化
 watch(() => props.apiKey, (newVal, oldVal) => {
+  console.log('[TencentMapPicker] apiKey 变化:', oldVal, '->', newVal)
   if (newVal && newVal !== oldVal) {
     destroyMap()
     nextTick(() => initMap())
   }
 })
 
+// 监听 markers 变化
+watch(() => props.markers, (newVal) => {
+  console.log('[TencentMapPicker] markers 变化:', newVal?.length, '个')
+  if (isMapReady && newVal && newVal.length > 0) {
+    setTimeout(() => updateMarkers(newVal), 100)
+  }
+}, { deep: true })
+
 onMounted(() => {
+  console.log('[TencentMapPicker] onMounted, apiKey:', props.apiKey)
   if (props.apiKey) {
-    initMap()
+    setTimeout(() => initMap(), 300)
   }
 })
 
@@ -257,7 +415,9 @@ defineExpose({
   searchAddress,
   reverseGeocode,
   setCenter,
-  setMarker
+  setMarker,
+  updateMarkers,
+  fitMarkers
 })
 </script>
 
@@ -265,10 +425,14 @@ defineExpose({
 .tencent-map-picker {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
 }
 
 .map-container {
   width: 100%;
+  height: 100%;
+  min-height: 200px;
   border-radius: 0.5rem;
   overflow: hidden;
   border: 1px solid #ddd;

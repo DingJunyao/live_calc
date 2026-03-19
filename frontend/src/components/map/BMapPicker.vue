@@ -10,18 +10,28 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { Coordinate, SearchResult } from '@/utils/mapTypes'
 
 // Props
+interface MarkerData {
+  id: number | string
+  lat: number
+  lng: number
+  name: string
+  selected?: boolean
+}
+
 interface Props {
   modelValue?: Coordinate
   height?: string
   readonly?: boolean
   apiKey?: string
+  markers?: MarkerData[]  // 多标记支持（用于地图展示多个点）
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: () => ({ lat: 39.9042, lng: 116.4074 }),
   height: '300px',
   readonly: false,
-  apiKey: ''
+  apiKey: '',
+  markers: () => []
 })
 
 // Emits
@@ -37,6 +47,7 @@ const currentCoordinate = ref<Coordinate | null>(null)
 // 地图实例和标记
 let mapInstance: any = null
 let markerInstance: any = null
+let multiMarkers: any[] = []  // 多标记数组
 let isMapReady = false
 let BMap: any = null
 
@@ -95,15 +106,37 @@ function waitForBMap(): Promise<void> {
 
 // 初始化地图
 async function initMap() {
-  if (!mapContainer.value) return
+  if (!mapContainer.value) {
+    console.log('[BMapPicker] 容器不存在')
+    return
+  }
+
+  console.log('[BMapPicker] 开始初始化...')
+  console.log('[BMapPicker] apiKey:', props.apiKey)
+
+  // 检查容器尺寸
+  const rect = mapContainer.value.getBoundingClientRect()
+  console.log('[BMapPicker] 容器尺寸:', rect.width, 'x', rect.height)
+
+  if (rect.width === 0 || rect.height === 0) {
+    console.warn('[BMapPicker] 容器尺寸为 0，延迟初始化')
+    setTimeout(() => initMap(), 200)
+    return
+  }
 
   try {
     await loadBMapScript()
     await waitForBMap()
 
-    const center = props.modelValue && props.modelValue.lat && props.modelValue.lng
-      ? new BMap.Point(props.modelValue.lng, props.modelValue.lat)  // 百度使用 [lng, lat]
-      : new BMap.Point(116.4074, 39.9042)
+    console.log('[BMapPicker] BMap 脚本加载完成')
+
+    // 使用固定默认中心点
+    const centerLng = 116.4074
+    const centerLat = 39.9042
+
+    console.log('[BMapPicker] 创建地图实例，中心点:', centerLng, centerLat)
+
+    const center = new BMap.Point(centerLng, centerLat)
 
     // 创建地图实例
     mapInstance = new BMap.Map(mapContainer.value)
@@ -121,15 +154,12 @@ async function initMap() {
       let lng: number | undefined
 
       if (e.latLng) {
-        // GL 版本可能使用 latLng
         lat = e.latLng.lat
         lng = e.latLng.lng
       } else if (e.latlng) {
-        // 某些版本使用 latlng
         lat = e.latlng.lat
         lng = e.latlng.lng
       } else if (e.point) {
-        // Legacy 版本使用 point
         lat = e.point.lat
         lng = e.point.lng
       }
@@ -139,17 +169,16 @@ async function initMap() {
         setMarker(coord)
         currentCoordinate.value = coord
         emit('update:modelValue', coord)
-      } else {
-        console.warn('[BMapPicker] 无法获取点击坐标:', e)
       }
     })
 
     isMapReady = true
+    console.log('[BMapPicker] 地图初始化成功')
 
-    // 如果有初始坐标，显示标记
-    if (props.modelValue && props.modelValue.lat && props.modelValue.lng) {
-      setMarker(props.modelValue)
-      currentCoordinate.value = props.modelValue
+    // 渲染多标记（如果有）
+    if (props.markers && props.markers.length > 0) {
+      console.log('[BMapPicker] 渲染多标记:', props.markers.length, '个')
+      updateMarkers(props.markers)
     }
   } catch (error) {
     console.error('[BMapPicker] 初始化地图失败:', error)
@@ -210,6 +239,94 @@ function setMarker(coord: Coordinate) {
   mapInstance.setCenter(point)
 }
 
+// 更新多标记（用于商家地图等场景）
+function updateMarkers(markers: MarkerData[]) {
+  if (!mapInstance || !isMapReady || !BMap) {
+    console.log('[BMapPicker] updateMarkers: 地图未就绪')
+    return
+  }
+
+  console.log('[BMapPicker] updateMarkers: 处理', markers.length, '个标记')
+
+  // 清除旧的多标记
+  multiMarkers.forEach(m => mapInstance.removeOverlay(m))
+  multiMarkers = []
+
+  // 添加新标记 - 使用简单默认标记
+  markers.forEach(marker => {
+    console.log('[BMapPicker] 处理标记:', marker.name, marker.lat, marker.lng)
+
+    if (!isValidCoordinate(marker.lat, marker.lng)) {
+      console.warn('[BMapPicker] 无效坐标，跳过:', marker.name)
+      return
+    }
+
+    const point = new BMap.Point(marker.lng, marker.lat)
+    const markerObj = new BMap.Marker(point)
+    mapInstance.addOverlay(markerObj)
+    multiMarkers.push(markerObj)
+  })
+
+  console.log('[BMapPicker] 成功添加', multiMarkers.length, '个标记')
+}
+
+// 检查坐标是否有效
+function isValidCoordinate(lat: number, lng: number): boolean {
+  return typeof lat === 'number' && typeof lng === 'number' &&
+         !isNaN(lat) && !isNaN(lng) &&
+         lat !== 0 && lng !== 0
+}
+
+// 缩放到所有标记范围
+function fitMarkers() {
+  console.log('[BMapPicker] fitMarkers 被调用')
+
+  if (!mapInstance || !isMapReady) {
+    console.log('[BMapPicker] fitMarkers: 地图未就绪')
+    return
+  }
+
+  // 使用 multiMarkers 中已添加的标记来计算范围
+  if (multiMarkers.length === 0) {
+    console.log('[BMapPicker] fitMarkers: 没有标记')
+    return
+  }
+
+  console.log('[BMapPicker] fitMarkers: 缩放到', multiMarkers.length, '个标记')
+
+  try {
+    // 重新获取 BMap（确保可用）
+    const currentBMap = (window as any).BMapGL || (window as any).BMap
+    if (!currentBMap) {
+      console.error('[BMapPicker] BMap 不可用')
+      return
+    }
+
+    // 获取所有标记的位置
+    const points: any[] = []
+    multiMarkers.forEach(marker => {
+      const pos = marker.getPosition()
+      console.log('[BMapPicker] 标记位置:', pos)
+      if (pos && typeof pos.lng === 'number' && typeof pos.lat === 'number' &&
+          !isNaN(pos.lng) && !isNaN(pos.lat)) {
+        points.push(new currentBMap.Point(pos.lng, pos.lat))
+      }
+    })
+
+    if (points.length === 0) {
+      console.log('[BMapPicker] fitMarkers: 没有有效坐标')
+      return
+    }
+
+    console.log('[BMapPicker] fitMarkers: 计算 viewport，', points.length, '个点')
+    const viewport = mapInstance.getViewport(points)
+    mapInstance.centerAndZoom(viewport.center, viewport.zoom)
+    console.log('[BMapPicker] fitMarkers: 成功')
+  } catch (e) {
+    console.error('[BMapPicker] fitMarkers 失败:', e)
+  }
+}
+
 // 搜索地址
 async function searchAddress(query: string): Promise<SearchResult[]> {
   if (!query || !props.apiKey) return []
@@ -262,6 +379,10 @@ function setCenter(lat: number, lng: number) {
 
 // 销毁地图
 function destroyMap() {
+  // 清除多标记
+  multiMarkers.forEach(m => mapInstance?.removeOverlay(m))
+  multiMarkers = []
+  // 清除单标记
   if (markerInstance) {
     mapInstance?.removeOverlay(markerInstance)
     markerInstance = null
@@ -285,15 +406,25 @@ watch(() => props.modelValue, (newVal) => {
 
 // 监听 apiKey 变化
 watch(() => props.apiKey, (newVal, oldVal) => {
+  console.log('[BMapPicker] apiKey 变化:', oldVal, '->', newVal)
   if (newVal && newVal !== oldVal) {
     destroyMap()
     nextTick(() => initMap())
   }
 })
 
+// 监听 markers 变化
+watch(() => props.markers, (newVal) => {
+  console.log('[BMapPicker] markers 变化:', newVal?.length, '个')
+  if (isMapReady && newVal && newVal.length > 0) {
+    setTimeout(() => updateMarkers(newVal), 100)
+  }
+}, { deep: true })
+
 onMounted(() => {
+  console.log('[BMapPicker] onMounted, apiKey:', props.apiKey)
   if (props.apiKey) {
-    initMap()
+    setTimeout(() => initMap(), 300)
   }
 })
 
@@ -306,7 +437,9 @@ defineExpose({
   searchAddress,
   reverseGeocode,
   setCenter,
-  setMarker
+  setMarker,
+  updateMarkers,
+  fitMarkers
 })
 </script>
 
@@ -314,10 +447,14 @@ defineExpose({
 .bmap-picker {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
 }
 
 .map-container {
   width: 100%;
+  height: 100%;
+  min-height: 200px;
   border-radius: 0.5rem;
   overflow: hidden;
   border: 1px solid #ddd;
