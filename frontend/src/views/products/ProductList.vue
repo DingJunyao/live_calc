@@ -126,8 +126,16 @@
                 :class="{ 'suggestion-selected': selectedIndex === index }"
                 @click="selectProduct(product)"
               >
-                {{ product.name }}
+                <span class="suggestion-name">{{ product.name }}</span>
                 <span v-if="product.brand" class="suggestion-brand"> - {{ product.brand }}</span>
+                <!-- 显示匹配的别名 -->
+                <span v-if="product.match_type === 'alias' && product.matched_alias" class="suggestion-alias">
+                  ({{ product.matched_alias }})
+                </span>
+                <!-- 显示食材名称提示 -->
+                <span v-else-if="product.match_type === 'ingredient_name' && product.ingredient_name" class="suggestion-ingredient">
+                  ({{ product.ingredient_name }})
+                </span>
               </div>
               <div
                 v-if="showProductCreateOption"
@@ -240,6 +248,10 @@ type ProductSuggestion = {
   id: number
   name: string
   brand?: string
+  ingredient_id?: number
+  ingredient_name?: string
+  match_type?: 'name' | 'ingredient_name' | 'alias'
+  matched_alias?: string | null
 }
 
 type PriceRecord = {
@@ -340,17 +352,14 @@ async function filterProductOptions() {
 
   // 优先使用API进行搜索以获得最新最全的结果
   try {
-    // 使用API端点进行搜索，这样可以利用后端的数据库索引
-    console.log(`调用API搜索: ${search}`)
-    const response = await productAPI.list({
-      skip: 0,
-      limit: 1000,  // 修改为1000，符合后端限制
-      search: search  // 假设API支持搜索参数
-    });
+    // 使用新的自动完成API进行搜索，支持别名匹配
+    console.log(`调用自动完成API搜索: ${search}`)
+    const response = await api.get(`/products/autocomplete?q=${encodeURIComponent(search)}&limit=100`);
 
-    const items = (response as any).items || (Array.isArray(response) ? response : []);
+    // API返回带有匹配类型和匹配别名的结果
+    const items = Array.isArray(response) ? response : [];
     filteredProducts.value = items;
-    console.log(`API搜索结果数量: ${items.length}, 搜索词: "${search}"`)
+    console.log(`自动完成API搜索结果数量: ${items.length}, 搜索词: "${search}"`)
 
     // 检查是否显示创建选项
     showProductCreateOption.value = search.length > 0 &&
@@ -2217,6 +2226,17 @@ function updateSuggestionsPosition(
 .suggestion-address {
   color: #666;
   font-size: 0.9em;
+}
+
+.suggestion-alias,
+.suggestion-ingredient {
+  color: #999;
+  font-size: 0.85em;
+  margin-left: 0.25rem;
+}
+
+.suggestion-name {
+  /* 商品名称默认样式 */
 }
 
 /* 创建新项目的特殊样式 */

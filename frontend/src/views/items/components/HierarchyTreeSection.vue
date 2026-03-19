@@ -117,8 +117,9 @@
                   :class="{ 'suggestion-selected': index === selectedIngredientIndex }"
                   @click="selectIngredient(suggestion)"
                 >
-                  {{ suggestion.name }}
-                  <span v-if="suggestion.category_name" class="category-hint">({{ suggestion.category_name }})</span>
+                  <span class="suggestion-name">{{ suggestion.name }}</span>
+                  <span v-if="suggestion.matched_alias" class="alias-hint">({{ suggestion.matched_alias }})</span>
+                  <span v-else-if="suggestion.category_name" class="category-hint">({{ suggestion.category_name }})</span>
                 </li>
               </ul>
             </div>
@@ -525,14 +526,41 @@ function searchIngredients() {
 
 function filterIngredients() {
   if (!ingredientSearchTerm.value.trim()) {
-    ingredientSuggestions.value = ingredients.value.slice(0, 10)
+    // 清除匹配别名
+    ingredientSuggestions.value = ingredients.value.slice(0, 10).map((ing: any) => ({
+      ...ing,
+      matched_alias: undefined
+    }))
   } else {
     const search = ingredientSearchTerm.value.toLowerCase()
     ingredientSuggestions.value = ingredients.value
-      .filter(ing =>
-        ing.name.toLowerCase().includes(search) ||
-        (ing.aliases && ing.aliases.some((alias: string) => alias.toLowerCase().includes(search)))
-      )
+      .filter((ing: any) => {
+        // 匹配名称
+        if (ing.name.toLowerCase().includes(search)) {
+          return true
+        }
+        // 匹配别名
+        if (ing.aliases && ing.aliases.some((alias: string) => alias.toLowerCase().includes(search))) {
+          return true
+        }
+        return false
+      })
+      .map((ing: any) => {
+        // 计算匹配的别名
+        let matchedAlias: string | undefined = undefined
+        if (ing.aliases) {
+          for (const alias of ing.aliases) {
+            if (alias.toLowerCase().includes(search)) {
+              matchedAlias = alias
+              break
+            }
+          }
+        }
+        return {
+          ...ing,
+          matched_alias: matchedAlias
+        }
+      })
       .slice(0, 10)
   }
   showIngredientSuggestions.value = ingredientSuggestions.value.length > 0
@@ -909,6 +937,16 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #999;
   font-weight: normal;
+}
+
+.alias-hint {
+  font-size: 12px;
+  color: #888;
+  font-weight: normal;
+}
+
+.suggestion-name {
+  /* 名称默认样式 */
 }
 
 .selected-hint {
