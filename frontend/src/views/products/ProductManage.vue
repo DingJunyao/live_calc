@@ -277,6 +277,14 @@ let searchTimeout: ReturnType<typeof setTimeout> | null = null
 let ingredientSearchTimeout: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
+  // 从路由参数初始化分页状态
+  const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 20;
+
+  // 确保分页参数有效
+  currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 20 : sizeFromRoute;
+
   loadProducts()
   loadIngredients()
   loadLocations()
@@ -392,6 +400,15 @@ function debounceSearch() {
 
 function handlePageChange(page: number) {
   currentPage.value = page
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadProducts()
 }
 
