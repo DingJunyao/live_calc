@@ -602,6 +602,7 @@ async function deleteRecipe(recipe: any) {
   }
 
   .recipe-grid {
+    grid-template-columns: repeat(2, 1fr); /* 移动端改为两列 */
     gap: 0.75rem;
   }
 
