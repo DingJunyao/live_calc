@@ -173,12 +173,30 @@ const mergeableIngredients = computed(() => {
 // 分页处理函数
 function handlePageChange(page: number) {
   currentPage.value = page
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadIngredients()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
-  currentPage.value = 1
+  currentPage.value = 1  // 更改页面大小时重置到第一页
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadIngredients()
 }
 
@@ -256,6 +274,14 @@ async function performMerge() {
 }
 
 onMounted(async () => {
+  // 从路由参数初始化分页状态
+  const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 20;
+
+  // 确保分页参数有效
+  currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 20 : sizeFromRoute;
+
   await loadCategories()
   await loadUnits()
   await loadIngredients()

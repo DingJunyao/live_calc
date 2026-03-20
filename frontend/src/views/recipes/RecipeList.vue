@@ -103,12 +103,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
 
+const route = useRoute()
 const router = useRouter()
 
 const recipes = ref<any[]>([])
@@ -128,7 +129,15 @@ const pageSize = ref(10)
 const total = ref(0)
 
 onMounted(async () => {
-  await loadRecipes()
+  // 从路由参数初始化分页状态
+  const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 10;
+
+  // 确保分页参数有效
+  currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 10 : sizeFromRoute;
+
+  await loadRecipes();
 })
 
 async function loadRecipes() {
@@ -169,12 +178,30 @@ async function loadRecipes() {
 
 function handlePageChange(page: number) {
   currentPage.value = page
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadRecipes()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
-  currentPage.value = 1
+  currentPage.value = 1  // 更改页面大小时重置到第一页
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadRecipes()
 }
 
