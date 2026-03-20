@@ -202,6 +202,25 @@
       </div>
     </div>
   </div>
+
+  <!-- 二次确认模态框 -->
+  <div v-if="showConfirmModal" class="modal-overlay">
+    <div class="modal-content modal-confirm">
+      <h3>⚠️ 确认操作</h3>
+      <p class="confirm-message">{{ confirmMessage }}</p>
+
+      <div class="form-actions">
+        <button @click="cancelConfirm" class="btn-secondary">取消</button>
+        <button @click="proceedWithAction" class="btn-danger">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 顶部通知提示 -->
+  <div v-if="notification" :class="['notification', 'notification-' + notification.type]">
+    {{ notification.message }}
+    <button @click="hideNotification" class="notification-close">×</button>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -259,6 +278,14 @@ const selectedMergeTarget = ref<any | null>(null)
 const merging = ref(false)
 const mergeTargetInputRef = ref<HTMLInputElement | null>(null)
 let mergeSearchTimeout: ReturnType<typeof setTimeout> | null = null
+
+// 新增：确认模态框相关状态
+const showConfirmModal = ref(false)
+const confirmMessage = ref('')
+const confirmCallback = ref<Function | null>(null)
+
+// 新增：通知提示相关状态
+const notification = ref<{ message: string, type: string } | null>(null)
 
 // 强制刷新标记
 const forceRefresh = ref(0)
@@ -579,7 +606,7 @@ async function saveEdit() {
   console.log('saveEdit - 当前 item.default_unit_id:', item.value?.default_unit_id)
 
   if (!editForm.value.name) {
-    alert('请输入名称')
+    showNotification('请输入名称', 'error')
     return
   }
 
@@ -645,7 +672,7 @@ async function saveEdit() {
       }
     }
 
-    alert('更新成功')
+    showNotification('更新成功', 'success')
     closeEditModal()
 
     // 不重新加载数据，只依赖直接更新
@@ -653,8 +680,41 @@ async function saveEdit() {
   } catch (error: any) {
     console.error('更新失败:', error)
     console.error('更新失败详情:', error.response?.data || error.message)
-    alert(`更新失败: ${error.message || '未知错误'}`)
+    showNotification(`更新失败: ${error.message || '未知错误'}`, 'error')
   }
+}
+
+// ==================== 通用模态框和通知相关函数 ====================
+
+function showConfirmation(message: string, callback: Function) {
+  confirmMessage.value = message;
+  confirmCallback.value = callback;
+  showConfirmModal.value = true;
+}
+
+function cancelConfirm() {
+  showConfirmModal.value = false;
+  confirmMessage.value = '';
+  confirmCallback.value = null;
+}
+
+function proceedWithAction() {
+  if (confirmCallback.value) {
+    confirmCallback.value();
+  }
+  cancelConfirm();
+}
+
+function showNotification(message: string, type: string = 'info') {
+  notification.value = { message, type };
+  // 3秒后自动隐藏通知
+  setTimeout(() => {
+    hideNotification();
+  }, 3000);
+}
+
+function hideNotification() {
+  notification.value = null;
 }
 
 // ==================== 合并原料相关函数 ====================
@@ -753,42 +813,47 @@ function handleMergeKeydown(event: KeyboardEvent) {
 }
 
 async function confirmMerge() {
-  if (!selectedMergeTarget.value) return
+  console.log('确认合并按钮被点击')
+  if (!selectedMergeTarget.value) {
+    console.log('没有选择目标原料')
+    return
+  }
 
   const targetName = selectedMergeTarget.value.name
   const sourceName = item.value?.name
   const targetId = selectedMergeTarget.value.id  // 先保存目标ID
+  const sourceId = itemId.value
 
-  // 二次确认
-  const confirmed = confirm(
-    `确定要将原料"${sourceName}"合并到"${targetName}"吗？\n\n` +
-    `此操作将：\n` +
-    `1. 更新菜谱中的原料引用\n` +
-    `2. 迁移相关商品和价格记录\n` +
-    `3. 将"${sourceName}"及其别名添加到"${targetName}"\n` +
-    `4. 删除"${sourceName}"，此操作不可恢复！`
-  )
+  console.log('合并信息:', { sourceId, sourceName, targetId, targetName })
 
-  if (!confirmed) return
+  // 使用页面内确认模态框替代原生 confirm
+  const confirmationMessage = `"${sourceName}" → "${targetName}"\n\n⚠️ 此操作不可撤销！\n\n将执行：\n• 更新菜谱中的原料引用\n• 迁移相关商品和价格记录\n• 合并别名到目标原料\n• 删除源原料"${sourceName}"\n\n确认继续？`;
 
-  merging.value = true
-  try {
-    const response = await api.post('/ingredients/merge', {
-      source_id: itemId.value,
-      target_id: targetId
-    })
+  showConfirmation(confirmationMessage, async () => {
+    console.log('用户确认了合并操作')
+    console.log('开始执行合并...')
+    merging.value = true
+    try {
+      const response = await api.post('/ingredients/merge', {
+        source_id: sourceId,
+        target_id: targetId
+      })
 
-    alert((response as any).message || '合并成功')
-    closeMergeModal()
+      console.log('合并成功响应:', response)
+      showNotification((response as any).message || '合并成功', 'success')
+      closeMergeModal()
 
-    // 跳转到目标原料详情页
-    router.push(`/items/ingredient/${targetId}`)
-  } catch (error: any) {
-    console.error('合并失败:', error)
-    alert(error.message || '合并失败，请重试')
-  } finally {
-    merging.value = false
-  }
+      // 跳转到目标原料详情页
+      router.push(`/items/ingredient/${targetId}`)
+    } catch (error: any) {
+      console.error('合并失败:', error)
+      console.error('错误详情:', error.response || error.message)
+      showNotification(error.message || '合并失败，请重试', 'error')
+    } finally {
+      console.log('合并操作结束，设置merging为false')
+      merging.value = false
+    }
+  });
 }
 
 function goToNutritionEdit() {
@@ -846,7 +911,7 @@ async function handleAddRelation(data: any) {
     const searchResponse = await api.get(`/ingredients/search-by-name/${encodeURIComponent(data.target_name)}?limit=1`)
 
     if (!searchResponse || searchResponse.length === 0) {
-      alert(`未找到食材"${data.target_name}"`)
+      showNotification(`未找到食材"${data.target_name}"`, 'error')
       return
     }
 
@@ -864,10 +929,10 @@ async function handleAddRelation(data: any) {
 
     // 添加成功后重新加载层级关系
     loadHierarchyRelations()
-    alert('添加关系成功')
+    showNotification('添加关系成功', 'success')
   } catch (e: any) {
     console.error('添加关系失败:', e)
-    alert(e.message || '添加关系失败，请重试')
+    showNotification(e.message || '添加关系失败，请重试', 'error')
   }
 }
 
@@ -880,7 +945,7 @@ async function handleDeleteRelation(relationId: number) {
     loadHierarchyRelations()
   } catch (e: any) {
     console.error('删除关系失败:', e)
-    alert(e.message || '删除关系失败，请重试')
+    showNotification(e.message || '删除关系失败，请重试', 'error')
   }
 }
 
@@ -893,7 +958,7 @@ async function handleEditStrength(data: any) {
     loadHierarchyRelations()
   } catch (e: any) {
     console.error('修改关系强度失败:', e)
-    alert(e.message || '修改关系强度失败，请重试')
+    showNotification(e.message || '修改关系强度失败，请重试', 'error')
   }
 }
 
@@ -980,10 +1045,92 @@ watch(
   color: #666;
 }
 
+/* 通知提示样式 */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 16px 24px;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  z-index: 1001;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 300px;
+  max-width: 500px;
+  animation: slideInRight 0.3s ease-out;
+}
+
+.notification-info {
+  background-color: #2196f3;
+}
+
+.notification-success {
+  background-color: #4caf50;
+}
+
+.notification-error {
+  background-color: #f44336;
+}
+
+.notification-warning {
+  background-color: #ff9800;
+  color: #333;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 20px;
+  cursor: pointer;
+  margin-left: 16px;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* 确认模态框样式 */
+.modal-confirm {
+  max-width: 400px;
+}
+
+.confirm-message {
+  margin: 1.25rem 0;
+  white-space: pre-line;
+  line-height: 1.6;
+  color: #333;
+}
+
 /* 移动端适配 */
 @media (max-width: 768px) {
-  .item-detail {
-    padding: 12px;
+  .notification {
+    right: 10px;
+    left: 10px;
+    top: 10px;
+    min-width: auto;
+  }
+
+  .modal-confirm {
+    width: 90%;
+    max-width: 350px;
   }
 }
 
@@ -1003,8 +1150,9 @@ watch(
 
 .modal-content {
   background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   max-width: 500px;
   width: 90%;
   max-height: 90vh;
@@ -1012,11 +1160,11 @@ watch(
 }
 
 .modal-content h2 {
-  margin: 0 0 20px;
-  font-size: 18px;
+  margin: 0 0 1.5rem;
+  font-size: 1.5rem;
   font-weight: 600;
   color: #333;
-  padding-top: 20px;
+  padding-top: 0;
 }
 
 .form-row {
@@ -1058,19 +1206,19 @@ watch(
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 20px;
-  padding: 0 20px 20px;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 0 2rem 2rem;
 }
 
 .btn-primary {
   background-color: #42b883;
   color: white;
   border: none;
-  padding: 10px 24px;
-  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 1rem;
 }
 
 .btn-primary:hover {
@@ -1078,27 +1226,27 @@ watch(
 }
 
 .btn-secondary {
-  background-color: #e5e5e5;
-  color: #666;
-  border: none;
-  padding: 10px 24px;
-  border-radius: 4px;
+  background-color: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 1rem;
 }
 
 .btn-secondary:hover {
-  background-color: #d4d4d4;
+  background-color: #e0e0e0;
 }
 
 .btn-danger {
   background-color: #e53935;
   color: white;
   border: none;
-  padding: 10px 24px;
-  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 1rem;
 }
 
 .btn-danger:hover {
