@@ -220,8 +220,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import { useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
 
@@ -449,12 +449,30 @@ function closeConversionsDialog() {
 // 分页处理函数
 function handlePageChange(page: number) {
   currentPage.value = page
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadUnits()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
   currentPage.value = 1
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadUnits()
 }
 </script>
