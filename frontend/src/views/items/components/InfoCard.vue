@@ -2,9 +2,14 @@
   <div class="info-card">
     <div class="info-card-header">
       <h2 class="info-title">基本信息</h2>
-      <button @click="$emit('edit')" class="btn-edit">
-        <i class="mdi mdi-pencil"></i> 编辑
-      </button>
+      <div class="header-actions">
+        <button v-if="type === 'ingredient'" @click="$emit('merge')" class="btn-merge" title="合并到其他原料">
+          <i class="mdi mdi-merge"></i> 合并
+        </button>
+        <button @click="$emit('edit')" class="btn-edit">
+          <i class="mdi mdi-pencil"></i> 编辑
+        </button>
+      </div>
     </div>
 
     <div class="info-content">
@@ -95,6 +100,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   edit: []
+  merge: []
   ingredientClick: [ingredientId: number]
 }>()
 
@@ -156,6 +162,28 @@ function formatDate(dateStr: string): string {
 
 .btn-edit:hover {
   background-color: #3aa876;
+}
+
+.btn-merge {
+  background-color: #ff9800;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-merge:hover {
+  background-color: #f57c00;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .info-content {

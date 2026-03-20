@@ -23,7 +23,7 @@
 
     <template v-else>
       <!-- 基本信息 -->
-      <InfoCard v-if="item" :item="item" :type="type" @edit="handleEditInfo" @ingredient-click="handleIngredientClick" />
+      <InfoCard v-if="item" :item="item" :type="type" @edit="handleEditInfo" @merge="openMergeModal" @ingredient-click="handleIngredientClick" />
 
       <!-- 价格历史 -->
       <PriceChartSection v-if="item && priceRecords.length > 0"
@@ -139,6 +139,69 @@
       </div>
     </div>
   </div>
+
+  <!-- 合并原料模态框 -->
+  <div v-if="showMergeModal" class="modal-overlay">
+    <div class="modal-content">
+      <h2>合并原料</h2>
+      <p class="merge-info">
+        将 <strong>{{ item?.name }}</strong> 合并到以下原料：
+      </p>
+
+      <div class="form-group">
+        <label for="merge-target">目标原料 *</label>
+        <input
+          ref="mergeTargetInputRef"
+          v-model="mergeSearchTerm"
+          type="text"
+          id="merge-target"
+          placeholder="搜索并选择目标原料"
+          @input="onMergeSearchInput"
+          @focus="showMergeSuggestions = true"
+          @keydown="handleMergeKeydown"
+          class="input-field"
+        />
+        <ul v-if="showMergeSuggestions && mergeSuggestions.length > 0" class="suggestions-list">
+          <li
+            v-for="(suggestion, index) in mergeSuggestions"
+            :key="suggestion.id"
+            :class="{ 'suggestion-selected': selectedMergeIndex === index }"
+            @click="selectMergeTarget(suggestion)"
+          >
+            {{ suggestion.name }}
+            <span v-if="suggestion.matched_alias" class="suggestion-alias">({{ suggestion.matched_alias }})</span>
+          </li>
+        </ul>
+        <p v-if="selectedMergeTarget" class="selected-hint">
+          已选择: {{ selectedMergeTarget.name }}
+        </p>
+      </div>
+
+      <div class="merge-warning">
+        <i class="mdi mdi-alert-circle"></i>
+        <div>
+          <p><strong>合并后将执行以下操作：</strong></p>
+          <ul>
+            <li>菜谱中的原料引用将更新为目标原料</li>
+            <li>相关商品和价格记录将迁移到目标原料</li>
+            <li>当前原料的名称和别名将添加到目标原料</li>
+            <li>当前原料将被删除，此操作不可恢复</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button @click="closeMergeModal" class="btn-secondary">取消</button>
+        <button
+          @click="confirmMerge"
+          class="btn-danger"
+          :disabled="!selectedMergeTarget || merging"
+        >
+          {{ merging ? '合并中...' : '确认合并' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -185,6 +248,17 @@ const editForm = ref({
 })
 const units = ref<any[]>([])
 const categories = ref<any[]>([])
+
+// 合并原料相关状态
+const showMergeModal = ref(false)
+const mergeSearchTerm = ref('')
+const mergeSuggestions = ref<any[]>([])
+const showMergeSuggestions = ref(false)
+const selectedMergeIndex = ref(-1)
+const selectedMergeTarget = ref<any | null>(null)
+const merging = ref(false)
+const mergeTargetInputRef = ref<HTMLInputElement | null>(null)
+let mergeSearchTimeout: ReturnType<typeof setTimeout> | null = null
 
 // 强制刷新标记
 const forceRefresh = ref(0)
@@ -583,6 +657,140 @@ async function saveEdit() {
   }
 }
 
+// ==================== 合并原料相关函数 ====================
+
+function openMergeModal() {
+  if (type.value !== 'ingredient') return
+  showMergeModal.value = true
+  mergeSearchTerm.value = ''
+  selectedMergeTarget.value = null
+  mergeSuggestions.value = []
+  showMergeSuggestions.value = false
+}
+
+function closeMergeModal() {
+  showMergeModal.value = false
+  mergeSearchTerm.value = ''
+  selectedMergeTarget.value = null
+  mergeSuggestions.value = []
+  showMergeSuggestions.value = false
+  selectedMergeIndex.value = -1
+}
+
+function onMergeSearchInput() {
+  if (mergeSearchTimeout) {
+    clearTimeout(mergeSearchTimeout)
+  }
+  mergeSearchTimeout = setTimeout(() => {
+    searchMergeTargets()
+  }, 300)
+}
+
+async function searchMergeTargets() {
+  const search = mergeSearchTerm.value.trim()
+
+  if (!search || search.length < 1) {
+    mergeSuggestions.value = []
+    showMergeSuggestions.value = false
+    return
+  }
+
+  try {
+    const response = await api.get(`/ingredients?q=${encodeURIComponent(search)}&limit=20`)
+    const items = (response as any).items || (Array.isArray(response) ? response : [])
+
+    // 过滤掉当前原料和已合并的原料
+    mergeSuggestions.value = items
+      .filter((ing: any) => ing.id !== itemId.value && !ing.is_merged)
+      .map((ing: any) => {
+        // 计算匹配的别名
+        let matchedAlias: string | undefined = undefined
+        if (ing.aliases) {
+          const searchLower = search.toLowerCase()
+          for (const alias of ing.aliases) {
+            if (alias.toLowerCase().includes(searchLower)) {
+              matchedAlias = alias
+              break
+            }
+          }
+        }
+        return {
+          ...ing,
+          matched_alias: matchedAlias
+        }
+      })
+
+    showMergeSuggestions.value = mergeSuggestions.value.length > 0
+    selectedMergeIndex.value = -1
+  } catch (error) {
+    console.error('搜索原料失败:', error)
+    mergeSuggestions.value = []
+    showMergeSuggestions.value = false
+  }
+}
+
+function selectMergeTarget(suggestion: any) {
+  selectedMergeTarget.value = suggestion
+  mergeSearchTerm.value = suggestion.name
+  showMergeSuggestions.value = false
+  selectedMergeIndex.value = -1
+}
+
+function handleMergeKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    selectedMergeIndex.value = Math.min(selectedMergeIndex.value + 1, mergeSuggestions.value.length - 1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    selectedMergeIndex.value = Math.max(selectedMergeIndex.value - 1, -1)
+  } else if (event.key === 'Enter' && selectedMergeIndex.value >= 0) {
+    event.preventDefault()
+    selectMergeTarget(mergeSuggestions.value[selectedMergeIndex.value])
+  } else if (event.key === 'Escape') {
+    showMergeSuggestions.value = false
+    selectedMergeIndex.value = -1
+  }
+}
+
+async function confirmMerge() {
+  if (!selectedMergeTarget.value) return
+
+  const targetName = selectedMergeTarget.value.name
+  const sourceName = item.value?.name
+  const targetId = selectedMergeTarget.value.id  // 先保存目标ID
+
+  // 二次确认
+  const confirmed = confirm(
+    `确定要将原料"${sourceName}"合并到"${targetName}"吗？\n\n` +
+    `此操作将：\n` +
+    `1. 更新菜谱中的原料引用\n` +
+    `2. 迁移相关商品和价格记录\n` +
+    `3. 将"${sourceName}"及其别名添加到"${targetName}"\n` +
+    `4. 删除"${sourceName}"，此操作不可恢复！`
+  )
+
+  if (!confirmed) return
+
+  merging.value = true
+  try {
+    const response = await api.post('/ingredients/merge', {
+      source_id: itemId.value,
+      target_id: targetId
+    })
+
+    alert((response as any).message || '合并成功')
+    closeMergeModal()
+
+    // 跳转到目标原料详情页
+    router.push(`/items/ingredient/${targetId}`)
+  } catch (error: any) {
+    console.error('合并失败:', error)
+    alert(error.message || '合并失败，请重试')
+  } finally {
+    merging.value = false
+  }
+}
+
 function goToNutritionEdit() {
   router.push({
     name: 'nutrition-edit',
@@ -822,6 +1030,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: relative;
 }
 
 .form-group label {
@@ -880,5 +1089,109 @@ watch(
 
 .btn-secondary:hover {
   background-color: #d4d4d4;
+}
+
+.btn-danger {
+  background-color: #e53935;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-danger:hover {
+  background-color: #c62828;
+}
+
+.btn-danger:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* 合并模态框样式 */
+.merge-info {
+  margin-bottom: 20px;
+  color: #666;
+}
+
+.merge-info strong {
+  color: #333;
+}
+
+.merge-warning {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.merge-warning i {
+  color: #ff9800;
+  font-size: 24px;
+}
+
+.merge-warning p {
+  margin: 0 0 8px 0;
+}
+
+.merge-warning ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.merge-warning li {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.suggestions-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1001;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.suggestions-list li {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.suggestions-list li:last-child {
+  border-bottom: none;
+}
+
+.suggestions-list li:hover,
+.suggestions-list li.suggestion-selected {
+  background-color: #e8f5e9;
+}
+
+.suggestion-alias {
+  color: #999;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.selected-hint {
+  font-size: 12px;
+  color: #42b883;
+  margin-top: 4px;
 }
 </style>

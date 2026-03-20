@@ -636,7 +636,24 @@ async def merge_ingredients(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """合并原料，将源原料合并到目标原料，源原料会被软删除"""
+    """合并原料，将源原料合并到目标原料，源原料会被软删除
+
+    权限控制：
+    - 管理员可以合并所有原料
+    - 普通用户只能合并自己添加的原料
+
+    合并操作：
+    1. 菜谱中的原料引用更新为目标原料
+    2. 商品处理：
+       - 如果源原料的同名商品存在，且目标原料也有同名商品，则将价格记录迁移到目标商品
+       - 否则将商品移到目标原料下
+    3. 别名合并：源原料的名称和别名添加到目标原料的别名中（去重）
+    4. 软删除源原料并标记为已合并
+    """
+    from app.models.recipe import RecipeIngredient
+    from app.models.product_entity import Product
+    from app.models.product import ProductRecord
+
     try:
         # 获取源原料和目标原料
         source_ingredient = db.query(Ingredient).filter(Ingredient.id == source_id, Ingredient.is_active == True).first()
@@ -647,41 +664,96 @@ async def merge_ingredients(
         if not target_ingredient:
             raise HTTPException(status_code=404, detail="目标原料不存在")
 
-        # 检查权限：导入的原料只能由管理员操作
-        if source_ingredient.is_imported and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="导入的原料只能由管理员执行合并操作")
+        if source_id == target_id:
+            raise HTTPException(status_code=400, detail="不能将原料合并到自身")
 
-        # 检查：导入原料只能合并到同样为导入的原料
-        if source_ingredient.is_imported and not target_ingredient.is_imported:
-            raise HTTPException(status_code=400, detail="导入的原料只能合并到同样为导入的原料")
+        # 权限检查
+        if not current_user.is_admin:
+            # 普通用户只能合并自己添加的原料
+            if source_ingredient.created_by != current_user.id:
+                raise HTTPException(status_code=403, detail="只能合并自己添加的原料")
 
-        # 执行合并操作
-        # 1. 更新所有引用源原料的外键
-        # 从 RecipeIngredient 表更新引用
-        from app.models.recipe import RecipeIngredient
+        # 1. 更新菜谱中的原料引用
         recipe_ingredients = db.query(RecipeIngredient).filter(RecipeIngredient.ingredient_id == source_id).all()
+        recipe_count = len(recipe_ingredients)
         for ri in recipe_ingredients:
             ri.ingredient_id = target_id
 
-        # 从 IngredientNutritionMapping 表更新引用
+        # 2. 处理商品
+        product_migrated_count = 0
+        price_migrated_count = 0
+
+        # 获取源原料下的所有商品
+        source_products = db.query(Product).filter(
+            Product.ingredient_id == source_id,
+            Product.is_active == True
+        ).all()
+
+        # 获取目标原料下的所有商品
+        target_products = db.query(Product).filter(
+            Product.ingredient_id == target_id,
+            Product.is_active == True
+        ).all()
+        target_product_names = {p.name: p for p in target_products}
+
+        for source_product in source_products:
+            if source_product.name in target_product_names:
+                # 目标原料下有同名商品，将价格记录迁移到目标商品
+                target_product = target_product_names[source_product.name]
+
+                # 迁移价格记录
+                price_records = db.query(ProductRecord).filter(
+                    ProductRecord.product_id == source_product.id
+                ).all()
+                for pr in price_records:
+                    pr.product_id = target_product.id
+                    price_migrated_count += 1
+
+                # 软删除源商品
+                source_product.is_active = False
+            else:
+                # 目标原料下没有同名商品，将商品移到目标原料下
+                source_product.ingredient_id = target_id
+                product_migrated_count += 1
+
+        # 3. 合并别名
+        target_aliases = set(target_ingredient.aliases or [])
+        source_name = source_ingredient.name
+        source_aliases = set(source_ingredient.aliases or [])
+
+        # 添加源原料名称（如果不与目标原料名称相同）
+        if source_name != target_ingredient.name:
+            target_aliases.add(source_name)
+
+        # 添加源原料别名（去重）
+        for alias in source_aliases:
+            if alias != target_ingredient.name:
+                target_aliases.add(alias)
+
+        # 更新目标原料的别名
+        target_ingredient.aliases = list(target_aliases) if target_aliases else None
+
+        # 4. 从 IngredientNutritionMapping 表更新引用
         from app.models.nutrition import IngredientNutritionMapping
-        mappings = db.query(IngredientNutritionMapping).filter(IngredientNutritionMapping.ingredient_id == source_id).all()
+        mappings = db.query(IngredientNutritionMapping).filter(
+            IngredientNutritionMapping.ingredient_id == source_id
+        ).all()
         for mapping in mappings:
-            mapping.ingredient_id = target_id
+            # 检查是否已存在相同的映射
+            existing = db.query(IngredientNutritionMapping).filter(
+                IngredientNutritionMapping.ingredient_id == target_id,
+                IngredientNutritionMapping.nutrition_id == mapping.nutrition_id
+            ).first()
+            if not existing:
+                mapping.ingredient_id = target_id
+            else:
+                # 已存在相同映射，删除重复的
+                db.delete(mapping)
 
-        # 从 ProductRecord 表更新引用（如果存在的话）
-        # 注意：可能需要根据实际情况调整模型引用
-        try:
-            from app.models.product import ProductRecord
-            product_records = db.query(ProductRecord).filter(ProductRecord.ingredient_id == source_id).all()
-            for pr in product_records:
-                pr.ingredient_id = target_id
-        except ImportError:
-            # ProductRecord 模型不存在或没有 ingredient_id 字段
-            pass
-
-        # 2. 软删除源原料
+        # 5. 软删除源原料并标记为已合并
         source_ingredient.is_active = False
+        source_ingredient.is_merged = True
+        source_ingredient.merged_into_id = target_id
         source_ingredient.updated_by = current_user.id
 
         db.commit()
@@ -689,7 +761,10 @@ async def merge_ingredients(
         return {
             "message": f"成功将原料 '{source_ingredient.name}' 合并到 '{target_ingredient.name}'",
             "source_id": source_id,
-            "target_id": target_id
+            "target_id": target_id,
+            "recipe_count": recipe_count,
+            "product_migrated_count": product_migrated_count,
+            "price_migrated_count": price_migrated_count
         }
     except HTTPException:
         raise
