@@ -125,17 +125,17 @@ const newRecipe = ref({
 
 // 分页相关
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(20)
 const total = ref(0)
 
 onMounted(async () => {
   // 从路由参数初始化分页状态
   const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
-  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 10;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 20;
 
   // 确保分页参数有效
   currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
-  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 10 : sizeFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 20 : sizeFromRoute;
 
   await loadRecipes();
 })
@@ -672,7 +672,7 @@ async function deleteRecipe(recipe: any) {
   }
 
   .recipe-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr); /* 超小屏幕也保持两列 */
     gap: 0.5rem;
   }
 

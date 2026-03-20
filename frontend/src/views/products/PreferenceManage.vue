@@ -149,6 +149,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { preferenceAPI, api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
@@ -186,6 +187,10 @@ const loading = ref(false)
 const showAddModal = ref(false)
 const editingPref = ref<Preference | null>(null)
 
+// 路由相关
+const route = useRoute()
+const router = useRouter()
+
 const ingredients = ref<Ingredient[]>([])
 const products = ref<Product[]>([])
 const recipes = ref<Recipe[]>([])
@@ -203,6 +208,14 @@ const pageSize = ref(20)
 const total = ref(0)
 
 onMounted(async () => {
+  // 从路由参数初始化分页状态
+  const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 20;
+
+  // 确保分页参数有效
+  currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 20 : sizeFromRoute;
+
   await loadPreferences()
   await loadIngredients()
   await loadProducts()
@@ -255,12 +268,30 @@ async function loadRecipes() {
 
 function handlePageChange(page: number) {
   currentPage.value = page
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadPreferences()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
   currentPage.value = 1
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadPreferences()
 }
 

@@ -1008,7 +1008,7 @@ async function deleteProduct(product: Product) {
   }
 
   .product-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr); /* 超小屏幕也保持两列 */
   }
 
   .modal-content {

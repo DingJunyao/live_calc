@@ -175,6 +175,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
@@ -190,6 +191,10 @@ import 'leaflet/dist/leaflet.css'
 import AMapPicker from '@/components/map/AMapPicker.vue'
 import BMapPicker from '@/components/map/BMapPicker.vue'
 import TencentMapPicker from '@/components/map/TencentMapPicker.vue'
+
+// 路由相关
+const route = useRoute()
+const router = useRouter()
 
 // 商家数据
 const merchants = ref<any[]>([])
@@ -640,12 +645,30 @@ async function loadMerchants() {
 
 function handlePageChange(page: number) {
   currentPage.value = page
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadMerchants()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
   currentPage.value = 1
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadMerchants()
 }
 
@@ -700,6 +723,14 @@ async function deleteMerchant(merchant: any) {
 }
 
 onMounted(async () => {
+  // 从路由参数初始化分页状态
+  const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 20;
+
+  // 确保分页参数有效
+  currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 20 : sizeFromRoute;
+
   await loadMapConfig()
   await loadMerchants()
   await nextTick()

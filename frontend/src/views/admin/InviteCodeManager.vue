@@ -81,6 +81,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import Pagination from '@/components/Pagination.vue'
@@ -101,9 +102,13 @@ const deleting = ref<Record<number, boolean>>({})
 const resultMessage = ref('')
 const resultType = ref<'success' | 'error'>('success')
 
+// 路由相关
+const route = useRoute()
+const router = useRouter()
+
 // 分页相关
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(20)
 const total = ref(0)
 
 async function loadInviteCodes() {
@@ -202,16 +207,42 @@ function showResult(message: string, type: 'success' | 'error') {
 // 分页处理函数
 function handlePageChange(page: number) {
   currentPage.value = page
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadInviteCodes()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
   currentPage.value = 1
+  // 更新URL参数但不触发页面刷新
+  router.replace({
+    ...route,
+    query: {
+      ...route.query,
+      page: currentPage.value,
+      size: pageSize.value
+    }
+  });
   loadInviteCodes()
 }
 
 onMounted(() => {
+  // 从路由参数初始化分页状态
+  const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 20;
+
+  // 确保分页参数有效
+  currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 20 : sizeFromRoute;
+
   loadInviteCodes()
 })
 </script>

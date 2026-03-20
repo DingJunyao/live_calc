@@ -318,7 +318,7 @@ const loadingUnits = ref(false)
 
 // 分页相关
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(20)
 const total = ref(0)
 
 // 会话记忆功能（在同一会话中记住上一次的选择）
@@ -669,11 +669,11 @@ function handleOverlayClick(event: MouseEvent) {
 onMounted(async () => {
   // 从路由参数初始化分页状态
   const pageFromRoute = route.query.page ? parseInt(route.query.page as string) : 1;
-  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 10;
+  const sizeFromRoute = route.query.size ? parseInt(route.query.size as string) : 20;
 
   // 确保分页参数有效
   currentPage.value = isNaN(pageFromRoute) || pageFromRoute < 1 ? 1 : pageFromRoute;
-  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 10 : sizeFromRoute;
+  pageSize.value = isNaN(sizeFromRoute) || sizeFromRoute < 1 ? 20 : sizeFromRoute;
 
   await loadProducts()
   await loadAllProducts()
