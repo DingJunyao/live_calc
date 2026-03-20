@@ -2063,7 +2063,7 @@ function updateSuggestionsPosition(
 /* 响应式设计 */
 @media (max-width: 768px) {
   .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(2, 1fr); /* 移动端改为两列 */
     gap: 1rem;
   }
 
@@ -2132,7 +2132,7 @@ function updateSuggestionsPosition(
 
 @media (max-width: 480px) {
   .product-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr); /* 超小屏幕也保持两列 */
   }
 
   .product-header h3 {

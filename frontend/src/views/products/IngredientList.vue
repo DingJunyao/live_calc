@@ -1581,6 +1581,11 @@ async function deleteHierarchyRelation(relationId: number) {
     padding: 0.75rem;
   }
 
+  .ingredient-grid {
+    grid-template-columns: repeat(2, 1fr); /* 移动端改为两列 */
+    gap: 0.75rem;
+  }
+
   .add-btn {
     width: 2rem;
     height: 2rem;
@@ -1623,6 +1628,10 @@ async function deleteHierarchyRelation(relationId: number) {
 @media (max-width: 480px) {
   .ingredient-list {
     padding: 0.5rem;
+  }
+
+  .ingredient-grid {
+    grid-template-columns: repeat(2, 1fr); /* 超小屏幕也保持两列 */
   }
 
   .add-btn {

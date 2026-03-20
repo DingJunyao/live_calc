@@ -954,7 +954,7 @@ async function deleteProduct(product: Product) {
   }
 
   .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(2, 1fr); /* 移动端改为两列 */
     gap: 0.75rem;
   }
 
