@@ -191,7 +191,7 @@ const loadIngredients = async () => {
       sort_by: 'price_records'  // 按价格记录次数排序
     }
     if (search.value) {
-      params.search = search.value
+      params.q = search.value
     }
 
     const response = await api.get('/ingredients', { params })

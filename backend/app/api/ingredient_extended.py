@@ -1,7 +1,9 @@
+# 食材扩展 API - 支持别名搜索（最后修改: 2026-03-27 23:35）
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session, load_only, joinedload
 from typing import List, Optional
 from decimal import Decimal
+import json
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -13,6 +15,16 @@ from app.models.nutrition import Ingredient
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
+
+
+def _make_alias_search_term(term: str) -> str:
+    """生成用于搜索 JSON 别名数组的 Unicode 转义字符串
+
+    SQLite 存储 JSON 时会将中文字符转为 Unicode 转义序列，
+    如 "番茄" 会存储为 "\\\\u756a\\\\u8304"。
+    此函数将搜索词转换为相同的格式以便匹配。
+    """
+    return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
 
 
 @router.get("/units", response_model=PaginatedResponse[dict])
@@ -480,6 +492,9 @@ async def get_ingredients(
         from app.models.product import ProductRecord
         from sqlalchemy import func
 
+        # 生成用于搜索别名的 Unicode 转义字符串
+        alias_search = _make_alias_search_term(search) if search else None
+
         # 根据排序方式进行查询
         if sort_by == "price_records":
             # 按价格记录数量排序
@@ -493,7 +508,11 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                subquery = subquery.filter(Ingredient.name.contains(search))
+                # 搜索名称或别名
+                subquery = subquery.filter(
+                    (Ingredient.name.contains(search)) |
+                    (Ingredient.aliases.contains(alias_search))
+                )
 
             if category_id:
                 subquery = subquery.filter(Ingredient.category_id == category_id)
@@ -508,7 +527,11 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                query = query.filter(Ingredient.name.contains(search))
+                # 搜索名称或别名
+                query = query.filter(
+                    (Ingredient.name.contains(search)) |
+                    (Ingredient.aliases.contains(alias_search))
+                )
 
             if category_id:
                 query = query.filter(Ingredient.category_id == category_id)
@@ -525,7 +548,11 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                total_query = total_query.filter(Ingredient.name.contains(search))
+                # 搜索名称或别名
+                total_query = total_query.filter(
+                    (Ingredient.name.contains(search)) |
+                    (Ingredient.aliases.contains(alias_search))
+                )
 
             if category_id:
                 total_query = total_query.filter(Ingredient.category_id == category_id)
@@ -541,7 +568,7 @@ async def get_ingredients(
                 # 搜索名称或别名
                 query = query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(f'"{search}"'))  # JSON 数组搜索
+                    (Ingredient.aliases.contains(alias_search))
                 )
 
             if category_id:

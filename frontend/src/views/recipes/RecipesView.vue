@@ -15,6 +15,7 @@
       label="搜索菜谱..."
       prepend-inner-icon="mdi-magnify"
       variant="outlined"
+      density="compact"
       hide-details
       clearable
       class="mb-4"
@@ -65,16 +66,19 @@
           </div>
 
           <!-- 菜谱名称（始终显示在图片/占位符下方） -->
-          <v-card-title class="text-center pa-2 text-h6">
+          <div class="text-center pa-2 text-subtitle-1">
             {{ recipe.name }}
-          </v-card-title>
+          </div>
 
           <v-card-text class="text-center pa-2">
-            <div class="text-h5 font-weight-bold text-tertiary mb-1">
-              ¥{{ formatCost(recipe.estimated_cost) }}
-            </div>
-            <div class="text-caption text-medium-emphasis">
-              {{ recipe.calories || '-' }} kcal
+            <div class="d-flex justify-center align-center ga-2 text-body-2">
+              <span class="font-weight-bold text-tertiary">
+                ¥{{ formatCost(recipe.estimated_cost) }}
+              </span>
+              <span class="text-caption text-medium-emphasis">·</span>
+              <span class="text-caption text-medium-emphasis">
+                {{ recipe.calories || '-' }} kcal
+              </span>
             </div>
           </v-card-text>
         </v-card>
@@ -114,13 +118,14 @@
       </div>
     </div>
 
-    <!-- 悬浮按钮 -->
-    <v-fab
+    <!-- FAB 浮动添加按钮 -->
+    <v-btn
       icon="mdi-plus"
       color="primary"
-      location="bottom right"
       size="large"
-      app
+      elevation="8"
+      class="position-fixed"
+      style="bottom: 80px; right: 24px"
       @click="showAddDialog = true"
     />
 

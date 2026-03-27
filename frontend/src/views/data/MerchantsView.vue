@@ -89,14 +89,16 @@
       </div>
     </div>
 
+    <!-- FAB 浮动添加按钮 -->
     <v-btn
+      icon="mdi-plus"
       color="primary"
-      class="ma-4"
-      prepend-icon="mdi-plus"
+      size="large"
+      elevation="8"
+      class="position-fixed"
+      style="bottom: 80px; right: 24px"
       @click="openEditDialog()"
-    >
-      添加商家
-    </v-btn>
+    />
 
     <!-- 添加/编辑对话框 -->
     <v-dialog v-model="addDialog" max-width="500">

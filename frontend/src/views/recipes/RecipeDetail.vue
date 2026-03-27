@@ -93,9 +93,6 @@
           <div class="text-h3 font-weight-bold text-tertiary">
             ¥{{ formatCost(costData.total_cost) }}
           </div>
-          <div class="text-caption text-medium-emphasis mt-2">
-            每份约 ¥{{ formatCost(costData.per_serving_cost) }}
-          </div>
         </v-card-text>
       </v-card>
 
@@ -124,28 +121,38 @@
         </v-card-title>
         <v-divider />
 
-        <v-list lines="two" v-if="recipe.ingredients?.length">
-          <v-list-item
-            v-for="ingredient in recipe.ingredients"
+        <v-card-text v-if="recipe.ingredients?.length" class="pa-0">
+          <div
+            v-for="(ingredient, index) in recipe.ingredients"
             :key="ingredient.id"
+            class="ingredient-item"
+            :class="{ 'mb-2': index < recipe.ingredients.length - 1 }"
           >
-            <template #prepend>
-              <v-avatar color="secondary" size="40">
-                <span class="text-white font-weight-bold">{{ ingredient.name?.charAt(0) }}</span>
-              </v-avatar>
-            </template>
-
-            <v-list-item-title>{{ ingredient.name }}</v-list-item-title>
-            <v-list-item-subtitle>
-              <span v-if="ingredient.quantity">{{ ingredient.quantity }} {{ ingredient.unit }}</span>
-              <span v-else-if="ingredient.quantity_range">
-                {{ ingredient.quantity_range.min }} - {{ ingredient.quantity_range.max }} {{ ingredient.unit }}
-              </span>
-              <span v-else>-</span>
-              <v-chip v-if="ingredient.is_optional" size="x-small" color="info" variant="flat" class="ml-2">可选</v-chip>
-            </v-list-item-subtitle>
-          </v-list-item>
-        </v-list>
+            <div class="d-flex align-center py-2">
+              <!-- 名称：左对齐 -->
+              <div class="ingredient-name flex-grow-1 text-body-2">
+                {{ ingredient.name }}
+                <v-chip v-if="ingredient.is_optional" size="x-small" color="info" variant="flat" class="ml-1">可选</v-chip>
+              </div>
+              <!-- 用量：右对齐 -->
+              <div class="ingredient-quantity text-body-2 text-right mr-4" style="min-width: 80px">
+                <span v-if="ingredient.quantity">{{ ingredient.quantity }} {{ ingredient.unit }}</span>
+                <span v-else-if="ingredient.quantity_range">
+                  {{ ingredient.quantity_range.min }}-{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
+                </span>
+                <span v-else>-</span>
+              </div>
+              <!-- 成本：右对齐 -->
+              <div class="ingredient-cost text-body-2 text-right" style="min-width: 60px">
+                ¥{{ formatIngredientCost(ingredient) }}
+              </div>
+            </div>
+            <!-- 备注另起一行 -->
+            <div v-if="ingredient.note" class="text-caption text-medium-emphasis pl-2 pb-1">
+              备注：{{ ingredient.note }}
+            </div>
+          </div>
+        </v-card-text>
 
         <v-card-text v-else class="text-center py-4 text-medium-emphasis">
           暂无原料数据
@@ -201,24 +208,28 @@
         </v-card-title>
         <v-divider />
 
-        <v-card-text>
-          <v-row dense>
-            <v-col
-              v-for="item in nutritionItems"
-              :key="item.key"
-              cols="6"
-              sm="4"
-            >
-              <div class="nutrition-item pa-3 rounded">
-                <div class="text-caption text-medium-emphasis">{{ item.label }}</div>
-                <div class="text-h6 font-weight-bold">
-                  {{ formatNutritionValue(nutritionData[item.key], item.unit) }}
-                </div>
-              </div>
-            </v-col>
-          </v-row>
+        <v-card-text class="pa-0">
+          <div class="nutrition-header d-flex py-2 border-bottom">
+            <div class="text-caption text-medium-emphasis ps-4 flex-grow-1">营养素</div>
+            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 80px">数量</div>
+            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 60px">NRV%</div>
+          </div>
+          <div
+            v-for="item in nutritionItems"
+            :key="item.key"
+            class="nutrition-row d-flex py-2"
+            :class="{ 'border-bottom': item.key !== nutritionItems[nutritionItems.length - 1].key }"
+          >
+            <div class="text-body-2 ps-4 flex-grow-1">{{ item.label }}</div>
+            <div class="text-body-2 text-end pe-4" style="min-width: 80px">
+              {{ formatNutritionValue(nutritionData[item.key], item.unit) }}
+            </div>
+            <div class="text-body-2 text-end pe-4" style="min-width: 60px">
+              {{ getNutritionNRV(item.key) }}%
+            </div>
+          </div>
 
-          <div class="mt-4 text-caption text-medium-emphasis">
+          <div class="mt-4 text-caption text-medium-emphasis ps-4">
             NRV = 营养素参考值百分比
           </div>
         </v-card-text>
@@ -514,6 +525,26 @@ const formatNutritionValue = (value: number | undefined, unit: string) => {
   return `${num.toFixed(1)} ${unit}`
 }
 
+// 格式化原料成本
+const formatIngredientCost = (ingredient: RecipeIngredient) => {
+  if (!costData.value?.cost_breakdown) return '-'
+  const breakdown = costData.value.cost_breakdown as any[]
+  const item = breakdown.find((b: any) => b.ingredient_id === ingredient.ingredient_id)
+  if (!item) return '-'
+  return formatCost(item.cost || 0)
+}
+
+// 获取营养素NRV百分比
+const getNutritionNRV = (key: string) => {
+  if (!nutritionData.value?.per_serving_nutrition) return '-'
+  const nutrition = nutritionData.value.per_serving_nutrition as any
+  // per_serving_nutrition.core_nutrients 包含 { 蛋白质: { value: 12.5, unit: 'g', nrp_pct: 20.8 } }
+  const nutrients = nutrition.core_nutrients || {}
+  const nutrient = nutrients[key]
+  if (!nutrient) return '-'
+  return nutrient.nrp_pct !== undefined ? nutrient.nrp_pct.toFixed(1) : '-'
+}
+
 const getColorByIndex = (index: number) => {
   const colors = ['primary', 'secondary', 'tertiary', 'success', 'warning']
   return colors[index % colors.length] || 'primary'
@@ -535,6 +566,25 @@ onMounted(loadData)
 .step-content {
   line-height: 1.5;
   color: rgb(var(--v-theme-on-surface));
+}
+
+/* 原料列表样式 */
+.ingredient-item {
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
+}
+
+.ingredient-item:last-child {
+  border-bottom: none;
+}
+
+/* 营养成分表格样式 */
+.nutrition-header {
+  background: rgb(var(--v-theme-surface-variant));
+  font-weight: 500;
+}
+
+.nutrition-row:hover {
+  background: rgba(var(--v-theme-primary), 0.04);
 }
 
 /* 缩略图样式 */

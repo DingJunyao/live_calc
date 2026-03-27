@@ -19,26 +19,31 @@
 
     <!-- 统计卡片 -->
     <v-row class="ma-2">
-      <v-col cols="4" sm="4">
+      <v-col cols="12" sm="4">
         <v-card elevation="0">
           <v-card-text class="text-center pa-2 pa-sm-4">
-            <div class="text-h5 text-sm-h4 font-weight-bold text-primary text-truncate">¥256.80</div>
+            <div v-if="loadingStats" class="text-h5 text-sm-h4 font-weight-bold text-primary text-truncate">--</div>
+            <div v-else class="text-h5 text-sm-h4 font-weight-bold text-primary text-truncate">
+              ¥{{ monthlyExpense !== null ? monthlyExpense.toFixed(2) : '0.00' }}
+            </div>
             <div class="text-caption text-medium-emphasis">本月支出</div>
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col cols="4" sm="4">
+      <v-col cols="12" sm="4">
         <v-card elevation="0">
           <v-card-text class="text-center pa-2 pa-sm-4">
-            <div class="text-h5 text-sm-h4 font-weight-bold text-truncate">42</div>
+            <div v-if="loadingStats" class="text-h5 text-sm-h4 font-weight-bold text-truncate">--</div>
+            <div v-else class="text-h5 text-sm-h4 font-weight-bold text-truncate">{{ totalRecords }}</div>
             <div class="text-caption text-medium-emphasis">记录数</div>
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col cols="4" sm="4">
+      <v-col cols="12" sm="4">
         <v-card elevation="0">
           <v-card-text class="text-center pa-2 pa-sm-4">
-            <div class="text-h5 text-sm-h4 font-weight-bold text-truncate">15</div>
+            <div v-if="loadingStats" class="text-h5 text-sm-h4 font-weight-bold text-truncate">--</div>
+            <div v-else class="text-h5 text-sm-h4 font-weight-bold text-truncate">{{ totalRecipes }}</div>
             <div class="text-caption text-medium-emphasis">菜谱数</div>
           </v-card-text>
         </v-card>
@@ -95,11 +100,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { api } from '@/api/client'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -108,6 +114,12 @@ const theme = useTheme()
 const userStore = useUserStore()
 
 const search = ref('')
+
+// 统计数据
+const monthlyExpense = ref<number | null>(null)
+const totalRecords = ref(0)
+const totalRecipes = ref(0)
+const loadingStats = ref(false)
 
 const isDark = computed(() => theme.global.current.value.dark)
 
@@ -119,4 +131,59 @@ const logout = () => {
   userStore.logout()
   router.push('/login')
 }
+
+// 加载统计数据
+const loadStats = async () => {
+  loadingStats.value = true
+  try {
+    // 获取价格记录总数
+    const productsResponse = await api.get('/products', { params: { limit: 1 } })
+    totalRecords.value = productsResponse.total || 0
+
+    // 获取菜谱总数
+    const recipesResponse = await api.get('/recipes', { params: { limit: 1 } })
+    totalRecipes.value = recipesResponse.total || 0
+
+    // 获取本月支出（从价格记录中计算）
+    const now = new Date()
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+
+    try {
+      const purchaseRecordsResponse = await api.get('/products', {
+        params: {
+          start_date: firstDay.toISOString(),
+          end_date: lastDay.toISOString(),
+          limit: 1000  // 获取足够多的记录以计算总支出
+        }
+      })
+
+      // 筛选出 record_type='purchase' 的记录，并计算总支出
+      if (purchaseRecordsResponse.items && Array.isArray(purchaseRecordsResponse.items)) {
+        const purchaseRecords = purchaseRecordsResponse.items.filter(
+          (item: any) => item.record_type === 'purchase'
+        )
+
+        // price 字段已经是该条记录的总价格，直接累加即可
+        monthlyExpense.value = purchaseRecords.reduce((sum: number, record: any) => {
+          const price = parseFloat(record.price) || 0
+          return sum + price
+        }, 0)
+      } else {
+        monthlyExpense.value = 0
+      }
+    } catch (e) {
+      // 如果获取支出失败，设为0
+      monthlyExpense.value = 0
+    }
+  } catch (e: any) {
+    console.error('加载统计数据失败', e)
+  } finally {
+    loadingStats.value = false
+  }
+}
+
+onMounted(() => {
+  loadStats()
+})
 </script>

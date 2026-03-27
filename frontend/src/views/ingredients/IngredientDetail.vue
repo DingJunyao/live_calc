@@ -227,6 +227,139 @@
         </v-card-text>
       </v-card>
 
+      <!-- 层级关系卡片 -->
+      <v-card elevation="0" class="ma-4">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="info">mdi-graph</v-icon>
+          层级关系
+          <v-spacer />
+          <v-btn
+            size="small"
+            variant="text"
+            color="primary"
+            prepend-icon="mdi-plus"
+            @click="openAddRelationDialog"
+          >
+            添加关系
+          </v-btn>
+        </v-card-title>
+        <v-divider />
+
+        <!-- 图表展示 -->
+        <HierarchyGraph
+          v-if="hasRelations"
+          :ingredient-id="ingredientId"
+          :ingredient-name="ingredient?.name || ''"
+          :hierarchy-data="hierarchyData"
+          height="400px"
+          class="ma-4"
+        />
+
+        <!-- 图例说明 -->
+        <v-card-text v-if="hasRelations" class="pt-0">
+          <v-alert type="info" variant="tonal" density="compact">
+            <template #title>
+              <span class="text-caption">关系说明</span>
+            </template>
+            <div class="text-caption">
+              <div class="d-flex align-center ga-2 mb-1">
+                <v-chip size="x-small" color="info">●</v-chip>
+                <span>实线 - 包含关系（父→子）</span>
+              </div>
+              <div class="d-flex align-center ga-2 mb-1">
+                <v-chip size="x-small" color="warning">┄</v-chip>
+                <span>虚线 - 回退关系（找不到数据时可回退）</span>
+              </div>
+              <div class="d-flex align-center ga-2">
+                <v-chip size="x-small" color="success">┈</v-chip>
+                <span>点线 - 可替代关系（相互替代）</span>
+              </div>
+            </div>
+          </v-alert>
+        </v-card-text>
+
+        <!-- 空状态 -->
+        <v-card-text v-if="!hasRelations" class="text-center py-8">
+          <v-icon size="48" color="medium-emphasis">mdi-graph-outline</v-icon>
+          <div class="text-body-2 text-medium-emphasis mt-2">暂无层级关系</div>
+          <div class="text-caption text-medium-emphasis mt-1">
+            可以设置原料之间的包含、回退或可替代关系
+          </div>
+        </v-card-text>
+      </v-card>
+
+      <!-- 层级关系列表（折叠面板） -->
+      <v-card v-if="hasRelations" elevation="0" class="ma-4">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="primary">mdi-format-list-bulleted</v-icon>
+          关系列表
+        </v-card-title>
+        <v-divider />
+
+        <!-- 关系列表 -->
+        <v-list density="compact">
+          <!-- 子关系（当前原料是父，包含/回退到其他原料） -->
+          <template v-if="hierarchyData?.child_relations?.length">
+            <v-list-subheader>包含/可回退到</v-list-subheader>
+            <v-list-item
+              v-for="rel in hierarchyData.child_relations"
+              :key="rel.id"
+              class="relation-item"
+            >
+              <template #prepend>
+                <v-icon color="info" size="small">mdi-arrow-down-right</v-icon>
+              </template>
+              <v-list-item-title>{{ rel.child_name }}</v-list-item-title>
+              <v-list-item-subtitle>
+                <v-chip size="x-small" :color="getRelationTypeColor(rel.relation_type)">
+                  {{ getRelationTypeLabel(rel.relation_type) }}
+                </v-chip>
+                <span class="ml-2 text-caption">强度: {{ rel.strength }}%</span>
+              </v-list-item-subtitle>
+              <template #append>
+                <v-btn
+                  icon="mdi-delete"
+                  size="x-small"
+                  variant="text"
+                  color="error"
+                  @click="confirmDeleteRelation(rel)"
+                />
+              </template>
+            </v-list-item>
+          </template>
+
+          <!-- 父关系（当前原料是子，被其他原料包含/回退） -->
+          <template v-if="hierarchyData?.parent_relations?.length">
+            <v-list-subheader v-if="hierarchyData.child_relations?.length">被以下原料包含/回退</v-list-subheader>
+            <v-list-item
+              v-for="rel in hierarchyData.parent_relations"
+              :key="rel.id"
+              class="relation-item"
+            >
+              <template #prepend>
+                <v-icon color="success" size="small">mdi-arrow-up-right</v-icon>
+              </template>
+              <v-list-item-title>{{ rel.parent_name }}</v-list-item-title>
+              <v-list-item-subtitle>
+                <v-chip size="x-small" :color="getRelationTypeColor(rel.relation_type)">
+                  {{ getRelationTypeLabel(rel.relation_type) }}
+                </v-chip>
+                <span class="ml-2 text-caption">强度: {{ rel.strength }}%</span>
+              </v-list-item-subtitle>
+              <template #append>
+                <v-btn
+                  icon="mdi-delete"
+                  size="x-small"
+                  variant="text"
+                  color="error"
+                  @click="confirmDeleteRelation(rel)"
+                />
+              </template>
+            </v-list-item>
+          </template>
+        </v-list>
+      </v-card>
+
       <!-- 关联菜谱卡片 -->
       <v-card elevation="0" class="ma-4">
         <v-card-title class="d-flex align-center pb-2">
@@ -371,13 +504,16 @@
           </v-alert>
           <v-autocomplete
             v-model="mergeTargetId"
+            v-model:search="mergeSearchQuery"
             :items="mergeTargets"
             item-title="name"
             item-value="id"
             label="选择目标原料"
             variant="outlined"
             :loading="loadingMergeTargets"
-            @update:search="searchMergeTargets"
+            hide-selected
+            auto-select-first
+            :custom-filter="() => true"
           />
         </v-card-text>
         <v-card-actions>
@@ -391,6 +527,99 @@
           >
             确认合并
           </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 添加层级关系对话框 -->
+    <v-dialog v-model="showAddRelationDialog" max-width="500">
+      <v-card>
+        <v-card-title>添加层级关系</v-card-title>
+        <v-card-text>
+          <v-form @submit.prevent="addRelation">
+            <v-autocomplete
+              v-model="relationForm.target_ingredient_id"
+              v-model:search="ingredientSearchQuery"
+              :items="availableIngredients"
+              item-title="name"
+              item-value="id"
+              label="选择原料"
+              variant="outlined"
+              required
+              :loading="loadingIngredients"
+              class="mb-4"
+              hint="输入名称搜索原料"
+              persistent-hint
+              hide-selected
+              auto-select-first
+              :custom-filter="() => true"
+            />
+
+            <v-select
+              v-model="relationForm.relation_type"
+              :items="relationTypeOptions"
+              item-title="label"
+              item-value="value"
+              label="关系类型"
+              variant="outlined"
+              required
+              class="mb-4"
+            >
+              <template #item="{ item, props }">
+                <v-list-item v-bind="props">
+                  <template #prepend>
+                    <v-icon :color="item.raw.color" size="small">{{ item.raw.icon }}</v-icon>
+                  </template>
+                </v-list-item>
+              </template>
+              <template #selection="{ item }">
+                <v-chip size="small" :color="item.raw.color">
+                  <v-icon start size="small">{{ item.raw.icon }}</v-icon>
+                  {{ item.raw.label }}
+                </v-chip>
+              </template>
+            </v-select>
+
+            <v-slider
+              v-model="relationForm.strength"
+              label="关系强度"
+              min="1"
+              max="100"
+              thumb-label
+              :hints="true"
+            >
+              <template #append>
+                <v-chip size="small">{{ relationForm.strength }}%</v-chip>
+              </template>
+            </v-slider>
+          </v-form>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showAddRelationDialog = false">取消</v-btn>
+          <v-btn
+            color="primary"
+            :loading="savingRelation"
+            :disabled="!relationForm.target_ingredient_id"
+            @click="addRelation"
+          >
+            添加
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 删除关系确认对话框 -->
+    <v-dialog v-model="showDeleteRelationDialog" max-width="400">
+      <v-card>
+        <v-card-title class="text-error">确认删除关系</v-card-title>
+        <v-card-text>
+          确定要删除这个层级关系吗？
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showDeleteRelationDialog = false">取消</v-btn>
+          <v-btn color="error" :loading="deletingRelation" @click="deleteRelation">删除</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -422,6 +651,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
+import HierarchyGraph from '@/components/charts/HierarchyGraph.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
@@ -466,6 +696,22 @@ interface Unit {
   abbreviation?: string
 }
 
+interface HierarchyRelation {
+  id: number
+  parent_id: number
+  parent_name: string
+  child_id: number
+  child_name: string
+  relation_type: string
+  strength: number
+  created_at: string
+}
+
+interface HierarchyData {
+  parent_relations: HierarchyRelation[]
+  child_relations: HierarchyRelation[]
+}
+
 const route = useRoute()
 const router = useRouter()
 
@@ -498,12 +744,30 @@ const recipes = ref<Recipe[]>([])
 // 单位列表
 const units = ref<Unit[]>([])
 
+// 层级关系数据
+const hierarchyData = ref<HierarchyData | null>(null)
+const loadingHierarchy = ref(false)
+
+// 可选择的原料列表
+const availableIngredients = ref<Ingredient[]>([])
+const loadingIngredients = ref(false)
+const ingredientSearchQuery = ref('')
+const mergeSearchQuery = ref('')
+
+// 搜索原料的防抖函数
+let ingredientSearchTimeout: ReturnType<typeof setTimeout> | null = null
+let mergeSearchTimeout: ReturnType<typeof setTimeout> | null = null
+
 // 对话框状态
 const showEditDialog = ref(false)
+const showAddRelationDialog = ref(false)
+const showDeleteRelationDialog = ref(false)
 const showAddPriceDialog = ref(false)
 const showMergeDialog = ref(false)
 const showDeleteDialog = ref(false)
 const saving = ref(false)
+const savingRelation = ref(false)
+const deletingRelation = ref(false)
 const merging = ref(false)
 const deleting = ref(false)
 
@@ -517,6 +781,41 @@ const editForm = ref({
 const priceForm = ref({
   product_id: null as number | null
 })
+
+// 关系表单数据
+const relationForm = ref({
+  target_ingredient_id: null as number | null,
+  relation_type: 'contains',
+  strength: 50
+})
+
+// 待删除的关系
+const relationToDelete = ref<HierarchyRelation | null>(null)
+
+// 关系类型选项
+const relationTypeOptions = [
+  {
+    value: 'contains',
+    label: '包含',
+    description: '当前原料包含目标原料（父→子）',
+    icon: 'mdi-arrow-down',
+    color: 'info'
+  },
+  {
+    value: 'fallback',
+    label: '回退',
+    description: '当前原料可回退到目标原料',
+    icon: 'mdi-arrow-left',
+    color: 'warning'
+  },
+  {
+    value: 'substitutable',
+    label: '可替代',
+    description: '两个原料可以相互替代',
+    icon: 'mdi-swap-horizontal',
+    color: 'success'
+  }
+]
 
 // 合并相关
 const mergeTargetId = ref<number | null>(null)
@@ -539,6 +838,14 @@ const nutritionItems = [
   { key: 'fiber', label: '膳食纤维', unit: 'g' },
   { key: 'sodium', label: '钠', unit: 'mg' }
 ]
+
+// 计算是否有层级关系
+const hasRelations = computed(() => {
+  return (
+    (hierarchyData.value?.child_relations?.length || 0) > 0 ||
+    (hierarchyData.value?.parent_relations?.length || 0) > 0
+  )
+})
 
 // 聚合价格数据用于图表（按日期分组）
 const chartData = computed(() => {
@@ -602,7 +909,8 @@ const loadData = async () => {
       loadProducts(),
       loadPriceRecords(),
       loadNutritionData(),
-      loadRecipes()
+      loadRecipes(),
+      loadHierarchy()
     ])
   } catch (e: any) {
     console.error('加载原料失败', e)
@@ -682,6 +990,112 @@ const loadRecipes = async () => {
   }
 }
 
+// 加载层级关系
+const loadHierarchy = async () => {
+  loadingHierarchy.value = true
+  try {
+    const response = await api.get(`/ingredients/${ingredientId.value}/hierarchy`)
+    hierarchyData.value = response
+  } catch (e) {
+    console.error('加载层级关系失败', e)
+    hierarchyData.value = { parent_relations: [], child_relations: [] }
+  } finally {
+    loadingHierarchy.value = false
+  }
+}
+
+// 搜索原料
+const searchIngredients = async (search: string) => {
+  if (!search || search.length < 1) {
+    availableIngredients.value = []
+    return
+  }
+
+  loadingIngredients.value = true
+  try {
+    const response = await api.get('/ingredients', {
+      params: { q: search, limit: 50 }
+    })
+    // 过滤掉当前原料
+    availableIngredients.value = (response.items || []).filter(
+      (item: Ingredient) => item.id !== ingredientId.value
+    )
+    console.log('[DEBUG] 搜索原料:', search, '返回结果:', availableIngredients.value)
+  } catch (e) {
+    availableIngredients.value = []
+  } finally {
+    loadingIngredients.value = false
+  }
+}
+
+// 打开添加关系对话框
+const openAddRelationDialog = () => {
+  relationForm.value = {
+    target_ingredient_id: null,
+    relation_type: 'contains',
+    strength: 50
+  }
+  availableIngredients.value = []
+  showAddRelationDialog.value = true
+}
+
+// 添加层级关系
+const addRelation = async () => {
+  if (!relationForm.value.target_ingredient_id) return
+
+  savingRelation.value = true
+  try {
+    await api.post('/ingredients/hierarchy', {
+      parent_id: ingredientId.value,
+      child_id: relationForm.value.target_ingredient_id,
+      relation_type: relationForm.value.relation_type,
+      strength: relationForm.value.strength
+    })
+    showMessage('关系添加成功', 'success')
+    showAddRelationDialog.value = false
+    await loadHierarchy()
+  } catch (e: any) {
+    showMessage(e.message || '添加关系失败', 'error')
+  } finally {
+    savingRelation.value = false
+  }
+}
+
+// 确认删除关系
+const confirmDeleteRelation = (relation: HierarchyRelation) => {
+  relationToDelete.value = relation
+  showDeleteRelationDialog.value = true
+}
+
+// 删除层级关系
+const deleteRelation = async () => {
+  if (!relationToDelete.value) return
+
+  deletingRelation.value = true
+  try {
+    await api.delete(`/ingredients/hierarchy/${relationToDelete.value.id}`)
+    showMessage('关系删除成功', 'success')
+    showDeleteRelationDialog.value = false
+    await loadHierarchy()
+  } catch (e: any) {
+    showMessage(e.message || '删除关系失败', 'error')
+  } finally {
+    deletingRelation.value = false
+  }
+}
+
+// 获取关系类型标签
+const getRelationTypeLabel = (type: string) => {
+  const option = relationTypeOptions.find(o => o.value === type)
+  return option?.label || type
+}
+
+// 获取关系类型颜色
+const getRelationTypeColor = (type: string) => {
+  const option = relationTypeOptions.find(o => o.value === type)
+  return option?.color || 'grey'
+}
+
 // 加载单位列表
 const loadUnits = async () => {
   try {
@@ -728,7 +1142,7 @@ const goToAddPrice = () => {
 }
 
 // 搜索合并目标
-const searchMergeTargets = async (search: string) => {
+const searchMergeTargets = async (search?: string) => {
   if (!search || search.length < 1) {
     mergeTargets.value = []
     return
@@ -838,6 +1252,22 @@ const showMessage = (message: string, color: string = 'success') => {
 
 // 监听分页变化
 watch(pricePage, loadPriceRecords)
+
+// 监听原料搜索输入，执行防抖搜索
+watch(ingredientSearchQuery, (newSearch) => {
+  if (ingredientSearchTimeout) clearTimeout(ingredientSearchTimeout)
+  ingredientSearchTimeout = setTimeout(() => {
+    searchIngredients(newSearch)
+  }, 300)
+})
+
+// 监听合并原料搜索输入，执行防抖搜索
+watch(mergeSearchQuery, (newSearch) => {
+  if (mergeSearchTimeout) clearTimeout(mergeSearchTimeout)
+  mergeSearchTimeout = setTimeout(() => {
+    searchMergeTargets(newSearch)
+  }, 300)
+})
 
 // 初始化
 onMounted(() => {
