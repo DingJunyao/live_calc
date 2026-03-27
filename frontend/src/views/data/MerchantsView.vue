@@ -1,6 +1,8 @@
 <template>
   <v-container fluid>
-    <v-app-bar elevation="0" color="background">
+    <!-- 顶部标题栏 -->
+    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
+      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
       <v-app-bar-title class="text-h6">商家管理</v-app-bar-title>
       <template #append>
         <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadMerchants" />
@@ -64,24 +66,27 @@
     </v-card>
 
     <!-- 分页器 -->
-    <div v-if="total > 0" class="d-flex justify-center align-center ga-4 py-4">
-      <v-select
-        v-model="pageSize"
-        :items="[10, 20, 50, 100]"
-        label="每页"
-        variant="outlined"
-        density="compact"
-        hide-details
-        style="max-width: 100px"
-        @update:model-value="handlePageSizeChange"
-      />
+    <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
       <v-pagination
         v-model="currentPage"
         :length="totalPages"
-        :total-visible="5"
+        :total-visible="3"
         rounded="circle"
+        density="comfortable"
       />
-      <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+      <div class="d-flex align-center ga-2">
+        <v-select
+          v-model="pageSize"
+          :items="[10, 20, 50, 100]"
+          label="每页"
+          variant="outlined"
+          density="compact"
+          hide-details
+          style="max-width: 90px"
+          @update:model-value="handlePageSizeChange"
+        />
+        <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+      </div>
     </div>
 
     <v-btn
@@ -130,8 +135,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api } from '@/api/client'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 interface Merchant {
   id: number
@@ -259,5 +267,10 @@ const deleteItem = async (id: number) => {
 
 onMounted(() => {
   loadMerchants()
+  window.addEventListener('app-refresh', loadMerchants)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('app-refresh', loadMerchants)
 })
 </script>

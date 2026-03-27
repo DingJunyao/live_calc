@@ -2,6 +2,7 @@
   <v-container fluid class="pa-0">
     <!-- 顶部导航 -->
     <v-app-bar elevation="0" color="background">
+      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
       <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
       <v-app-bar-title class="text-h6 text-truncate">
         {{ recipe?.name || '菜谱详情' }}
@@ -28,11 +29,13 @@
     <template v-else-if="recipe">
       <!-- 菜谱图片 -->
       <v-card v-if="recipe.images?.length" elevation="0" class="ma-4 overflow-hidden">
+        <!-- 主图片 -->
         <v-img
-          :src="getImageUrl(recipe.images[0])"
+          :src="getImageUrl(recipe.images[selectedImageIndex])"
           height="200"
           cover
-          class="bg-surface-variant"
+          class="bg-surface-variant cursor-pointer"
+          @click="openLightbox(selectedImageIndex)"
         >
           <template #placeholder>
             <div class="d-flex align-center justify-center fill-height bg-surface-variant">
@@ -44,7 +47,39 @@
               <v-icon size="64" color="medium-emphasis">mdi-food</v-icon>
             </div>
           </template>
+          <!-- 图片数量角标 -->
+          <div v-if="recipe.images.length > 1" class="position-absolute bottom-0 right-0 pa-2">
+            <v-chip size="small" color="black" variant="flat" opacity="0.7">
+              <v-icon start size="small">mdi-image-multiple</v-icon>
+              {{ recipe.images.length }}
+            </v-chip>
+          </div>
         </v-img>
+        <!-- 缩略图列表 -->
+        <div v-if="recipe.images.length > 1" class="d-flex ga-2 pa-2 overflow-x-auto">
+          <v-img
+            v-for="(img, index) in recipe.images"
+            :key="index"
+            :src="getImageUrl(img)"
+            width="60"
+            height="60"
+            cover
+            class="rounded cursor-pointer thumbnail-item"
+            :class="{ 'thumbnail-active': index === selectedImageIndex }"
+            @click="selectedImageIndex = index"
+          >
+            <template #placeholder>
+              <div class="d-flex align-center justify-center fill-height bg-surface-variant">
+                <v-progress-circular indeterminate size="small" color="primary" />
+              </div>
+            </template>
+            <template #error>
+              <div class="d-flex align-center justify-center fill-height bg-surface-variant">
+                <v-icon size="small" color="medium-emphasis">mdi-food</v-icon>
+              </div>
+            </template>
+          </v-img>
+        </div>
       </v-card>
 
       <!-- 成本信息卡片 -->
@@ -202,6 +237,84 @@
         </v-btn>
       </div>
     </template>
+
+    <!-- 图片灯箱 -->
+    <v-dialog
+      v-model="lightboxOpen"
+      max-width="95vw"
+      max-height="95vh"
+      content-class="lightbox-dialog"
+    >
+      <v-card class="lightbox-card">
+        <!-- 关闭按钮 -->
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          color="white"
+          class="lightbox-close"
+          @click="lightboxOpen = false"
+        />
+
+        <!-- 图片计数 -->
+        <div v-if="recipe?.images && recipe.images.length > 1" class="lightbox-counter">
+          {{ lightboxIndex + 1 }} / {{ recipe.images.length }}
+        </div>
+
+        <!-- 主图片 -->
+        <img
+          v-if="recipe?.images?.length"
+          :src="getImageUrl(recipe.images[lightboxIndex])"
+          class="lightbox-image"
+          @click.stop
+        />
+
+        <!-- 左右切换按钮 -->
+        <template v-if="recipe?.images && recipe.images.length > 1">
+          <v-btn
+            icon="mdi-chevron-left"
+            variant="flat"
+            color="black"
+            opacity="0.5"
+            class="lightbox-nav lightbox-prev"
+            @click="prevImage"
+          />
+          <v-btn
+            icon="mdi-chevron-right"
+            variant="flat"
+            color="black"
+            opacity="0.5"
+            class="lightbox-nav lightbox-next"
+            @click="nextImage"
+          />
+        </template>
+
+        <!-- 缩略图导航 -->
+        <div v-if="recipe?.images && recipe.images.length > 1" class="lightbox-thumbnails">
+          <v-img
+            v-for="(img, index) in recipe.images"
+            :key="index"
+            :src="getImageUrl(img)"
+            width="48"
+            height="48"
+            cover
+            class="rounded cursor-pointer"
+            :class="{ 'lightbox-thumbnail-active': index === lightboxIndex }"
+            @click="lightboxIndex = index"
+          >
+            <template #placeholder>
+              <div class="d-flex align-center justify-center fill-height bg-surface-variant">
+                <v-progress-circular indeterminate size="x-small" color="primary" />
+              </div>
+            </template>
+            <template #error>
+              <div class="d-flex align-center justify-center fill-height bg-surface-variant">
+                <v-icon size="x-small" color="medium-emphasis">mdi-food</v-icon>
+              </div>
+            </template>
+          </v-img>
+        </div>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -210,6 +323,9 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 interface CostHistoryRecord {
   date: string
@@ -271,6 +387,11 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const costData = ref<CostData | null>(null)
 const nutritionData = ref<NutritionData | null>(null)
+
+// 图片灯箱相关
+const selectedImageIndex = ref(0)
+const lightboxOpen = ref(false)
+const lightboxIndex = ref(0)
 
 // 成本历史数据
 const costHistoryRecords = ref<CostHistoryRecord[]>([])
@@ -364,6 +485,24 @@ const getImageUrl = (imagePath: string) => {
   return `https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out/${imagePath}`
 }
 
+// 灯箱相关方法
+const openLightbox = (index: number) => {
+  lightboxIndex.value = index
+  lightboxOpen.value = true
+}
+
+const prevImage = () => {
+  if (recipe.value?.images && recipe.value.images.length > 0) {
+    lightboxIndex.value = (lightboxIndex.value - 1 + recipe.value.images.length) % recipe.value.images.length
+  }
+}
+
+const nextImage = () => {
+  if (recipe.value?.images && recipe.value.images.length > 0) {
+    lightboxIndex.value = (lightboxIndex.value + 1) % recipe.value.images.length
+  }
+}
+
 const formatCost = (cost: number | string) => {
   const num = parseFloat(String(cost)) || 0
   return num.toFixed(2)
@@ -396,5 +535,90 @@ onMounted(loadData)
 .step-content {
   line-height: 1.5;
   color: rgb(var(--v-theme-on-surface));
+}
+
+/* 缩略图样式 */
+.thumbnail-item {
+  flex-shrink: 0;
+  border: 2px solid transparent;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.thumbnail-active {
+  border-color: rgb(var(--v-theme-primary));
+  transform: scale(1.05);
+}
+
+/* 灯箱样式 */
+:deep(.lightbox-dialog) {
+  margin: auto;
+}
+
+.lightbox-card {
+  background: rgba(0, 0, 0, 0.95) !important;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 20px 20px;
+  min-height: 300px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+}
+
+.lightbox-counter {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  font-size: 14px;
+  z-index: 10;
+}
+
+.lightbox-image {
+  max-width: 90vw;
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.lightbox-prev {
+  left: 12px;
+}
+
+.lightbox-next {
+  right: 12px;
+}
+
+.lightbox-thumbnails {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 8px 0;
+}
+
+.lightbox-thumbnail-active {
+  border: 2px solid white !important;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 </style>

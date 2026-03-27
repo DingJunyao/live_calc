@@ -2,6 +2,7 @@
   <v-container fluid class="pa-0">
     <!-- 顶部导航 -->
     <v-app-bar elevation="0" color="background">
+      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
       <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
       <v-app-bar-title class="text-h6 text-truncate">
         {{ ingredient?.name || '原料详情' }}
@@ -165,9 +166,7 @@
           <v-list-item v-for="record in priceRecords" :key="record.id">
             <template #prepend>
               <v-avatar color="tertiary-container" size="40">
-                <span class="text-tertiary font-weight-bold">
-                  ¥{{ formatPrice(record.price) }}
-                </span>
+                <v-icon color="tertiary">mdi-receipt-text</v-icon>
               </v-avatar>
             </template>
 
@@ -194,13 +193,13 @@
         </v-card-text>
 
         <!-- 分页器 -->
-        <div v-if="priceTotal > 0" class="d-flex justify-center align-center ga-2 py-4">
+        <div v-if="priceTotal > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
           <v-pagination
             v-model="pricePage"
             :length="priceTotalPages"
             :total-visible="3"
             rounded="circle"
-            density="compact"
+            density="comfortable"
           />
           <span class="text-caption text-medium-emphasis">共 {{ priceTotal }} 条</span>
         </div>
@@ -423,6 +422,9 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 interface Ingredient {
   id: number

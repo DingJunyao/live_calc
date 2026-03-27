@@ -24,6 +24,10 @@ const router = createRouter({
       children: [
         {
           path: '',
+          redirect: '/prices',
+        },
+        {
+          path: 'prices',
           name: 'prices',
           component: () => import('@/views/prices/PricesView.vue'),
         },

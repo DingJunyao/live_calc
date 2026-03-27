@@ -35,8 +35,41 @@
       <div class="text-body-1 text-medium-emphasis mt-4">{{ emptyText }}</div>
     </div>
 
-    <!-- 图表容器 -->
-    <div v-else ref="chartRef" class="chart-container"></div>
+    <!-- 有数据时显示 -->
+    <template v-else>
+      <!-- 当天价格信息卡片 -->
+      <div v-if="latestData" class="px-4 py-3">
+        <v-card variant="outlined" class="pa-3">
+          <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+            <div class="text-body-2 text-medium-emphasis">
+              {{ latestData.dateFormatted }}
+            </div>
+            <div class="d-flex align-center ga-4 flex-wrap">
+              <div class="text-center">
+                <div class="text-caption text-medium-emphasis">平均</div>
+                <div class="text-subtitle-1 font-weight-bold" :style="{ color: color }">
+                  ¥{{ latestData.avg.toFixed(2) }}{{ unitSuffix }}
+                </div>
+              </div>
+              <v-divider vertical class="d-none d-sm-flex" />
+              <div class="text-center">
+                <div class="text-caption text-medium-emphasis">区间</div>
+                <div class="text-subtitle-1 font-weight-bold">
+                  ¥{{ latestData.min.toFixed(2) }} - ¥{{ latestData.max.toFixed(2) }}{{ unitSuffix }}
+                </div>
+              </div>
+              <div v-if="latestData.count" class="text-center">
+                <div class="text-caption text-medium-emphasis">记录</div>
+                <div class="text-subtitle-1 font-weight-bold">{{ latestData.count }}</div>
+              </div>
+            </div>
+          </div>
+        </v-card>
+      </div>
+
+      <!-- 图表容器 -->
+      <div ref="chartRef" class="chart-container"></div>
+    </template>
   </v-card>
 </template>
 
@@ -102,6 +135,9 @@ const filters = [
   { label: '年', value: 'year' as const }
 ]
 
+// 单位后缀
+const unitSuffix = computed(() => props.unit ? `/${props.unit}` : '')
+
 // 过滤数据
 const chartData = computed(() => {
   if (!props.data || props.data.length === 0) return []
@@ -129,6 +165,24 @@ const chartData = computed(() => {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 })
 
+// 最新一天的数据
+const latestData = computed(() => {
+  if (!chartData.value || chartData.value.length === 0) return null
+
+  const latest = chartData.value[chartData.value.length - 1]
+  const dateObj = new Date(latest.date)
+  const dateFormatted = dateObj.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+
+  return {
+    ...latest,
+    dateFormatted
+  }
+})
+
 // 监听筛选变化
 watch(selectedFilter, (newFilter) => {
   emit('filter-change', newFilter)
@@ -147,7 +201,13 @@ function initChart() {
 
 // 更新图表
 function updateChart() {
-  if (!chart || chartData.value.length === 0) return
+  if (!chart) return
+
+  // 如果没有数据，清空图表
+  if (chartData.value.length === 0) {
+    chart.clear()
+    return
+  }
 
   const data = chartData.value
   const minValue = Math.min(...data.map(d => d.min))
@@ -177,18 +237,16 @@ function updateChart() {
           day: '2-digit'
         })
 
-        const unit = props.unit ? `/${props.unit}` : ''
-
         return `
           <div style="padding: 8px 12px;">
             <div style="font-weight: 600; margin-bottom: 8px;">${dateStr}</div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${props.color};"></span>
-              <span>平均: ¥${item.avg.toFixed(2)}${unit}</span>
+              <span>平均: ¥${item.avg.toFixed(2)}${unitSuffix.value}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
               <span style="display: inline-block; width: 12px; height: 12px; background-color: ${props.color}33; border-radius: 2px;"></span>
-              <span>范围: ¥${item.min.toFixed(2)} - ¥${item.max.toFixed(2)}${unit}</span>
+              <span>范围: ¥${item.min.toFixed(2)} - ¥${item.max.toFixed(2)}${unitSuffix.value}</span>
             </div>
             ${item.count ? `<div style="margin-top: 4px; color: #999; font-size: 12px;">记录数: ${item.count}</div>` : ''}
           </div>
@@ -232,8 +290,7 @@ function updateChart() {
       axisPointer: {
         label: {
           formatter: (params: any) => {
-            const unit = props.unit ? `/${props.unit}` : ''
-            return `¥${params.value.toFixed(2)}${unit}`
+            return `¥${params.value.toFixed(2)}${unitSuffix.value}`
           }
         }
       }
@@ -316,6 +373,23 @@ watch(() => props.data, () => {
 watch(() => props.loading, () => {
   if (!props.loading) {
     nextTick(updateChart)
+  }
+})
+
+// 监听 chartData 变化，当从空变为有数据时重新初始化图表
+watch(chartData, (newData, oldData) => {
+  const wasEmpty = !oldData || oldData.length === 0
+  const hasData = newData && newData.length > 0
+
+  if (hasData && wasEmpty) {
+    // 从空变为有数据，需要重新初始化图表
+    nextTick(() => {
+      if (chart) {
+        chart.dispose()
+        chart = null
+      }
+      initChart()
+    })
   }
 })
 

@@ -92,4 +92,18 @@ export default createVuetify({
       dark: darkTheme,
     },
   },
+  display: {
+    // 自定义断点配置
+    // 将 mobile 断点修改为 smAndDown (< 600px)
+    // 默认是 mdAndDown (< 1280px)，对于侧边栏来说太大了
+    mobileBreakpoint: 'sm',
+    thresholds: {
+      xs: 0,
+      sm: 600,
+      md: 960,
+      lg: 1280,
+      xl: 1920,
+      xxl: 2560,
+    },
+  },
 })

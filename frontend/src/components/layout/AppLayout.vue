@@ -1,7 +1,13 @@
 <template>
   <v-layout>
     <!-- 桌面端侧边导航 -->
-    <v-navigation-drawer v-if="isDesktop" permanent>
+    <v-navigation-drawer
+      v-if="isDesktop"
+      :model-value="true"
+      :rail="!desktopSidebar"
+      permanent
+      touchless
+    >
       <v-list density="compact" nav>
         <v-list-item prepend-avatar="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" :title="userStore.user?.username || '用户'" :subtitle="userStore.user?.email || ''" />
       </v-list>
@@ -9,7 +15,7 @@
       <v-divider />
 
       <v-list density="compact" nav>
-        <v-list-item prepend-icon="mdi-currency-cny" title="价格记录" to="/" />
+        <v-list-item prepend-icon="mdi-currency-cny" title="价格记录" to="/prices" />
         <v-list-item prepend-icon="mdi-book-open-variant" title="菜谱管理" to="/recipes" />
         <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" />
         <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" />
@@ -18,42 +24,69 @@
       </v-list>
 
       <template #append>
-        <div class="pa-2">
-          <v-btn block variant="text" @click="toggleTheme">
-            <v-icon start>{{ isDark ? 'mdi-weather-sunny' : 'mdi-weather-night' }}</v-icon>
-            {{ isDark ? '浅色' : '深色' }}
-          </v-btn>
-          <v-btn block variant="text" color="error" class="mt-2" @click="logout">
-            <v-icon start>mdi-logout</v-icon>
-            退出登录
-          </v-btn>
-        </div>
+        <v-list density="compact" nav>
+          <v-list-item
+            :prepend-icon="isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
+            :title="isDark ? '浅色' : '深色'"
+            @click="toggleTheme"
+          />
+          <v-list-item
+            prepend-icon="mdi-logout"
+            title="退出登录"
+            base-color="error"
+            @click="logout"
+          />
+        </v-list>
       </template>
     </v-navigation-drawer>
 
-    <!-- 移动端底部导航 -->
-    <v-bottom-navigation
+    <!-- 移动端侧边导航抽屉 -->
+    <v-navigation-drawer
       v-if="!isDesktop"
-      color="primary"
-      grow
+      :model-value="mobileDrawer"
+      temporary
+      fixed
+      location="left"
+      width="280"
+      scrim
+      :z-index="1000"
+      @update:model-value="handleMobileDrawerUpdate"
     >
-      <v-btn to="/">
-        <v-icon>mdi-currency-cny</v-icon>
-        <span>记录</span>
-      </v-btn>
-      <v-btn to="/recipes">
-        <v-icon>mdi-book-open-variant</v-icon>
-        <span>菜谱</span>
-      </v-btn>
-      <v-btn to="/data">
-        <v-icon>mdi-database</v-icon>
-        <span>数据</span>
-      </v-btn>
-      <v-btn to="/profile">
-        <v-icon>mdi-account</v-icon>
-        <span>我的</span>
-      </v-btn>
-    </v-bottom-navigation>
+      <v-list density="compact" nav class="pt-4">
+        <v-list-item
+          prepend-avatar="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
+          :title="userStore.user?.username || '用户'"
+          :subtitle="userStore.user?.email || ''"
+        />
+      </v-list>
+
+      <v-divider />
+
+      <v-list density="compact" nav>
+        <v-list-item prepend-icon="mdi-currency-cny" title="价格记录" to="/prices" @click="closeDrawer" />
+        <v-list-item prepend-icon="mdi-book-open-variant" title="菜谱管理" to="/recipes" @click="closeDrawer" />
+        <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" @click="closeDrawer" />
+        <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" @click="closeDrawer" />
+        <v-list-item prepend-icon="mdi-store" title="商家管理" to="/data/merchants" @click="closeDrawer" />
+        <v-list-item prepend-icon="mdi-account" title="个人中心" to="/profile" @click="closeDrawer" />
+      </v-list>
+
+      <template #append>
+        <v-list density="compact" nav>
+          <v-list-item
+            :prepend-icon="isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
+            :title="isDark ? '浅色' : '深色'"
+            @click="toggleTheme"
+          />
+          <v-list-item
+            prepend-icon="mdi-logout"
+            title="退出登录"
+            base-color="error"
+            @click="logout"
+          />
+        </v-list>
+      </template>
+    </v-navigation-drawer>
 
     <!-- 主内容区 -->
     <v-main>
@@ -63,33 +96,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useUserStore } from '@/stores/user'
+import { useMobileDrawer } from '@/composables/useMobileDrawer'
 
 const userStore = useUserStore()
 const router = useRouter()
 const theme = useTheme()
-
-const isDesktop = ref(true)
-let mediaQuery: MediaQueryList | null = null
+const { mobileDrawer, desktopSidebar, isDesktop, closeDrawer } = useMobileDrawer()
 
 const isDark = computed(() => theme.global.current.value.dark)
 
-const updateIsDesktop = (e: MediaQueryListEvent | MediaQueryList) => {
-  isDesktop.value = e.matches
-}
-
-onMounted(() => {
-  mediaQuery = window.matchMedia('(min-width: 960px)')
-  isDesktop.value = mediaQuery.matches
-  mediaQuery.addEventListener('change', updateIsDesktop)
+// 桌面端侧边栏的双向绑定
+const desktopSidebarModel = computed({
+  get: () => desktopSidebar.value,
+  set: () => {
+    // 不允许通过 v-model 关闭，只能通过 toggleDesktopSidebar 切换 rail 模式
+  }
 })
 
-onUnmounted(() => {
-  if (mediaQuery) {
-    mediaQuery.removeEventListener('change', updateIsDesktop)
+// 监听桌面端状态变化，切换到桌面端时关闭移动端抽屉
+watch(isDesktop, (value) => {
+  if (value) {
+    closeDrawer()
   }
 })
 
@@ -101,4 +132,36 @@ const logout = () => {
   userStore.logout()
   router.push('/login')
 }
+
+// 处理移动端抽屉状态变化（点击外部关闭时）
+const handleMobileDrawerUpdate = (value: boolean) => {
+  if (!value) {
+    closeDrawer()
+  }
+}
 </script>
+
+<style scoped>
+/* 侧边栏固定视口高度，不随页面滚动 */
+:deep(.v-navigation-drawer) {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+}
+
+:deep(.v-navigation-drawer__content) {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* 移动端抽屉的遮罩层 */
+:deep(.v-navigation-drawer--temporary) {
+  z-index: 1000 !important;
+}
+
+:deep(.v-overlay__scrim) {
+  z-index: 999 !important;
+}
+</style>

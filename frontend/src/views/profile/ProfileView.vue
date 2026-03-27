@@ -1,10 +1,9 @@
 <template>
   <v-container fluid>
-    <!-- 顶部 -->
-    <v-app-bar elevation="0" color="background">
-      <v-app-bar-title class="text-h6">我的</v-app-bar-title>
-      <v-spacer />
-      <v-btn icon="mdi-cog" variant="text" @click="showSettings" />
+    <!-- 顶部标题栏 -->
+    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
+      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+      <v-app-bar-title class="text-h6">个人中心</v-app-bar-title>
     </v-app-bar>
 
     <!-- 搜索栏 -->
@@ -20,26 +19,26 @@
 
     <!-- 统计卡片 -->
     <v-row class="ma-2">
-      <v-col cols="4">
+      <v-col cols="4" sm="4">
         <v-card elevation="0">
-          <v-card-text class="text-center pa-4">
-            <div class="text-h4 font-weight-bold text-primary">¥256.80</div>
+          <v-card-text class="text-center pa-2 pa-sm-4">
+            <div class="text-h5 text-sm-h4 font-weight-bold text-primary text-truncate">¥256.80</div>
             <div class="text-caption text-medium-emphasis">本月支出</div>
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col cols="4">
+      <v-col cols="4" sm="4">
         <v-card elevation="0">
-          <v-card-text class="text-center pa-4">
-            <div class="text-h4 font-weight-bold">42</div>
+          <v-card-text class="text-center pa-2 pa-sm-4">
+            <div class="text-h5 text-sm-h4 font-weight-bold text-truncate">42</div>
             <div class="text-caption text-medium-emphasis">记录数</div>
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col cols="4">
+      <v-col cols="4" sm="4">
         <v-card elevation="0">
-          <v-card-text class="text-center pa-4">
-            <div class="text-h4 font-weight-bold">15</div>
+          <v-card-text class="text-center pa-2 pa-sm-4">
+            <div class="text-h5 text-sm-h4 font-weight-bold text-truncate">15</div>
             <div class="text-caption text-medium-emphasis">菜谱数</div>
           </v-card-text>
         </v-card>
@@ -100,6 +99,9 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useUserStore } from '@/stores/user'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 const router = useRouter()
 const theme = useTheme()
@@ -111,10 +113,6 @@ const isDark = computed(() => theme.global.current.value.dark)
 
 const toggleTheme = () => {
   theme.global.name.value = isDark.value ? 'light' : 'dark'
-}
-
-const showSettings = () => {
-  alert('该功能即将推出')
 }
 
 const logout = () => {

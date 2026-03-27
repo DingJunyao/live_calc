@@ -1,7 +1,8 @@
 <template>
   <v-container fluid>
-    <!-- 顶部 -->
-    <v-app-bar elevation="0" color="background">
+    <!-- 顶部标题栏 -->
+    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
+      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
       <v-app-bar-title class="text-h6">菜谱管理</v-app-bar-title>
       <template #append>
         <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadRecipes" />
@@ -46,17 +47,24 @@
           @click="goToDetail(recipe.id)"
           hover
         >
-          <!-- 图片占位 -->
-          <v-avatar
-            color="primary-container"
-            size="120"
-            class="mx-auto d-block my-4"
+          <!-- 菜谱图片或占位符 -->
+          <v-img
+            v-if="recipe.images && recipe.images.length > 0"
+            :src="getImageUrl(recipe.images[0])"
+            height="140"
+            cover
+          />
+          <div
+            v-else
+            class="d-flex align-center justify-center"
+            style="height: 140px; background: rgb(var(--v-theme-primary-container))"
           >
             <v-icon size="64" color="primary">
               mdi-food
             </v-icon>
-          </v-avatar>
+          </div>
 
+          <!-- 菜谱名称（始终显示在图片/占位符下方） -->
           <v-card-title class="text-center pa-2 text-h6">
             {{ recipe.name }}
           </v-card-title>
@@ -83,24 +91,27 @@
     </v-row>
 
     <!-- 分页器 -->
-    <div v-if="total > 0" class="d-flex justify-center align-center ga-4 py-4">
-      <v-select
-        v-model="pageSize"
-        :items="[10, 20, 50, 100]"
-        label="每页"
-        variant="outlined"
-        density="compact"
-        hide-details
-        style="max-width: 100px"
-        @update:model-value="handlePageSizeChange"
-      />
+    <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
       <v-pagination
         v-model="currentPage"
         :length="totalPages"
-        :total-visible="5"
+        :total-visible="3"
         rounded="circle"
+        density="comfortable"
       />
-      <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+      <div class="d-flex align-center ga-2">
+        <v-select
+          v-model="pageSize"
+          :items="[10, 20, 50, 100]"
+          label="每页"
+          variant="outlined"
+          density="compact"
+          hide-details
+          style="max-width: 90px"
+          @update:model-value="handlePageSizeChange"
+        />
+        <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+      </div>
     </div>
 
     <!-- 悬浮按钮 -->
@@ -132,9 +143,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 interface Recipe {
   id: number
@@ -146,6 +160,7 @@ interface Recipe {
   servings?: number
   estimated_cost?: number | string
   calories?: number
+  images?: string[]
   created_at?: string
 }
 
@@ -217,8 +232,20 @@ const goToDetail = (id: number) => {
   router.push(`/recipes/${id}`)
 }
 
+// 处理图片路径
+const getImageUrl = (imagePath: string) => {
+  if (imagePath.startsWith('http')) return imagePath
+  if (imagePath.startsWith('/static/images/')) return `/api/v1${imagePath}`
+  return `https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out/${imagePath}`
+}
+
 onMounted(() => {
   loadRecipes()
+  window.addEventListener('app-refresh', loadRecipes)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('app-refresh', loadRecipes)
 })
 </script>
 

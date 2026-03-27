@@ -1,6 +1,8 @@
 <template>
   <v-container fluid>
-    <v-app-bar elevation="0" color="background">
+    <!-- 顶部标题栏 -->
+    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
+      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
       <v-app-bar-title class="text-h6">商品管理</v-app-bar-title>
       <template #append>
         <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadProducts" />
@@ -64,34 +66,39 @@
     </v-card>
 
     <!-- 分页器 -->
-    <div v-if="total > 0" class="d-flex justify-center align-center ga-4 py-4">
-      <v-select
-        v-model="pageSize"
-        :items="[10, 20, 50, 100]"
-        label="每页"
-        variant="outlined"
-        density="compact"
-        hide-details
-        style="max-width: 100px"
-        @update:model-value="handlePageSizeChange"
-      />
+    <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 pa-4">
       <v-pagination
         v-model="currentPage"
         :length="totalPages"
-        :total-visible="5"
+        :total-visible="3"
         rounded="circle"
+        density="comfortable"
       />
-      <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+      <div class="d-flex align-center ga-2">
+        <v-select
+          v-model="pageSize"
+          :items="[10, 20, 50, 100]"
+          label="每页"
+          variant="outlined"
+          density="compact"
+          hide-details
+          style="max-width: 90px"
+          @update:model-value="handlePageSizeChange"
+        />
+        <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+      </div>
     </div>
 
+    <!-- FAB 浮动添加按钮 -->
     <v-btn
+      icon="mdi-plus"
       color="primary"
-      class="ma-4"
-      prepend-icon="mdi-plus"
+      size="large"
+      elevation="8"
+      class="position-fixed"
+      style="bottom: 80px; right: 24px"
       @click="showAddDialog = true"
-    >
-      添加商品
-    </v-btn>
+    />
 
     <!-- 添加对话框 -->
     <v-dialog v-model="showAddDialog" max-width="500">
@@ -130,7 +137,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { api } from '@/api/client'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 interface Product {
   id: number
@@ -176,7 +187,8 @@ const loadProducts = async () => {
     const skip = (currentPage.value - 1) * pageSize.value
     const params: Record<string, any> = {
       skip,
-      limit: pageSize.value
+      limit: pageSize.value,
+      sort_by: 'price_records'  // 按价格记录次数排序
     }
     if (search.value) {
       params.search = search.value
@@ -219,9 +231,12 @@ const saveItem = async () => {
   }
 }
 
-import { api } from '@/api/client'
-
 onMounted(() => {
   loadProducts()
+  window.addEventListener('app-refresh', loadProducts)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('app-refresh', loadProducts)
 })
 </script>
