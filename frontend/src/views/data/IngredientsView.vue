@@ -1,14 +1,14 @@
 <template>
-  <v-container fluid>
-    <!-- 顶部标题栏 -->
-    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
-      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-      <v-app-bar-title class="text-h6">原料管理</v-app-bar-title>
-      <template #append>
-        <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadIngredients" />
-      </template>
-    </v-app-bar>
+  <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
+  <v-app-bar elevation="0" color="background" density="comfortable" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+    <v-app-bar-title class="text-h6">原料管理</v-app-bar-title>
+    <template #append>
+      <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadIngredients" />
+    </template>
+  </v-app-bar>
 
+  <v-container fluid>
     <v-text-field
       v-model="search"
       label="搜索原料..."

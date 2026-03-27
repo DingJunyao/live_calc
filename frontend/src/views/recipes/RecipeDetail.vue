@@ -1,17 +1,20 @@
 <template>
-  <v-container fluid class="pa-0">
-    <!-- 顶部导航 -->
-    <v-app-bar elevation="0" color="background">
-      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-      <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
-      <v-app-bar-title class="text-h6 text-truncate">
-        {{ recipe?.name || '菜谱详情' }}
-      </v-app-bar-title>
-      <template #append>
-        <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
-      </template>
-    </v-app-bar>
+  <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
+  <v-app-bar elevation="0" color="background" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+    <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
+    <v-app-bar-title class="text-h6">
+      <div class="d-flex align-center ga-2">
+        <span class="text-truncate">{{ recipe?.name || '菜谱详情' }}</span>
+        <v-chip size="x-small" variant="tonal" color="primary">菜谱</v-chip>
+      </div>
+    </v-app-bar-title>
+    <template #append>
+      <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
+    </template>
+  </v-app-bar>
 
+  <v-container fluid class="pa-0">
     <!-- 加载中 -->
     <div v-if="loading" class="text-center py-16">
       <v-progress-circular indeterminate color="primary" size="64" />

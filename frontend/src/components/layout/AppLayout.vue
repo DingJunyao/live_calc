@@ -126,14 +126,6 @@ const { mobileDrawer, desktopSidebar, isDesktop, closeDrawer } = useMobileDrawer
 
 const isDark = computed(() => theme.global.current.value.dark)
 
-// 桌面端侧边栏的双向绑定
-const desktopSidebarModel = computed({
-  get: () => desktopSidebar.value,
-  set: () => {
-    // 不允许通过 v-model 关闭，只能通过 toggleDesktopSidebar 切换 rail 模式
-  }
-})
-
 // 监听桌面端状态变化，切换到桌面端时关闭移动端抽屉
 watch(isDesktop, (value) => {
   if (value) {

@@ -1,17 +1,17 @@
 <template>
-  <v-container class="pa-4">
-    <!-- 顶部标题栏 -->
-    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
-      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-      <v-app-bar-title class="text-h6">后台管理</v-app-bar-title>
-      <template #append>
-        <v-chip color="primary" variant="tonal" size="small">
-          <v-icon start size="small">mdi-shield-account</v-icon>
-          管理员
-        </v-chip>
-      </template>
-    </v-app-bar>
+  <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
+  <v-app-bar elevation="0" color="background" density="comfortable" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+    <v-app-bar-title class="text-h6">后台管理</v-app-bar-title>
+    <template #append>
+      <v-chip color="primary" variant="tonal" size="small">
+        <v-icon start size="small">mdi-shield-account</v-icon>
+        管理员
+      </v-chip>
+    </template>
+  </v-app-bar>
 
+  <v-container class="pa-4">
     <!-- 统计卡片 -->
     <v-row class="ma-2 mb-4">
       <v-col cols="12" sm="6" lg="3">

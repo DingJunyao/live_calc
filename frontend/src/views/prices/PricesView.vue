@@ -1,14 +1,14 @@
 <template>
-  <v-container class="pa-4">
-    <!-- 顶部标题栏 -->
-    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
-      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-      <v-app-bar-title class="text-h6">价格记录</v-app-bar-title>
-      <template #append>
-        <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadRecords" />
-      </template>
-    </v-app-bar>
+  <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
+  <v-app-bar elevation="0" color="background" density="comfortable" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+    <v-app-bar-title class="text-h6">价格记录</v-app-bar-title>
+    <template #append>
+      <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadRecords" />
+    </template>
+  </v-app-bar>
 
+  <v-container class="pa-4">
     <v-text-field
       v-model="searchQuery"
       label="搜索商品..."

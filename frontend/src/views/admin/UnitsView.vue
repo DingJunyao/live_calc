@@ -1,17 +1,18 @@
 <template>
+  <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
+  <v-app-bar elevation="0" color="background" density="comfortable" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+    <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
+    <v-app-bar-title class="text-h6">单位管理</v-app-bar-title>
+    <template #append>
+      <v-btn color="primary" variant="tonal" @click="openCreateDialog">
+        <v-icon start>mdi-plus</v-icon>
+        添加单位
+      </v-btn>
+    </template>
+  </v-app-bar>
+
   <v-container class="pa-4">
-    <!-- 顶部标题栏 -->
-    <v-app-bar elevation="0" color="background" density="comfortable" class="mb-4">
-      <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-      <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
-      <v-app-bar-title class="text-h6">单位管理</v-app-bar-title>
-      <template #append>
-        <v-btn color="primary" variant="tonal" @click="openCreateDialog">
-          <v-icon start>mdi-plus</v-icon>
-          添加单位
-        </v-btn>
-      </template>
-    </v-app-bar>
 
     <!-- 筛选器 -->
     <v-card class="rounded-lg mb-4">
