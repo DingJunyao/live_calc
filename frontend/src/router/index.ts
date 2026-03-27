@@ -76,6 +76,36 @@ const router = createRouter({
           name: 'profile',
           component: () => import('@/views/profile/ProfileView.vue'),
         },
+        {
+          path: 'admin',
+          name: 'admin',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/AdminDashboard.vue'),
+        },
+        {
+          path: 'admin/invite-codes',
+          name: 'admin-invite-codes',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/InviteCodesView.vue'),
+        },
+        {
+          path: 'admin/units',
+          name: 'admin-units',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/UnitsView.vue'),
+        },
+        {
+          path: 'admin/map-settings',
+          name: 'admin-map-settings',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/MapSettingsView.vue'),
+        },
+        {
+          path: 'admin/recipe-import',
+          name: 'admin-recipe-import',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/RecipeImportView.vue'),
+        },
       ],
     },
   ],
@@ -85,9 +115,13 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth !== false)
+  const adminOnly = to.matched.some((record) => record.meta.adminOnly === true)
 
   if (requiresAuth && !userStore.isLoggedIn) {
     next('/login')
+  } else if (adminOnly && !userStore.user?.is_admin) {
+    // 非管理员访问管理页面，重定向到首页
+    next('/')
   } else if ((to.name === 'login' || to.name === 'register') && userStore.isLoggedIn) {
     next('/')
   } else {

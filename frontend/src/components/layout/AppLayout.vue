@@ -21,6 +21,14 @@
         <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" />
         <v-list-item prepend-icon="mdi-store" title="商家管理" to="/data/merchants" />
         <v-list-item prepend-icon="mdi-account" title="个人中心" to="/profile" />
+        <v-divider v-if="userStore.user?.is_admin" class="my-2" />
+        <v-list-item
+          v-if="userStore.user?.is_admin"
+          prepend-icon="mdi-shield-account"
+          title="后台管理"
+          to="/admin"
+          base-color="primary"
+        />
       </v-list>
 
       <template #append>
@@ -69,6 +77,15 @@
         <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-store" title="商家管理" to="/data/merchants" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-account" title="个人中心" to="/profile" @click="closeDrawer" />
+        <v-divider v-if="userStore.user?.is_admin" class="my-2" />
+        <v-list-item
+          v-if="userStore.user?.is_admin"
+          prepend-icon="mdi-shield-account"
+          title="后台管理"
+          to="/admin"
+          base-color="primary"
+          @click="closeDrawer"
+        />
       </v-list>
 
       <template #append>
