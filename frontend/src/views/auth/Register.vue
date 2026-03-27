@@ -1,271 +1,188 @@
 <template>
-  <div class="register-container">
-    <div class="register-card">
-      <h1>注册</h1>
+  <v-app>
+    <v-main class="d-flex align-center justify-center bg-background">
+      <v-container class="h-100 d-flex align-center justify-center">
+        <v-card class="elevation-8" max-width="400" width="100%">
+          <v-card-title class="text-center pa-6">
+            <div class="text-h4 font-weight-bold text-primary">注册</div>
+            <div class="text-subtitle-2 text-medium-emphasis mt-2">创建您的生计账号</div>
+          </v-card-title>
 
-      <div v-if="errorMessage" class="error-message">
-        {{ errorMessage }}
-      </div>
+          <v-card-text>
+            <v-form @submit.prevent="handleRegister">
+              <v-text-field
+                v-model="form.username"
+                label="用户名"
+                prepend-inner-icon="mdi-account"
+                variant="outlined"
+                required
+                :error-messages="errors.username"
+                class="mb-4"
+              />
 
-      <form @submit.prevent="handleRegister">
-        <div class="form-group">
-          <label for="username">用户名</label>
-          <input
-            id="username"
-            v-model="formData.username"
-            type="text"
-            required
-            placeholder="3-50个字符"
-            minlength="3"
-            maxlength="50"
-          />
-        </div>
+              <v-text-field
+                v-model="form.email"
+                label="邮箱"
+                prepend-inner-icon="mdi-email"
+                type="email"
+                variant="outlined"
+                required
+                :error-messages="errors.email"
+                class="mb-4"
+              />
 
-        <div class="form-group">
-          <label for="email">邮箱</label>
-          <input
-            id="email"
-            v-model="formData.email"
-            type="email"
-            required
-            placeholder="your@email.com"
-          />
-        </div>
+              <v-text-field
+                v-model="form.password"
+                label="密码"
+                prepend-inner-icon="mdi-lock"
+                type="password"
+                variant="outlined"
+                required
+                :error-messages="errors.password"
+                class="mb-4"
+              />
 
-        <div class="form-group">
-          <label for="phone">手机号（可选）</label>
-          <input
-            id="phone"
-            v-model="formData.phone"
-            type="tel"
-            placeholder="请输入手机号"
-            pattern="^1[3-9]\d{9}$"
-          />
-          <small>格式: 11位手机号，如 13812345678</small>
-        </div>
+              <v-text-field
+                v-model="form.confirmPassword"
+                label="确认密码"
+                prepend-inner-icon="mdi-lock-check"
+                type="password"
+                variant="outlined"
+                required
+                :error-messages="errors.confirmPassword"
+                class="mb-4"
+              />
 
-        <div class="form-group">
-          <label for="password">密码</label>
-          <input
-            id="password"
-            v-model="formData.password"
-            type="password"
-            required
-            placeholder="至少6个字符"
-            minlength="6"
-          />
-        </div>
+              <v-text-field
+                v-if="requireInviteCode"
+                v-model="form.inviteCode"
+                label="邀请码"
+                prepend-inner-icon="mdi-ticket"
+                variant="outlined"
+                required
+                :error-messages="errors.inviteCode"
+                class="mb-4"
+              />
 
-        <div class="form-group" v-if="requireInviteCode">
-          <label for="inviteCode">邀请码</label>
-          <input
-            id="inviteCode"
-            v-model="formData.invite_code"
-            type="text"
-            required
-            placeholder="请输入邀请码"
-          />
-        </div>
+              <v-btn
+                type="submit"
+                color="primary"
+                size="large"
+                block
+                variant="elevated"
+                :loading="loading"
+              >
+                注册
+              </v-btn>
+            </v-form>
 
-        <button type="submit" class="btn-primary" :disabled="loading">
-          {{ loading ? '注册中...' : '注册' }}
-        </button>
-      </form>
+            <v-alert v-if="errorMessage" type="error" class="mt-4" closable>
+              {{ errorMessage }}
+            </v-alert>
+          </v-card-text>
 
-      <div class="links">
-        <router-link to="/login">返回登录</router-link>
-      </div>
-    </div>
-  </div>
+          <v-card-actions class="pa-4 pt-0">
+            <span class="text-body-2 text-medium-emphasis">已有账号？</span>
+            <v-btn variant="text" color="primary" to="/login" class="ml-1">
+              立即登录
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-container>
+    </v-main>
+  </v-app>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { api } from '@/api/client'
-import SHA256 from 'crypto-js/sha256'
-import Hex from 'crypto-js/enc-hex'
+import api from '@/api/client'
+import { hashPassword } from '@/utils/crypto'
 
 const router = useRouter()
 const userStore = useUserStore()
 
-const formData = ref({
+const form = reactive({
   username: '',
   email: '',
-  phone: '',
   password: '',
-  invite_code: ''
+  confirmPassword: '',
+  inviteCode: '',
 })
+
+const errors = reactive({
+  username: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+  inviteCode: '',
+})
+
 const loading = ref(false)
 const errorMessage = ref('')
 const requireInviteCode = ref(false)
 
-function preparePassword(password: string): string {
-  // 使用 crypto-js 进行 SHA256 哈希
-  const hash = SHA256(password)
-  return hash.toString(Hex)
-}
-
-function validateForm(): boolean {
-  errorMessage.value = ''
-
-  if (!formData.value.username || formData.value.username.trim().length < 3) {
-    errorMessage.value = '用户名至少需要 3 个字符'
-    return false
-  }
-
-  if (formData.value.username.length > 50) {
-    errorMessage.value = '用户名最多 50 个字符'
-    return false
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!formData.value.email || !emailRegex.test(formData.value.email)) {
-    errorMessage.value = '请输入有效的邮箱地址'
-    return false
-  }
-
-  if (formData.value.phone && !/^1[3-9]\d{9}$/.test(formData.value.phone)) {
-    errorMessage.value = '请输入有效的手机号'
-    return false
-  }
-
-  if (!formData.value.password || formData.value.password.length < 6) {
-    errorMessage.value = '密码至少需要 6 个字符'
-    return false
-  }
-
-  return true
-}
-
+// 获取注册配置
 onMounted(async () => {
-  // 检查是否需要邀请码
   try {
-    const config = await api.get('/auth/config')
+    const config: any = await api.get('/auth/config')
     requireInviteCode.value = config.registration_require_invite_code || false
   } catch (error) {
-    // 忽略错误，默认不需要邀请码
-    requireInviteCode.value = false
+    console.error('Failed to fetch auth config:', error)
   }
 })
 
-async function handleRegister() {
-  if (!validateForm()) {
-    return
+const handleRegister = async () => {
+  // 清空错误
+  Object.keys(errors).forEach(key => {
+    errors[key as keyof typeof errors] = ''
+  })
+  errorMessage.value = ''
+
+  // 验证
+  let hasError = false
+  if (!form.username) {
+    errors.username = '请输入用户名'
+    hasError = true
+  }
+  if (!form.email) {
+    errors.email = '请输入邮箱'
+    hasError = true
+  }
+  if (!form.password) {
+    errors.password = '请输入密码'
+    hasError = true
+  } else if (form.password.length < 6) {
+    errors.password = '密码至少需要6个字符'
+    hasError = true
+  }
+  if (form.password !== form.confirmPassword) {
+    errors.confirmPassword = '两次输入的密码不一致'
+    hasError = true
+  }
+  if (requireInviteCode.value && !form.inviteCode) {
+    errors.inviteCode = '请输入邀请码'
+    hasError = true
   }
 
-  loading.value = true
-  errorMessage.value = ''
-  try {
-    // 对密码进行 SHA256 哈希
-    const password_hash = preparePassword(formData.value.password)
+  if (hasError) return
 
-    await userStore.register({
-      ...formData.value,
-      password_hash
-    })
+  loading.value = true
+  try {
+    // 在前端加密密码
+    const passwordHash = hashPassword(form.password)
+    await userStore.register(
+      form.username,
+      form.email,
+      passwordHash,
+      requireInviteCode.value ? form.inviteCode : undefined
+    )
     router.push('/')
   } catch (error: any) {
-    errorMessage.value = error.message || '注册失败'
+    errorMessage.value = error.response?.data?.detail || '注册失败，请稍后重试'
   } finally {
     loading.value = false
   }
 }
 </script>
-
-<style scoped>
-.register-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.register-card {
-  background: white;
-  padding: 2rem;
-  border-radius: 1rem;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  max-width: 400px;
-}
-
-.register-card h1 {
-  font-size: 1.5rem;
-  color: #333;
-  margin-bottom: 1.5rem;
-}
-
-.error-message {
-  background-color: #fee;
-  color: #c33;
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-  margin-bottom: 1rem;
-  border: 1px solid #fcc;
-}
-
-.form-group small {
-  display: block;
-  font-size: 0.75rem;
-  color: #999;
-  margin-top: 0.25rem;
-}
-
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #333;
-}
-
-.form-group input {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
-  font-size: 1rem;
-  box-sizing: border-box;
-}
-
-.btn-primary {
-  width: 100%;
-  padding: 0.75rem;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  font-size: 1rem;
-  cursor: pointer;
-  margin-top: 1rem;
-  box-sizing: border-box;
-}
-
-.btn-primary:hover {
-  background: #5568d3;
-}
-
-.btn-primary:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
-
-.links {
-  margin-top: 1.5rem;
-  text-align: center;
-}
-
-.links a {
-  color: #667eea;
-  text-decoration: none;
-}
-
-.links a:hover {
-  text-decoration: underline;
-}
-</style>

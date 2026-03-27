@@ -1,112 +1,60 @@
+// stores/user.ts
 import { defineStore } from 'pinia'
-import { api } from '../api/client'
-import router from '../router'
+import { ref, computed } from 'vue'
+import type { User } from '@/types'
+import api from '@/api/client'
 
-interface User {
-  id: number
-  username: string
-  email: string
-  phone: string | null
-  is_admin: boolean
-  email_verified: boolean
-  token?: string
-}
+export const useUserStore = defineStore('user', () => {
+  const user = ref<User | null>(null)
+  const token = ref<string | null>(localStorage.getItem('access_token'))
 
-interface UserState {
-  user: User | null
-  token: string | null
-}
+  const isLoggedIn = computed(() => !!token.value)
 
-export const useUserStore = defineStore('user', {
-  state: (): UserState => ({
-    user: null,
-    token: localStorage.getItem('token') || null
-  }),
-
-  getters: {
-    isLoggedIn: (state): boolean => !!state.user
-  },
-
-  actions: {
-    async initializeUserFromStorage(): Promise<boolean> {
-      const storedToken = localStorage.getItem('token')
-      if (storedToken) {
-        try {
-          // 设置 API 客户端的令牌
-          api.setToken(storedToken)
-
-          // 尝试获取用户信息来验证令牌有效性
-          const user = await api.get<User>('/auth/me')
-          this.setUser(user)
-          this.setToken(storedToken)
-          return true
-        } catch (error) {
-          console.error('Failed to initialize user from stored token:', error)
-          // 如果令牌无效，清除它
-          this.clearUser()
-          return false
-        }
-      }
-      return false
-    },
-
-    setUser(user: User): void {
-      this.user = user
-      this.token = user.token || this.token || ''
-    },
-
-    setToken(token: string, refreshToken?: string): void {
-      this.token = token
-      localStorage.setItem('token', token)
-      api.setToken(token, refreshToken)
-    },
-
-    clearUser(): void {
-      this.user = null
-      this.token = null
-      localStorage.removeItem('token')
-      localStorage.removeItem('refresh_token')
-      api.clearToken()
-    },
-
-    async login(username: string, password_hash: string): Promise<void> {
-      try {
-        const response = await api.post<{ access_token: string, refresh_token: string }>(
-          '/auth/login',
-          { username, password_hash }
-        )
-
-        // 设置 token 和 refresh_token
-        this.setToken(response.access_token, response.refresh_token)
-
-        // 获取用户信息
-        const user = await api.get<User>('/auth/me')
-        this.setUser(user)
-      } catch (error) {
-        console.error('Login failed:', error)
-        throw error
-      }
-    },
-
-    async register(userData: any): Promise<void> {
-      try {
-        const response = await api.post<{ access_token: string, refresh_token: string }>('/auth/register', userData)
-
-        // 设置 token 和 refresh_token
-        this.setToken(response.access_token, response.refresh_token)
-
-        // 获取用户信息
-        const user = await api.get<User>('/auth/me')
-        this.setUser(user)
-      } catch (error) {
-        console.error('Register failed:', error)
-        throw error
-      }
-    },
-
-    logout(): void {
-      this.clearUser()
-      router.push('/login')
+  async function fetchUser() {
+    if (!token.value) return
+    try {
+      const data = await api.get('/auth/me')
+      user.value = data
+    } catch (error) {
+      console.error('Failed to fetch user:', error)
     }
+  }
+
+  async function login(username: string, passwordHash: string) {
+    const data = await api.post('/auth/login', { username, password_hash: passwordHash })
+    token.value = data.access_token
+    localStorage.setItem('access_token', data.access_token)
+    localStorage.setItem('refresh_token', data.refresh_token)
+    await fetchUser()
+  }
+
+  async function register(username: string, email: string, passwordHash: string, inviteCode?: string) {
+    const data = await api.post('/auth/register', {
+      username,
+      email,
+      password_hash: passwordHash,
+      invite_code: inviteCode,
+    })
+    token.value = data.access_token
+    localStorage.setItem('access_token', data.access_token)
+    localStorage.setItem('refresh_token', data.refresh_token)
+    await fetchUser()
+  }
+
+  function logout() {
+    user.value = null
+    token.value = null
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+  }
+
+  return {
+    user,
+    token,
+    isLoggedIn,
+    fetchUser,
+    login,
+    register,
+    logout,
   }
 })
