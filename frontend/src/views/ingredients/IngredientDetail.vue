@@ -341,8 +341,8 @@
               >
                 <v-icon color="info" size="small" class="mr-3">mdi-arrow-down-right</v-icon>
                 <div class="flex-grow-1">
-                  <div class="text-body-2">{{ rel.child_name }}</div>
-                  <div class="text-caption text-medium-emphasis">
+                  <div class="text-body-2" v-html="getRelationListDisplayText(rel, 'child')"></div>
+                  <div class="text-caption text-medium-emphasis mt-1">
                     <v-chip size="x-small" :color="getRelationTypeColor(rel.relation_type)">
                       {{ getRelationTypeLabel(rel.relation_type) }}
                     </v-chip>
@@ -370,7 +370,8 @@
 
           <!-- 父关系（当前原料是子，被其他原料包含/回退） -->
           <template v-if="hierarchyData?.parent_relations?.length">
-            <v-list-subheader v-if="hierarchyData.child_relations?.length">被以下原料包含/回退</v-list-subheader>
+            <v-list-subheader v-if="hierarchyData.child_relations?.length">所属关系</v-list-subheader>
+            <v-list-subheader v-else>所属关系</v-list-subheader>
             <v-list-item
               v-for="rel in hierarchyData.parent_relations"
               :key="rel.id"
@@ -382,8 +383,8 @@
               >
                 <v-icon color="success" size="small" class="mr-3">mdi-arrow-up-right</v-icon>
                 <div class="flex-grow-1">
-                  <div class="text-body-2">{{ rel.parent_name }}</div>
-                  <div class="text-caption text-medium-emphasis">
+                  <div class="text-body-2" v-html="getRelationListDisplayText(rel, 'parent')"></div>
+                  <div class="text-caption text-medium-emphasis mt-1">
                     <v-chip size="x-small" :color="getRelationTypeColor(rel.relation_type)">
                       {{ getRelationTypeLabel(rel.relation_type) }}
                     </v-chip>
@@ -522,13 +523,14 @@
             请先选择一个关联商品，然后为其添加价格记录
           </v-alert>
           <v-autocomplete
-            v-model="priceForm.product_id"
+            v-model="selectedPriceProduct"
             :items="products"
             item-title="name"
             item-value="id"
             label="选择商品"
             variant="outlined"
             required
+            return-object
           />
         </v-card-text>
         <v-card-actions>
@@ -554,7 +556,7 @@
             合并后，当前原料的菜谱引用、商品关联将迁移到目标原料，此操作不可恢复！
           </v-alert>
           <v-autocomplete
-            v-model="mergeTargetId"
+            v-model="selectedMergeTarget"
             v-model:search="mergeSearchQuery"
             :items="mergeTargets"
             item-title="name"
@@ -565,6 +567,7 @@
             hide-selected
             auto-select-first
             :custom-filter="() => true"
+            return-object
           />
         </v-card-text>
         <v-card-actions>
@@ -589,7 +592,7 @@
         <v-card-text>
           <v-form @submit.prevent="addRelation">
             <v-autocomplete
-              v-model="relationForm.target_ingredient_id"
+              v-model="selectedTargetIngredient"
               v-model:search="ingredientSearchQuery"
               :items="availableIngredients"
               item-title="name"
@@ -604,6 +607,7 @@
               hide-selected
               auto-select-first
               :custom-filter="() => true"
+              return-object
             />
 
             <v-select
@@ -638,11 +642,28 @@
               max="100"
               thumb-label
               :hints="true"
+              class="mb-4"
             >
               <template #append>
                 <v-chip size="small">{{ relationForm.strength }}%</v-chip>
               </template>
             </v-slider>
+
+            <!-- 关系预览 -->
+            <v-alert
+              v-if="selectedTargetIngredient && relationForm.relation_type"
+              type="info"
+              variant="tonal"
+              density="compact"
+              class="mb-2"
+            >
+              <div class="text-body-2">
+                {{ getRelationPreviewText(relationForm.relation_type, 'child') }}
+              </div>
+              <div class="text-caption mt-1 text-medium-emphasis">
+                {{ getRelationDescriptionText(relationForm.relation_type, 'child') }}
+              </div>
+            </v-alert>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -666,13 +687,19 @@
         <v-card-title>编辑层级关系</v-card-title>
         <v-card-text>
           <v-form @submit.prevent="saveEditRelation">
-            <v-text-field
-              :model-value="editRelationRelation?.child_name || editRelationRelation?.parent_name"
-              label="关联原料"
-              variant="outlined"
-              disabled
-              class="mb-4"
-            />
+            <!-- 关系预览 -->
+            <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+              <template #title>
+                <div class="text-body-2">
+                  <strong>{{ ingredient?.name }}</strong>
+                  <span class="mx-2">{{ getRelationTypeLabel(editRelationForm.relation_type) }}</span>
+                  <strong>{{ editRelationRelation?.child_name || editRelationRelation?.parent_name }}</strong>
+                </div>
+              </template>
+              <div class="text-caption mt-1 text-medium-emphasis">
+                {{ getEditRelationDirectionText() }}
+              </div>
+            </v-alert>
 
             <v-select
               v-model="editRelationForm.relation_type"
@@ -771,6 +798,7 @@ import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import HierarchyGraph from '@/components/charts/HierarchyGraph.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -901,12 +929,18 @@ const priceForm = ref({
   product_id: null as number | null
 })
 
+// 选中的商品对象（用于显示名称）
+const selectedPriceProduct = ref<Product | null>(null)
+
 // 关系表单数据
 const relationForm = ref({
   target_ingredient_id: null as number | null,
   relation_type: 'contains',
   strength: 50
 })
+
+// 选中的原料对象（用于显示名称）
+const selectedTargetIngredient = ref<Ingredient | null>(null)
 
 // 编辑关系数据
 const editRelationRelation = ref<HierarchyRelation | null>(null)
@@ -948,6 +982,9 @@ const mergeTargetId = ref<number | null>(null)
 const mergeTargets = ref<Ingredient[]>([])
 const loadingMergeTargets = ref(false)
 
+// 选中的合并目标对象（用于显示名称）
+const selectedMergeTarget = ref<Ingredient | null>(null)
+
 // 提示消息
 const snackbar = ref({
   show: false,
@@ -975,154 +1012,6 @@ const nutrientSortOrder = [
 // 展开状态
 const showAllNutrients = ref(false)
 
-// 定义所有营养素的中文名称映射
-const nutritionLabelMap: Record<string, string> = {
-  '能量': '热量',
-  '蛋白质': '蛋白质',
-  '脂肪': '脂肪',
-  '碳水化合物': '碳水化合物',
-  '膳食纤维': '膳食纤维',
-  '钙': '钙',
-  '铁': '铁',
-  '钠': '钠',
-  '钾': '钾',
-  '镁': '镁',
-  '磷': '磷',
-  '锌': '锌',
-  '铜': '铜',
-  '锰': '锰',
-  '硒': '硒',
-  '维生素A': '维生素A',
-  '维生素C': '维生素C',
-  '维生素B1': '维生素B1',
-  '维生素B2': '维生素B2',
-  '维生素B3（烟酸）': '维生素B3（烟酸）',
-  '维生素B3': '维生素B3（烟酸）',
-  '维生素B5（泛酸）': '维生素B5（泛酸）',
-  '维生素B5': '维生素B5（泛酸）',
-  '维生素B6': '维生素B6',
-  '维生素B12': '维生素B12',
-  '维生素B12（强化）': '维生素B12（强化）',
-  '维生素D': '维生素D',
-  '维生素E': '维生素E',
-  '维生素E（强化）': '维生素E（强化）',
-  '维生素K': '维生素K',
-  '叶酸': '叶酸',
-  '生物素': '生物素',
-  '胆碱': '胆碱',
-  '饱和脂肪': '饱和脂肪',
-  '单不饱和脂肪酸': '单不饱和脂肪',
-  '多不饱和脂肪酸': '多不饱和脂肪',
-  '反式脂肪酸': '反式脂肪',
-  '胆固醇': '胆固醇',
-  '总糖': '总糖',
-  '蔗糖': '蔗糖',
-  '葡萄糖': '葡萄糖',
-  '果糖': '果糖',
-  '半乳糖': '半乳糖',
-  '乳糖': '乳糖',
-  '麦芽糖': '麦芽糖',
-  '淀粉': '淀粉',
-  '水分': '水分',
-  '灰分': '灰分',
-  '酒精': '酒精',
-  '咖啡因': '咖啡因',
-  '可可碱': '可可碱',
-  '视黄醇': '视黄醇',
-  'α-胡萝卜素': 'α-胡萝卜素',
-  'β-胡萝卜素': 'β-胡萝卜素',
-  'β-隐黄质': 'β-隐黄质',
-  '番茄红素': '番茄红素',
-  '叶黄素和玉米黄质': '叶黄素和玉米黄质',
-  'α-生育酚': 'α-生育酚',
-  'β-生育酚': 'β-生育酚',
-  'γ-生育酚': 'γ-生育酚',
-  'δ-生育酚': 'δ-生育酚',
-  'α-生育三烯酚': 'α-生育三烯酚',
-  'β-生育三烯酚': 'β-生育三烯酚',
-  'γ-生育三烯酚': 'γ-生育三烯酚',
-  'δ-生育三烯酚': 'δ-生育三烯酚',
-  '丁酸': '丁酸',
-  '己酸': '己酸',
-  '辛酸': '辛酸',
-  '癸酸': '癸酸',
-  '月桂酸': '月桂酸',
-  '肉豆蔻酸': '肉豆蔻酸',
-  '十五烷酸': '十五烷酸',
-  '棕榈酸': '棕榈酸',
-  '十七烷酸': '十七烷酸',
-  '硬脂酸': '硬脂酸',
-  '花生酸': '花生酸',
-  '山嵛酸': '山嵛酸',
-  '木焦油酸': '木焦油酸',
-  '肉豆蔻油酸': '肉豆蔻油酸',
-  '十五碳烯酸': '十五碳烯酸',
-  '棕榈油酸': '棕榈油酸',
-  '顺式-棕榈油酸': '棕榈油酸',
-  '十七碳烯酸': '十七碳烯酸',
-  '油酸': '油酸',
-  '顺式-油酸': '油酸',
-  '二十碳烯酸': '二十碳烯酸',
-  '二十二碳烯酸': '二十二碳烯酸',
-  '顺式-二十二碳烯酸': '二十二碳烯酸',
-  '顺式-二十四碳烯酸': '二十四碳烯酸',
-  '亚油酸': '亚油酸',
-  '共轭亚油酸': '共轭亚油酸',
-  '顺式-亚油酸': '亚油酸',
-  '亚麻酸': '亚麻酸',
-  'α-亚麻酸': 'α-亚麻酸',
-  'γ-亚麻酸': 'γ-亚麻酸',
-  '十八碳四烯酸': '十八碳四烯酸',
-  '二十碳二烯酸': '二十碳二烯酸',
-  '二十碳三烯酸': '二十碳三烯酸',
-  '二高-γ-亚麻酸': '二高-γ-亚麻酸',
-  '花生四烯酸': '花生四烯酸',
-  '二十碳五烯酸': '二十碳五烯酸（EPA）',
-  '二十二碳四烯酸': '二十二碳四烯酸',
-  '二十二碳五烯酸': '二十二碳五烯酸（DPA）',
-  '二十二碳六烯酸': '二十二碳六烯酸（DHA）',
-  '反式-棕榈油酸': '反式-棕榈油酸',
-  '反式-油酸': '反式-油酸',
-  '反式-亚油酸': '反式-亚油酸',
-  '反式-二十二碳烯酸': '反式-二十二碳烯酸'
-}
-
-// 英文键名到中文键名的映射
-const englishToChineseMap: Record<string, string> = {
-  'energy_kcal': '能量',
-  'protein': '蛋白质',
-  'fat': '脂肪',
-  'carbohydrate': '碳水化合物',
-  'fiber': '膳食纤维',
-  'calcium': '钙',
-  'iron': '铁',
-  'sodium': '钠',
-  'potassium': '钾',
-  'magnesium': '镁',
-  'phosphorus': '磷',
-  'zinc': '锌',
-  'vitamin_a_rae': '维生素A',
-  'vitamin_c': '维生素C',
-  'vitamin_b1': '维生素B1',
-  'vitamin_b2': '维生素B2',
-  'vitamin_b3': '维生素B3（烟酸）',
-  'pantothenic_acid': '维生素B5（泛酸）',
-  'vitamin_b6': '维生素B6',
-  'vitamin_b12': '维生素B12',
-  'vitamin_d': '维生素D',
-  'vitamin_e': '维生素E',
-  'vitamin_k': '维生素K',
-  'saturated_fat': '饱和脂肪',
-  'monounsaturated_fat': '不饱和脂肪',
-  'polyunsaturated_fat': '多不饱和脂肪',
-  'cholesterol': '胆固醇',
-  'folate': '叶酸',
-  'choline_total': '胆碱',
-  'alcohol_ethyl': '酒精',
-  'caffeine': '咖啡因',
-  'theobromine': '可可碱',
-  'water': '水分'
-}
 
 // 营养素排序辅助函数
 const sortNutrients = (items: any[]) => {
@@ -1185,7 +1074,7 @@ const displayNutritionItems = computed(() => {
     .map(key => {
       return {
         key: key,
-        label: nutritionLabelMap[key] || key,
+        label: NUTRITION_LABEL_MAP[key] || key,
         unit: (allNutrients[key] as any).unit || '',
         isCore: false
       }
@@ -1492,7 +1381,9 @@ const addRelation = async () => {
     showAddRelationDialog.value = false
     await loadHierarchy()
   } catch (e: any) {
-    showMessage(e.message || '添加关系失败', 'error')
+    // 从 response.data.detail 获取详细的错误信息
+    const errorMessage = e.response?.data?.detail || e.message || '添加关系失败'
+    showMessage(errorMessage, 'error')
   } finally {
     savingRelation.value = false
   }
@@ -1522,7 +1413,9 @@ const saveEditRelation = async () => {
     showEditRelationDialog.value = false
     await loadHierarchy()
   } catch (e: any) {
-    showMessage(e.message || '更新关系失败', 'error')
+    // 从 response.data.detail 获取详细的错误信息
+    const errorMessage = e.response?.data?.detail || e.message || '更新关系失败'
+    showMessage(errorMessage, 'error')
   } finally {
     savingRelation.value = false
   }
@@ -1545,7 +1438,9 @@ const deleteRelation = async () => {
     showDeleteRelationDialog.value = false
     await loadHierarchy()
   } catch (e: any) {
-    showMessage(e.message || '删除关系失败', 'error')
+    // 从 response.data.detail 获取详细的错误信息
+    const errorMessage = e.response?.data?.detail || e.message || '删除关系失败'
+    showMessage(errorMessage, 'error')
   } finally {
     deletingRelation.value = false
   }
@@ -1561,6 +1456,185 @@ const getRelationTypeLabel = (type: string) => {
 const getRelationTypeColor = (type: string) => {
   const option = relationTypeOptions.find(o => o.value === type)
   return option?.color || 'grey'
+}
+
+// 获取关系指向文本
+// relationType: 关系类型（contains, fallback, substitutable）
+// direction: 'child' 表示当前是父级（显示子原料），'parent' 表示当前是子级（显示父原料）
+// fullText: 是否显示完整的"当前原料"文字
+const getRelationDirectionText = (
+  relationType: string,
+  direction: 'child' | 'parent',
+  fullText: boolean = true
+) => {
+  const currentText = fullText ? '当前原料' : '当前'
+
+  // child_relations: 当前原料 → 子原料
+  if (direction === 'child') {
+    switch (relationType) {
+      case 'contains':
+        return `属于${currentText}`
+      case 'fallback':
+        return `可回退到${currentText}`
+      case 'substitutable':
+        return `可替代${currentText}`
+      default:
+        return ''
+    }
+  }
+
+  // parent_relations: 父原料 → 当前原料
+  if (direction === 'parent') {
+    switch (relationType) {
+      case 'contains':
+        return `${currentText}属于`
+      case 'fallback':
+        return `${currentText}可回退到`
+      case 'substitutable':
+        return `可替代${currentText}`
+      default:
+        return ''
+    }
+  }
+
+  return ''
+}
+
+// 获取关系列表显示文本（用于关系列表）
+const getRelationListDisplayText = (rel: any, direction: 'child' | 'parent') => {
+  const currentName = ingredient.value?.name || '当前原料'
+  const currentShort = '当前'
+
+  // child_relations: 当前原料是 parent
+  if (direction === 'child') {
+    const otherName = rel.child_name
+    switch (rel.relation_type) {
+      case 'contains':
+        return `<span class="text-medium-emphasis">${otherName}</span> <span class="text-caption text-primary font-weight-bold">属于${currentShort}</span>`
+      case 'fallback':
+        // 对于 fallback，parent 是具体原料，child 是抽象原料
+        // 在当前原料(parent)的详情中，显示"抽象原料 可回退到 当前原料"
+        return `<span class="text-medium-emphasis">${otherName}</span> <span class="text-caption text-primary font-weight-bold">可回退到${currentShort}</span>`
+      case 'substitutable':
+        return `<span class="text-medium-emphasis">${otherName}</span> <span class="text-caption text-primary font-weight-bold">可替代${currentShort}</span>`
+      default:
+        return otherName
+    }
+  }
+
+  // parent_relations: 当前原料是 child
+  if (direction === 'parent') {
+    const otherName = rel.parent_name
+    switch (rel.relation_type) {
+      case 'contains':
+        return `<span class="text-caption text-primary font-weight-bold">${currentShort}属于</span> <span class="text-medium-emphasis ml-1">${otherName}</span>`
+      case 'fallback':
+        // 对于 fallback，parent 是具体原料，child 是抽象原料
+        // 在当前原料(child)的详情中，显示"当前原料 可回退到 具体原料"
+        return `<span class="text-caption text-primary font-weight-bold">${currentShort}可回退到</span> <span class="text-medium-emphasis ml-1">${otherName}</span>`
+      case 'substitutable':
+        return `<span class="text-caption text-primary font-weight-bold">可替代${currentShort}</span> <span class="text-medium-emphasis ml-1">${otherName}</span>`
+      default:
+        return otherName
+    }
+  }
+
+  return ''
+}
+
+// 获取编辑关系对话框的关系指向文本
+const getEditRelationDirectionText = () => {
+  const rel = editRelationRelation.value
+  if (!rel) return ''
+
+  const relationType = editRelationForm.value.relation_type
+  const currentText = '当前原料'
+
+  // 判断是 child_relation 还是 parent_relation
+  // child_relation: 当前原料是父，关联原料是子
+  if (rel.child_name && !rel.parent_name) {
+    // 这是 child_relation，格式：子原料 属于 当前原料
+    return `${rel.child_name} ${getRelationDirectionText(relationType, 'child', true)}`
+  }
+  // parent_relation: 当前原料是子，关联原料是父
+  else if (rel.parent_name && !rel.child_name) {
+    // 这是 parent_relation，格式：当前原料 属于 父原料
+    return `${getRelationDirectionText(relationType, 'parent', true)} ${rel.parent_name}`
+  }
+
+  return ''
+}
+
+// 获取关系预览文本（用于添加关系对话框）
+// 显示格式：当前原料 [关系动词] 目标原料
+const getRelationPreviewText = (relationType: string, direction: 'child' | 'parent') => {
+  const currentName = ingredient.value?.name || '当前原料'
+  const targetName = selectedTargetIngredient.value?.name || '目标原料'
+
+  // child_relations: 当前原料是父，目标原料是子
+  if (direction === 'child') {
+    switch (relationType) {
+      case 'contains':
+        return `${currentName} 包含 ${targetName}`
+      case 'fallback':
+        return `${currentName} 可回退到 ${targetName}`
+      case 'substitutable':
+        return `${currentName} 和 ${targetName} 可相互替代`
+      default:
+        return `${currentName} - ${targetName}`
+    }
+  }
+
+  // parent_relations: 当前原料是子，目标原料是父
+  if (direction === 'parent') {
+    switch (relationType) {
+      case 'contains':
+        return `${currentName} 属于 ${targetName}`
+      case 'fallback':
+        return `${currentName} 可回退到 ${targetName}`
+      case 'substitutable':
+        return `${currentName} 和 ${targetName} 可相互替代`
+      default:
+        return `${currentName} - ${targetName}`
+    }
+  }
+
+  return ''
+}
+
+// 获取关系描述文本（解释关系的含义）
+const getRelationDescriptionText = (relationType: string, direction: 'child' | 'parent') => {
+  const targetName = selectedTargetIngredient.value?.name || '目标原料'
+
+  // child_relations: 当前原料是父，目标原料是子
+  if (direction === 'child') {
+    switch (relationType) {
+      case 'contains':
+        return `即 ${targetName} 是 ${ingredient.value?.name || '当前原料'} 的一部分`
+      case 'fallback':
+        return `即当无法获取 ${ingredient.value?.name || '当前原料'} 时，可使用 ${targetName} 代替`
+      case 'substitutable':
+        return `即两者可以在某些情况下互相替换使用`
+      default:
+        return ''
+    }
+  }
+
+  // parent_relations: 当前原料是子，目标原料是父
+  if (direction === 'parent') {
+    switch (relationType) {
+      case 'contains':
+        return `即 ${ingredient.value?.name || '当前原料'} 是 ${targetName} 的一部分`
+      case 'fallback':
+        return `即当无法获取 ${ingredient.value?.name || '当前原料'} 时，可使用 ${targetName} 代替`
+      case 'substitutable':
+        return `即两者可以在某些情况下互相替换使用`
+      default:
+        return ''
+    }
+  }
+
+  return ''
 }
 
 // 加载单位列表
@@ -1740,6 +1814,21 @@ watch(mergeSearchQuery, (newSearch) => {
     searchMergeTargets(newSearch)
   }, 300)
 })
+
+// 监听选中的目标原料对象，同步 id 到表单
+watch(selectedTargetIngredient, (newIngredient) => {
+  relationForm.value.target_ingredient_id = newIngredient?.id || null
+}, { immediate: true })
+
+// 监听选中的合并目标对象，同步 id
+watch(selectedMergeTarget, (newTarget) => {
+  mergeTargetId.value = newTarget?.id || null
+}, { immediate: true })
+
+// 监听选中的商品对象，同步 id 到表单
+watch(selectedPriceProduct, (newProduct) => {
+  priceForm.value.product_id = newProduct?.id || null
+}, { immediate: true })
 
 // 监听路由参数变化，当原料 ID 变化时重新加载数据
 watch(() => route.params.id, () => {

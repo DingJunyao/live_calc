@@ -148,8 +148,26 @@
                 <span v-else>-</span>
               </div>
               <!-- 成本：右对齐 -->
-              <div class="ingredient-cost text-body-2 text-right" style="min-width: 60px">
-                ¥{{ formatIngredientCost(ingredient) }}
+              <div class="ingredient-cost text-body-2 text-right d-flex align-center justify-end" style="min-width: 60px">
+                <template v-if="getIngredientFallbackChain(ingredient)">
+                  <v-tooltip location="top">
+                    <template #activator="{ props }">
+                      <v-icon
+                        v-bind="props"
+                        size="small"
+                        color="info"
+                        class="mr-1"
+                      >
+                        mdi-information
+                      </v-icon>
+                    </template>
+                    <div>
+                      <div class="text-caption">根据以下食材计算成本：</div>
+                      <div class="text-body-2 font-weight-bold">{{ getIngredientFallbackChain(ingredient) }}</div>
+                    </div>
+                  </v-tooltip>
+                </template>
+                <span>¥{{ formatIngredientCost(ingredient) }}</span>
               </div>
             </div>
             <!-- 备注另起一行 -->
@@ -352,6 +370,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -391,9 +410,34 @@ interface RecipeIngredient {
   note?: string
 }
 
+interface CostBreakdownItem {
+  ingredient_name: string
+  original_ingredient_name?: string
+  ingredient_id: number
+  recipe_ingredient_id: number
+  quantity: string
+  unit_price: number
+  cost: number
+  fallback_chain?: string
+}
+
 interface CostData {
   total_cost: number | string
-  per_serving_cost: number | string
+  per_serving_cost?: number | string
+  cost_breakdown?: CostBreakdownItem[]
+}
+
+interface NutrientItem {
+  value: number
+  unit: string
+  key?: string
+  nrp_pct?: number
+  standard?: string
+}
+
+interface PerServingNutrition {
+  core_nutrients: Record<string, NutrientItem>
+  all_nutrients?: Record<string, NutrientItem>
 }
 
 interface NutritionData {
@@ -403,6 +447,7 @@ interface NutritionData {
   carbs?: number
   fiber?: number
   sodium?: number
+  per_serving_nutrition?: PerServingNutrition
 }
 
 const route = useRoute()
@@ -444,158 +489,6 @@ const nutrientSortOrder = [
 
 // 展开状态
 const showAllNutrients = ref(false)
-
-// 定义所有营养素的中文名称映射
-const nutritionLabelMap: Record<string, string> = {
-  '蛋白质': '蛋白质',
-  '脂肪': '脂肪',
-  '碳水化合物': '碳水化合物',
-  '膳食纤维': '膳食纤维',
-  '钙': '钙',
-  '铁': '铁',
-  '钠': '钠',
-  '钾': '钾',
-  '镁': '镁',
-  '磷': '磷',
-  '锌': '锌',
-  '铜': '铜',
-  '锰': '锰',
-  '硒': '硒',
-  '维生素A': '维生素A',
-  '维生素C': '维生素C',
-  '维生素B1': '维生素B1',
-  '维生素B2': '维生素B2',
-  '维生素B3（烟酸）': '维生素B3（烟酸）',
-  '维生素B3': '维生素B3（烟酸）',
-  '维生素B5（泛酸）': '维生素B5（泛酸）',
-  '维生素B5': '维生素B5（泛酸）',
-  '维生素B6': '维生素B6',
-  '维生素B12': '维生素B12',
-  '维生素B12（强化）': '维生素B12（强化）',
-  '维生素D': '维生素D',
-  '维生素E': '维生素E',
-  '维生素E（强化）': '维生素E（强化）',
-  '维生素K': '维生素K',
-  '叶酸': '叶酸',
-  '生物素': '生物素',
-  '胆碱': '胆碱',
-  '饱和脂肪': '饱和脂肪',
-  '单不饱和脂肪酸': '单不饱和脂肪',
-  '多不饱和脂肪酸': '多不饱和脂肪',
-  '反式脂肪酸': '反式脂肪',
-  '胆固醇': '胆固醇',
-  '总糖': '总糖',
-  '蔗糖': '蔗糖',
-  '葡萄糖': '葡萄糖',
-  '果糖': '果糖',
-  '半乳糖': '半乳糖',
-  '乳糖': '乳糖',
-  '麦芽糖': '麦芽糖',
-  '淀粉': '淀粉',
-  '水分': '水分',
-  '灰分': '灰分',
-  '酒精': '酒精',
-  '咖啡因': '咖啡因',
-  '可可碱': '可可碱',
-  '视黄醇': '视黄醇',
-  'α-胡萝卜素': 'α-胡萝卜素',
-  'β-胡萝卜素': 'β-胡萝卜素',
-  'β-隐黄质': 'β-隐黄质',
-  '番茄红素': '番茄红素',
-  '叶黄素和玉米黄质': '叶黄素和玉米黄质',
-  'α-生育酚': 'α-生育酚',
-  'β-生育酚': 'β-生育酚',
-  'γ-生育酚': 'γ-生育酚',
-  'δ-生育酚': 'δ-生育酚',
-  'α-生育三烯酚': 'α-生育三烯酚',
-  'β-生育三烯酚': 'β-生育三烯酚',
-  'γ-生育三烯酚': 'γ-生育三烯酚',
-  'δ-生育三烯酚': 'δ-生育三烯酚',
-  '丁酸': '丁酸',
-  '己酸': '己酸',
-  '辛酸': '辛酸',
-  '癸酸': '癸酸',
-  '月桂酸': '月桂酸',
-  '肉豆蔻酸': '肉豆蔻酸',
-  '十五烷酸': '十五烷酸',
-  '棕榈酸': '棕榈酸',
-  '十七烷酸': '十七烷酸',
-  '硬脂酸': '硬脂酸',
-  '花生酸': '花生酸',
-  '山嵛酸': '山嵛酸',
-  '木焦油酸': '木焦油酸',
-  '肉豆蔻油酸': '肉豆蔻油酸',
-  '十五碳烯酸': '十五碳烯酸',
-  '棕榈油酸': '棕榈油酸',
-  '顺式-棕榈油酸': '棕榈油酸',
-  '十七碳烯酸': '十七碳烯酸',
-  '油酸': '油酸',
-  '顺式-油酸': '油酸',
-  '二十碳烯酸': '二十碳烯酸',
-  '二十二碳烯酸': '二十二碳烯酸',
-  '顺式-二十二碳烯酸': '二十二碳烯酸',
-  '顺式-二十四碳烯酸': '二十四碳烯酸',
-  '亚油酸': '亚油酸',
-  '共轭亚油酸': '共轭亚油酸',
-  '顺式-亚油酸': '亚油酸',
-  '亚麻酸': '亚麻酸',
-  'α-亚麻酸': 'α-亚麻酸',
-  'γ-亚麻酸': 'γ-亚麻酸',
-  '十八碳四烯酸': '十八碳四烯酸',
-  '二十碳二烯酸': '二十碳二烯酸',
-  '二十碳三烯酸': '二十碳三烯酸',
-  '二高-γ-亚麻酸': '二高-γ-亚麻酸',
-  '花生四烯酸': '花生四烯酸',
-  '二十碳五烯酸': '二十碳五烯酸（EPA）',
-  '二十二碳四烯酸': '二十二碳四烯酸',
-  '二十二碳五烯酸': '二十二碳五烯酸（DPA）',
-  '二十二碳六烯酸': '二十二碳六烯酸（DHA）',
-  '反式-棕榈油酸': '反式-棕榈油酸',
-  '反式-油酸': '反式-油酸',
-  '反式-亚油酸': '反式-亚油酸',
-  '反式-二十二碳烯酸': '反式-二十二碳烯酸',
-  // 新增营养素映射
-  '能量': '能量',
-  'β-谷甾醇': 'β-谷甾醇',
-  '丙氨酸': '丙氨酸',
-  '丝氨酸': '丝氨酸',
-  '二十一碳五烯酸': '二十一碳五烯酸',
-  '亚油酸异构体': '亚油酸异构体',
-  '亚麻酸异构体': '亚麻酸异构体',
-  '亮氨酸': '亮氨酸',
-  '十三烷酸': '十三烷酸',
-  '单不饱和脂肪': '单不饱和脂肪',
-  '单烯反式脂肪酸': '单烯反式脂肪酸',
-  '反式-11-油酸': '反式-11-油酸',
-  '反式-亚油酸二反式异构体': '反式-亚油酸二反式异构体',
-  '多不饱和脂肪': '多不饱和脂肪',
-  '多烯反式脂肪酸': '多烯反式脂肪酸',
-  '天冬氨酸': '天冬氨酸',
-  '异亮氨酸': '异亮氨酸',
-  '植物固醇': '植物固醇',
-  '氟': '氟',
-  '甘氨酸': '甘氨酸',
-  '甜菜碱': '甜菜碱',
-  '精氨酸': '精氨酸',
-  '组氨酸': '组氨酸',
-  '维生素D2（麦角钙化醇）': '维生素D2（麦角钙化醇）',
-  '维生素D3（胆钙化醇）': '维生素D3（胆钙化醇）',
-  '维生素K1（二氢叶绿醌）': '维生素K1（二氢叶绿醌）',
-  '维生素K2（甲萘醌-4）': '维生素K2（甲萘醌-4）',
-  '缬氨酸': '缬氨酸',
-  '羟脯氨酸': '羟脯氨酸',
-  '胱氨酸': '胱氨酸',
-  '脯氨酸': '脯氨酸',
-  '色氨酸': '色氨酸',
-  '苏氨酸': '苏氨酸',
-  '苯丙氨酸': '苯丙氨酸',
-  '菜油固醇': '菜油固醇',
-  '蛋氨酸': '蛋氨酸',
-  '谷氨酸': '谷氨酸',
-  '豆固醇': '豆固醇',
-  '赖氨酸': '赖氨酸',
-  '酪氨酸': '酪氨酸'
-}
 
 // 营养素排序辅助函数
 const sortNutrients = (items: any[]) => {
@@ -649,24 +542,59 @@ const displayNutritionItems = computed(() => {
     .filter(key => !defaultKeys.has(key))
     .map(key => ({
       key: key,
-      label: nutritionLabelMap[key] || key,
+      label: NUTRITION_LABEL_MAP[key] || key,
       unit: (coreNutrients[key] as any).unit || '',
       isCore: true
     }))
 
   // 获取 all_nutrients 中的其他营养素
-  const otherAllNutrients = Object.keys(allNutrients)
+  // 先按照中文名称分组，合并同一中文名称的多个英文键名的值
+  const chineseKeyGroups = new Map<string, { keys: string[], totalValue: number, unit: string }>()
+
+  Object.keys(allNutrients)
     .filter(key => {
       const data = allNutrients[key]
       return data && typeof data === 'object' && 'value' in data
     })
-    .filter(key => !defaultKeys.has(key)) // 排除默认显示的5个
-    .map(key => ({
-      key: key,
-      label: nutritionLabelMap[key] || key,
-      unit: (allNutrients[key] as any).unit || '',
-      isCore: false
-    }))
+    .filter(key => {
+      // 将英文键名转换为中文键名，然后检查是否是核心营养素
+      const chineseKey = ENGLISH_TO_CHINESE_MAP[key] || key
+      return !defaultKeys.has(chineseKey) // 排除默认显示的5个
+    })
+    .forEach(key => {
+      const chineseKey = ENGLISH_TO_CHINESE_MAP[key] || key
+      const data = allNutrients[key] as any
+
+      if (!chineseKeyGroups.has(chineseKey)) {
+        chineseKeyGroups.set(chineseKey, {
+          keys: [],
+          totalValue: 0,
+          unit: data.unit || ''
+        })
+      }
+
+      const group = chineseKeyGroups.get(chineseKey)!
+      group.keys.push(key)
+      group.totalValue += (data.value || 0)
+      // 使用第一个遇到的单位
+      if (!group.unit && data.unit) {
+        group.unit = data.unit
+      }
+    })
+
+  // 将分组后的数据转换为项目数组
+  const otherAllNutrients = Array.from(chineseKeyGroups.entries())
+    .map(([chineseKey, group]) => {
+      // 使用第一个出现的英文键名作为 key
+      const firstKey = group.keys[0]
+      return {
+        key: firstKey,
+        label: NUTRITION_LABEL_MAP[chineseKey] || chineseKey,
+        value: group.totalValue, // 使用合并后的值
+        unit: group.unit,
+        isCore: false
+      }
+    })
 
   // 合并其他营养素
   const otherItems = [...otherCoreNutrients, ...otherAllNutrients]
@@ -691,37 +619,46 @@ const otherNutrientsCount = computed(() => {
   const otherCoreCount = Object.keys(coreNutrients).filter(key => !defaultKeys.has(key)).length
 
   // 计算 all_nutrients 中的其他营养素数量
+  const seenChineseKeys = new Set<string>()
   const otherAllCount = Object.keys(allNutrients).filter(key => {
     const data = allNutrients[key]
-    return data && typeof data === 'object' && 'value' in data && !defaultKeys.has(key)
+    if (!data || typeof data !== 'object' || !('value' in data)) return false
+    // 将英文键名转换为中文键名，然后检查是否是核心营养素
+    const chineseKey = ENGLISH_TO_CHINESE_MAP[key] || key
+    if (!defaultKeys.has(chineseKey) && !seenChineseKeys.has(chineseKey)) {
+      seenChineseKeys.add(chineseKey)
+      return true
+    }
+    return false
   }).length
 
   return otherCoreCount + otherAllCount
 })
 
 // 从后端返回的嵌套结构中提取营养值
+// 注意：对于非核心营养素（isCore=false），displayItems 中已包含合并后的 value 和 unit
 const getNutritionValue = (item: any) => {
-  if (!nutritionData.value?.per_serving_nutrition) return null
-
   if (item.isCore) {
+    // 核心营养素从 core_nutrients 获取完整数据（包括 NRP）
+    if (!nutritionData.value?.per_serving_nutrition) return null
     const nutrient = nutritionData.value.per_serving_nutrition.core_nutrients?.[item.key]
     return nutrient?.value
   }
 
-  const nutrient = nutritionData.value.per_serving_nutrition.all_nutrients?.[item.key]
-  return nutrient?.value
+  // 其他营养素直接使用合并后的值
+  return item.value
 }
 
 const getNutritionUnit = (item: any) => {
-  if (!nutritionData.value?.per_serving_nutrition) return null
-
   if (item.isCore) {
+    // 核心营养素从 core_nutrients 获取完整数据
+    if (!nutritionData.value?.per_serving_nutrition) return null
     const nutrient = nutritionData.value.per_serving_nutrition.core_nutrients?.[item.key]
     return nutrient?.unit
   }
 
-  const nutrient = nutritionData.value.per_serving_nutrition.all_nutrients?.[item.key]
-  return nutrient?.unit
+  // 其他营养素直接使用合并后的单位
+  return item.unit
 }
 
 const loadData = async () => {
@@ -835,10 +772,31 @@ const formatNutritionValue = (value: number | undefined, unit: string) => {
 // 格式化原料成本
 const formatIngredientCost = (ingredient: RecipeIngredient) => {
   if (!costData.value?.cost_breakdown) return '-'
-  const breakdown = costData.value.cost_breakdown as any[]
-  const item = breakdown.find((b: any) => b.ingredient_id === ingredient.ingredient_id)
+  const breakdown = costData.value.cost_breakdown as CostBreakdownItem[]
+  // 使用 recipe_ingredient_id 来匹配，而不是 ingredient_id
+  // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
+  const item = breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id)
   if (!item) return '-'
   return formatCost(item.cost || 0)
+}
+
+// 获取原料的回退链信息
+const getIngredientFallbackChain = (ingredient: RecipeIngredient): string | null => {
+  if (!costData.value?.cost_breakdown) return null
+  const breakdown = costData.value.cost_breakdown as CostBreakdownItem[]
+  // 使用 recipe_ingredient_id 来匹配，而不是 ingredient_id
+  // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
+  const item = breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id)
+  return item?.fallback_chain || null
+}
+
+// 获取原料的成本明细项
+const getIngredientCostItem = (ingredient: RecipeIngredient): CostBreakdownItem | null => {
+  if (!costData.value?.cost_breakdown) return null
+  const breakdown = costData.value.cost_breakdown as CostBreakdownItem[]
+  // 使用 recipe_ingredient_id 来匹配，而不是 ingredient_id
+  // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
+  return breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id) || null
 }
 
 // 获取营养素NRV百分比

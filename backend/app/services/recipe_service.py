@@ -259,13 +259,16 @@ async def calculate_recipe_cost(
     user_id: int,
     db: Session = None
 ) -> Dict:
-    """计算菜谱成本"""
+    """计算菜谱成本，使用当天价格区间的平均值"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         return None
 
     total_cost = Decimal("0.00")
     cost_breakdown = []
+
+    # 获取当前日期
+    now = datetime.now()
 
     for recipe_ingredient in recipe.ingredients:
         ingredient = recipe_ingredient.ingredient
@@ -285,78 +288,111 @@ async def calculate_recipe_cost(
             Product.is_active == True
         ).first()
 
-        latest_record = None
+        day_records = []
         unit_price = None
         fallback_chain = None  # 回退链信息
         original_ingredient_name = ingredient.name  # 保存原始食材名称
 
         if product:
-            # 通过商品ID查找用户最新的价格记录
-            latest_record = db.query(ProductRecord).filter(
-                ProductRecord.user_id == user_id,
-                ProductRecord.product_id == product.id
-            ).order_by(ProductRecord.recorded_at.desc()).first()
+            # 获取当天的所有价格记录
+            day_records = _get_price_records_for_date(db, user_id, ingredient.id, now)
 
-            # 如果找不到价格记录，尝试使用回退食材
-            if not latest_record:
+            # 如果当天无记录，使用前向填充
+            if not day_records:
+                # 先尝试使用食材回退机制
                 fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
                 if fallback_result:
                     fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
-                    # 直接使用回退的价格记录
-                    latest_record = fallback_price_record
-                    # 更新ingredient为回退食材，用于成本计算
-                    ingredient = fallback_ingredient
+                    # 查找回退食材当天的价格记录
+                    fallback_product = db.query(Product).filter(
+                        Product.ingredient_id == fallback_ingredient.id,
+                        Product.is_active == True
+                    ).first()
 
-            if latest_record:
-                # 计算单价：总价 ÷ 数量
-                record_price = Decimal(str(latest_record.price))
+                    if fallback_product:
+                        # 查找回退食材当天的价格记录
+                        day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now)
 
-                # 修复：检查 standard_quantity 是否为 None 或 0，避免除零错误
-                std_qty = latest_record.standard_quantity
-                if std_qty is None or std_qty == 0:
-                    # 如果标准数量未知，使用原始价格作为单位价格（这种情况很少见）
-                    unit_price = record_price
-                else:
-                    record_quantity = Decimal(str(std_qty))
-                    unit_price = record_price / record_quantity
+                        # 如果回退食材也没有当天记录，使用前向填充
+                        if not day_records:
+                            fallback_record = _get_price_record_with_fallback(
+                                db=db,
+                                user_id=user_id,
+                                product_id=fallback_product.id,
+                                as_of_date=now
+                            )
+                            if fallback_record:
+                                day_records = [fallback_record]
+                                ingredient = fallback_ingredient
+                        else:
+                            ingredient = fallback_ingredient
+
+                # 如果食材回退也没有，使用原食材前向填充
+                if not day_records:
+                    fallback_record = _get_price_record_with_fallback(
+                        db=db,
+                        user_id=user_id,
+                        product_id=product.id,
+                        as_of_date=now
+                    )
+                    if fallback_record:
+                        day_records = [fallback_record]
         else:
             # 如果找不到商品，尝试使用回退食材
             fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
             if fallback_result:
                 fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
                 # 查找回退食材的商品
-                product = db.query(Product).filter(
+                fallback_product = db.query(Product).filter(
                     Product.ingredient_id == fallback_ingredient.id,
                     Product.is_active == True
                 ).first()
 
-                if product:
-                    # 直接使用回退的价格记录
-                    latest_record = fallback_price_record
-                    # 更新ingredient为回退食材
+                if fallback_product:
+                    # 查找回退食材当天的价格记录
+                    day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now)
+
+                    # 如果回退食材也没有当天记录，使用前向填充
+                    if not day_records:
+                        fallback_record = _get_price_record_with_fallback(
+                            db=db,
+                            user_id=user_id,
+                            product_id=fallback_product.id,
+                            as_of_date=now
+                        )
+                        if fallback_record:
+                            day_records = [fallback_record]
+
                     ingredient = fallback_ingredient
 
-            if not latest_record:
-                # 如果找不到回退食材的价格记录，尝试通过名称匹配（这个SB数据一致性问题）
+            # 如果仍然没有记录，尝试通过名称匹配
+            if not day_records:
                 latest_record = db.query(ProductRecord).filter(
                     ProductRecord.user_id == user_id,
                     ProductRecord.product_name.contains(original_ingredient_name)
                 ).order_by(ProductRecord.recorded_at.desc()).first()
 
-            if latest_record:
-                # 同样需要计算单价
-                record_price = Decimal(str(latest_record.price))
+                if latest_record:
+                    day_records = [latest_record]
 
-                # 修复：检查 standard_quantity 是否为 None 或 0，避免除零错误
-                std_qty = latest_record.standard_quantity
+        if day_records:
+            # 计算当天所有记录的平均单价
+            unit_prices = []
+            for record in day_records:
+                record_price = Decimal(str(record.price))
+                std_qty = record.standard_quantity
                 if std_qty is None or std_qty == 0:
-                    # 如果标准数量未知，使用原始价格作为单位价格
-                    unit_price = record_price
+                    unit_price_temp = record_price
                 else:
                     record_quantity = Decimal(str(std_qty))
-                    unit_price = record_price / record_quantity
+                    unit_price_temp = record_price / record_quantity
+                unit_prices.append(unit_price_temp)
 
-        if latest_record:
+            # 使用平均单价
+            if unit_prices:
+                unit_price = sum(unit_prices) / len(unit_prices)
+
+        if unit_price is not None:
             # 计算成本：单价 × 菜谱中的数量 = 成本
             ingredient_quantity = recipe_ingredient.quantity
 
@@ -375,6 +411,7 @@ async def calculate_recipe_cost(
 
                     cost_breakdown.append({
                         "ingredient_name": ingredient.name,
+                        "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                         "ingredient_id": ingredient.id,
                         "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                         "quantity": str(ingredient_quantity),
@@ -384,14 +421,14 @@ async def calculate_recipe_cost(
                     })
                 except Exception as e:
                     # 数量解析失败，使用基础价格
-                    cost = Decimal(str(latest_record.price))
+                    cost = unit_price
                     total_cost += cost
                     cost_breakdown.append({
                         "ingredient_name": ingredient.name,
                         "ingredient_id": ingredient.id,
                         "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                         "quantity": "1",  # 默认为1
-                        "unit_price": float(latest_record.price),
+                        "unit_price": float(unit_price) if unit_price else 0.0,
                         "cost": float(cost),
                         "fallback_chain": fallback_chain  # 回退链信息（如果有）
                     })
@@ -400,6 +437,7 @@ async def calculate_recipe_cost(
                 # 这样用户可以看到所有食材，即使它们的数量为0
                 cost_breakdown.append({
                     "ingredient_name": ingredient.name,
+                    "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                     "ingredient_id": ingredient.id,
                     "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                     "quantity": str(ingredient_quantity),
@@ -687,6 +725,9 @@ async def calculate_recipe_nutrition(
     # 存储食材贡献详情
     ingredient_details = []
 
+    # 初始化所有营养素的总量（包括 all_nutrients）
+    total_all_nutrients = {}
+
     for recipe_ingredient in recipe.ingredients:
         ingredient = recipe_ingredient.ingredient
 
@@ -860,6 +901,34 @@ async def calculate_recipe_nutrition(
                     total_core_nutrients[nutrient_name]["value"] += value * float(ratio)
                     total_core_nutrients[nutrient_name]["unit"] = source_unit
 
+        # 累加所有其他营养素值（all_nutrients）
+        for nutrient_name, nutrient_data in all_nutrients.items():
+            if nutrient_name not in total_core_nutrients:  # 避免重复累加核心营养素
+                # 确保 value 不为 None
+                value = float(nutrient_data.get("value", 0) or 0)
+                source_unit = nutrient_data.get("unit", "")
+
+                # 如果值为 0 且有回退食材，尝试从回退食材获取该营养素的值
+                if value == 0 and fallback_nutrients and nutrient_name in fallback_nutrients:
+                    fallback_value = float(fallback_nutrients[nutrient_name].get("value", 0) or 0)
+                    if fallback_value > 0:
+                        value = fallback_value
+                        source_unit = fallback_nutrients[nutrient_name].get("unit", "")
+
+                # 初始化 total_all_nutrients（如果不存在）
+                if nutrient_name not in total_all_nutrients:
+                    total_all_nutrients[nutrient_name] = {"value": 0, "unit": source_unit}
+
+                # 如果是能量，检查单位并转换为 kcal
+                if nutrient_name == "能量" and source_unit == "kJ":
+                    # 先将 kJ 转换为 kcal（1 kJ = 0.239006 kcal）
+                    value_kcal = value * 0.239006
+                    total_all_nutrients[nutrient_name]["value"] += value_kcal * float(ratio)
+                    total_all_nutrients[nutrient_name]["unit"] = "kcal"
+                else:
+                    total_all_nutrients[nutrient_name]["value"] += value * float(ratio)
+                    total_all_nutrients[nutrient_name]["unit"] = source_unit
+
         # 添加食材贡献详情
         # 收集每个营养素的贡献值（考虑回退）
         contribution_data = {}
@@ -906,15 +975,45 @@ async def calculate_recipe_nutrition(
         if nrv_reference > 0:
             # NRV 百分比 = （每份营养值 / NRV 标准值）× 100
             per_serving_nrp_pct = round((per_serving_value / nrv_reference) * 100, 2)
+            # 添加参考值说明
+            per_serving_standard = f"NRV标准值：{nrv_reference}{per_serving_unit}"
         else:
-            # 没有参考值，使用默认值
-            per_serving_nrp_pct = 0
+            # 没有参考值，设为 None
+            per_serving_nrp_pct = None
+            per_serving_standard = "无标准"
 
         per_serving_core_nutrients[name] = {
             "value": per_serving_value,
             "unit": per_serving_unit,
             "key": data["key"],
-            "nrp_pct": per_serving_nrp_pct
+            "nrp_pct": per_serving_nrp_pct,
+            "standard": per_serving_standard
+        }
+
+    # 计算每份的 all_nutrients 值
+    per_serving_all_nutrients = {}
+    for name, data in total_all_nutrients.items():
+        # 处理 None 值的情况
+        total_value = data["value"] if data["value"] is not None else 0
+        per_serving_value = round(total_value / servings, 2)
+        per_serving_unit = data["unit"] if data["unit"] is not None else ""
+
+        # 使用 NRV 标准参考值计算 NRV 百分比（如果有参考值）
+        nrv_reference = NRV_REFERENCE_VALUES.get(name, 0)
+        if nrv_reference > 0:
+            per_serving_nrp_pct = round((per_serving_value / nrv_reference) * 100, 2)
+            # 添加参考值说明
+            per_serving_standard = f"NRV标准值：{nrv_reference}{per_serving_unit}"
+        else:
+            # 没有参考值，设为 None
+            per_serving_nrp_pct = None
+            per_serving_standard = "无标准"
+
+        per_serving_all_nutrients[name] = {
+            "value": per_serving_value,
+            "unit": per_serving_unit,
+            "nrp_pct": per_serving_nrp_pct,
+            "standard": per_serving_standard
         }
 
     # 提取简化的核心值用于兼容性
@@ -959,7 +1058,8 @@ async def calculate_recipe_nutrition(
             }
         },
         "per_serving_nutrition": {
-            "core_nutrients": per_serving_core_nutrients
+            "core_nutrients": per_serving_core_nutrients,
+            "all_nutrients": per_serving_all_nutrients
         },
         "ingredient_details": ingredient_details  # 添加食材贡献详情
     }
@@ -1100,6 +1200,7 @@ def calculate_recipe_cost_as_of(
 
                     cost_breakdown.append({
                         "ingredient_name": ingredient.name,
+                        "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                         "ingredient_id": ingredient.id,
                         "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                         "quantity": str(ingredient_quantity),
@@ -1125,6 +1226,7 @@ def calculate_recipe_cost_as_of(
                 # 这样用户可以看到所有食材，即使它们的数量为0
                 cost_breakdown.append({
                     "ingredient_name": ingredient.name,
+                    "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                     "ingredient_id": ingredient.id,
                     "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
                     "quantity": str(ingredient_quantity),
