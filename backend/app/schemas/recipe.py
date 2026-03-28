@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Union
 from datetime import datetime
 from decimal import Decimal
+from app.utils.datetime_utils import TimeZoneAwareModel
 
 
 class CookingStep(BaseModel):
@@ -36,7 +37,7 @@ class RecipeCreate(BaseModel):
     result_ingredient_id: Optional[int] = None
 
 
-class RecipeResponse(BaseModel):
+class RecipeResponse(TimeZoneAwareModel):
     id: int
     name: str
     source: str

@@ -48,17 +48,18 @@
               <v-list-item-subtitle>{{ ingredient.default_unit_name }}</v-list-item-subtitle>
             </v-list-item>
 
-            <v-list-item v-if="ingredient.aliases?.length">
+            <v-list-item v-if="ingredient.aliases?.length" class="aliases-list-item">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-tag-outline</v-icon>
               </template>
               <v-list-item-title>别名</v-list-item-title>
-              <v-list-item-subtitle>
+              <v-list-item-subtitle class="aliases-subtitle">
                 <v-chip
                   v-for="alias in ingredient.aliases"
                   :key="alias"
-                  size="x-small"
-                  class="mr-1"
+                  size="small"
+                  class="mr-1 mb-1"
+                  label
                 >
                   {{ alias }}
                 </v-chip>
@@ -473,7 +474,7 @@
     </template>
 
     <!-- 编辑对话框 -->
-    <v-dialog v-model="showEditDialog" max-width="500">
+    <v-dialog v-model="showEditDialog" max-width="600">
       <v-card>
         <v-card-title>编辑原料</v-card-title>
         <v-card-text>
@@ -503,7 +504,121 @@
               chips
               closable-chips
               hint="按回车添加别名"
+              class="mb-4"
             />
+
+            <!-- 营养素数据（可折叠） -->
+            <v-expansion-panels class="mb-4">
+              <v-expansion-panel>
+                <v-expansion-panel-title>
+                  <template #default="{ expanded }">
+                    <div class="d-flex align-center">
+                      <v-icon class="mr-2">mdi-nutrition</v-icon>
+                      <span>营养素数据</span>
+                      <span class="text-caption text-medium-emphasis ml-2">
+                        （每100g，可选）
+                      </span>
+                      <v-spacer />
+                      <v-icon :icon="expanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
+                    </div>
+                  </template>
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                  <v-row dense>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.energy_kcal"
+                        label="能量 (kcal)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.protein"
+                        label="蛋白质 (g)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.fat"
+                        label="脂肪 (g)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.carbohydrates"
+                        label="碳水化合物 (g)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.dietary_fiber"
+                        label="膳食纤维 (g)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.calcium"
+                        label="钙 (mg)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.iron"
+                        label="铁 (mg)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.sodium"
+                        label="钠 (mg)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                    <v-col cols="6" sm="4">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.potassium"
+                        label="钾 (mg)"
+                        variant="outlined"
+                        type="number"
+                        hide-details
+                        density="compact"
+                      />
+                    </v-col>
+                  </v-row>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+            </v-expansion-panels>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -581,6 +696,23 @@
           >
             确认合并
           </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 合并确认对话框 -->
+    <v-dialog v-model="showMergeConfirmDialog" max-width="400">
+      <v-card>
+        <v-card-title class="text-warning">确认合并</v-card-title>
+        <v-card-text>
+          确定要将「{{ ingredient?.name }}」合并到「{{ selectedMergeTarget?.name }}」吗？
+          <br /><br />
+          <span class="text-error">此操作不可恢复！</span>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showMergeConfirmDialog = false">取消</v-btn>
+          <v-btn color="warning" :loading="merging" @click="doMerge">确认合并</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -911,6 +1043,7 @@ const showEditRelationDialog = ref(false)
 const showDeleteRelationDialog = ref(false)
 const showAddPriceDialog = ref(false)
 const showMergeDialog = ref(false)
+const showMergeConfirmDialog = ref(false)
 const showDeleteDialog = ref(false)
 const saving = ref(false)
 const savingRelation = ref(false)
@@ -922,7 +1055,18 @@ const deleting = ref(false)
 const editForm = ref({
   name: '',
   default_unit_id: null as number | null,
-  aliases: [] as string[]
+  aliases: [] as string[],
+  nutrition: {
+    energy_kcal: null as number | null,
+    protein: null as number | null,
+    fat: null as number | null,
+    carbohydrates: null as number | null,
+    dietary_fiber: null as number | null,
+    calcium: null as number | null,
+    iron: null as number | null,
+    sodium: null as number | null,
+    potassium: null as number | null,
+  }
 })
 
 const priceForm = ref({
@@ -1650,10 +1794,45 @@ const loadUnits = async () => {
 // 打开编辑对话框
 const openEditDialog = () => {
   if (!ingredient.value) return
+
+  // 从 nutritionData 中提取营养素值
+  const loadNutritionValues = () => {
+    const defaultNutrition = {
+      energy_kcal: null,
+      protein: null,
+      fat: null,
+      carbohydrates: null,
+      dietary_fiber: null,
+      calcium: null,
+      iron: null,
+      sodium: null,
+      potassium: null,
+    }
+
+    if (!nutritionData.value?.nutrition) {
+      return defaultNutrition
+    }
+
+    const allNutrients = nutritionData.value.nutrition.all_nutrients || {}
+
+    return {
+      energy_kcal: allNutrients.energy_kcal?.value || null,
+      protein: allNutrients.protein?.value || null,
+      fat: allNutrients.fat?.value || null,
+      carbohydrates: allNutrients.carbohydrates?.value || null,
+      dietary_fiber: allNutrients.dietary_fiber?.value || null,
+      calcium: allNutrients.calcium?.value || null,
+      iron: allNutrients.iron?.value || null,
+      sodium: allNutrients.sodium?.value || null,
+      potassium: allNutrients.potassium?.value || null,
+    }
+  }
+
   editForm.value = {
     name: ingredient.value.name || '',
     default_unit_id: ingredient.value.default_unit_id || null,
-    aliases: ingredient.value.aliases || []
+    aliases: ingredient.value.aliases || [],
+    nutrition: loadNutritionValues()
   }
   showEditDialog.value = true
 }
@@ -1664,11 +1843,74 @@ const saveEdit = async () => {
 
   saving.value = true
   try {
-    const response = await api.put(`/nutrition/ingredients/${ingredientId.value}`, editForm.value)
+    const payload: any = {
+      name: editForm.value.name,
+      default_unit_id: editForm.value.default_unit_id,
+      aliases: editForm.value.aliases
+    }
+
+    // 处理营养素数据：如果填了任何营养素，则添加到 payload
+    const nutrients: Record<string, any> = {}
+    let hasNutrition = false
+
+    console.log('[前端编辑] 当前营养素表单值:', editForm.value.nutrition)
+
+    if (editForm.value.nutrition.energy_kcal != null && editForm.value.nutrition.energy_kcal > 0) {
+      nutrients.energy_kcal = editForm.value.nutrition.energy_kcal
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.protein != null && editForm.value.nutrition.protein > 0) {
+      nutrients.protein = editForm.value.nutrition.protein
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.fat != null && editForm.value.nutrition.fat > 0) {
+      nutrients.fat = editForm.value.nutrition.fat
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.carbohydrates != null && editForm.value.nutrition.carbohydrates > 0) {
+      nutrients.carbohydrates = editForm.value.nutrition.carbohydrates
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.dietary_fiber != null && editForm.value.nutrition.dietary_fiber > 0) {
+      nutrients.dietary_fiber = editForm.value.nutrition.dietary_fiber
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.calcium != null && editForm.value.nutrition.calcium > 0) {
+      nutrients.calcium = editForm.value.nutrition.calcium
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.iron != null && editForm.value.nutrition.iron > 0) {
+      nutrients.iron = editForm.value.nutrition.iron
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.sodium != null && editForm.value.nutrition.sodium > 0) {
+      nutrients.sodium = editForm.value.nutrition.sodium
+      hasNutrition = true
+    }
+    if (editForm.value.nutrition.potassium != null && editForm.value.nutrition.potassium > 0) {
+      nutrients.potassium = editForm.value.nutrition.potassium
+      hasNutrition = true
+    }
+
+    console.log('[前端编辑] 处理后的营养素数据:', nutrients)
+    console.log('[前端编辑] hasNutrition:', hasNutrition)
+
+    if (hasNutrition) {
+      payload.nutrition = nutrients
+    }
+
+    console.log('[前端编辑] 完整 payload:', payload)
+
+    const response = await api.put(`/ingredients/${ingredientId.value}`, payload)
     ingredient.value = response
+
+    // 刷新营养数据
+    await loadNutritionData()
+
     showEditDialog.value = false
     showMessage('保存成功', 'success')
   } catch (e: any) {
+    console.error('[前端编辑] 保存失败:', e)
     showMessage(e.message || '保存失败', 'error')
   } finally {
     saving.value = false
@@ -1705,8 +1947,14 @@ const searchMergeTargets = async (search?: string) => {
   }
 }
 
-// 合并原料
-const mergeIngredient = async () => {
+// 合并原料 - 打开确认对话框
+const mergeIngredient = () => {
+  if (!mergeTargetId.value) return
+  showMergeConfirmDialog.value = true
+}
+
+// 执行合并操作
+const doMerge = async () => {
   if (!mergeTargetId.value) return
 
   merging.value = true
@@ -1716,6 +1964,9 @@ const mergeIngredient = async () => {
       target_id: mergeTargetId.value
     })
     showMessage(response.message || '合并成功', 'success')
+    // 关闭所有对话框
+    showMergeDialog.value = false
+    showMergeConfirmDialog.value = false
     // 跳转到目标原料
     router.push(`/data/ingredients/${mergeTargetId.value}`)
   } catch (e: any) {
@@ -1853,6 +2104,30 @@ onMounted(() => {
 
 .nutrition-row:hover {
   background: rgba(var(--v-theme-primary), 0.04);
+}
+
+/* 别名列表项样式 - 允许高度自适应 */
+.aliases-list-item {
+  align-items: flex-start !important;
+}
+
+.aliases-list-item :deep(.v-list-item__content) {
+  overflow: visible !important;
+}
+
+/* 别名标签容器样式 */
+.aliases-subtitle {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  line-height: 1.5;
+  display: block !important;
+}
+
+.aliases-subtitle .v-chip {
+  display: inline-flex !important;
+  height: auto !important;
+  padding: 4px 10px !important;
 }
 
 .relation-item-wrapper :deep(.v-list-item__content) {

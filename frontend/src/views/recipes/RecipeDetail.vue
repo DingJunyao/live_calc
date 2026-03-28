@@ -130,11 +130,13 @@
             :key="ingredient.id"
             class="ingredient-item"
             :class="{ 'mb-2': index < recipe.ingredients.length - 1 }"
-            @click="goToIngredient(ingredient.ingredient_id)"
           >
             <div class="d-flex align-center py-2">
-              <!-- 名称：左对齐 -->
-              <div class="ingredient-name flex-grow-1 text-body-2">
+              <!-- 名称：左对齐（可点击） -->
+              <div
+                class="ingredient-name flex-grow-1 text-body-2 ingredient-clickable"
+                @click="goToIngredient(ingredient.ingredient_id)"
+              >
                 {{ ingredient.name }}
                 <v-chip v-if="ingredient.is_optional" size="x-small" color="info" variant="flat" class="ml-1">可选</v-chip>
                 <v-icon size="x-small" class="ml-1">mdi-chevron-right</v-icon>
@@ -864,16 +866,23 @@ onMounted(loadData)
 /* 原料列表样式 */
 .ingredient-item {
   border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.ingredient-item:hover {
-  background: rgba(var(--v-theme-primary), 0.04);
 }
 
 .ingredient-item:last-child {
   border-bottom: none;
+}
+
+/* 可点击的原料名称样式 */
+.ingredient-clickable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 4px;
+}
+
+.ingredient-clickable:hover {
+  background: rgba(var(--v-theme-primary), 0.04);
 }
 
 /* 营养成分表格样式 */

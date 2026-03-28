@@ -70,10 +70,19 @@ async def get_expense_report(
     end_date: date = Query(...),
     category: str = Query("all"),
     granularity: str = Query("daily"),
+    timezone_offset: Optional[int] = Query(None, description="用户时区偏移（秒），东八区为 28800"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取支出报告"""
+    """获取支出报告（支持时区感知）
+
+    Args:
+        start_date: 开始日期（用户本地日期）
+        end_date: 结束日期（用户本地日期）
+        category: 类别筛选
+        granularity: 粒度
+        timezone_offset: 时区偏移（秒），如不提供则默认使用东八区
+    """
     try:
         result = await generate_expense_report(
             current_user.id,
@@ -81,7 +90,8 @@ async def get_expense_report(
             end_date,
             category,
             granularity,
-            db=db
+            db=db,
+            user_timezone_offset=timezone_offset
         )
         return ExpenseReportResponse(**result)
     except Exception as e:

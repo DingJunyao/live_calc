@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
+from app.utils.datetime_utils import TimeZoneAwareModel
 
 
 class ProductRecordCreate(BaseModel):
@@ -28,7 +29,7 @@ class ProductRecordUpdate(BaseModel):
     recorded_at: Optional[datetime] = None
 
 
-class ProductRecordResponse(BaseModel):
+class ProductRecordResponse(TimeZoneAwareModel):
     id: int
     product_id: int
     product_name: str

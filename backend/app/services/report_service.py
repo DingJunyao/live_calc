@@ -1,10 +1,11 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
-from typing import Dict, List
-from datetime import date, timedelta
+from sqlalchemy import func, extract, and_
+from typing import Dict, List, Optional
+from datetime import date, timedelta, datetime
 from app.models.product import ProductRecord
 from app.models.expense import Expense
 from app.models.recipe import Recipe
+from app.utils.date_range_utils import local_date_range_to_utc_range
 from decimal import Decimal
 
 
@@ -14,9 +15,20 @@ async def generate_expense_report(
     end_date: date,
     category: str = "all",
     granularity: str = "daily",
-    db: Session = None
+    db: Session = None,
+    user_timezone_offset: Optional[int] = None
 ) -> Dict:
-    """生成支出报告"""
+    """生成支出报告（时区感知版本）
+
+    Args:
+        user_id: 用户ID
+        start_date: 开始日期（用户本地日期）
+        end_date: 结束日期（用户本地日期）
+        category: 类别筛选
+        granularity: 粒度
+        db: 数据库会话
+        user_timezone_offset: 用户时区偏移（秒），东八区为 28800
+    """
     total_expense = Decimal("0.00")
     time_series = []
 
@@ -25,25 +37,46 @@ async def generate_expense_report(
     total_transport = Decimal("0.00")
     total_utility = Decimal("0.00")
 
+    # 将本地日期范围转换为UTC时间范围
+    utc_start, utc_end = local_date_range_to_utc_range(start_date, end_date, user_timezone_offset)
+
+    # 查询日期范围内的所有商品记录（一次性查询，提高性能）
+    if category in ["all", "food"]:
+        food_records = db.query(
+            ProductRecord.recorded_at,
+            func.sum(ProductRecord.price).label('total')
+        ).filter(
+            ProductRecord.user_id == user_id,
+            ProductRecord.record_type == "purchase",
+            ProductRecord.recorded_at >= utc_start,
+            ProductRecord.recorded_at <= utc_end
+        ).group_by(func.date(ProductRecord.recorded_at)).all()
+
+    # 其他费用使用本地日期（Expense.date存储的是本地日期）
     current_date = start_date
     while current_date <= end_date:
         daily_food = Decimal("0.00")
         daily_transport = Decimal("0.00")
         daily_utility = Decimal("0.00")
 
-        # 商品支出（只计算购买记录，不计算单纯的价格记录）
+        # 商品支出 - 从预查询的结果中匹配
         if category in ["all", "food"]:
+            # 将当前本地日期转换为UTC日期范围
+            day_utc_start, day_utc_end = local_date_range_to_utc_range(current_date, current_date, user_timezone_offset)
+
+            # 查询当天的商品支出
             food_total = db.query(
                 func.sum(ProductRecord.price).label('total')
             ).filter(
                 ProductRecord.user_id == user_id,
-                ProductRecord.record_type == "purchase",  # 这个SB过滤条件确保只计算购买记录
-                func.date(ProductRecord.recorded_at) == current_date
+                ProductRecord.record_type == "purchase",
+                ProductRecord.recorded_at >= day_utc_start,
+                ProductRecord.recorded_at <= day_utc_end
             ).first()
             daily_food = food_total.total if food_total and food_total.total else Decimal("0.00")
             total_food += daily_food
 
-        # 其他费用
+        # 其他费用（Expense.date存储的是本地日期，直接比较）
         if category in ["all", "transport"]:
             transport_total = db.query(
                 func.sum(Expense.amount).label('total')
