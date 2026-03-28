@@ -29,28 +29,196 @@ class NutritionCalculator:
         "vitamin_b12", "vitamin_d", "vitamin_e", "vitamin_k"
     ]
 
-    # 营养素显示名称
+    # 营养素显示名称（英文键名到中文显示名称的映射）
     NUTRIENT_NAMES = {
+        # 核心营养素
         "energy_kcal": "能量",
         "protein": "蛋白质",
         "fat": "脂肪",
         "carbohydrate": "碳水化合物",
         "fiber": "膳食纤维",
+
+        # 矿物质
         "calcium": "钙",
         "iron": "铁",
         "sodium": "钠",
         "potassium": "钾",
+        "magnesium": "镁",
+        "phosphorus": "磷",
+        "zinc": "锌",
+        "copper": "铜",
+        "manganese": "锰",
+        "selenium": "硒",
+
+        # 维生素
         "vitamin_a_rae": "维生素A",
+        "vitamin_a_iu": "维生素A",
         "vitamin_c": "维生素C",
         "vitamin_b1": "维生素B1",
         "vitamin_b2": "维生素B2",
+        "vitamin_b3": "维生素B3（烟酸）",
+        "niacin": "维生素B3（烟酸）",
+        "vitamin_b5": "维生素B5（泛酸）",
+        "pantothenic_acid": "维生素B5（泛酸）",
+        "vitamin_b6": "维生素B6",
         "vitamin_b12": "维生素B12",
+        "vitamin_b_12_added": "维生素B12（强化）",
         "vitamin_d": "维生素D",
         "vitamin_e": "维生素E",
+        "vitamin_e_added": "维生素E（强化）",
         "vitamin_k": "维生素K",
+        "folate": "叶酸",
+        "folate_dfe": "叶酸",
+        "folate_food": "叶酸",
+        "folic_acid": "叶酸",
+        "choline_total": "胆碱",
+        "biotin": "生物素",
+
+        # 脂肪酸
         "saturated_fat": "饱和脂肪",
+        "monounsaturated_fat": "单不饱和脂肪",
+        "polyunsaturated_fat": "多不饱和脂肪",
         "cholesterol": "胆固醇",
-        "folate": "叶酸"
+        "fatty_acids_total_trans": "反式脂肪酸",
+        "fatty_acids_total_trans_monoenoic": "单烯反式脂肪酸",
+        "fatty_acids_total_trans_polyenoic": "多烯反式脂肪酸",
+
+        # 饱和脂肪酸（具体）
+        "sfa_4:0": "丁酸",
+        "sfa_6:0": "己酸",
+        "sfa_8:0": "辛酸",
+        "sfa_10:0": "癸酸",
+        "sfa_12:0": "月桂酸",
+        "sfa_14:0": "肉豆蔻酸",
+        "sfa_15:0": "十五烷酸",
+        "sfa_16:0": "棕榈酸",
+        "sfa_17:0": "十七烷酸",
+        "sfa_18:0": "硬脂酸",
+        "sfa_20:0": "花生酸",
+        "sfa_22:0": "山嵛酸",
+        "sfa_24:0": "木焦油酸",
+
+        # 单不饱和脂肪酸
+        "mufa_14:1": "肉豆蔻油酸",
+        "mufa_15:1": "十五碳烯酸",
+        "mufa_16:1": "棕榈油酸",
+        "mufa_16:1_c": "顺式-棕榈油酸",
+        "mufa_17:1": "十七碳烯酸",
+        "mufa_18:1": "油酸",
+        "mufa_18:1_c": "顺式-油酸",
+        "mufa_20:1": "二十碳烯酸",
+        "mufa_22:1": "二十二碳烯酸",
+        "mufa_22:1_c": "顺式-二十二碳烯酸",
+        "mufa_24:1_c": "顺式-二十四碳烯酸",
+
+        # 多不饱和脂肪酸
+        "pufa_18:2": "亚油酸",
+        "pufa_18:2_clas": "共轭亚油酸",
+        "pufa_18:2_n_6_cc": "顺式-亚油酸",
+        "pufa_18:3": "亚麻酸",
+        "pufa_18:3_n_3_ccc_(ala)": "α-亚麻酸",
+        "pufa_18:3_n_6_ccc": "γ-亚麻酸",
+        "pufa_18:4": "十八碳四烯酸",
+        "pufa_20:2_n_6_cc": "二十碳二烯酸",
+        "pufa_20:3": "二十碳三烯酸",
+        "pufa_20:3_n_3": "二十碳三烯酸",
+        "pufa_20:3_n_6": "二高-γ-亚麻酸",
+        "pufa_20:4": "花生四烯酸",
+        "pufa_20:5_n_3_(epa)": "二十碳五烯酸",
+        "pufa_22:4": "二十二碳四烯酸",
+        "pufa_22:5_n_3_(dpa)": "二十二碳五烯酸",
+        "pufa_22:6_n_3_(dha)": "二十二碳六烯酸",
+
+        # 反式脂肪酸
+        "tfa_16:1_t": "反式-棕榈油酸",
+        "tfa_18:1_t": "反式-油酸",
+        "tfa_18:2_t_not_further_defined": "反式-亚油酸",
+        "tfa_22:1_t": "反式-二十二碳烯酸",
+
+        # 糖类
+        "total_sugars": "总糖",
+        "sucrose": "蔗糖",
+        "glucose": "葡萄糖",
+        "fructose": "果糖",
+        "galactose": "半乳糖",
+        "lactose": "乳糖",
+        "maltose": "麦芽糖",
+        "starch": "淀粉",
+
+        # 其他
+        "water": "水分",
+        "ash": "灰分",
+        "alcohol_ethyl": "酒精",
+        "caffeine": "咖啡因",
+        "theobromine": "可可碱",
+        "retinol": "视黄醇",
+
+        # 类胡萝卜素
+        "carotene_alpha": "α-胡萝卜素",
+        "carotene_beta": "β-胡萝卜素",
+        "cryptoxanthin_beta": "β-隐黄质",
+        "lycopene": "番茄红素",
+        "lutein_+_zeaxanthin": "叶黄素和玉米黄质",
+
+        # 维生素E相关
+        "tocopherol_alpha": "α-生育酚",
+        "tocopherol_beta": "β-生育酚",
+        "tocopherol_gamma": "γ-生育酚",
+        "tocopherol_delta": "δ-生育酚",
+        "tocotrienol_alpha": "α-生育三烯酚",
+        "tocotrienol_beta": "β-生育三烯酚",
+        "tocotrienol_gamma": "γ-生育三烯酚",
+        "tocotrienol_delta": "δ-生育三烯酚",
+
+        # 维生素D相关
+        "vitamin_d_(d2_+_d3)_international_units": "维生素D",
+        "vitamin_d2_(ergocalciferol)": "维生素D2（麦角钙化醇）",
+        "vitamin_d3_(cholecalciferol)": "维生素D3（胆钙化醇）",
+
+        # 维生素K相关
+        "vitamin_k_(dihydrophylloquinone)": "维生素K1（二氢叶绿醌）",
+        "vitamin_k_(menaquinone_4)": "维生素K2（甲萘醌-4）",
+
+        # 矿物质
+        "fluoride_f": "氟",
+
+        # 氨基酸
+        "alanine": "丙氨酸",
+        "arginine": "精氨酸",
+        "aspartic_acid": "天冬氨酸",
+        "cystine": "胱氨酸",
+        "glutamic_acid": "谷氨酸",
+        "glycine": "甘氨酸",
+        "histidine": "组氨酸",
+        "hydroxyproline": "羟脯氨酸",
+        "isoleucine": "异亮氨酸",
+        "leucine": "亮氨酸",
+        "lysine": "赖氨酸",
+        "methionine": "蛋氨酸",
+        "phenylalanine": "苯丙氨酸",
+        "proline": "脯氨酸",
+        "serine": "丝氨酸",
+        "threonine": "苏氨酸",
+        "tryptophan": "色氨酸",
+        "tyrosine": "酪氨酸",
+        "valine": "缬氨酸",
+
+        # 植物固醇
+        "beta_sitosterol": "β-谷甾醇",
+        "campesterol": "菜油固醇",
+        "stigmasterol": "豆固醇",
+        "phytosterols": "植物固醇",
+
+        # 其他脂肪酸
+        "mufa_18:1_11_t_(18:1t_n_7)": "反式-11-油酸",
+        "pufa_18:2_i": "亚油酸异构体",
+        "pufa_18:3i": "亚麻酸异构体",
+        "pufa_21:5": "二十一碳五烯酸",
+        "tfa_18:2_tt": "反式-亚油酸二反式异构体",
+        "sfa_13:0": "十三烷酸",
+
+        # 其他
+        "betaine": "甜菜碱"
     }
 
     def __init__(self, db: Session):
@@ -255,15 +423,18 @@ class NutritionCalculator:
 
         for key, value in merged_nutrients.items():
             if isinstance(value, dict) and 'value' in value:
-                # 放入 all_nutrients
-                all_nutrients[key] = value
+                # 将英文键转换为中文显示名称（如果是英文的话）
+                display_name = self.NUTRIENT_NAMES.get(key, key)
+
+                # 放入 all_nutrients（使用中文名称作为键）
+                all_nutrients[display_name] = value
 
                 # 判断是否是核心营养素
-                if key in core_nutrient_names:
-                    core_nutrients[key] = value
+                if display_name in core_nutrient_names:
+                    core_nutrients[display_name] = value
                     # 如果有 nrp_pct，放入 nrp_totals
                     if 'nrp_pct' in value and value['nrp_pct'] is not None:
-                        nrp_totals[key] = value['nrp_pct']
+                        nrp_totals[display_name] = value['nrp_pct']
 
         # 格式化返回数据
         return {
@@ -407,10 +578,14 @@ class NutritionCalculator:
             value = data.get("value", 0) or 0
             nrp_pct = data.get("nrp_pct", 0) or 0
 
-            result["all_nutrients"][key] = {
+            # 尝试将英文键名转换为中文显示名称
+            display_name = self.NUTRIENT_NAMES.get(key, key)
+
+            result["all_nutrients"][display_name] = {
                 **data,
                 "value": round(float(value) * scale_factor, 2),
-                "nrp_pct": round(float(nrp_pct) * scale_factor, 2)
+                "nrp_pct": round(float(nrp_pct) * scale_factor, 2),
+                "original_key": key  # 保留原始键名用于参考
             }
 
         # 计算 NRV 总和

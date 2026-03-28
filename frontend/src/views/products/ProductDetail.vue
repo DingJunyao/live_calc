@@ -214,19 +214,45 @@
           <v-icon start color="success">mdi-food-apple-outline</v-icon>
           营养成分
           <span class="text-caption text-medium-emphasis ml-2">（每100g）</span>
+          <v-spacer />
+          <v-btn
+            v-if="otherNutrientsCount > 0"
+            size="small"
+            variant="text"
+            color="primary"
+            class="text-caption"
+            @click="showAllNutrients = !showAllNutrients"
+          >
+            {{ showAllNutrients ? '收起' : `展开 +${otherNutrientsCount} 项` }}
+            <v-icon :icon="showAllNutrients ? 'mdi-chevron-up' : 'mdi-chevron-down'" end />
+          </v-btn>
         </v-card-title>
         <v-divider />
-        <v-card-text>
-          <v-row dense>
-            <v-col cols="6" sm="4" v-for="item in nutritionItems" :key="item.key">
-              <div class="nutrition-item pa-3 rounded">
-                <div class="text-caption text-medium-emphasis">{{ item.label }}</div>
-                <div class="text-h6 font-weight-bold">
-                  {{ formatNutritionValue(nutritionData[item.key], item.unit) }}
-                </div>
-              </div>
-            </v-col>
-          </v-row>
+
+        <v-card-text class="pa-0">
+          <div class="nutrition-header d-flex py-2 border-bottom">
+            <div class="text-caption text-medium-emphasis ps-4 flex-grow-1">营养素</div>
+            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 80px">数量</div>
+            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 60px">NRV%</div>
+          </div>
+          <div
+            v-for="item in displayNutritionItems"
+            :key="item.key"
+            class="nutrition-row d-flex py-2"
+            :class="{ 'border-bottom': item.key !== displayNutritionItems[displayNutritionItems.length - 1].key }"
+          >
+            <div class="text-body-2 ps-4 flex-grow-1">{{ item.label }}</div>
+            <div class="text-body-2 text-end pe-4" style="min-width: 80px">
+              {{ formatNutritionValue(getNutritionValue(item), getNutritionUnit(item) || item.unit) }}
+            </div>
+            <div class="text-body-2 text-end pe-4" style="min-width: 60px">
+              {{ getNutritionNRV(item) }}%
+            </div>
+          </div>
+
+          <div class="mt-4 text-caption text-medium-emphasis ps-4">
+            NRV = 营养素参考值百分比
+          </div>
         </v-card-text>
       </v-card>
 
@@ -456,15 +482,325 @@ const snackbar = ref({
   color: 'success'
 })
 
-// 营养素配置
-const nutritionItems = [
-  { key: 'calories', label: '热量', unit: 'kcal' },
-  { key: 'protein', label: '蛋白质', unit: 'g' },
-  { key: 'fat', label: '脂肪', unit: 'g' },
-  { key: 'carbs', label: '碳水', unit: 'g' },
-  { key: 'fiber', label: '膳食纤维', unit: 'g' },
-  { key: 'sodium', label: '钠', unit: 'mg' }
+// 营养素配置（默认显示的营养素）
+const coreNutritionItems = [
+  { key: '能量', label: '能量', unit: 'kcal' },
+  { key: '蛋白质', label: '蛋白质', unit: 'g' },
+  { key: '脂肪', label: '脂肪', unit: 'g' },
+  { key: '碳水化合物', label: '碳水化合物', unit: 'g' },
+  { key: '钠', label: '钠', unit: 'mg' }
 ]
+
+// 营养素排序顺序（展开时这些营养素排在前面）
+const nutrientSortOrder = [
+  '能量', '蛋白质', '脂肪', '碳水化合物', '钠',
+  '膳食纤维', '钙', '铁', '钾',
+  '维生素A', '维生素B1', '维生素B2', '维生素B12', '维生素C',
+  '维生素D', '维生素E', '维生素K'
+]
+
+// 展开状态
+const showAllNutrients = ref(false)
+
+// 定义所有营养素的中文名称映射
+const nutritionLabelMap: Record<string, string> = {
+  '能量': '热量',
+  '蛋白质': '蛋白质',
+  '脂肪': '脂肪',
+  '碳水化合物': '碳水化合物',
+  '膳食纤维': '膳食纤维',
+  '钙': '钙',
+  '铁': '铁',
+  '钠': '钠',
+  '钾': '钾',
+  '镁': '镁',
+  '磷': '磷',
+  '锌': '锌',
+  '铜': '铜',
+  '锰': '锰',
+  '硒': '硒',
+  '维生素A': '维生素A',
+  '维生素C': '维生素C',
+  '维生素B1': '维生素B1',
+  '维生素B2': '维生素B2',
+  '维生素B3（烟酸）': '维生素B3（烟酸）',
+  '维生素B3': '维生素B3（烟酸）',
+  '维生素B5（泛酸）': '维生素B5（泛酸）',
+  '维生素B5': '维生素B5（泛酸）',
+  '维生素B6': '维生素B6',
+  '维生素B12': '维生素B12',
+  '维生素B12（强化）': '维生素B12（强化）',
+  '维生素D': '维生素D',
+  '维生素E': '维生素E',
+  '维生素E（强化）': '维生素E（强化）',
+  '维生素K': '维生素K',
+  '叶酸': '叶酸',
+  '生物素': '生物素',
+  '胆碱': '胆碱',
+  '饱和脂肪': '饱和脂肪',
+  '单不饱和脂肪酸': '单不饱和脂肪',
+  '多不饱和脂肪酸': '多不饱和脂肪',
+  '反式脂肪酸': '反式脂肪',
+  '胆固醇': '胆固醇',
+  '总糖': '总糖',
+  '蔗糖': '蔗糖',
+  '葡萄糖': '葡萄糖',
+  '果糖': '果糖',
+  '半乳糖': '半乳糖',
+  '乳糖': '乳糖',
+  '麦芽糖': '麦芽糖',
+  '淀粉': '淀粉',
+  '水分': '水分',
+  '灰分': '灰分',
+  '酒精': '酒精',
+  '咖啡因': '咖啡因',
+  '可可碱': '可可碱',
+  '视黄醇': '视黄醇',
+  'α-胡萝卜素': 'α-胡萝卜素',
+  'β-胡萝卜素': 'β-胡萝卜素',
+  'β-隐黄质': 'β-隐黄质',
+  '番茄红素': '番茄红素',
+  '叶黄素和玉米黄质': '叶黄素和玉米黄质',
+  'α-生育酚': 'α-生育酚',
+  'β-生育酚': 'β-生育酚',
+  'γ-生育酚': 'γ-生育酚',
+  'δ-生育酚': 'δ-生育酚',
+  'α-生育三烯酚': 'α-生育三烯酚',
+  'β-生育三烯酚': 'β-生育三烯酚',
+  'γ-生育三烯酚': 'γ-生育三烯酚',
+  'δ-生育三烯酚': 'δ-生育三烯酚',
+  '丁酸': '丁酸',
+  '己酸': '己酸',
+  '辛酸': '辛酸',
+  '癸酸': '癸酸',
+  '月桂酸': '月桂酸',
+  '肉豆蔻酸': '肉豆蔻酸',
+  '十五烷酸': '十五烷酸',
+  '棕榈酸': '棕榈酸',
+  '十七烷酸': '十七烷酸',
+  '硬脂酸': '硬脂酸',
+  '花生酸': '花生酸',
+  '山嵛酸': '山嵛酸',
+  '木焦油酸': '木焦油酸',
+  '肉豆蔻油酸': '肉豆蔻油酸',
+  '十五碳烯酸': '十五碳烯酸',
+  '棕榈油酸': '棕榈油酸',
+  '顺式-棕榈油酸': '棕榈油酸',
+  '十七碳烯酸': '十七碳烯酸',
+  '油酸': '油酸',
+  '顺式-油酸': '油酸',
+  '二十碳烯酸': '二十碳烯酸',
+  '二十二碳烯酸': '二十二碳烯酸',
+  '顺式-二十二碳烯酸': '二十二碳烯酸',
+  '顺式-二十四碳烯酸': '二十四碳烯酸',
+  '亚油酸': '亚油酸',
+  '共轭亚油酸': '共轭亚油酸',
+  '顺式-亚油酸': '亚油酸',
+  '亚麻酸': '亚麻酸',
+  'α-亚麻酸': 'α-亚麻酸',
+  'γ-亚麻酸': 'γ-亚麻酸',
+  '十八碳四烯酸': '十八碳四烯酸',
+  '二十碳二烯酸': '二十碳二烯酸',
+  '二十碳三烯酸': '二十碳三烯酸',
+  '二高-γ-亚麻酸': '二高-γ-亚麻酸',
+  '花生四烯酸': '花生四烯酸',
+  '二十碳五烯酸': '二十碳五烯酸（EPA）',
+  '二十二碳四烯酸': '二十二碳四烯酸',
+  '二十二碳五烯酸': '二十二碳五烯酸（DPA）',
+  '二十二碳六烯酸': '二十二碳六烯酸（DHA）',
+  '反式-棕榈油酸': '反式-棕榈油酸',
+  '反式-油酸': '反式-油酸',
+  '反式-亚油酸': '反式-亚油酸',
+  '反式-二十二碳烯酸': '反式-二十二碳烯酸'
+}
+
+// 英文键名到中文键名的映射
+const englishToChineseMap: Record<string, string> = {
+  'energy_kcal': '能量',
+  'protein': '蛋白质',
+  'fat': '脂肪',
+  'carbohydrate': '碳水化合物',
+  'fiber': '膳食纤维',
+  'calcium': '钙',
+  'iron': '铁',
+  'sodium': '钠',
+  'potassium': '钾',
+  'magnesium': '镁',
+  'phosphorus': '磷',
+  'zinc': '锌',
+  'vitamin_a_rae': '维生素A',
+  'vitamin_c': '维生素C',
+  'vitamin_b1': '维生素B1',
+  'vitamin_b2': '维生素B2',
+  'vitamin_b3': '维生素B3（烟酸）',
+  'pantothenic_acid': '维生素B5（泛酸）',
+  'vitamin_b6': '维生素B6',
+  'vitamin_b12': '维生素B12',
+  'vitamin_d': '维生素D',
+  'vitamin_e': '维生素E',
+  'vitamin_k': '维生素K',
+  'saturated_fat': '饱和脂肪',
+  'monounsaturated_fat': '不饱和脂肪',
+  'polyunsaturated_fat': '多不饱和脂肪',
+  'cholesterol': '胆固醇',
+  'folate': '叶酸',
+  'choline_total': '胆碱',
+  'alcohol_ethyl': '酒精',
+  'caffeine': '咖啡因',
+  'theobromine': '可可碱',
+  'water': '水分'
+}
+
+// 营养素排序辅助函数
+const sortNutrients = (items: any[]) => {
+  return items.sort((a, b) => {
+    const indexA = nutrientSortOrder.indexOf(a.key)
+    const indexB = nutrientSortOrder.indexOf(b.key)
+
+    // 如果都在排序列表中，按排序顺序
+    if (indexA !== -1 && indexB !== -1) {
+      return indexA - indexB
+    }
+    // 如果只有A在排序列表中，A排在前面
+    if (indexA !== -1) {
+      return -1
+    }
+    // 如果只有B在排序列表中，B排在前面
+    if (indexB !== -1) {
+      return 1
+    }
+    // 都不在排序列表中，按原顺序
+    return 0
+  })
+}
+
+// 根据展开状态返回要显示的营养素列表
+const displayNutritionItems = computed(() => {
+  if (!nutritionData.value?.nutrition) return []
+
+  const coreNutrients = nutritionData.value.nutrition.core_nutrients || {}
+  const allNutrients = nutritionData.value.nutrition.all_nutrients || {}
+
+  // 常用营养素（从 core_nutrients 获取，因为键名是中文）
+  const coreItems = coreNutritionItems
+    .filter(item => coreNutrients[item.key])
+    .map(item => ({
+      key: item.key,
+      label: item.label,
+      unit: (coreNutrients[item.key] as any).unit || item.unit,
+      isCore: true
+    }))
+
+  if (!showAllNutrients.value) {
+    return coreItems
+  }
+
+  // 获取核心营养素的键集合（用于过滤）
+  const coreKeys = new Set(coreNutritionItems.map(ci => ci.key))
+
+  // 其他营养素（从 all_nutrients 获取，键已经是中文了）
+  const availableKeys = Object.keys(allNutrients).filter(key => {
+    const data = allNutrients[key]
+    return data && typeof data === 'object' && 'value' in data
+  })
+
+  const otherItems = availableKeys
+    .filter(key => {
+      // 后端已经将键转为中文，直接检查是否是核心营养素
+      return !coreKeys.has(key)
+    })
+    .map(key => {
+      return {
+        key: key,
+        label: nutritionLabelMap[key] || key,
+        unit: (allNutrients[key] as any).unit || '',
+        isCore: false
+      }
+    })
+
+  // 排序
+  const sortedItems = sortNutrients([...coreItems, ...otherItems])
+
+  return sortedItems
+})
+
+// 其他营养素数量（用于按钮文案）
+const otherNutrientsCount = computed(() => {
+  if (!nutritionData.value?.nutrition?.all_nutrients) return 0
+
+  const allNutrients = nutritionData.value.nutrition.all_nutrients
+
+  // 获取核心营养素的键集合
+  const coreKeys = new Set(coreNutritionItems.map(ci => ci.key))
+
+  const availableKeys = Object.keys(allNutrients).filter(key => {
+    const data = allNutrients[key]
+    return data && typeof data === 'object' && 'value' in data
+  })
+
+  return availableKeys.filter(key => {
+    // 后端已经将键转为中文，直接检查是否是核心营养素
+    return !coreKeys.has(key)
+  }).length
+})
+
+// 从后端返回的嵌套结构中提取营养值
+const getNutritionValue = (item: any) => {
+  if (!nutritionData.value?.nutrition) return null
+
+  // 如果是核心营养素，从 core_nutrients 获取（中文键）
+  if (item.isCore) {
+    const nutrient = nutritionData.value.nutrition.core_nutrients?.[item.key]
+    return nutrient?.value
+  }
+
+  // 否则从 all_nutrients 获取（使用中文键，后端已转换）
+  const nutrient = nutritionData.value.nutrition.all_nutrients?.[item.key]
+  return nutrient?.value
+}
+
+const getNutritionUnit = (item: any) => {
+  if (!nutritionData.value?.nutrition) return null
+
+  // 如果是核心营养素，从 core_nutrients 获取（中文键）
+  if (item.isCore) {
+    const nutrient = nutritionData.value.nutrition.core_nutrients?.[item.key]
+    return nutrient?.unit
+  }
+
+  // 否则从 all_nutrients 获取（使用中文键，后端已转换）
+  const nutrient = nutritionData.value.nutrition.all_nutrients?.[item.key]
+  return nutrient?.unit
+}
+
+const getNutritionNRV = (item: any) => {
+  if (!nutritionData.value?.nutrition) return '-'
+
+  let nutrient: any
+
+  // 如果是核心营养素，从 core_nutrients 获取（中文键）
+  if (item.isCore) {
+    nutrient = nutritionData.value.nutrition.core_nutrients?.[item.key]
+  } else {
+    // 否则从 all_nutrients 获取（使用中文键，后端已转换）
+    nutrient = nutritionData.value.nutrition.all_nutrients?.[item.key]
+  }
+
+  if (!nutrient) return '-'
+
+  // 如果 standard 是"无标准"或类似的，表示没有推荐摄入量，显示 "-"
+  if (nutrient.standard === '无标准' || nutrient.standard === '无标准值') {
+    return '-'
+  }
+
+  // 如果 nrp_pct 是 undefined 或 null，显示 "-"
+  if (nutrient.nrp_pct === undefined || nutrient.nrp_pct === null) {
+    return '-'
+  }
+
+  // 显示实际百分比
+  return nutrient.nrp_pct.toFixed(1)
+}
 
 // 聚合价格数据用于图表（按日期分组，计算最小、最大、平均价格）
 const chartData = computed(() => {
@@ -736,8 +1072,13 @@ onMounted(() => {
   font-family: monospace;
 }
 
-.nutrition-item {
+/* 营养成分表格样式 */
+.nutrition-header {
   background: rgb(var(--v-theme-surface-variant));
-  text-align: center;
+  font-weight: 500;
+}
+
+.nutrition-row:hover {
+  background: rgba(var(--v-theme-primary), 0.04);
 }
 </style>
