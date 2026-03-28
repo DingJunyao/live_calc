@@ -8,84 +8,123 @@
     </template>
   </v-app-bar>
 
-  <v-container fluid>
-    <v-text-field
-      v-model="search"
-      label="搜索商家..."
-      prepend-inner-icon="mdi-magnify"
-      variant="outlined"
-      density="compact"
-      hide-details
-      clearable
-      class="mb-4"
-      @update:model-value="debouncedSearch"
-    />
-
+  <!-- 主内容容器：固定高度，flex 布局 -->
+  <div class="merchants-page-container">
     <!-- 加载中 -->
-    <div v-if="loading" class="text-center py-8">
+    <div v-if="loading" class="fullpage-loading">
       <v-progress-circular indeterminate color="primary" size="64" />
       <div class="text-body-1 mt-4">加载中...</div>
     </div>
 
     <!-- 错误提示 -->
-    <v-alert v-else-if="error" type="error" class="mb-4">
+    <v-alert v-else-if="error" type="error" class="ma-4">
       {{ error }}
       <template #append>
         <v-btn variant="text" @click="loadMerchants">重试</v-btn>
       </template>
     </v-alert>
 
-    <!-- 商家列表 -->
-    <v-card v-else elevation="0">
-      <v-list lines="two">
-        <v-list-item
-          v-for="item in items"
-          :key="item.id"
-          @click="openEditDialog(item)"
-        >
-          <template #prepend>
-            <v-avatar color="tertiary" size="40">
-              <v-icon>mdi-store</v-icon>
-            </v-avatar>
-          </template>
+    <!-- 主内容区：列表 + 地图 -->
+    <div v-else class="main-content">
+      <!-- 左边：搜索框 + 商家列表 -->
+      <div class="left-panel">
+        <div class="search-wrapper">
+          <v-text-field
+            v-model="search"
+            label="搜索商家..."
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            @update:model-value="debouncedSearch"
+          />
+        </div>
 
-          <v-list-item-title>{{ item.name }}</v-list-item-title>
-          <v-list-item-subtitle>{{ item.address || '暂无地址' }}</v-list-item-subtitle>
+        <div class="list-scroll-area">
+          <v-list lines="two" class="merchant-list">
+            <v-list-item
+              v-for="item in items"
+              :key="item.id"
+              @click="selectMerchant(item)"
+              :active="selectedMerchant?.id === item.id"
+            >
+              <template #prepend>
+                <v-avatar color="tertiary" size="40">
+                  <v-icon>mdi-store</v-icon>
+                </v-avatar>
+              </template>
 
-          <template #append>
-            <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click.stop="deleteItem(item.id)" />
-          </template>
-        </v-list-item>
+              <v-list-item-title>{{ item.name }}</v-list-item-title>
+              <v-list-item-subtitle>
+                {{ item.address || '暂无地址' }}
+              </v-list-item-subtitle>
+              <v-list-item-subtitle v-if="item.latitude && item.longitude" class="text-caption">
+                <v-icon size="x-small" class="mr-1">mdi-map-marker</v-icon>
+                {{ item.latitude.toFixed(4) }}, {{ item.longitude.toFixed(4) }}
+              </v-list-item-subtitle>
 
-        <v-list-item v-if="items.length === 0">
-          <v-list-item-title class="text-center text-medium-emphasis">
-            暂无商家
-          </v-list-item-title>
-        </v-list-item>
-      </v-list>
-    </v-card>
+              <template #append>
+                <div class="d-flex ga-1">
+                  <v-btn
+                    icon="mdi-pencil"
+                    size="small"
+                    variant="text"
+                    color="primary"
+                    @click.stop="openEditDialog(item)"
+                  />
+                  <v-btn
+                    icon="mdi-delete"
+                    size="small"
+                    variant="text"
+                    color="error"
+                    @click.stop="deleteItem(item.id)"
+                  />
+                </div>
+              </template>
+            </v-list-item>
 
-    <!-- 分页器 -->
-    <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
-      <v-pagination
-        v-model="currentPage"
-        :length="totalPages"
-        :total-visible="3"
-        rounded="circle"
-        density="comfortable"
-      />
-      <div class="d-flex align-center ga-2">
-        <v-select
-          v-model="pageSize"
-          :items="[10, 20, 50, 100]"
-          label="每页"
-          variant="outlined"
-          density="compact"
-          hide-details
-          style="max-width: 90px"
-          @update:model-value="handlePageSizeChange"
+            <v-list-item v-if="items.length === 0">
+              <v-list-item-title class="text-center text-medium-emphasis">
+                暂无商家
+              </v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </div>
+
+        <!-- 分页器 -->
+        <div v-if="total > 0" class="pagination-wrapper">
+          <v-pagination
+            v-model="currentPage"
+            :length="totalPages"
+            :total-visible="3"
+            rounded="circle"
+            density="comfortable"
+            size="small"
+          />
+          <div class="d-flex align-center ga-2 justify-center mt-2">
+            <v-select
+              v-model="pageSize"
+              :items="[10, 20, 50, 100]"
+              label="每页"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="max-width: 80px"
+              @update:model-value="handlePageSizeChange"
+            />
+            <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右边：地图 -->
+      <div class="right-panel">
+        <MerchantMapView
+          :merchants="items"
+          :selected-merchant="selectedMerchant"
+          :is-desktop="isDesktop"
         />
-        <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
       </div>
     </div>
 
@@ -119,11 +158,15 @@
               variant="outlined"
               class="mb-4"
             />
-            <v-text-field
-              v-model="form.phone"
-              label="电话"
-              variant="outlined"
-            />
+
+            <!-- 地图选点 -->
+            <div class="mb-4">
+              <div class="text-subtitle-2 mb-2">商家位置</div>
+              <MapPicker
+                v-model="pickerCoords"
+                :show-switcher="true"
+              />
+            </div>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -133,13 +176,16 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import MerchantMapView from '@/components/map/MerchantMapView.vue'
+import MapPicker from '@/components/map/MapPicker.vue'
+import type { Coordinate } from '@/utils/map/mapTypes'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -148,8 +194,8 @@ interface Merchant {
   name: string
   address?: string
   phone?: string
-  latitude?: number
-  longitude?: number
+  latitude?: number | null
+  longitude?: number | null
   created_at?: string
 }
 
@@ -159,12 +205,15 @@ const error = ref<string | null>(null)
 const search = ref('')
 const addDialog = ref(false)
 const editingItem = ref<Merchant | null>(null)
+const selectedMerchant = ref<Merchant | null>(null)
 const saving = ref(false)
 const form = ref({
   name: '',
   address: '',
-  phone: '',
 })
+
+// 选点器坐标
+const pickerCoords = ref<Coordinate | undefined>()
 
 // 分页相关
 const currentPage = ref(1)
@@ -216,37 +265,75 @@ watch(currentPage, () => {
   loadMerchants()
 })
 
+/**
+ * 选择商家
+ */
+const selectMerchant = (item: Merchant) => {
+  selectedMerchant.value = item
+}
+
+/**
+ * 打开编辑对话框
+ */
 const openEditDialog = (item?: Merchant) => {
   editingItem.value = item || null
   if (item) {
     form.value = {
       name: item.name,
       address: item.address || '',
-      phone: item.phone || '',
+    }
+    // 设置坐标
+    if (item.latitude != null && item.longitude != null) {
+      pickerCoords.value = {
+        lat: item.latitude,
+        lng: item.longitude
+      }
+    } else {
+      pickerCoords.value = undefined
     }
   } else {
-    form.value = { name: '', address: '', phone: '' }
+    form.value = { name: '', address: '' }
+    pickerCoords.value = undefined
   }
   addDialog.value = true
 }
 
+/**
+ * 保存商家
+ */
 const saveItem = async () => {
   if (!form.value.name.trim()) return
 
   saving.value = true
   try {
+    const data: any = {
+      name: form.value.name,
+      address: form.value.address || undefined,
+    }
+
+    // 添加坐标
+    if (pickerCoords.value) {
+      data.latitude = pickerCoords.value.lat
+      data.longitude = pickerCoords.value.lng
+    }
+
     if (editingItem.value) {
-      const response = await api.put(`/merchants/${editingItem.value.id}`, form.value)
+      const response = await api.put(`/merchants/${editingItem.value.id}`, data)
       const index = items.value.findIndex(i => i.id === editingItem.value!.id)
       if (index !== -1) {
         items.value[index] = response
       }
     } else {
-      const response = await api.post('/merchants', form.value)
+      const response = await api.post('/merchants', data)
       items.value.unshift(response)
       total.value++
     }
     addDialog.value = false
+
+    // 如果选中的是被编辑的商家，更新选中状态
+    if (selectedMerchant.value && editingItem.value && selectedMerchant.value.id === editingItem.value.id) {
+      selectedMerchant.value = items.value.find(i => i.id === editingItem.value!.id) || null
+    }
   } catch (e: any) {
     console.error('保存商家失败', e)
   } finally {
@@ -262,6 +349,10 @@ const deleteItem = async (id: number) => {
       items.value.splice(index, 1)
       total.value--
     }
+    // 如果删除的是选中的商家，清除选中状态
+    if (selectedMerchant.value?.id === id) {
+      selectedMerchant.value = null
+    }
   } catch (e: any) {
     console.error('删除商家失败', e)
   }
@@ -276,3 +367,85 @@ onUnmounted(() => {
   window.removeEventListener('app-refresh', loadMerchants)
 })
 </script>
+
+<style scoped>
+/* 页面容器：固定高度，排除 app-bar 高度 */
+.merchants-page-container {
+  height: calc(100vh - 56px); /* 减去 app-bar 的高度 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* 全页面加载/错误提示 */
+.fullpage-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 主内容区域：flex 布局 */
+.main-content {
+  flex: 1;
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  overflow: hidden; /* 防止整个页面滚动 */
+}
+
+/* 左侧面板：搜索框 + 列表 + 分页 */
+.left-panel {
+  width: 350px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+/* 搜索框容器 */
+.search-wrapper {
+  flex-shrink: 0;
+}
+
+/* 列表滚动区域 */
+.list-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0; /* 允许 flex 子元素收缩 */
+}
+
+.merchant-list {
+  background: rgb(var(--v-theme-surface));
+  border-radius: 8px;
+}
+
+/* 分页器容器 */
+.pagination-wrapper {
+  flex-shrink: 0;
+  padding: 0.5rem 0;
+}
+
+/* 右侧面板：地图 */
+.right-panel {
+  flex: 1;
+  min-width: 0; /* 允许 flex 子元素收缩 */
+  height: 100%;
+}
+
+/* 移动端适配 */
+@media (max-width: 960px) {
+  .main-content {
+    flex-direction: column;
+  }
+
+  .left-panel {
+    width: 100%;
+    max-height: 50vh;
+  }
+
+  .right-panel {
+    height: 50vh;
+  }
+}
+</style>
