@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, and_, or_
 from typing import List, Optional
 from datetime import datetime
+import json
+
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
@@ -19,6 +21,16 @@ from app.schemas.common import PaginatedResponse
 from app.utils.database_helpers import serialize_tags, deserialize_tags
 
 router = APIRouter(tags=["products_entity"])
+
+
+def _make_alias_search_term(term: str) -> str:
+    """生成用于搜索 JSON 别名数组的 Unicode 转义字符串
+
+    SQLite 存储 JSON 时会将中文字符转为 Unicode 转义序列，
+    如 "番茄" 会存储为 "\\\\u756a\\\\u8304"。
+    此函数将搜索词转换为相同的格式以便匹配。
+    """
+    return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
 
 
 @router.post("/products/entity", response_model=ProductResponse)
@@ -97,12 +109,13 @@ def list_products(
 
         if search:
             # 搜索商品名称或食材别名
+            alias_search = _make_alias_search_term(search)
             search_filter = or_(
                 Product.name.contains(search),
                 Product.ingredient.has(
                     or_(
                         Ingredient.name.contains(search),
-                        Ingredient.aliases.contains(f'"{search}"')
+                        Ingredient.aliases.contains(alias_search)
                     )
                 )
             )
@@ -123,12 +136,13 @@ def list_products(
 
         if search:
             # 搜索商品名称或食材别名
+            alias_search = _make_alias_search_term(search)
             search_filter = or_(
                 Product.name.contains(search),
                 Product.ingredient.has(
                     or_(
                         Ingredient.name.contains(search),
-                        Ingredient.aliases.contains(f'"{search}"')
+                        Ingredient.aliases.contains(alias_search)
                     )
                 )
             )

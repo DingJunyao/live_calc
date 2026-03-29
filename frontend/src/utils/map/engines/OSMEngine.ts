@@ -3,13 +3,12 @@
  * 使用 Leaflet 原生 OSM 瓦片，无需 API Key
  */
 
-import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
+import type { MapEngine, MarkerOptions, SearchResult, MapConfig } from '../../map/mapTypes';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 
 export class OSMEngine implements MapEngine {
-  name: MapEngineType = 'osm';
-  displayName: string = 'OpenStreetMap';
+  name = 'osm' as const;
+  displayName = 'OpenStreetMap';
 
   private map: L.Map | null = null;
   private markers: Map<any, L.Marker> = new Map();
@@ -20,7 +19,7 @@ export class OSMEngine implements MapEngine {
     this.config = config;
   }
 
-  init(container: HTMLElement, options: MapOptions): void {
+  init(container: HTMLElement, options: any): void {
     // 如果已经初始化，先销毁
     if (this.map) {
       this.destroy();
@@ -52,6 +51,13 @@ export class OSMEngine implements MapEngine {
         });
       });
     }
+
+    // 延迟调用 invalidateSize 以确保容器尺寸正确
+    setTimeout(() => {
+      if (this.map) {
+        this.map.invalidateSize();
+      }
+    }, 100);
   }
 
   setCenter(lat: number, lng: number): void {
@@ -66,7 +72,7 @@ export class OSMEngine implements MapEngine {
     }
   }
 
-  addMarker(lat: number, lng: number, options?: MarkerOptions): L.Marker {
+  addMarker(lat: number, lng: number, options?: MarkerOptions): any {
     if (!this.map) {
       throw new Error('Map not initialized');
     }
@@ -88,7 +94,7 @@ export class OSMEngine implements MapEngine {
 
     const markerId = Symbol('marker');
     this.markers.set(markerId, marker);
-    return markerId as any;
+    return markerId;
   }
 
   removeMarker(markerId: any): void {
@@ -107,8 +113,6 @@ export class OSMEngine implements MapEngine {
   }
 
   async searchAddress(query: string): Promise<SearchResult[]> {
-    // OpenStreetMap 没有官方的反向地理编码服务
-    // 使用 Nominatim 进行地址搜索
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
       const response = await fetch(url);
@@ -124,14 +128,6 @@ export class OSMEngine implements MapEngine {
       console.error('OSM search error:', error);
       return [];
     }
-  }
-
-  async geocode(address: string): Promise<SearchResult> {
-    const results = await this.searchAddress(address);
-    if (results.length > 0) {
-      return results[0];
-    }
-    throw new Error('Address not found');
   }
 
   destroy(): void {
@@ -165,8 +161,6 @@ export class OSMEngine implements MapEngine {
         this.map.on('click', (e: L.LeafletMouseEvent) => {
           handler({ lat: e.latlng.lat, lng: e.latlng.lng });
         });
-      } else if (event === 'markerDragend') {
-        // 标记拖拽事件由 addMarker 单独处理
       }
     }
   }

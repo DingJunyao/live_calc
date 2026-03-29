@@ -1,15 +1,15 @@
 /**
- * 高德地图引擎
- * 使用 leaflet.chinaProvider 加载瓦片
+ * 高德地图引擎（基于 Leaflet）
+ * TODO: 后续添加 SDK 支持
  */
 
-import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
+import type { MapEngine, MarkerOptions, SearchResult, MapConfig } from '../../map/mapTypes';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import 'leaflet.chinatmsproviders';
 
 export class AMapEngine implements MapEngine {
-  name: MapEngineType = 'amap';
-  displayName: string = '高德地图';
+  name = 'amap' as const;
+  displayName = '高德地图';
 
   private map: L.Map | null = null;
   private markers: Map<any, L.Marker> = new Map();
@@ -20,11 +20,7 @@ export class AMapEngine implements MapEngine {
     this.config = config;
   }
 
-  init(container: HTMLElement, options: MapOptions): void {
-    if (this.map) {
-      this.destroy();
-    }
-
+  init(container: HTMLElement, options: any): void {
     const center = options.center || [39.9042, 116.4074];
     const zoom = options.zoom || 13;
 
@@ -34,10 +30,11 @@ export class AMapEngine implements MapEngine {
       zoomControl: true
     });
 
-    // 使用 chinaProvider 加载高德瓦片
-    const gaodeLayer = L.tileLayer.chinaProvider('GaoDe.Normal.Map', {
-      maxZoom: 18,
-      minZoom: 5
+    // 使用高德地图图层
+    // @ts-ignore
+    L.tileLayer.chinaProvider('GaoDe.Normal.Map', {
+      key: this.config.mapApiKeys.amap,
+      maxZoom: 18
     }).addTo(this.map);
 
     if (options.enableClick !== false) {
@@ -48,6 +45,13 @@ export class AMapEngine implements MapEngine {
         });
       });
     }
+
+    // 延迟调用 invalidateSize 以确保容器尺寸正确
+    setTimeout(() => {
+      if (this.map) {
+        this.map.invalidateSize();
+      }
+    }, 100);
   }
 
   setCenter(lat: number, lng: number): void {
@@ -83,7 +87,7 @@ export class AMapEngine implements MapEngine {
 
     const markerId = Symbol('marker');
     this.markers.set(markerId, marker);
-    return markerId as any;
+    return markerId;
   }
 
   removeMarker(markerId: any): void {
@@ -102,55 +106,9 @@ export class AMapEngine implements MapEngine {
   }
 
   async searchAddress(query: string): Promise<SearchResult[]> {
-    const apiKey = this.config.mapApiKeys?.amap;
-    const useApi = !!apiKey;
-
-    if (useApi) {
-      try {
-        const url = `https://restapi.amap.com/v3/place/text?keywords=${encodeURIComponent(query)}&city=全国&output=json&key=${apiKey}`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.pois && data.pois.length > 0) {
-          return data.pois.slice(0, 5).map((poi: any) => ({
-            address: poi.address || poi.name,
-            lat: parseFloat(poi.location.split(',')[1]),
-            lng: parseFloat(poi.location.split(',')[0]),
-            name: poi.name
-          }));
-        }
-      } catch (error) {
-        console.error('AMap geocoding error:', error);
-      }
-    }
-
-    return this.fallbackSearch(query);
-  }
-
-  private async fallbackSearch(query: string): Promise<SearchResult[]> {
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
-      const response = await fetch(url);
-      const data = await response.json();
-
-      return data.map((item: any) => ({
-        address: item.display_name,
-        lat: parseFloat(item.lat),
-        lng: parseFloat(item.lon),
-        name: item.name
-      }));
-    } catch (error) {
-      console.error('Fallback search error:', error);
-      return [];
-    }
-  }
-
-  async geocode(address: string): Promise<SearchResult> {
-    const results = await this.searchAddress(address);
-    if (results.length > 0) {
-      return results[0];
-    }
-    throw new Error('Address not found');
+    // TODO: 实现高德地图 API 搜索
+    console.warn('AMap searchAddress not implemented');
+    return [];
   }
 
   destroy(): void {
@@ -175,12 +133,10 @@ export class AMapEngine implements MapEngine {
     }
     this.eventHandlers.get(event)!.add(handler);
 
-    if (this.map) {
-      if (event === 'click') {
-        this.map.on('click', (e: L.LeafletMouseEvent) => {
-          handler({ lat: e.latlng.lat, lng: e.latlng.lng });
-        });
-      }
+    if (this.map && event === 'click') {
+      this.map.on('click', (e: L.LeafletMouseEvent) => {
+        handler({ lat: e.latlng.lat, lng: e.latlng.lng });
+      });
     }
   }
 
@@ -194,7 +150,7 @@ export class AMapEngine implements MapEngine {
   private emit(event: string, data: any): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
-      handlers.forEach(h => h(data));
+      handlers.forEach(handler => handler(data));
     }
   }
 }

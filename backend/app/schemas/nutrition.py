@@ -2,9 +2,10 @@ from pydantic import BaseModel
 from decimal import Decimal
 from typing import Optional, List
 from datetime import datetime
+from app.utils.datetime_utils import TimeZoneAwareModel
 
 
-class IngredientResponse(BaseModel):
+class IngredientResponse(TimeZoneAwareModel):
     """原料响应模型（仅包含必要字段，避免序列化 Unit 对象）"""
     id: int
     name: str

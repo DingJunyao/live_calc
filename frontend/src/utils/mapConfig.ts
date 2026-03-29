@@ -2,8 +2,8 @@
  * 地图配置和用户偏好管理工具
  */
 
-import type { MapConfig, UserMapPreference, MapEngineType } from './mapTypes';
-import { defaultMapConfig } from './mapTypes';
+import type { MapConfig, UserMapPreference, MapEngineType } from './map/mapTypes';
+import { defaultMapConfig } from './map/mapTypes';
 
 const STORAGE_KEY = 'livecalc:mapPreference';
 
@@ -85,36 +85,5 @@ export function clearUserMapPreference(): void {
     localStorage.removeItem(STORAGE_KEY);
   } catch (error) {
     console.error('Failed to clear map preference:', error);
-  }
-}
-
-// 从后端获取全局配置
-export async function fetchMapConfig(): Promise<MapConfig> {
-  try {
-    const response = await fetch('/api/v1/admin/map-config');
-    if (response.ok) {
-      const data = await response.json();
-      return { ...defaultMapConfig, ...data };
-    }
-  } catch (error) {
-    console.error('Failed to fetch map config:', error);
-  }
-  return defaultMapConfig;
-}
-
-// 保存配置到后端
-export async function saveMapConfig(config: MapConfig): Promise<boolean> {
-  try {
-    const response = await fetch('/api/v1/admin/map-config', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(config)
-    });
-    return response.ok;
-  } catch (error) {
-    console.error('Failed to save map config:', error);
-    return false;
   }
 }

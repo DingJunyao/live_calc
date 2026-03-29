@@ -271,13 +271,15 @@ async def create_ingredient(
 @router.put("/ingredients/{ingredient_id}", response_model=dict)
 async def update_ingredient(
     ingredient_id: int,
-    name: str = Body(None),
-    aliases: str = Body(None),
+    name: Optional[str] = Body(None),
+    aliases: Optional[List[str]] = Body(None),
     default_unit_id: Optional[int] = Body(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """更新原料"""
+    """更新原料 - nutrition.py 版本，不支持 nutrition 参数"""
+    print(f"[DEBUG] === nutrition.py 的 update_ingredient 被调用 ===")
+    print(f"[DEBUG] ingredient_id={ingredient_id}, 路径=/api/v1/nutrition/ingredients/{ingredient_id}")
     try:
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
@@ -290,7 +292,7 @@ async def update_ingredient(
             ingredient.name = name
 
         if aliases is not None:
-            ingredient.aliases = [alias.strip() for alias in aliases.split(',') if alias.strip()]
+            ingredient.aliases = [alias.strip() for alias in aliases if alias.strip()]
 
         if default_unit_id is not None:
             ingredient.default_unit_id = default_unit_id

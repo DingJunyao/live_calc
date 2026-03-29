@@ -1,22 +1,20 @@
+// main.ts
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
-import { useUserStore } from './stores/user'
-import '@mdi/font/css/materialdesignicons.css'
+import vuetify from './plugins/vuetify'
 
-// 预先加载地图相关库（解决百度地图 CRS 问题）
+// 导入 Leaflet 样式和地图相关库
+// 注意：proj4leaflet 必须在 leaflet.chinatmsproviders 之前导入
+import 'leaflet/dist/leaflet.css'
 import 'proj4leaflet'
 import 'leaflet.chinatmsproviders'
 
 const app = createApp(App)
-const pinia = createPinia()
 
-app.use(pinia)
+app.use(createPinia())
 app.use(router)
-
-// 在应用启动时初始化用户状态
-const userStore = useUserStore()
-userStore.initializeUserFromStorage()
+app.use(vuetify)
 
 app.mount('#app')

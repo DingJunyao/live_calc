@@ -1,8 +1,10 @@
+# 价格记录 API - 支持通过食材别名搜索（最后修改: 2026-03-27 23:30）
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, text
+from sqlalchemy import func, text, or_, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
+import json
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.product import ProductRecord
@@ -19,6 +21,16 @@ from app.utils.unit_converter import convert_to_standard
 from app.services.unit_matcher import UnitMatcher
 
 router = APIRouter()
+
+
+def _make_alias_search_term(term: str) -> str:
+    """生成用于搜索 JSON 别名数组的 Unicode 转义字符串
+
+    SQLite 存储 JSON 时会将中文字符转为 Unicode 转义序列，
+    如 "番茄" 会存储为 "\\u756a\\u8304"。
+    此函数将搜索词转换为相同的格式以便匹配。
+    """
+    return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
 
 
 def _get_or_create_ingredient(db: Session, product_name: str, current_user) -> Ingredient:
@@ -220,7 +232,6 @@ async def get_product_records(
 
         # 应用过滤条件
         if ingredient_id:
-            from app.models.product_entity import Product
             product_ids = db.query(Product.id).filter(
                 Product.ingredient_id == ingredient_id,
                 Product.is_active == True
@@ -232,9 +243,18 @@ async def get_product_records(
         else:
             search_term = search or product_name
             if search_term:
-                record_counts = record_counts.join(ProductRecord.product).filter(
-                    ProductRecord.product_name.contains(search_term)
+                # 搜索商品名称或关联食材的别名
+                alias_search = _make_alias_search_term(search_term)
+                record_counts = record_counts.join(ProductRecord.product).join(
+                    Product.ingredient
+                ).filter(
+                    or_(
+                        ProductRecord.product_name.contains(search_term),
+                        Ingredient.name.contains(search_term),
+                        Ingredient.aliases.contains(alias_search)
+                    )
                 )
+                print(f"[DEBUG] products.py - 搜索价格记录: {search_term}, 别名搜索: {alias_search}")
 
         # 添加日期范围过滤
         if start_date:
@@ -261,7 +281,6 @@ async def get_product_records(
 
         # 应用过滤条件到主查询
         if ingredient_id:
-            from app.models.product_entity import Product
             product_ids = db.query(Product.id).filter(
                 Product.ingredient_id == ingredient_id,
                 Product.is_active == True
@@ -273,7 +292,17 @@ async def get_product_records(
         else:
             search_term = search or product_name
             if search_term:
-                query = query.filter(ProductRecord.product_name.contains(search_term))
+                # 搜索商品名称或关联食材的别名
+                alias_search = _make_alias_search_term(search_term)
+                query = query.join(ProductRecord.product).join(
+                    Product.ingredient
+                ).filter(
+                    or_(
+                        ProductRecord.product_name.contains(search_term),
+                        Ingredient.name.contains(search_term),
+                        Ingredient.aliases.contains(alias_search)
+                    )
+                )
 
         # 添加日期范围过滤
         if start_date:
@@ -300,7 +329,6 @@ async def get_product_records(
         # 优先使用 ingredient_id 过滤（通过关联商品）
         if ingredient_id:
             # 通过 ingredient_id 查找所有关联的商品
-            from app.models.product_entity import Product
             product_ids = db.query(Product.id).filter(
                 Product.ingredient_id == ingredient_id,
                 Product.is_active == True
@@ -314,7 +342,17 @@ async def get_product_records(
         else:
             search_term = search or product_name
             if search_term:
-                query = query.filter(ProductRecord.product_name.contains(search_term))
+                # 搜索商品名称或关联食材的别名
+                alias_search = _make_alias_search_term(search_term)
+                query = query.join(ProductRecord.product).join(
+                    Product.ingredient
+                ).filter(
+                    or_(
+                        ProductRecord.product_name.contains(search_term),
+                        Ingredient.name.contains(search_term),
+                        Ingredient.aliases.contains(alias_search)
+                    )
+                )
 
         # 添加日期范围过滤
         if start_date:
@@ -565,3 +603,4 @@ async def get_product_history(
         product_name=product_name,
         records=processed_records
     )
+

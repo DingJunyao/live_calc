@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from app.utils.database_helpers import validate_tags
+from app.utils.datetime_utils import TimeZoneAwareModel
 
 
 class ProductBase(BaseModel):
@@ -31,7 +32,7 @@ class ProductUpdate(BaseModel):
     tags: Optional[List[str]] = None
 
 
-class ProductResponse(ProductBase):
+class ProductResponse(TimeZoneAwareModel, ProductBase):
     id: int
     ingredient_name: Optional[str] = None
     created_at: datetime
@@ -65,7 +66,7 @@ class ProductBarcodeUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class ProductBarcodeResponse(ProductBarcodeBase):
+class ProductBarcodeResponse(TimeZoneAwareModel, ProductBarcodeBase):
     id: int
     product_id: int
     is_active: bool

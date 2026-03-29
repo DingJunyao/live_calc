@@ -1,7 +1,9 @@
+# 食材扩展 API - 支持别名搜索（最后修改: 2026-03-27 23:35）
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session, load_only, joinedload
 from typing import List, Optional
 from decimal import Decimal
+import json
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -13,6 +15,16 @@ from app.models.nutrition import Ingredient
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
+
+
+def _make_alias_search_term(term: str) -> str:
+    """生成用于搜索 JSON 别名数组的 Unicode 转义字符串
+
+    SQLite 存储 JSON 时会将中文字符转为 Unicode 转义序列，
+    如 "番茄" 会存储为 "\\\\u756a\\\\u8304"。
+    此函数将搜索词转换为相同的格式以便匹配。
+    """
+    return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
 
 
 @router.get("/units", response_model=PaginatedResponse[dict])
@@ -294,6 +306,7 @@ async def create_ingredient(
     aliases: Optional[List[str]] = Body(None),
     density: Optional[float] = Body(None),
     default_unit: Optional[str] = Body(None),
+    nutrition: Optional[dict] = Body(None, description="营养素数据，如 {protein: 10, fat: 5}"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -323,10 +336,70 @@ async def create_ingredient(
         db.commit()
         db.refresh(new_ingredient)
 
+        # 处理营养素数据
+        if nutrition:
+            try:
+                from app.models.nutrition_data import NutritionData
+
+                # 构建营养素数据结构
+                core_nutrients = {}
+                all_nutrients = {}
+
+                # 营养素映射（中文 -> 英文键名）
+                nutrient_map = {
+                    'energy_kcal': ('能量', 'kcal'),
+                    'protein': ('蛋白质', 'g'),
+                    'fat': ('脂肪', 'g'),
+                    'carbohydrates': ('碳水化合物', 'g'),
+                    'dietary_fiber': ('膳食纤维', 'g'),
+                    'calcium': ('钙', 'mg'),
+                    'iron': ('铁', 'mg'),
+                    'sodium': ('钠', 'mg'),
+                    'potassium': ('钾', 'mg'),
+                }
+
+                for eng_name, (zh_name, unit) in nutrient_map.items():
+                    if nutrition.get(eng_name) is not None:
+                        value = float(nutrition[eng_name])
+                        if value > 0:
+                            # 核心（中文键名）
+                            core_nutrients[zh_name] = {
+                                'value': value,
+                                'unit': unit,
+                                'key': eng_name,
+                                'standard': '中国GB标准'
+                            }
+                            # 全部（英文键名）
+                            all_nutrients[eng_name] = {
+                                'value': value,
+                                'unit': unit,
+                                'standard': '中国GB标准'
+                            }
+
+                if core_nutrients:
+                    nutrition_data = NutritionData(
+                        ingredient_id=new_ingredient.id,
+                        source='custom',
+                        nutrients={
+                            'core_nutrients': core_nutrients,
+                            'all_nutrients': all_nutrients
+                        },
+                        reference_amount=100.0,
+                        reference_unit='g',
+                        match_confidence=1.0,
+                        is_verified=False,
+                        created_by=current_user.id,
+                        updated_by=current_user.id
+                    )
+                    db.add(nutrition_data)
+                    db.commit()
+            except Exception as e:
+                # 营养素数据创建失败不影响原料创建
+                print(f"Warning: Failed to create nutrition data for {name}: {str(e)}")
+
         # 自动创建对应的同名商品
         try:
             from app.models.product_entity import Product
-            from app.models.nutrition import Ingredient
 
             # 检查是否已存在同名商品
             existing_product = db.query(Product).filter(
@@ -379,10 +452,15 @@ async def update_ingredient(
     density: Optional[float] = Body(None),
     default_unit: Optional[str] = Body(None),
     default_unit_id: Optional[int] = Body(None),
+    nutrition: Optional[dict] = Body(None, description="营养素数据，如 {protein: 10, fat: 5}"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """更新食材"""
+    """更新食材 - 这是 ingredient_extended.py 中支持 nutrition 参数的版本"""
+    print(f"[DEBUG] === ingredient_extended.py 的 update_ingredient 被调用 ===")
+    print(f"[DEBUG] ingredient_id={ingredient_id}, nutrition provided={nutrition is not None}")
+    if nutrition:
+        print(f"[DEBUG] nutrition data: {nutrition}")
     try:
         from app.services.unit_matcher import UnitMatcher
 
@@ -420,6 +498,98 @@ async def update_ingredient(
         ingredient.updated_by = current_user.id
 
         db.commit()
+
+        # 处理营养素数据
+        if nutrition:
+            try:
+                print(f"[更新原料] 开始处理营养素数据: ingredient_id={ingredient_id}, nutrition={nutrition}")
+                from app.models.nutrition_data import NutritionData
+
+                # 构建营养素数据结构
+                core_nutrients = {}
+                all_nutrients = {}
+
+                # 营养素映射（中文 -> 英文键名）
+                nutrient_map = {
+                    'energy_kcal': ('能量', 'kcal'),
+                    'protein': ('蛋白质', 'g'),
+                    'fat': ('脂肪', 'g'),
+                    'carbohydrates': ('碳水化合物', 'g'),
+                    'dietary_fiber': ('膳食纤维', 'g'),
+                    'calcium': ('钙', 'mg'),
+                    'iron': ('铁', 'mg'),
+                    'sodium': ('钠', 'mg'),
+                    'potassium': ('钾', 'mg'),
+                }
+
+                for eng_name, (zh_name, unit) in nutrient_map.items():
+                    if nutrition.get(eng_name) is not None:
+                        value = float(nutrition[eng_name])
+                        print(f"[更新原料] 处理营养素 {eng_name}: value={value}")
+                        if value > 0:
+                            # 核心（中文键名）
+                            core_nutrients[zh_name] = {
+                                'value': value,
+                                'unit': unit,
+                                'key': eng_name,
+                                'standard': '中国GB标准'
+                            }
+                            # 全部（英文键名）
+                            all_nutrients[eng_name] = {
+                                'value': value,
+                                'unit': unit,
+                                'standard': '中国GB标准'
+                            }
+
+                print(f"[更新原料] 构建完成: core_nutrients={list(core_nutrients.keys())}, all_nutrients={list(all_nutrients.keys())}")
+
+                if core_nutrients:
+                    # 查找是否已存在自定义营养数据
+                    existing_nutrition = db.query(NutritionData).filter(
+                        NutritionData.ingredient_id == ingredient_id,
+                        NutritionData.source == 'custom'
+                    ).first()
+
+                    print(f"[更新原料] 查询现有营养数据: existing={existing_nutrition is not None}")
+
+                    if existing_nutrition:
+                        # 更新现有营养数据
+                        print(f"[更新原料] 更新现有营养数据 id={existing_nutrition.id}")
+                        existing_nutrition.nutrients = {
+                            'core_nutrients': core_nutrients,
+                            'all_nutrients': all_nutrients
+                        }
+                        existing_nutrition.updated_by = current_user.id
+                    else:
+                        # 创建新的营养数据
+                        print(f"[更新原料] 创建新的营养数据")
+                        nutrition_data = NutritionData(
+                            ingredient_id=ingredient_id,
+                            source='custom',
+                            nutrients={
+                                'core_nutrients': core_nutrients,
+                                'all_nutrients': all_nutrients
+                            },
+                            reference_amount=100.0,
+                            reference_unit='g',
+                            match_confidence=1.0,
+                            is_verified=False,
+                            created_by=current_user.id,
+                            updated_by=current_user.id
+                        )
+                        db.add(nutrition_data)
+
+                    db.commit()
+                    print(f"[更新原料] 营养数据保存成功")
+                else:
+                    print(f"[更新原料] core_nutrients 为空，跳过营养数据更新")
+            except Exception as e:
+                # 营养素数据更新失败不影响原料更新
+                import traceback
+                print(f"Warning: Failed to update nutrition data for {ingredient.name}: {str(e)}")
+                print(f"Traceback: {traceback.format_exc()}")
+        else:
+            print(f"[更新原料] 未提供营养素数据")
 
         # 重新查询以加载 default_unit 关系
         ingredient_with_unit = db.query(Ingredient).options(
@@ -480,6 +650,9 @@ async def get_ingredients(
         from app.models.product import ProductRecord
         from sqlalchemy import func
 
+        # 生成用于搜索别名的 Unicode 转义字符串
+        alias_search = _make_alias_search_term(search) if search else None
+
         # 根据排序方式进行查询
         if sort_by == "price_records":
             # 按价格记录数量排序
@@ -493,7 +666,11 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                subquery = subquery.filter(Ingredient.name.contains(search))
+                # 搜索名称或别名
+                subquery = subquery.filter(
+                    (Ingredient.name.contains(search)) |
+                    (Ingredient.aliases.contains(alias_search))
+                )
 
             if category_id:
                 subquery = subquery.filter(Ingredient.category_id == category_id)
@@ -508,7 +685,11 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                query = query.filter(Ingredient.name.contains(search))
+                # 搜索名称或别名
+                query = query.filter(
+                    (Ingredient.name.contains(search)) |
+                    (Ingredient.aliases.contains(alias_search))
+                )
 
             if category_id:
                 query = query.filter(Ingredient.category_id == category_id)
@@ -525,7 +706,11 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                total_query = total_query.filter(Ingredient.name.contains(search))
+                # 搜索名称或别名
+                total_query = total_query.filter(
+                    (Ingredient.name.contains(search)) |
+                    (Ingredient.aliases.contains(alias_search))
+                )
 
             if category_id:
                 total_query = total_query.filter(Ingredient.category_id == category_id)
@@ -541,7 +726,7 @@ async def get_ingredients(
                 # 搜索名称或别名
                 query = query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(f'"{search}"'))  # JSON 数组搜索
+                    (Ingredient.aliases.contains(alias_search))
                 )
 
             if category_id:
@@ -750,7 +935,54 @@ async def merge_ingredients(
                 # 已存在相同映射，删除重复的
                 db.delete(mapping)
 
-        # 5. 软删除源原料并标记为已合并
+        # 5. 处理层级关系
+        from app.models.ingredient_hierarchy import IngredientHierarchy
+
+        hierarchy_updated_count = 0
+
+        # 5.1 源食材作为父级的关系：目标食材继承源食材的子级
+        child_relations = db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.parent_id == source_id
+        ).all()
+
+        for relation in child_relations:
+            # 检查是否已存在相同的关系
+            existing = db.query(IngredientHierarchy).filter(
+                IngredientHierarchy.parent_id == target_id,
+                IngredientHierarchy.child_id == relation.child_id,
+                IngredientHierarchy.relation_type == relation.relation_type
+            ).first()
+
+            if not existing:
+                # 转移关系到目标食材
+                relation.parent_id = target_id
+                hierarchy_updated_count += 1
+            else:
+                # 已存在相同关系，软删除重复的关系
+                relation.is_active = False
+
+        # 5.2 源食材作为子级的关系：目标食材继承源食材的父级
+        parent_relations = db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.child_id == source_id
+        ).all()
+
+        for relation in parent_relations:
+            # 检查是否已存在相同的关系
+            existing = db.query(IngredientHierarchy).filter(
+                IngredientHierarchy.parent_id == relation.parent_id,
+                IngredientHierarchy.child_id == target_id,
+                IngredientHierarchy.relation_type == relation.relation_type
+            ).first()
+
+            if not existing:
+                # 转移关系到目标食材
+                relation.child_id = target_id
+                hierarchy_updated_count += 1
+            else:
+                # 已存在相同关系，软删除重复的关系
+                relation.is_active = False
+
+        # 6. 软删除源原料并标记为已合并
         source_ingredient.is_active = False
         source_ingredient.is_merged = True
         source_ingredient.merged_into_id = target_id
@@ -764,7 +996,8 @@ async def merge_ingredients(
             "target_id": target_id,
             "recipe_count": recipe_count,
             "product_migrated_count": product_migrated_count,
-            "price_migrated_count": price_migrated_count
+            "price_migrated_count": price_migrated_count,
+            "hierarchy_updated_count": hierarchy_updated_count
         }
     except HTTPException:
         raise

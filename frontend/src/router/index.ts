@@ -1,161 +1,132 @@
+// router/index.ts
 import { createRouter, createWebHistory } from 'vue-router'
-import type { RouteRecordRaw } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-
-const routes: Array<RouteRecordRaw> = [
-  {
-    path: '/',
-    name: 'dashboard',
-    component: () => import('@/views/dashboard/Dashboard.vue').then(m => m.default)
-  },
-  {
-    path: '/login',
-    name: 'login',
-    component: () => import('@/views/auth/Login.vue').then(m => m.default)
-  },
-  {
-    path: '/register',
-    name: 'register',
-    component: () => import('@/views/auth/Register.vue').then(m => m.default)
-  },
-  {
-    path: '/products',
-    name: 'products',
-    component: () => import('@/views/products/ProductList.vue').then(m => m.default)
-  },
-  {
-    path: '/products/manage',
-    name: 'products-manage',
-    component: () => import('@/views/products/ProductManage.vue').then(m => m.default)
-  },
-  {
-    path: '/ingredients',
-    name: 'ingredients',
-    component: () => import('@/views/products/IngredientList.vue').then(m => m.default)
-  },
-  {
-    path: '/preferences',
-    name: 'preferences',
-    component: () => import('@/views/products/PreferenceManage.vue').then(m => m.default)
-  },
-  {
-    path: '/recipes',
-    name: 'recipes',
-    component: () => import('@/views/recipes/RecipeList.vue').then(m => m.default)
-  },
-  {
-    path: '/recipes/:id',
-    name: 'recipe-detail',
-    component: () => import('@/views/recipes/RecipeDetail.vue').then(m => m.default)
-  },
-  {
-    path: '/nutrition/:type/:id',
-    name: 'nutrition-detail',
-    component: () => import('@/views/nutrition/NutritionDetail.vue').then(m => m.default)
-  },
-  {
-    path: '/recipes/:id/edit',
-    name: 'recipe-form',
-    component: () => import('@/views/recipes/RecipeForm.vue').then(m => m.default)
-  },
-  {
-    path: '/recipes/new',
-    name: 'recipe-form',
-    component: () => import('@/views/recipes/RecipeForm.vue').then(m => m.default)
-  },
-  {
-    path: '/merchants',
-    name: 'merchants',
-    component: () => import('@/views/merchants/MerchantMap.vue').then(m => m.default)
-  },
-  {
-    path: '/reports',
-    name: 'reports',
-    component: () => import('@/views/reports/ReportOverview.vue').then(m => m.default)
-  },
-  {
-    path: '/admin',
-    name: 'admin',
-    component: () => import('@/views/admin/AdminPanel.vue').then(m => m.default)
-  },
-  {
-    path: '/admin/users',
-    name: 'userManagement',
-    component: () => import('@/views/admin/UserManagement.vue').then(m => m.default)
-  },
-  {
-    path: '/admin/invite-codes',
-    name: 'inviteCodeManagement',
-    component: () => import('@/views/admin/InviteCodeManager.vue').then(m => m.default)
-  },
-  {
-    path: '/admin/recipe-import',
-    name: 'recipeImport',
-    component: () => import('@/views/admin/RecipeImport.vue').then(m => m.default)
-  },
-  {
-    path: '/admin/units',
-    name: 'unitManagement',
-    component: () => import('@/views/admin/UnitManager.vue').then(m => m.default)
-  },
-  {
-    path: '/admin/map-settings',
-    name: 'mapSettings',
-    component: () => import('@/views/admin/MapSettings.vue').then(m => m.default)
-  },
-  {
-    path: '/items/:type/:id',
-    name: 'item-detail',
-    component: () => import('@/views/items/ItemDetail.vue').then(m => m.default)
-  },
-  {
-    path: '/items/:type/:id/nutrition/edit',
-    name: 'nutrition-edit',
-    component: () => import('@/views/items/NutritionEditForm.vue').then(m => m.default)
-  },
-  {
-    path: '/items/:type/:id/associations/manage',
-    name: 'association-manage',
-    component: () => import('@/views/items/AssociationManage.vue').then(m => m.default)
-  }
-]
 
 const router = createRouter({
   history: createWebHistory(),
-  routes,
-  scrollBehavior(to, from, savedPosition) {
-    // 如果有保存的位置（浏览器前进/后退），使用保存的位置
-    if (savedPosition) {
-      return savedPosition
-    }
-    // 否则滚动到顶部
-    return { top: 0 }
-  }
+  routes: [
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/auth/Login.vue'),
+      meta: { requiresAuth: false },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/auth/Register.vue'),
+      meta: { requiresAuth: false },
+    },
+    {
+      path: '/',
+      component: () => import('@/components/layout/AppLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          redirect: '/prices',
+        },
+        {
+          path: 'prices',
+          name: 'prices',
+          component: () => import('@/views/prices/PricesView.vue'),
+        },
+        {
+          path: 'recipes',
+          name: 'recipes',
+          component: () => import('@/views/recipes/RecipesView.vue'),
+        },
+        {
+          path: 'recipes/:id',
+          name: 'recipe-detail',
+          component: () => import('@/views/recipes/RecipeDetail.vue'),
+        },
+        {
+          path: 'data',
+          name: 'data',
+          redirect: '/data/products',
+        },
+        {
+          path: 'data/products',
+          name: 'products',
+          component: () => import('@/views/data/ProductsView.vue'),
+        },
+        {
+          path: 'data/products/:id',
+          name: 'product-detail',
+          component: () => import('@/views/products/ProductDetail.vue'),
+        },
+        {
+          path: 'data/ingredients',
+          name: 'ingredients',
+          component: () => import('@/views/data/IngredientsView.vue'),
+        },
+        {
+          path: 'data/ingredients/:id',
+          name: 'ingredient-detail',
+          component: () => import('@/views/ingredients/IngredientDetail.vue'),
+        },
+        {
+          path: 'data/merchants',
+          name: 'merchants',
+          component: () => import('@/views/data/MerchantsView.vue'),
+        },
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('@/views/profile/ProfileView.vue'),
+        },
+        {
+          path: 'admin',
+          name: 'admin',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/AdminDashboard.vue'),
+        },
+        {
+          path: 'admin/invite-codes',
+          name: 'admin-invite-codes',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/InviteCodesView.vue'),
+        },
+        {
+          path: 'admin/units',
+          name: 'admin-units',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/UnitsView.vue'),
+        },
+        {
+          path: 'admin/map-settings',
+          name: 'admin-map-settings',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/MapSettingsView.vue'),
+        },
+        {
+          path: 'admin/recipe-import',
+          name: 'admin-recipe-import',
+          meta: { adminOnly: true },
+          component: () => import('@/views/admin/RecipeImportView.vue'),
+        },
+      ],
+    },
+  ],
 })
 
-// 全局前置守卫
-router.beforeEach(async (to, from, next) => {
+// 路由守卫
+router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
+  const requiresAuth = to.matched.some((record) => record.meta.requiresAuth !== false)
+  const adminOnly = to.matched.some((record) => record.meta.adminOnly === true)
 
-  // 检查是否已登录
-  if (!userStore.isLoggedIn) {
-    // 尝试从本地存储初始化用户信息
-    const isValid = await userStore.initializeUserFromStorage();
-
-    if (!isValid && to.name !== 'login' && to.name !== 'register') {
-      // 如果令牌无效且不在登录/注册页面，跳转到登录页
-      next({ name: 'login' })
-      return
-    }
+  if (requiresAuth && !userStore.isLoggedIn) {
+    next('/login')
+  } else if (adminOnly && !userStore.user?.is_admin) {
+    // 非管理员访问管理页面，重定向到首页
+    next('/')
+  } else if ((to.name === 'login' || to.name === 'register') && userStore.isLoggedIn) {
+    next('/')
+  } else {
+    next()
   }
-
-  // 如果用户已登录，但访问的是登录或注册页面，重定向到首页
-  if ((to.name === 'login' || to.name === 'register') && userStore.isLoggedIn) {
-    next({ name: 'dashboard' })
-    return
-  }
-
-  next()
 })
 
 export default router

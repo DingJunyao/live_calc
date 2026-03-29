@@ -1,42 +1,25 @@
 /**
- * 天地图引擎
- * 使用 leaflet.chinaProvider 加载瓦片（需要 Token）
+ * 天地图引擎（基于 Leaflet）
  */
 
-import type { MapEngine, MapEngineType, MapOptions, MarkerOptions, SearchResult, MapConfig } from '../mapTypes';
+import type { MapEngine, MarkerOptions, MapConfig } from '../../map/mapTypes';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import 'leaflet.chinatmsproviders';
 
 export class TiandituEngine implements MapEngine {
-  name: MapEngineType = 'tianditu';
-  displayName: string = '天地图';
+  name = 'tianditu' as const;
+  displayName = '天地图';
 
   private map: L.Map | null = null;
   private markers: Map<any, L.Marker> = new Map();
   private config: MapConfig;
   private eventHandlers: Map<string, Set<Function>> = new Map();
-  private token: string = '';
 
   constructor(config: MapConfig) {
     this.config = config;
-    // 天地图必须配置 Token
-    // 支持新旧配置结构
-    const tiandituConfig = config.mapApiKeys as any;
-    this.token = tiandituConfig?.tianditu?.token || tiandituConfig?.tiandituToken || '';
-    console.log('[TiandituEngine] 初始化, config.mapApiKeys:', config.mapApiKeys, 'token:', this.token);
   }
 
-  init(container: HTMLElement, options: MapOptions): void {
-    if (this.map) {
-      this.destroy();
-    }
-
-    if (!this.token) {
-      console.error('Tianditu: Token is required');
-      container.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">天地图需要配置 Token，请联系管理员</div>';
-      return;
-    }
-
+  init(container: HTMLElement, options: any): void {
     const center = options.center || [39.9042, 116.4074];
     const zoom = options.zoom || 13;
 
@@ -46,25 +29,20 @@ export class TiandituEngine implements MapEngine {
       zoomControl: true
     });
 
-    // 使用 chinaProvider 加载天地图瓦片
-    // 支持 'TianDiTu.Normal.Map' (矢量) 或 'TianDiTu.Satellite.Map' (影像)
-    // 获取地图类型，支持新旧配置结构
-    const tiandituConfig = this.config.mapApiKeys as any;
-    const mapType = tiandituConfig?.tianditu?.type || tiandituConfig?.tiandituType || 'vec';
-    const providerType = mapType === 'img' ? 'TianDiTu.Satellite.Map' : 'TianDiTu.Normal.Map';
-
-    const tiandituLayer = L.tileLayer.chinaProvider(providerType, {
+    // 使用天地图图层（注意：插件使用 TianDiTu 而不是 Tianditu）
+    // @ts-ignore
+    L.tileLayer.chinaProvider('TianDiTu.Normal.Map', {
+      key: this.config.mapApiKeys.tianditu?.token,
       maxZoom: 18,
-      minZoom: 5,
-      key: this.token
+      minZoom: 5
     }).addTo(this.map);
 
-    // 添加注记层
-    const annotationType = mapType === 'img' ? 'TianDiTu.Satellite.Annotion' : 'TianDiTu.Normal.Annotion';
-    L.tileLayer.chinaProvider(annotationType, {
+    // 添加天地图注记层（注意：插件使用 Annotion 而不是 Annot）
+    // @ts-ignore
+    L.tileLayer.chinaProvider('TianDiTu.Normal.Annotion', {
+      key: this.config.mapApiKeys.tianditu?.token,
       maxZoom: 18,
-      minZoom: 5,
-      key: this.token
+      minZoom: 5
     }).addTo(this.map);
 
     if (options.enableClick !== false) {
@@ -75,6 +53,13 @@ export class TiandituEngine implements MapEngine {
         });
       });
     }
+
+    // 延迟调用 invalidateSize 以确保容器尺寸正确
+    setTimeout(() => {
+      if (this.map) {
+        this.map.invalidateSize();
+      }
+    }, 100);
   }
 
   setCenter(lat: number, lng: number): void {
@@ -110,7 +95,7 @@ export class TiandituEngine implements MapEngine {
 
     const markerId = Symbol('marker');
     this.markers.set(markerId, marker);
-    return markerId as any;
+    return markerId;
   }
 
   removeMarker(markerId: any): void {
@@ -126,58 +111,6 @@ export class TiandituEngine implements MapEngine {
     if (marker) {
       marker.setLatLng([lat, lng]);
     }
-  }
-
-  async searchAddress(query: string): Promise<SearchResult[]> {
-    if (!this.token) {
-      console.error('Tianditu: Token is required for geocoding');
-      return this.fallbackSearch(query);
-    }
-
-    try {
-      const url = `https://api.tianditu.gov.cn/v3/search?postStr={"keyWord":"${encodeURIComponent(query)}","type":"query","mapBound":"-180,-90,180,90","queryType":"1","count":"5"}&type=geocode&tk=${this.token}`;
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data && data.results && data.results.length > 0) {
-        return data.results.map((poi: any) => ({
-          address: poi.address,
-          lat: parseFloat(poi.latlon.split(',')[1]),
-          lng: parseFloat(poi.latlon.split(',')[0]),
-          name: poi.name
-        }));
-      }
-    } catch (error) {
-      console.error('Tianditu geocoding error:', error);
-    }
-
-    return this.fallbackSearch(query);
-  }
-
-  private async fallbackSearch(query: string): Promise<SearchResult[]> {
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
-      const response = await fetch(url);
-      const data = await response.json();
-
-      return data.map((item: any) => ({
-        address: item.display_name,
-        lat: parseFloat(item.lat),
-        lng: parseFloat(item.lon),
-        name: item.name
-      }));
-    } catch (error) {
-      console.error('Fallback search error:', error);
-      return [];
-    }
-  }
-
-  async geocode(address: string): Promise<SearchResult> {
-    const results = await this.searchAddress(address);
-    if (results.length > 0) {
-      return results[0];
-    }
-    throw new Error('Address not found');
   }
 
   destroy(): void {
@@ -202,12 +135,10 @@ export class TiandituEngine implements MapEngine {
     }
     this.eventHandlers.get(event)!.add(handler);
 
-    if (this.map) {
-      if (event === 'click') {
-        this.map.on('click', (e: L.LeafletMouseEvent) => {
-          handler({ lat: e.latlng.lat, lng: e.latlng.lng });
-        });
-      }
+    if (this.map && event === 'click') {
+      this.map.on('click', (e: L.LeafletMouseEvent) => {
+        handler({ lat: e.latlng.lat, lng: e.latlng.lng });
+      });
     }
   }
 
@@ -221,7 +152,7 @@ export class TiandituEngine implements MapEngine {
   private emit(event: string, data: any): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
-      handlers.forEach(h => h(data));
+      handlers.forEach(handler => handler(data));
     }
   }
 }

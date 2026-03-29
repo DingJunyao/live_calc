@@ -8,9 +8,10 @@ from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime, 
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
+from app.core.base_model import AuditMixin
 
 
-class NutritionData(Base):
+class NutritionData(Base, AuditMixin):
     """
     营养数据模型
 
@@ -68,15 +69,13 @@ class NutritionData(Base):
     # 元数据
     extra_data = Column(JSON, nullable=True)  # 存储额外的元信息
 
-    # 时间戳
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    # 注意：created_by, updated_by, created_at, updated_at, is_active 从 AuditMixin 继承
 
     def __repr__(self):
         return f"<NutritionData(ingredient_id={self.ingredient_id}, source={self.source})>"
 
 
-class AIIngredientMatch(Base):
+class AIIngredientMatch(Base, AuditMixin):
     """
     AI 匹配记录模型
 
@@ -107,15 +106,13 @@ class AIIngredientMatch(Base):
     verified_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
 
-    # 审计信息
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # 注意：created_by, updated_by, created_at, updated_at, is_active 从 AuditMixin 继承
 
     def __repr__(self):
         return f"<AIIngredientMatch(ingredient_id={self.ingredient_id}, source={self.source}, confidence={self.confidence})>"
 
 
-class NutritionEditHistory(Base):
+class NutritionEditHistory(Base, AuditMixin):
     """
     营养数据编辑历史模型
 
@@ -141,17 +138,17 @@ class NutritionEditHistory(Base):
     # 修改原因
     reason = Column(Text, nullable=True)
 
-    # 操作者
+    # 操作者（注意：edited_at 是具体操作时间，与 AuditMixin 的 updated_at 不同）
     edited_by = Column(Integer, ForeignKey("users.id"), nullable=False)
-
-    # 时间戳
     edited_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # 注意：created_by, updated_by, created_at, updated_at, is_active 从 AuditMixin 继承
 
     def __repr__(self):
         return f"<NutritionEditHistory(id={self.id}, edit_type={self.edit_type}, ingredient_id={self.ingredient_id})>"
 
 
-class NRVStandard(Base):
+class NRVStandard(Base, AuditMixin):
     """
     营养素参考值（NRV）标准
 
@@ -178,9 +175,7 @@ class NRVStandard(Base):
     # 描述
     description = Column(Text, nullable=True)
 
-    # 时间戳
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    # 注意：created_by, updated_by, created_at, updated_at, is_active 从 AuditMixin 继承
 
     def __repr__(self):
         return f"<NRVStandard(nutrient={self.nutrient_name}, source={self.standard_source}, value={self.standard_value}{self.unit})>"

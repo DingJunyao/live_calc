@@ -95,22 +95,50 @@ def create_hierarchy_relation(
     if not child_ingredient:
         raise HTTPException(status_code=404, detail=f"子食材ID {relation.child_id} 不存在")
 
-    # 检查是否已存在相同的关系
+    # 检查是否已存在相同的关系（包括关系类型）
+    # 同一对原料之间可以存在不同类型的关系（如包含、回退、可替代）
     existing_relation = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.parent_id == relation.parent_id,
-        IngredientHierarchy.child_id == relation.child_id
+        IngredientHierarchy.child_id == relation.child_id,
+        IngredientHierarchy.relation_type == relation.relation_type
     ).first()
 
     if existing_relation:
-        raise HTTPException(status_code=400, detail="该层级关系已存在")
+        raise HTTPException(
+            status_code=400,
+            detail=f"该层级关系已存在（{relation_type.value}）"
+        )
 
-    # 创建层级关系
-    hierarchy_relation = IngredientHierarchy(
-        parent_id=relation.parent_id,
-        child_id=relation.child_id,
-        relation_type=relation.relation_type,
-        strength=relation.strength
-    )
+    # 对于 fallback（回退）关系，需要特殊处理
+    # 回退关系的语义是：从抽象原料回退到具体原料
+    # 数据模型中：parent 是具体原料（数据源），child 是抽象原料
+    # 例如：parent=猪肉, child=肉，表示"肉"可以回退使用"猪肉"的数据
+    if relation_type == HierarchyRelationType.FALLBACK:
+        # 交换 parent_id 和 child_id
+        actual_parent_id = relation.child_id
+        actual_child_id = relation.parent_id
+
+        # 检查交换后是否自引用
+        if actual_parent_id == actual_child_id:
+            raise HTTPException(
+                status_code=400,
+                detail="不能创建自引用的回退关系"
+            )
+
+        hierarchy_relation = IngredientHierarchy(
+            parent_id=actual_parent_id,
+            child_id=actual_child_id,
+            relation_type=relation.relation_type,
+            strength=relation.strength
+        )
+    else:
+        # 对于其他关系类型（contains, substitutable），保持原样
+        hierarchy_relation = IngredientHierarchy(
+            parent_id=relation.parent_id,
+            child_id=relation.child_id,
+            relation_type=relation.relation_type,
+            strength=relation.strength
+        )
 
     db.add(hierarchy_relation)
     db.commit()

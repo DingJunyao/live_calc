@@ -6,6 +6,7 @@ from typing import List, Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.merchant import Merchant, FavoriteMerchant
+from app.models.map_config import MapConfiguration
 from app.schemas.merchant import (
     MerchantCreate,
     MerchantUpdate,
@@ -19,6 +20,35 @@ from app.schemas.common import PaginatedResponse
 from app.services.map_service import calculate_route
 
 router = APIRouter()
+
+
+@router.get("/map-config")
+async def get_public_map_config(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取公开的地图配置 - 任何登录用户都可以访问"""
+    try:
+        config = db.query(MapConfiguration).first()
+        if not config:
+            # 如果没有配置，返回默认配置
+            return {
+                "available_maps": ["amap", "baidu", "tencent", "tianditu", "osm"],
+                "default_map": "amap",
+                "map_api_keys": {
+                    "amap": None,
+                    "amap_security": None,
+                    "baidu": None,
+                    "tencent": None,
+                    "tianditu": {"token": "", "type": "vec"}
+                }
+            }
+        return config.to_dict()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取地图配置时发生错误: {str(e)}"
+        )
 
 
 @router.post("", response_model=MerchantResponse)

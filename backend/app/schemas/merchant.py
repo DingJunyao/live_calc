@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, Field as PydanticField
 from typing import Optional, List
 from datetime import datetime  # 修改为 datetime 而不是 date
+from app.utils.datetime_utils import TimeZoneAwareModel
 
 
 class MerchantCreate(BaseModel):
@@ -17,7 +18,7 @@ class MerchantUpdate(BaseModel):
     longitude: Optional[float] = Field(None, ge=-180, le=180)
 
 
-class MerchantResponse(BaseModel):
+class MerchantResponse(TimeZoneAwareModel):
     id: int
     name: str
     address: Optional[str]
@@ -36,7 +37,7 @@ class FavoriteMerchantCreate(BaseModel):
     longitude: float = Field(..., ge=-180, le=180)
 
 
-class FavoriteMerchantResponse(BaseModel):
+class FavoriteMerchantResponse(TimeZoneAwareModel):
     id: int
     name: str
     type: str
