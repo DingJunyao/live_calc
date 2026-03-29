@@ -20,7 +20,7 @@
       <!-- 地图控制按钮 -->
       <div v-show="!isLoading && validMerchants.length > 0" class="map-controls">
         <!-- 地图切换器（桌面端） -->
-        <v-btn-group v-if="availableMaps.length > 1" class="desktop-layer-selector" density="compact">
+        <v-btn-group v-if="isDesktop && availableMaps.length > 1" class="desktop-layer-selector" density="compact">
           <v-btn
             v-for="map in availableMaps"
             :key="map.value"
@@ -35,8 +35,8 @@
 
         <!-- 地图切换下拉（移动端） -->
         <v-select
-          v-else-if="availableMaps.length > 1"
-          v-model="currentMapLayer"
+          v-else-if="!isDesktop && availableMaps.length > 1"
+          :model-value="currentMapLayer"
           :items="availableMaps"
           item-title="label"
           item-value="value"
@@ -44,7 +44,7 @@
           variant="solo"
           hide-details
           class="mobile-layer-selector"
-          @update:model-value="handleMapLayerChange"
+          @update:model-value="handleMobileMapChange"
           style="max-width: 120px"
         />
 
@@ -383,6 +383,12 @@ function handleMapLayerChange() {
   switchMapLayer(currentMapLayer.value)
 }
 
+// 处理移动端地图切换（避免 v-model 竞态问题）
+function handleMobileMapChange(newValue: MapEngineType) {
+  // 先切换地图，switchMapLayer 会更新 currentMapLayer
+  switchMapLayer(newValue)
+}
+
 // 全屏切换
 function toggleFullscreen() {
   if (!mapWrapperRef.value) return
@@ -584,6 +590,32 @@ onUnmounted(() => {
 
   .mobile-layer-selector {
     display: block;
+  }
+
+  /* 移动端地图控件缩小 */
+  .map-controls {
+    gap: 4px; /* 减小间距 */
+  }
+
+  :deep(.mobile-layer-selector) {
+    max-width: 80px; /* 减小宽度 */
+    font-size: 0.7rem; /* 减小字体 */
+  }
+
+  :deep(.mobile-layer-selector .v-field__input) {
+    padding: 4px 8px; /* 减小内边距 */
+    min-height: 28px; /* 减小高度 */
+    font-size: 0.7rem;
+  }
+
+  .control-btn {
+    width: 28px !important; /* 减小按钮宽度 */
+    height: 28px !important; /* 减小按钮高度 */
+    min-width: 28px !important;
+  }
+
+  :deep(.control-btn .v-btn__content) {
+    font-size: 16px; /* 减小图标尺寸 */
   }
 
   :deep(.merchant-marker) {

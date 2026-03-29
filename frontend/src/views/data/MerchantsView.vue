@@ -94,28 +94,42 @@
 
         <!-- 分页器 -->
         <div v-if="total > 0" class="pagination-wrapper">
-          <v-pagination
-            v-model="currentPage"
-            :length="totalPages"
-            :total-visible="3"
-            rounded="circle"
-            density="comfortable"
-            size="small"
-          />
-          <div class="d-flex align-center ga-2 justify-center mt-2">
-            <v-select
-              v-model="pageSize"
-              :items="[10, 20, 50, 100]"
-              label="每页"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="max-width: 80px"
-              @update:model-value="handlePageSizeChange"
+          <div class="pagination-content">
+            <v-pagination
+              v-model="currentPage"
+              :length="totalPages"
+              :total-visible="isDesktop ? 5 : 3"
+              rounded="circle"
+              :density="isDesktop ? 'comfortable' : 'compact'"
+              :size="isDesktop ? 'small' : 'x-small'"
+              class="flex-shrink-0"
             />
-            <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
+            <div class="pagination-controls">
+              <v-select
+                v-model="pageSize"
+                :items="[10, 20, 50, 100]"
+                :label="isDesktop ? '每页' : undefined"
+                variant="outlined"
+                density="compact"
+                hide-details
+                class="page-size-select"
+                @update:model-value="handlePageSizeChange"
+              />
+              <span v-if="isDesktop" class="text-caption text-medium-emphasis total-count">共 {{ total }} 条</span>
+              <span v-else class="text-caption text-medium-emphasis total-count">{{ total }}条</span>
+            </div>
           </div>
         </div>
+
+        <!-- FAB 添加按钮 -->
+        <v-btn
+          icon="mdi-plus"
+          color="primary"
+          size="large"
+          elevation="6"
+          class="fab-button"
+          @click="openEditDialog()"
+        />
       </div>
 
       <!-- 右边：地图 -->
@@ -127,17 +141,6 @@
         />
       </div>
     </div>
-
-    <!-- FAB 浮动添加按钮 -->
-    <v-btn
-      icon="mdi-plus"
-      color="primary"
-      size="large"
-      elevation="8"
-      class="position-fixed"
-      style="bottom: 80px; right: 24px"
-      @click="openEditDialog()"
-    />
 
     <!-- 添加/编辑对话框 -->
     <v-dialog v-model="addDialog" max-width="500">
@@ -396,6 +399,7 @@ onUnmounted(() => {
 
 /* 左侧面板：搜索框 + 列表 + 分页 */
 .left-panel {
+  position: relative; /* 为 FAB 按钮提供定位上下文 */
   width: 350px;
   display: flex;
   flex-direction: column;
@@ -426,6 +430,36 @@ onUnmounted(() => {
   padding: 0.5rem 0;
 }
 
+/* FAB 浮动按钮 */
+.fab-button {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 10;
+}
+
+.pagination-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.page-size-select {
+  max-width: 80px;
+}
+
+.total-count {
+  white-space: nowrap;
+}
+
 /* 右侧面板：地图 */
 .right-panel {
   flex: 1;
@@ -437,15 +471,63 @@ onUnmounted(() => {
 @media (max-width: 960px) {
   .main-content {
     flex-direction: column;
+    overflow-y: auto; /* 允许整体滚动 */
+    display: flex;
+    flex: 1;
   }
 
   .left-panel {
     width: 100%;
-    max-height: 50vh;
+    flex: 3; /* 60% 空间 */
+    min-height: 0; /* 允许 flex 子元素收缩 */
+    display: flex;
+    flex-direction: column;
   }
 
   .right-panel {
-    height: 50vh;
+    flex: 2; /* 40% 空间 */
+    min-height: 0; /* 允许 flex 子元素收缩 */
+  }
+
+  /* 移动端分页器紧凑布局 */
+  .pagination-wrapper {
+    padding: 0.25rem 0; /* 正常的上下 padding */
+  }
+
+  .pagination-content {
+    flex-direction: row; /* 改为横向布局 */
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0 0.25rem;
+  }
+
+  .pagination-controls {
+    gap: 0.5rem; /* 增加间距以便容纳选择框 */
+  }
+
+  .page-size-select {
+    min-width: 85px; /* 确保有足够宽度显示三位数 */
+    max-width: 85px;
+    font-size: 0.75rem; /* 减小字体 */
+  }
+
+  .total-count {
+    font-size: 0.7rem; /* 减小字体 */
+  }
+
+  /* 让分页按钮更紧凑 */
+  :deep(.v-pagination__item) {
+    padding: 0 4px;
+    min-width: 28px;
+    height: 28px;
+  }
+
+  /* 移动端 FAB 按钮优化 */
+  .fab-button {
+    bottom: 12px;
+    right: 12px;
+    width: 48px !important;
+    height: 48px !important;
   }
 }
 </style>
