@@ -1316,10 +1316,11 @@ const hasRelations = computed(() => {
   )
 })
 
-// 聚合价格数据用于图表（按日期分组）
+// 聚合价格数据用于图表（按日期分组，转换到原料的默认单位）
 const chartData = computed(() => {
   if (!priceRecords.value || priceRecords.value.length === 0) return []
 
+  const defaultUnit = ingredient.value?.default_unit_name || 'g'
   const dailyMap = new Map<string, number[]>()
 
   for (const record of priceRecords.value) {
@@ -1328,15 +1329,38 @@ const chartData = computed(() => {
     if (isNaN(date.getTime())) continue
     const dateKey = date.toISOString().split('T')[0]
 
-    // 计算单价
+    // 计算原始单价
     const quantity = parseFloat(String(record.original_quantity)) || 1
     const price = parseFloat(String(record.price)) || 0
-    const unitPrice = price / quantity
+    const originalUnitPrice = price / quantity
+
+    // 转换到原料的默认单位
+    let convertedUnitPrice = originalUnitPrice
+    const originalUnit = record.original_unit
+
+    // 如果原始单位和默认单位不同，进行转换
+    if (originalUnit && originalUnit !== defaultUnit) {
+      // 常用单位转换系数（相对于g）
+      const unitFactors: Record<string, number> = {
+        'g': 1,
+        'kg': 1000,
+        '斤': 500,
+        '两': 50,
+        'mg': 0.001
+      }
+
+      const fromFactor = unitFactors[originalUnit] || 1
+      const toFactor = unitFactors[defaultUnit] || 1
+
+      // 单价转换公式：新单价 = 原单价 × (toFactor / fromFactor)
+      // 例如：0.0366元/g → 0.0366 × (500 / 1) = 18.3元/斤
+      convertedUnitPrice = originalUnitPrice * (toFactor / fromFactor)
+    }
 
     if (!dailyMap.has(dateKey)) {
       dailyMap.set(dateKey, [])
     }
-    dailyMap.get(dateKey)!.push(unitPrice)
+    dailyMap.get(dateKey)!.push(convertedUnitPrice)
   }
 
   // 计算每日统计值
@@ -1354,12 +1378,9 @@ const chartData = computed(() => {
     .sort((a, b) => a.date.localeCompare(b.date))
 })
 
-// 获取实际使用的单位
+// 获取图表使用的单位（始终使用原料的默认单位）
 const chartUnit = computed(() => {
-  if (priceRecords.value && priceRecords.value.length > 0 && priceRecords.value[0].original_unit) {
-    return priceRecords.value[0].original_unit
-  }
-  return ingredient.value?.default_unit_name || ''
+  return ingredient.value?.default_unit_name || 'g'
 })
 
 // 加载数据
@@ -1423,8 +1444,8 @@ const loadPriceRecords = async () => {
       params: {
         ingredient_id: ingredientId.value,
         skip,
-        limit: pricePageSize.value,
-        target_unit: ingredient.value?.default_unit_name
+        limit: pricePageSize.value
+        // 不传递 target_unit，显示原始价格记录
       }
     })
     priceRecords.value = response.items || []
@@ -1906,6 +1927,10 @@ const saveEdit = async () => {
 
     // 刷新营养数据
     await loadNutritionData()
+
+    // 刷新价格数据（最新价格和价格趋势都会使用新的默认单位）
+    await loadLatestPrice()
+    await loadPriceRecords()
 
     showEditDialog.value = false
     showMessage('保存成功', 'success')

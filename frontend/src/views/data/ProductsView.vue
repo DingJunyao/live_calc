@@ -50,7 +50,7 @@
           </template>
 
           <v-list-item-title>{{ item.name }}</v-list-item-title>
-          <v-list-item-subtitle>{{ item.category || '未分类' }}</v-list-item-subtitle>
+          <v-list-item-subtitle>{{ item.brand || '无品牌' }}</v-list-item-subtitle>
 
           <template #append>
             <v-btn icon="mdi-chevron-right" size="small" variant="text" />
@@ -113,16 +113,44 @@
               required
               class="mb-4"
             />
+            <v-autocomplete
+              v-model="selectedIngredient"
+              v-model:search="ingredientSearch"
+              :items="ingredients"
+              item-title="name"
+              item-value="id"
+              label="关联原料 *"
+              variant="outlined"
+              required
+              :loading="loadingIngredients"
+              :no-data-text="ingredientSearch ? '未找到匹配的原料' : '请输入搜索关键词'"
+              placeholder="输入关键词搜索原料"
+              clearable
+              return-object
+              auto-select-first
+              hide-selected
+              :custom-filter="() => true"
+              class="mb-4"
+            >
+              <template #item="{ props, item }">
+                <v-list-item v-bind="props">
+                  <v-list-item-subtitle v-if="item.raw.aliases && item.raw.aliases.length > 0">
+                    别名: {{ item.raw.aliases.join(', ') }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+              </template>
+            </v-autocomplete>
             <v-text-field
-              v-model="form.category"
-              label="分类"
+              v-model="form.brand"
+              label="品牌"
               variant="outlined"
               class="mb-4"
             />
-            <v-textarea
-              v-model="form.description"
-              label="描述"
+            <v-text-field
+              v-model="form.barcode"
+              label="条码"
               variant="outlined"
+              class="mb-4"
             />
           </v-form>
         </v-card-text>
@@ -146,9 +174,17 @@ const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 interface Product {
   id: number
   name: string
-  category?: string
+  brand?: string
+  barcode?: string
   description?: string
   created_at?: string
+}
+
+interface Ingredient {
+  id: number
+  name: string
+  aliases?: string[]
+  default_unit?: string
 }
 
 const items = ref<Product[]>([])
@@ -157,10 +193,18 @@ const error = ref<string | null>(null)
 const search = ref('')
 const showAddDialog = ref(false)
 const saving = ref(false)
+
+// 原料列表
+const ingredients = ref<Ingredient[]>([])
+const loadingIngredients = ref(false)
+const ingredientSearch = ref('')
+const selectedIngredient = ref<Ingredient | null>(null)
+
 const form = ref({
   name: '',
-  category: '',
-  description: '',
+  brand: '',
+  barcode: '',
+  ingredient_id: null as number | null
 })
 
 // 分页相关
@@ -169,6 +213,37 @@ const pageSize = ref(20)
 const total = ref(0)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
+
+// 加载原料列表
+const loadIngredients = async (searchText?: string) => {
+  loadingIngredients.value = true
+  try {
+    const params: Record<string, any> = { limit: 100 }
+    if (searchText) {
+      params.q = searchText
+    }
+    const response = await api.get('/ingredients', { params })
+    ingredients.value = response.items || []
+  } catch (e: any) {
+    console.error('加载原料列表失败', e)
+  } finally {
+    loadingIngredients.value = false
+  }
+}
+
+// 监听原料搜索输入，防抖处理
+let ingredientSearchTimeout: ReturnType<typeof setTimeout> | null = null
+watch(ingredientSearch, (newVal) => {
+  if (ingredientSearchTimeout) clearTimeout(ingredientSearchTimeout)
+  ingredientSearchTimeout = setTimeout(() => {
+    loadIngredients(newVal)
+  }, 300)
+})
+
+// 监听选中的原料对象，同步 ingredient_id 到表单
+watch(selectedIngredient, (newIngredient) => {
+  form.value.ingredient_id = newIngredient?.id || null
+}, { immediate: true })
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
@@ -216,6 +291,10 @@ watch(currentPage, () => {
 
 const saveItem = async () => {
   if (!form.value.name.trim()) return
+  if (!form.value.ingredient_id) {
+    alert('请选择关联的原料')
+    return
+  }
 
   saving.value = true
   try {
@@ -223,7 +302,9 @@ const saveItem = async () => {
     items.value.unshift(response)
     total.value++
     showAddDialog.value = false
-    form.value = { name: '', category: '', description: '' }
+    form.value = { name: '', brand: '', barcode: '', ingredient_id: null }
+    selectedIngredient.value = null
+    ingredientSearch.value = ''
   } catch (e: any) {
     console.error('保存商品失败', e)
   } finally {
@@ -233,6 +314,7 @@ const saveItem = async () => {
 
 onMounted(() => {
   loadProducts()
+  loadIngredients()
   window.addEventListener('app-refresh', loadProducts)
 })
 

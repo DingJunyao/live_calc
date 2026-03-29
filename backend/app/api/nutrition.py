@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, BackgroundTasks
 from app.schemas.common import PaginatedResponse
 from sqlalchemy import or_, func
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session, load_only, joinedload
 from typing import List, Optional
 import json
 from app.core.database import get_db
@@ -513,7 +513,7 @@ async def get_ingredient_nutrition(
             result["reference_unit"] = nutrition_data.reference_unit
             result["match_confidence"] = nutrition_data.match_confidence
 
-        print(f"[营养查询] 返回结果: {result}")
+        # print(f"[营养查询] 返回结果: {result}")
         return NutritionResponse(**result)
     except HTTPException as he:
         print(f"[营养查询] HTTP 错误: {he.status_code} - {he.detail}")
@@ -649,11 +649,23 @@ async def get_ingredient_latest_price(
 
     - **ingredient_id**: 食材ID
 
-    返回该原料关联商品在最近一天的平均价格
+    返回该原料关联商品在最近一天的平均价格（基于原料的默认单位）
     """
     try:
         from app.models.product import ProductRecord
+        from app.services.unit_conversion_service import UnitConversionService
         from datetime import datetime, timedelta
+
+        # 查询原料及其默认单位
+        ingredient = db.query(Ingredient).filter(
+            Ingredient.id == ingredient_id
+        ).first()
+
+        if not ingredient:
+            print(f"[DEBUG] 原料 {ingredient_id} 不存在")
+            return {"average_price": None, "unit": None}
+
+        print(f"[DEBUG] 原料: {ingredient.name}, 默认单位: {ingredient.default_unit.abbreviation if ingredient.default_unit else None}")
 
         # 查询该原料关联的商品
         products = db.query(Product).filter(
@@ -661,7 +673,10 @@ async def get_ingredient_latest_price(
         ).all()
 
         if not products:
+            print(f"[DEBUG] 原料 {ingredient_id} 没有关联商品")
             return {"average_price": None, "unit": None}
+
+        print(f"[DEBUG] 找到 {len(products)} 个关联商品")
 
         product_ids = [p.id for p in products]
 
@@ -670,58 +685,106 @@ async def get_ingredient_latest_price(
         now = datetime.utcnow()
         one_day_ago = now - timedelta(days=1)
 
-        recent_records = db.query(ProductRecord).filter(
+        recent_records = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit)
+        ).filter(
             ProductRecord.product_id.in_(product_ids),
             ProductRecord.recorded_at >= one_day_ago
         ).order_by(ProductRecord.recorded_at.desc()).all()
 
         # 如果最近24小时内没有记录，则查找最近一次记录的那一天的所有记录
         if not recent_records:
+            print(f"[DEBUG] 最近24小时内没有记录，查找最近一次记录")
             # 查找最近一次记录
             latest_record = db.query(ProductRecord).filter(
                 ProductRecord.product_id.in_(product_ids)
             ).order_by(ProductRecord.recorded_at.desc()).first()
 
             if not latest_record:
+                print(f"[DEBUG] 没有找到任何价格记录")
                 return {"average_price": None, "unit": None}
 
             # 获取与最近记录同一天的所有记录
             latest_date = latest_record.recorded_at.date()
-            recent_records = db.query(ProductRecord).filter(
+            print(f"[DEBUG] 最近记录日期: {latest_date}")
+            recent_records = db.query(ProductRecord).options(
+                joinedload(ProductRecord.original_unit)
+            ).filter(
                 ProductRecord.product_id.in_(product_ids),
                 func.date(ProductRecord.recorded_at) == latest_date
             ).all()
 
+        print(f"[DEBUG] 找到 {len(recent_records)} 条价格记录")
+
         if not recent_records:
             return {"average_price": None, "unit": None}
 
-        # 计算平均价格 - 使用单价而非总价
+        # 初始化单位转换服务
+        unit_service = UnitConversionService(db)
+
+        # 获取原料的默认单位缩写
+        target_unit_abbr = None
+        if ingredient.default_unit:
+            target_unit_abbr = ingredient.default_unit.abbreviation
+
+        print(f"[DEBUG] 目标单位: {target_unit_abbr}")
+
+        # 计算平均价格 - 转换到原料的默认单位
         unit_prices = []
-        for record in recent_records:
-            if record.price is not None and record.original_quantity is not None and record.original_quantity > 0:
-                # 计算单价：总价 / 数量
-                unit_price = record.price / record.original_quantity
-                unit_prices.append(unit_price)
+        for i, record in enumerate(recent_records):
+            print(f"[DEBUG] 记录 {i+1}: price={record.price}, quantity={record.original_quantity}, unit={record.original_unit.abbreviation if record.original_unit else None}")
+            if record.price is not None and record.original_quantity is not None and record.original_quantity > 0 and record.original_unit:
+                total_price = float(record.price)
+                original_quantity = float(record.original_quantity)
+                original_unit_abbr = record.original_unit.abbreviation
+
+                # 如果原料有默认单位，且与记录单位不同，则转换数量到目标单位
+                if target_unit_abbr and original_unit_abbr != target_unit_abbr:
+                    # 转换数量到目标单位
+                    print(f"[DEBUG]   转换数量: {original_quantity} {original_unit_abbr} -> {target_unit_abbr}")
+                    converted_quantity = unit_service.convert(
+                        original_quantity,
+                        original_unit_abbr,
+                        target_unit_abbr,
+                        ingredient.name
+                    )
+                    print(f"[DEBUG]   转换后数量: {converted_quantity} {target_unit_abbr}")
+
+                    if converted_quantity is not None and converted_quantity > 0:
+                        # 用总价除以转换后的数量，得到目标单位的单价
+                        unit_price = total_price / converted_quantity
+                        print(f"[DEBUG]   目标单位单价: {unit_price} {target_unit_abbr}")
+                        unit_prices.append(unit_price)
+                    else:
+                        # 转换失败，跳过此记录
+                        print(f"[DEBUG]   转换失败，跳过此记录")
+                        continue
+                else:
+                    # 单位相同或原料没有默认单位，直接计算单价
+                    unit_price = total_price / original_quantity
+                    print(f"[DEBUG]   单价: {unit_price} {original_unit_abbr}")
+                    unit_prices.append(unit_price)
+
+        print(f"[DEBUG] 有效单价列表: {unit_prices}")
 
         if not unit_prices:
             return {"average_price": None, "unit": None}
 
         average_price = sum(unit_prices) / len(unit_prices)
 
-        # 获取最常见的单位名称
-        from collections import Counter
-        units = [record.original_unit.name if record.original_unit else None for record in recent_records]
-        units = [u for u in units if u is not None]
-        if units:
-            most_common_unit = Counter(units).most_common(1)[0][0]
-        else:
-            most_common_unit = None
+        print(f"[DEBUG] 平均价格: {average_price}")
 
-        return {
+        # 返回原料的默认单位（如果有）
+        result = {
             "average_price": round(average_price, 2),
-            "unit": most_common_unit
+            "unit": target_unit_abbr
         }
+        print(f"[DEBUG] 返回结果: {result}")
+        return result
     except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取最近价格失败: {str(e)}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")
 
 

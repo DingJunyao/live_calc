@@ -137,7 +137,7 @@
             size="small"
             variant="text"
             color="primary"
-            @click="showAddPriceDialog = true"
+            @click="openAddPriceDialog"
           >
             添加记录
           </v-btn>
@@ -189,7 +189,7 @@
             variant="tonal"
             class="mt-4"
             prepend-icon="mdi-plus"
-            @click="showAddPriceDialog = true"
+            @click="openAddPriceDialog"
           >
             添加价格记录
           </v-btn>
@@ -283,6 +283,33 @@
               required
               class="mb-4"
             />
+            <v-autocomplete
+              v-model="selectedIngredient"
+              v-model:search="ingredientSearch"
+              :items="ingredients"
+              item-title="name"
+              item-value="id"
+              label="关联原料 *"
+              variant="outlined"
+              required
+              :loading="loadingIngredients"
+              :no-data-text="ingredientSearch ? '未找到匹配的原料' : '请输入搜索关键词'"
+              placeholder="输入关键词搜索原料"
+              clearable
+              return-object
+              auto-select-first
+              hide-selected
+              :custom-filter="() => true"
+              class="mb-4"
+            >
+              <template #item="{ props, item }">
+                <v-list-item v-bind="props">
+                  <v-list-item-subtitle v-if="item.raw.aliases && item.raw.aliases.length > 0">
+                    别名: {{ item.raw.aliases.join(', ') }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+              </template>
+            </v-autocomplete>
             <v-text-field
               v-model="editForm.brand"
               label="品牌"
@@ -302,7 +329,119 @@
               multiple
               chips
               closable-chips
+              class="mb-4"
             />
+
+            <!-- 营养成分折叠面板 -->
+            <v-expansion-panels class="mb-4">
+              <v-expansion-panel>
+                <v-expansion-panel-title>
+                  <div class="d-flex align-center ga-2">
+                    <v-icon>mdi-food</v-icon>
+                    <span>营养成分（可选）</span>
+                    <v-chip v-if="hasCustomNutrition" size="x-small" color="primary">已设置</v-chip>
+                  </div>
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                  <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+                    如果填写营养成分，将优先使用此处设置的数据；否则将使用所属原料的营养成分
+                  </v-alert>
+
+                  <v-row>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.energy_kcal"
+                        label="能量 (kcal)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.protein"
+                        label="蛋白质 (g)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.fat"
+                        label="脂肪 (g)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.carbohydrates"
+                        label="碳水化合物 (g)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.dietary_fiber"
+                        label="膳食纤维 (g)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.calcium"
+                        label="钙 (mg)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.iron"
+                        label="铁 (mg)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.sodium"
+                        label="钠 (mg)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                    <v-col cols="6">
+                      <v-text-field
+                        v-model.number="editForm.nutrition.potassium"
+                        label="钾 (mg)"
+                        type="number"
+                        variant="outlined"
+                        hide-details
+                        class="mb-2"
+                      />
+                    </v-col>
+                  </v-row>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+            </v-expansion-panels>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -339,11 +478,14 @@
                 />
               </v-col>
               <v-col cols="6">
-                <v-text-field
+                <v-select
                   v-model="priceForm.unit"
+                  :items="unitOptions"
                   label="单位"
                   variant="outlined"
                   required
+                  :hint="currentIngredientDefaultUnit ? `原料默认单位: ${currentIngredientDefaultUnit}` : ''"
+                  :persistent-hint="!!currentIngredientDefaultUnit"
                 />
               </v-col>
             </v-row>
@@ -430,6 +572,13 @@ interface Merchant {
   name: string
 }
 
+interface Ingredient {
+  id: number
+  name: string
+  aliases?: string[]
+  default_unit?: string
+}
+
 const route = useRoute()
 const router = useRouter()
 
@@ -453,6 +602,12 @@ const nutritionData = ref<any>(null)
 // 商家列表
 const merchants = ref<Merchant[]>([])
 
+// 原料列表
+const ingredients = ref<Ingredient[]>([])
+const loadingIngredients = ref(false)
+const ingredientSearch = ref('')
+const selectedIngredient = ref<Ingredient | null>(null)
+
 // 对话框状态
 const showEditDialog = ref(false)
 const showAddPriceDialog = ref(false)
@@ -466,8 +621,25 @@ const editForm = ref({
   name: '',
   brand: '',
   barcode: '',
-  tags: [] as string[]
+  ingredient_id: null as number | null,
+  tags: [] as string[],
+  // 营养成分
+  nutrition: {
+    energy_kcal: null as number | null,
+    protein: null as number | null,
+    fat: null as number | null,
+    carbohydrates: null as number | null,
+    dietary_fiber: null as number | null,
+    calcium: null as number | null,
+    iron: null as number | null,
+    sodium: null as number | null,
+    potassium: null as number | null
+  }
 })
+
+// 营养成分编辑状态
+const showNutritionEditor = ref(false)
+const hasCustomNutrition = ref(false)
 
 const priceForm = ref({
   price: 0,
@@ -475,6 +647,18 @@ const priceForm = ref({
   unit: 'g',
   merchant_id: null as number | null
 })
+
+// 打开添加价格记录对话框时，自动填充默认单位
+const openAddPriceDialog = () => {
+  // 如果原料有默认单位，使用默认单位；否则使用 'g'
+  priceForm.value = {
+    price: 0,
+    quantity: 1,
+    unit: currentIngredientDefaultUnit.value || 'g',
+    merchant_id: null
+  }
+  showAddPriceDialog.value = true
+}
 
 // 提示消息
 const snackbar = ref({
@@ -703,6 +887,20 @@ const chartUnit = computed(() => {
   return ''
 })
 
+// 获取当前商品关联的原料的默认单位
+const currentIngredientDefaultUnit = computed(() => {
+  // 从 nutritionData 或 product 中获取原料的默认单位
+  if (nutritionData.value?.ingredient?.default_unit) {
+    return nutritionData.value.ingredient.default_unit
+  }
+  return null
+})
+
+// 单位选项
+const unitOptions = [
+  'g', 'kg', '斤', '两', 'ml', 'L', '个', '包', '袋', '盒', '瓶', '罐'
+]
+
 // 加载数据
 const loadData = async () => {
   loading.value = true
@@ -773,6 +971,37 @@ const loadMerchants = async () => {
   }
 }
 
+// 加载原料列表
+const loadIngredients = async (searchText?: string) => {
+  loadingIngredients.value = true
+  try {
+    const params: Record<string, any> = { limit: 100 }
+    if (searchText) {
+      params.q = searchText
+    }
+    const response = await api.get('/ingredients', { params })
+    ingredients.value = response.items || []
+  } catch (e: any) {
+    console.error('加载原料列表失败', e)
+  } finally {
+    loadingIngredients.value = false
+  }
+}
+
+// 监听原料搜索输入，防抖处理
+let ingredientSearchTimeout: ReturnType<typeof setTimeout> | null = null
+watch(ingredientSearch, (newVal) => {
+  if (ingredientSearchTimeout) clearTimeout(ingredientSearchTimeout)
+  ingredientSearchTimeout = setTimeout(() => {
+    loadIngredients(newVal)
+  }, 300)
+})
+
+// 监听选中的原料对象，同步 ingredient_id 到表单
+watch(selectedIngredient, (newIngredient) => {
+  editForm.value.ingredient_id = newIngredient?.id || null
+}, { immediate: true })
+
 // 打开编辑对话框
 const openEditDialog = () => {
   if (!product.value) return
@@ -780,20 +1009,143 @@ const openEditDialog = () => {
     name: product.value.name || '',
     brand: product.value.brand || '',
     barcode: product.value.barcode || '',
-    tags: product.value.tags || []
+    ingredient_id: product.value.ingredient_id || null,
+    tags: product.value.tags || [],
+    nutrition: {
+      energy_kcal: null,
+      protein: null,
+      fat: null,
+      carbohydrates: null,
+      dietary_fiber: null,
+      calcium: null,
+      iron: null,
+      sodium: null,
+      potassium: null
+    }
   }
+
+  // 加载当前关联的原料
+  if (product.value.ingredient_id) {
+    // 先加载原料列表，然后设置选中的原料
+    loadIngredients().then(() => {
+      const currentIngredient = ingredients.value.find(i => i.id === product.value.ingredient_id)
+      if (currentIngredient) {
+        selectedIngredient.value = currentIngredient
+        ingredientSearch.value = currentIngredient.name
+      }
+    })
+  } else {
+    loadIngredients()
+  }
+
+  // 加载商品的自定义营养数据
+  loadCustomNutrition()
+
   showEditDialog.value = true
+}
+
+// 加载商品的自定义营养数据
+const loadCustomNutrition = async () => {
+  try {
+    const response = await api.get(`/products/entity/${productId.value}/nutrition`)
+    const customData = response.custom_nutrition_data
+
+    hasCustomNutrition.value = !!(customData && Object.keys(customData).length > 0)
+
+    // 如果有自定义营养数据，填充到表单
+    if (customData?.all_nutrients) {
+      const nutrients = customData.all_nutrients
+      editForm.value.nutrition = {
+        energy_kcal: nutrients.energy_kcal?.value || null,
+        protein: nutrients.protein?.value || null,
+        fat: nutrients.fat?.value || null,
+        carbohydrates: nutrients.carbohydrates?.value || null,
+        dietary_fiber: nutrients.dietary_fiber?.value || null,
+        calcium: nutrients.calcium?.value || null,
+        iron: nutrients.iron?.value || null,
+        sodium: nutrients.sodium?.value || null,
+        potassium: nutrients.potassium?.value || null
+      }
+    }
+  } catch (e) {
+    // 如果获取失败，保持空值
+    console.warn('加载商品营养数据失败:', e)
+  }
 }
 
 // 保存编辑
 const saveEdit = async () => {
   if (!editForm.value.name.trim()) return
+  if (!editForm.value.ingredient_id) {
+    showMessage('请选择关联的原料', 'error')
+    return
+  }
 
   saving.value = true
   try {
-    const response = await api.put(`/products/entity/${productId.value}`, editForm.value)
+    // 先保存基本信息
+    const response = await api.put(`/products/entity/${productId.value}`, {
+      name: editForm.value.name,
+      brand: editForm.value.brand,
+      barcode: editForm.value.barcode,
+      ingredient_id: editForm.value.ingredient_id,
+      tags: editForm.value.tags
+    })
     product.value = response
+
+    // 检查是否有营养成分需要保存
+    const hasNutritionData = Object.values(editForm.value.nutrition).some(v => v !== null && v !== undefined && v > 0)
+
+    if (hasNutritionData) {
+      // 构建营养数据结构
+      const nutrients: Record<string, any> = {}
+
+      if (editForm.value.nutrition.energy_kcal) {
+        nutrients.energy_kcal = { value: editForm.value.nutrition.energy_kcal, unit: 'kcal' }
+      }
+      if (editForm.value.nutrition.protein) {
+        nutrients.protein = { value: editForm.value.nutrition.protein, unit: 'g' }
+      }
+      if (editForm.value.nutrition.fat) {
+        nutrients.fat = { value: editForm.value.nutrition.fat, unit: 'g' }
+      }
+      if (editForm.value.nutrition.carbohydrates) {
+        nutrients.carbohydrates = { value: editForm.value.nutrition.carbohydrates, unit: 'g' }
+      }
+      if (editForm.value.nutrition.dietary_fiber) {
+        nutrients.dietary_fiber = { value: editForm.value.nutrition.dietary_fiber, unit: 'g' }
+      }
+      if (editForm.value.nutrition.calcium) {
+        nutrients.calcium = { value: editForm.value.nutrition.calcium, unit: 'mg' }
+      }
+      if (editForm.value.nutrition.iron) {
+        nutrients.iron = { value: editForm.value.nutrition.iron, unit: 'mg' }
+      }
+      if (editForm.value.nutrition.sodium) {
+        nutrients.sodium = { value: editForm.value.nutrition.sodium, unit: 'mg' }
+      }
+      if (editForm.value.nutrition.potassium) {
+        nutrients.potassium = { value: editForm.value.nutrition.potassium, unit: 'mg' }
+      }
+
+      // 构建完整的营养数据结构
+      const nutritionData = {
+        all_nutrients: nutrients
+      }
+
+      // 保存自定义营养数据
+      await api.put(`/products/entity/${productId.value}/nutrition`, nutritionData)
+    } else {
+      // 如果没有营养数据，清除已有的自定义营养数据
+      await api.put(`/products/entity/${productId.value}/nutrition`, {})
+    }
+
+    // 重新加载营养数据显示
+    await loadNutritionData()
+
     showEditDialog.value = false
+    selectedIngredient.value = null
+    ingredientSearch.value = ''
     showMessage('保存成功', 'success')
   } catch (e: any) {
     showMessage(e.message || '保存失败', 'error')
@@ -912,6 +1264,7 @@ watch(pricePage, loadPriceRecords)
 onMounted(() => {
   loadData()
   loadMerchants()
+  loadIngredients()
 })
 </script>
 

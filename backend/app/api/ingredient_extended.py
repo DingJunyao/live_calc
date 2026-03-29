@@ -601,10 +601,12 @@ async def update_ingredient(
             "name": ingredient.name,
             "category_id": ingredient.category_id,
             "density": ingredient.density,
-            "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
+            "default_unit_id": ingredient.default_unit_id,
+            "default_unit_name": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
             "aliases": ingredient.aliases or [],
             "is_imported": ingredient.is_imported,
-            "created_at": ingredient.created_at
+            "created_at": ingredient.created_at,
+            "updated_at": ingredient.updated_at
         }
     except HTTPException:
         raise

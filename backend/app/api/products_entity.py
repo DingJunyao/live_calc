@@ -1,5 +1,5 @@
 """商品实体 API 路由"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, and_, or_
 from typing import List, Optional
@@ -546,6 +546,173 @@ def product_autocomplete(
         results.sort(key=lambda x: (match_order.get(x["match_type"], 3), x["name"]))
 
         return results[:limit]
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"商品自动完成搜索失败: {str(e)}")
+
+
+# ==================== 商品营养数据端点 ====================
+
+@router.get("/products/entity/{product_id}/nutrition")
+async def get_product_nutrition(
+    product_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    获取商品的营养数据
+
+    回退逻辑：
+    1. 如果商品有 custom_nutrition_data，使用商品数据
+    2. 如果商品的某项营养素未设置，从所属原料获取
+    3. 如果原料也没有，使用层级关系回退
+    """
+    try:
+        # 查询商品及其原料
+        product = db.query(Product).options(
+            joinedload(Product.ingredient)
+        ).filter(Product.id == product_id, Product.is_active == True).first()
+
+        if not product:
+            raise HTTPException(status_code=404, detail="商品不存在")
+
+        if not product.ingredient:
+            raise HTTPException(status_code=400, detail="商品未关联原料")
+
+        ingredient = product.ingredient
+
+        # 获取商品自定义营养数据
+        product_nutrition = product.custom_nutrition_data or {}
+
+        # 从原料获取营养数据
+        ingredient_nutrition = _get_ingredient_nutrition_with_fallback(db, ingredient)
+
+        # 合并营养数据（商品数据优先）
+        merged_nutrition = _merge_nutrition_data(product_nutrition, ingredient_nutrition)
+
+        return {
+            "product_id": product.id,
+            "product_name": product.name,
+            "ingredient_id": ingredient.id,
+            "ingredient_name": ingredient.name,
+            "custom_nutrition_data": product.custom_nutrition_data,
+            "nutrition": merged_nutrition,
+            "source": "product" if product.custom_nutrition_data else "ingredient"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取商品营养数据失败: {str(e)}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取商品营养数据失败: {str(e)}")
+
+
+@router.put("/products/entity/{product_id}/nutrition")
+async def update_product_nutrition(
+    product_id: int,
+    nutrition: dict = Body(..., description="营养数据"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    更新商品的营养数据
+
+    请求体格式：
+    {
+        "core_nutrients": {
+            "能量": {"value": 100, "unit": "kcal"},
+            "蛋白质": {"value": 10, "unit": "g"}
+        },
+        "all_nutrients": {
+            "energy_kcal": {"value": 100, "unit": "kcal"},
+            "protein": {"value": 10, "unit": "g"}
+        }
+    }
+    """
+    try:
+        product = db.query(Product).filter(
+            Product.id == product_id,
+            Product.is_active == True
+        ).first()
+
+        if not product:
+            raise HTTPException(status_code=404, detail="商品不存在")
+
+        # 保存自定义营养数据
+        product.custom_nutrition_data = nutrition
+        product.custom_nutrition_source = "custom"
+        product.updated_by = current_user.id
+        product.updated_at = datetime.utcnow()
+
+        db.commit()
+
+        return {
+            "message": "营养数据更新成功",
+            "custom_nutrition_data": product.custom_nutrition_data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        import traceback
+        print(f"[ERROR] 更新商品营养数据失败: {str(e)}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"更新商品营养数据失败: {str(e)}")
+
+
+def _get_ingredient_nutrition_with_fallback(db: Session, ingredient) -> dict:
+    """
+    获取原料的营养数据（包含层级关系回退）
+
+    回退逻辑：
+    1. 检查原料自身是否有营养数据
+    2. 如果没有，检查层级关系（父级原料）
+    """
+    from app.models.nutrition_data import NutritionData
+
+    # 检查原料的自定义营养数据
+    custom_nutrition = db.query(NutritionData).filter(
+        NutritionData.ingredient_id == ingredient.id,
+        NutritionData.source == 'custom'
+        ).first()
+
+    if custom_nutrition:
+        return custom_nutrition.nutrients
+
+    # 检查导入的营养数据
+    imported_nutrition = db.query(NutritionData).filter(
+        NutritionData.id == ingredient.nutrition_id
+    ).first()
+
+    if imported_nutrition:
+        return imported_nutrition.nutrients
+
+    # TODO: 实现层级关系回退
+    # 目前先返回空结构
+    return {"core_nutrients": {}, "all_nutrients": {}}
+
+
+def _merge_nutrition_data(product_nutrition: dict, ingredient_nutrition: dict) -> dict:
+    """
+    合并商品和原料的营养数据
+
+    优先级：商品数据 > 原料数据
+    """
+    core_nutrients = {}
+    all_nutrients = {}
+
+    # 先从原料获取基础数据
+    if ingredient_nutrition.get("core_nutrients"):
+        core_nutrients.update(ingredient_nutrition["core_nutrients"])
+    if ingredient_nutrition.get("all_nutrients"):
+        all_nutrients.update(ingredient_nutrition["all_nutrients"])
+
+    # 商品数据覆盖原料数据
+    if product_nutrition.get("core_nutrients"):
+        core_nutrients.update(product_nutrition["core_nutrients"])
+    if product_nutrition.get("all_nutrients"):
+        all_nutrients.update(product_nutrition["all_nutrients"])
+
+    return {
+        "core_nutrients": core_nutrients,
+        "all_nutrients": all_nutrients
+    }

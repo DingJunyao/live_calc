@@ -207,8 +207,8 @@ async def get_product_records(
 ):
     """获取商品记录列表（分页）
 
-    target_unit: 目标单位（如 'g', 'L'），价格将按此单位显示
-    如果不指定，使用标准单位（重量为 g，体积为 ml）
+    target_unit: 目标单位（如 'g', 'L', '斤'），价格记录将转换到该单位
+    如果不指定，使用原始记录的单位
 
     sort_by: 排序方式
         - created_at: 按创建时间排序（默认，即按记录时间倒序）
@@ -216,6 +216,17 @@ async def get_product_records(
         - price_records: 按商品的价格记录数量排序
     """
     from sqlalchemy import func
+    from app.services.unit_conversion_service import UnitConversionService
+    
+    # 初始化单位转换服务（如果需要转换）
+    unit_service = UnitConversionService(db) if target_unit else None
+    
+    # 获取原料名称（用于单位转换）
+    ingredient_name = None
+    if ingredient_id and unit_service:
+        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+        if ingredient:
+            ingredient_name = ingredient.name
 
     # 根据排序方式构建查询
     if sort_by == "price_records":
@@ -377,11 +388,36 @@ async def get_product_records(
             records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
     page = skip // limit + 1
 
-    # 手动构造响应列表，将 Unit 对象转换为字符串
-    # 价格记录已经以正确的单位存储（如 L），不需要数值转换
-    # target_unit 仅用于控制显示的标签（如果需要的话）
+    # 手动构造响应列表，处理单位转换
     items = []
     for record in records:
+        # 确定要显示的数量和单位
+        if target_unit and unit_service and record.original_unit:
+            # 需要单位转换
+            original_unit_abbr = record.original_unit.abbreviation
+            original_quantity = float(record.original_quantity)
+            
+            # 尝试转换数量到目标单位
+            converted_quantity = unit_service.convert(
+                original_quantity,
+                original_unit_abbr,
+                target_unit,
+                ingredient_name
+            )
+            
+            if converted_quantity is not None:
+                # 转换成功，使用转换后的数量和目标单位
+                display_quantity = converted_quantity
+                display_unit = target_unit
+            else:
+                # 转换失败，使用原始值
+                display_quantity = original_quantity
+                display_unit = original_unit_abbr
+        else:
+            # 不需要转换，使用原始值
+            display_quantity = float(record.original_quantity)
+            display_unit = record.original_unit.abbreviation if record.original_unit else ""
+        
         items.append(
             ProductRecordResponse(
                 id=record.id,
@@ -389,10 +425,10 @@ async def get_product_records(
                 product_name=record.product_name,
                 merchant_id=record.merchant_id,
                 merchant_name=record.merchant.name if record.merchant else None,
-                price=record.price,
+                price=float(record.price),  # 总价保持不变
                 currency=record.currency,
-                original_quantity=record.original_quantity,
-                original_unit=record.original_unit.abbreviation if record.original_unit else "",
+                original_quantity=display_quantity,  # 使用转换后的数量
+                original_unit=display_unit,  # 使用转换后的单位
                 standard_quantity=record.standard_quantity,
                 standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
                 record_type=record.record_type,
