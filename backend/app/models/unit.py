@@ -13,11 +13,13 @@ class Unit(Base, AuditMixin):
     abbreviation = Column(String(20), unique=True, nullable=False)  # 缩写
     plural_form = Column(String(50))  # 复数形式
     unit_type = Column(String(50), nullable=False)  # 类型，如"mass"（质量）, "volume"（体积）
-    base_unit_id = Column(Integer, ForeignKey("units.id"))  # 基础单位ID，用于派生单位
+    base_unit_id = Column(Integer, ForeignKey("units.id"))  # [deprecated] 基础单位ID，保留兼容
     si_factor = Column(Numeric(15, 10), default=1.0)  # 转换为国际单位制的因子
     is_si_base = Column(Boolean, default=False)  # 是否是国际单位制基本单位
     is_common = Column(Boolean, default=False)  # 是否为常用单位
     display_order = Column(Integer, default=0)  # 显示顺序
+    unit_system = Column(String(20), nullable=True)  # 单位制：metric/market/imperial/count/vague
+    default_estimate = Column(Numeric(10, 3), nullable=True)  # 模糊量的默认估算值（kg为单位）
 
     # created_at, updated_at, created_by, updated_by, is_active 等审计字段从 AuditMixin 继承
 

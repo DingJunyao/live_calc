@@ -28,6 +28,8 @@ from app.models import (
     product_entity,
     user_ingredient_preference,
     map_config,
+    entity_unit_override,
+    entity_density,
 )  # noqa: F401
 
 # Alembic 配置

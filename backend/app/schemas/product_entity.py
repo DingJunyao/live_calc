@@ -46,6 +46,7 @@ class ProductResponse(TimeZoneAwareModel, ProductBase):
 class ProductWithDetails(ProductResponse):
     ingredient_name: Optional[str] = None
     latest_price: Optional[float] = None
+    latest_price_unit: Optional[str] = None
     latest_price_date: Optional[datetime] = None
 
 

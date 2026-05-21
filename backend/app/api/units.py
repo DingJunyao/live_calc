@@ -1,58 +1,37 @@
 """
 单位管理 API
-提供单位的增删改查和换算关系管理功能
+提供单位的增删改查、换算关系管理、实体单位覆盖和密度管理功能
 """
+from decimal import Decimal
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.models.unit import Unit, UnitConversion
+from app.models.entity_unit_override import EntityUnitOverride
+from app.models.entity_density import EntityDensity
+from app.schemas.unit import (
+    UnitCreate,
+    UnitUpdate,
+    UnitResponse,
+    EntityUnitOverrideCreate,
+    EntityUnitOverrideUpdate,
+    EntityUnitOverrideResponse,
+    EntityDensityCreate,
+    EntityDensityUpdate,
+    EntityDensityResponse,
+    UnitConvertRequest,
+    UnitConvertResponse,
+)
 from app.services.unit_matcher import UnitMatcher
+from app.services.unit_conversion_service import UnitConversionService
 
 router = APIRouter(prefix="/units", tags=["单位管理"])
 
-
-# ============ Pydantic 模式 ============
-
-class UnitBase(BaseModel):
-    """单位基础模式"""
-    name: str = Field(..., description="单位名称")
-    abbreviation: str = Field(..., description="单位缩写")
-    plural_form: Optional[str] = Field(None, description="复数形式")
-    unit_type: str = Field(..., description="单位类型（mass/volume/length/count等）")
-    si_factor: float = Field(default=1.0, description="转换为国际单位制的因子")
-    is_si_base: bool = Field(default=False, description="是否是国际单位制基本单位")
-    is_common: bool = Field(default=False, description="是否为常用单位")
-    display_order: int = Field(default=0, description="显示顺序")
-
-
-class UnitCreate(UnitBase):
-    """创建单位模式"""
-    pass
-
-
-class UnitUpdate(BaseModel):
-    """更新单位模式"""
-    name: Optional[str] = None
-    abbreviation: Optional[str] = None
-    plural_form: Optional[str] = None
-    unit_type: Optional[str] = None
-    si_factor: Optional[float] = None
-    is_si_base: Optional[bool] = None
-    is_common: Optional[bool] = None
-    display_order: Optional[int] = None
-
-
-class UnitResponse(UnitBase):
-    """单位响应模式"""
-    id: int
-    base_unit_id: Optional[int] = None
-
-    class Config:
-        from_attributes = True
-
+# ============ 辅助：保留内联模式（换算关系、匹配） ============
 
 class UnitConversionCreate(BaseModel):
     """创建换算关系模式"""
@@ -91,27 +70,26 @@ class UnitMatchResponse(BaseModel):
     is_new: bool = Field(..., description="是否为新创建的单位")
 
 
-class UnitConvertRequest(BaseModel):
-    """单位转换请求模式"""
-    from_unit_id: int = Field(..., description="源单位ID")
-    to_unit_id: int = Field(..., description="目标单位ID")
-    value: float = Field(..., description="要转换的值")
+# ============ 辅助函数 ============
+
+VALID_ENTITY_TYPES = {"ingredient", "product"}
 
 
-class UnitConvertResponse(BaseModel):
-    """单位转换响应模式"""
-    from_value: float
-    to_value: float
-    from_unit: str
-    to_unit: str
-    conversion_factor: float
+def _validate_entity_type(entity_type: str):
+    """验证 entity_type 参数"""
+    if entity_type not in VALID_ENTITY_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的 entity_type: '{entity_type}'，只接受 {VALID_ENTITY_TYPES}"
+        )
 
 
-# ============ API 端点 ============
+# ============ 单位 CRUD ============
 
 @router.get("/", response_model=List[UnitResponse])
 def list_units(
     unit_type: Optional[str] = None,
+    unit_system: Optional[str] = None,
     is_common: Optional[bool] = None,
     db: Session = Depends(get_db)
 ):
@@ -119,12 +97,16 @@ def list_units(
     获取单位列表
 
     - **unit_type**: 按单位类型过滤（mass/volume/length/count等）
+    - **unit_system**: 按单位制过滤（metric/market/imperial/count/vague）
     - **is_common**: 只返回常用单位
     """
     query = db.query(Unit)
 
     if unit_type:
         query = query.filter(Unit.unit_type == unit_type)
+
+    if unit_system:
+        query = query.filter(Unit.unit_system == unit_system)
 
     if is_common is not None:
         query = query.filter(Unit.is_common == is_common)
@@ -321,57 +303,46 @@ def match_unit(request: UnitMatchRequest, db: Session = Depends(get_db)):
     return UnitMatchResponse(unit=unit, is_new=is_new)
 
 
-# ============ 单位转换 ============
+# ============ 单位转换（使用 UnitConversionService） ============
 
 @router.post("/convert", response_model=UnitConvertResponse)
 def convert_units(request: UnitConvertRequest, db: Session = Depends(get_db)):
     """
     单位转换
 
-    - **from_unit_id**: 源单位ID
-    - **to_unit_id**: 目标单位ID
+    使用 UnitConversionService 进行统一换算，支持：
+    - 同类型 SI 因子换算
+    - 实体覆盖单位换算（需提供 entity_type 和 entity_id）
+    - 体积/质量跨类型密度换算（需提供 entity_type 和 entity_id）
+
     - **value**: 要转换的值
-
-    返回转换后的值
+    - **from_unit**: 源单位缩写
+    - **to_unit**: 目标单位缩写
+    - **entity_type**: 实体类型（可选，'ingredient' 或 'product'）
+    - **entity_id**: 实体ID（可选）
     """
-    # 检查单位是否存在
-    from_unit = db.query(Unit).filter(Unit.id == request.from_unit_id).first()
-    to_unit = db.query(Unit).filter(Unit.id == request.to_unit_id).first()
+    service = UnitConversionService(db)
 
-    if not from_unit:
-        raise HTTPException(status_code=404, detail=f"源单位 ID {request.from_unit_id} 不存在")
-    if not to_unit:
-        raise HTTPException(status_code=404, detail=f"目标单位 ID {request.to_unit_id} 不存在")
+    result = service.convert(
+        value=request.value,
+        from_unit_abbr=request.from_unit,
+        to_unit_abbr=request.to_unit,
+        entity_type=request.entity_type,
+        entity_id=request.entity_id,
+    )
 
-    # 如果是同一个单位，直接返回
-    if request.from_unit_id == request.to_unit_id:
-        return UnitConvertResponse(
-            from_value=request.value,
-            to_value=request.value,
-            from_unit=from_unit.abbreviation,
-            to_unit=to_unit.abbreviation,
-            conversion_factor=1.0
-        )
-
-    # 尝试通过换算关系查找转换因子
-    conversion = db.query(UnitConversion).filter(
-        UnitConversion.from_unit_id == request.from_unit_id,
-        UnitConversion.to_unit_id == request.to_unit_id
-    ).first()
-
-    if not conversion:
+    if result is None:
         raise HTTPException(
             status_code=400,
-            detail=f"未找到从 {from_unit.name} 到 {to_unit.name} 的换算关系"
+            detail=f"不支持从 '{request.from_unit}' 到 '{request.to_unit}' 的换算"
         )
 
-    to_value = request.value * conversion.conversion_factor
+    converted_value, method = result
     return UnitConvertResponse(
-        from_value=request.value,
-        to_value=to_value,
-        from_unit=from_unit.abbreviation,
-        to_unit=to_unit.abbreviation,
-        conversion_factor=conversion.conversion_factor
+        value=converted_value,
+        from_unit=request.from_unit,
+        to_unit=request.to_unit,
+        method=method,
     )
 
 
@@ -408,3 +379,268 @@ def import_units_batch(unit_names: List[str], db: Session = Depends(get_db)):
             results["errors"].append(f"{unit_name}: {str(e)}")
 
     return results
+
+
+# ============ 实体单位覆盖 API ============
+
+entities_unit_router = APIRouter(
+    prefix="/entities/{entity_type}/{entity_id}/units",
+    tags=["实体单位覆盖"],
+)
+
+
+@entities_unit_router.get("", response_model=List[EntityUnitOverrideResponse])
+@entities_unit_router.get("/", response_model=List[EntityUnitOverrideResponse])
+def list_entity_unit_overrides(
+    entity_type: str,
+    entity_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    获取实体自定义单位列表
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    """
+    _validate_entity_type(entity_type)
+    overrides = (
+        db.query(EntityUnitOverride)
+        .filter(
+            EntityUnitOverride.entity_type == entity_type,
+            EntityUnitOverride.entity_id == entity_id,
+        )
+        .all()
+    )
+    return overrides
+
+
+@entities_unit_router.post("", response_model=EntityUnitOverrideResponse, status_code=201)
+@entities_unit_router.post("/", response_model=EntityUnitOverrideResponse, status_code=201)
+def create_entity_unit_override(
+    entity_type: str,
+    entity_id: int,
+    data: EntityUnitOverrideCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    创建实体单位覆盖
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    """
+    _validate_entity_type(entity_type)
+
+    # 检查是否已存在同名的覆盖
+    existing = (
+        db.query(EntityUnitOverride)
+        .filter(
+            EntityUnitOverride.entity_type == entity_type,
+            EntityUnitOverride.entity_id == entity_id,
+            EntityUnitOverride.unit_name == data.unit_name,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"实体 {entity_type}/{entity_id} 已存在单位覆盖 '{data.unit_name}'"
+        )
+
+    override = EntityUnitOverride(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        **data.model_dump(),
+    )
+    db.add(override)
+    db.commit()
+    db.refresh(override)
+    return override
+
+
+@entities_unit_router.put("/{override_id}", response_model=EntityUnitOverrideResponse)
+def update_entity_unit_override(
+    entity_type: str,
+    entity_id: int,
+    override_id: int,
+    data: EntityUnitOverrideUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    更新实体单位覆盖
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    - **override_id**: 覆盖记录ID
+    """
+    _validate_entity_type(entity_type)
+
+    override = (
+        db.query(EntityUnitOverride)
+        .filter(
+            EntityUnitOverride.id == override_id,
+            EntityUnitOverride.entity_type == entity_type,
+            EntityUnitOverride.entity_id == entity_id,
+        )
+        .first()
+    )
+    if not override:
+        raise HTTPException(status_code=404, detail="实体单位覆盖不存在")
+
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(override, field, value)
+
+    db.commit()
+    db.refresh(override)
+    return override
+
+
+@entities_unit_router.delete("/{override_id}")
+def delete_entity_unit_override(
+    entity_type: str,
+    entity_id: int,
+    override_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    删除实体单位覆盖
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    - **override_id**: 覆盖记录ID
+    """
+    _validate_entity_type(entity_type)
+
+    override = (
+        db.query(EntityUnitOverride)
+        .filter(
+            EntityUnitOverride.id == override_id,
+            EntityUnitOverride.entity_type == entity_type,
+            EntityUnitOverride.entity_id == entity_id,
+        )
+        .first()
+    )
+    if not override:
+        raise HTTPException(status_code=404, detail="实体单位覆盖不存在")
+
+    db.delete(override)
+    db.commit()
+    return {"message": "实体单位覆盖已删除"}
+
+
+# ============ 实体密度 API ============
+
+entities_density_router = APIRouter(
+    prefix="/entities/{entity_type}/{entity_id}/density",
+    tags=["实体密度"],
+)
+
+
+@entities_density_router.get("", response_model=List[EntityDensityResponse])
+@entities_density_router.get("/", response_model=List[EntityDensityResponse])
+def list_entity_densities(
+    entity_type: str,
+    entity_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    获取实体密度列表
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    """
+    _validate_entity_type(entity_type)
+    densities = (
+        db.query(EntityDensity)
+        .filter(
+            EntityDensity.entity_type == entity_type,
+            EntityDensity.entity_id == entity_id,
+        )
+        .all()
+    )
+    return densities
+
+
+@entities_density_router.post("", response_model=EntityDensityResponse)
+@entities_density_router.post("/", response_model=EntityDensityResponse)
+def upsert_entity_density(
+    entity_type: str,
+    entity_id: int,
+    data: EntityDensityCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    创建或更新实体密度（upsert）
+
+    如果相同 entity_type + entity_id + condition 的记录已存在，则更新；否则创建。
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    - **density**: 密度（kg/m³）
+    - **condition**: 状态描述（用于区分同实体不同状态，如"切碎"、"压碎"）
+    """
+    _validate_entity_type(entity_type)
+
+    # 查找已有记录（按 entity_type + entity_id + condition 唯一约束匹配）
+    existing = (
+        db.query(EntityDensity)
+        .filter(
+            EntityDensity.entity_type == entity_type,
+            EntityDensity.entity_id == entity_id,
+            EntityDensity.condition == data.condition,
+        )
+        .first()
+    )
+
+    if existing:
+        # 更新已有记录
+        update_data = data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(existing, field, value)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    # 创建新记录
+    density_record = EntityDensity(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        **data.model_dump(),
+    )
+    db.add(density_record)
+    db.commit()
+    db.refresh(density_record)
+    return density_record
+
+
+@entities_density_router.delete("/{density_id}")
+def delete_entity_density(
+    entity_type: str,
+    entity_id: int,
+    density_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    删除实体密度
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    - **density_id**: 密度记录ID
+    """
+    _validate_entity_type(entity_type)
+
+    density_record = (
+        db.query(EntityDensity)
+        .filter(
+            EntityDensity.id == density_id,
+            EntityDensity.entity_type == entity_type,
+            EntityDensity.entity_id == entity_id,
+        )
+        .first()
+    )
+    if not density_record:
+        raise HTTPException(status_code=404, detail="实体密度记录不存在")
+
+    db.delete(density_record)
+    db.commit()
+    return {"message": "实体密度记录已删除"}

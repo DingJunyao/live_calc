@@ -1,3 +1,8 @@
+"""
+[DEPRECATED] 此模型已废弃，新代码应使用 EntityDensity（entity_densities 表）。
+
+保留表和模型以兼容现有引用，后续逐步迁移后移除。
+"""
 from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship

@@ -457,10 +457,6 @@ async def update_ingredient(
     current_user = Depends(get_current_user)
 ):
     """更新食材 - 这是 ingredient_extended.py 中支持 nutrition 参数的版本"""
-    print(f"[DEBUG] === ingredient_extended.py 的 update_ingredient 被调用 ===")
-    print(f"[DEBUG] ingredient_id={ingredient_id}, nutrition provided={nutrition is not None}")
-    if nutrition:
-        print(f"[DEBUG] nutrition data: {nutrition}")
     try:
         from app.services.unit_matcher import UnitMatcher
 

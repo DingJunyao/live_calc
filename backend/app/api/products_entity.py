@@ -194,14 +194,11 @@ def list_products(
 @router.get("/products/entity/{product_id}/", response_model=ProductWithDetails)
 def get_product(product_id: int, db: Session = Depends(get_db)):
     """获取商品详情"""
-    print(f"DEBUG get_product: 开始查询 product_id={product_id}")
     product = db.query(Product).options(
         joinedload(Product.ingredient)
     ).filter(Product.id == product_id, Product.is_active == True).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    print(f"DEBUG get_product: 找到 product, id={product.id}, name={product.name}, ingredient_id={product.ingredient_id}")
-    print(f"DEBUG get_product: product.ingredient={product.ingredient}")
 
     # 反序列化 tags
     if product.tags:
@@ -209,24 +206,65 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     else:
         product.tags = []
 
-    # 获取最新价格记录
-    latest_price_record = db.query(ProductRecord).filter(
+    # 获取最新价格记录（含单位信息）
+    latest_price_record = db.query(ProductRecord).options(
+        joinedload(ProductRecord.original_unit)
+    ).filter(
         ProductRecord.product_id == product_id
     ).order_by(desc(ProductRecord.recorded_at)).first()
 
-    latest_price = float(latest_price_record.price) if latest_price_record else None
+    latest_price = None
+    latest_price_unit = None
     latest_price_date = latest_price_record.recorded_at if latest_price_record else None
+
+    if latest_price_record and latest_price_record.original_quantity and latest_price_record.original_quantity > 0:
+        from decimal import Decimal
+        from app.services.unit_conversion_service import UnitConversionService
+        unit_service = UnitConversionService(db)
+
+        total_price = float(latest_price_record.price)
+        original_quantity = float(latest_price_record.original_quantity)
+        original_unit_abbr = latest_price_record.original_unit.abbreviation if latest_price_record.original_unit else None
+
+        # 获取原料默认单位作为目标
+        target_unit_abbr = None
+        if product.ingredient and product.ingredient.default_unit:
+            target_unit_abbr = product.ingredient.default_unit.abbreviation
+
+        # 计算每单位价格
+        if original_unit_abbr:
+            if target_unit_abbr and original_unit_abbr != target_unit_abbr:
+                convert_result = unit_service.convert(
+                    Decimal(str(original_quantity)),
+                    original_unit_abbr,
+                    target_unit_abbr,
+                    entity_type="product",
+                    entity_id=product_id,
+                )
+                if convert_result is not None:
+                    converted_quantity, _ = convert_result
+                    if converted_quantity and float(converted_quantity) > 0:
+                        latest_price = float(total_price) / float(converted_quantity)
+                        latest_price_unit = target_unit_abbr
+                    else:
+                        latest_price = total_price / original_quantity
+                        latest_price_unit = original_unit_abbr
+                else:
+                    latest_price = total_price / original_quantity
+                    latest_price_unit = original_unit_abbr
+            else:
+                latest_price = total_price / original_quantity
+                latest_price_unit = original_unit_abbr
 
     # 构建详细响应
     ingredient_name = product.ingredient.name if product.ingredient else None
-    print(f"DEBUG get_product: product_id={product_id}, ingredient_id={product.ingredient_id}, ingredient_name={ingredient_name}")
     response = ProductWithDetails(
         **product.__dict__,
         ingredient_name=ingredient_name,
         latest_price=latest_price,
+        latest_price_unit=latest_price_unit,
         latest_price_date=latest_price_date
     )
-    print(f"DEBUG get_product: response.ingredient_name={response.ingredient_name}")
     return response
 
 

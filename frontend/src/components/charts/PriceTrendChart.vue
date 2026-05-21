@@ -171,11 +171,7 @@ const latestData = computed(() => {
 
   const latest = chartData.value[chartData.value.length - 1]
   const dateObj = new Date(latest.date)
-  const dateFormatted = dateObj.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
+  const dateFormatted = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`
 
   return {
     ...latest,
@@ -231,11 +227,8 @@ function updateChart() {
         if (dateIndex < 0 || dateIndex >= data.length) return ''
 
         const item = data[dateIndex]
-        const dateStr = new Date(item.date).toLocaleDateString('zh-CN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        })
+        const dateObj = new Date(item.date)
+        const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`
 
         return `
           <div style="padding: 8px 12px;">

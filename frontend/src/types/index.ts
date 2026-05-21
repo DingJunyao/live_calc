@@ -76,10 +76,12 @@ export interface Unit {
   abbreviation: string
   plural_form: string | null
   unit_type: string
-  si_factor: number
+  unit_system: string | null // metric/market/imperial/count/vague
+  si_factor: number | null
   is_si_base: boolean
   is_common: boolean
   display_order: number
+  default_estimate: number | null
   base_unit_id: number | null
 }
 
@@ -93,4 +95,27 @@ export interface UnitConversion {
   precision: number
   from_unit: Unit
   to_unit: Unit
+}
+
+export interface EntityUnitOverride {
+  id: number
+  entity_type: string
+  entity_id: number
+  unit_name: string
+  base_unit_id: number | null
+  conversion_factor: number | null
+  weight_per_unit: number | null
+  weight_unit_id: number | null
+  is_default: boolean
+}
+
+export interface EntityDensity {
+  id: number
+  entity_type: string
+  entity_id: number
+  density: number // kg/m³
+  temperature: number | null
+  condition: string | null
+  source: string | null
+  confidence: number
 }

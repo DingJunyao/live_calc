@@ -1,3 +1,8 @@
+"""
+[DEPRECATED] 此模块已废弃，新代码应使用 UnitConversionService。
+
+保留以兼容现有引用，后续逐步迁移后移除。
+"""
 from decimal import Decimal
 from typing import Tuple
 

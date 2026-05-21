@@ -96,6 +96,92 @@
         </v-card-text>
       </v-card>
 
+      <!-- 添加/编辑单位对话框 -->
+      <v-dialog v-model="showUnitDialog" max-width="450">
+        <v-card>
+          <v-card-title>{{ unitForm.id ? '编辑单位' : '添加单位' }}</v-card-title>
+          <v-card-text>
+            <v-form @submit.prevent="saveEntityUnit">
+              <v-text-field
+                v-model="unitForm.unit_name"
+                label="单位名称"
+                variant="outlined"
+                placeholder="如：盒(12个)、根、袋"
+                required
+                class="mb-3"
+              />
+              <v-text-field
+                v-model.number="unitForm.conversion_factor"
+                label="换算系数"
+                variant="outlined"
+                type="number"
+                hint="1单位 = 几个基础单位"
+                persistent-hint
+                class="mb-3"
+              />
+              <v-text-field
+                v-model.number="unitForm.weight_per_unit"
+                label="单个重量 (g)"
+                variant="outlined"
+                type="number"
+                hint="每个单位对应的重量（克）"
+                persistent-hint
+                class="mb-3"
+              />
+              <v-checkbox
+                v-model="unitForm.is_default"
+                label="设为默认单位"
+                density="compact"
+                hide-details
+              />
+            </v-form>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn @click="showUnitDialog = false">取消</v-btn>
+            <v-btn color="primary" :loading="savingUnit" @click="saveEntityUnit">保存</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- 添加/编辑密度对话框 -->
+      <v-dialog v-model="showDensityDialog" max-width="450">
+        <v-card>
+          <v-card-title>{{ densityForm.id ? '编辑密度' : '设置密度' }}</v-card-title>
+          <v-card-text>
+            <v-form @submit.prevent="saveDensity">
+              <v-text-field
+                v-model.number="densityForm.density"
+                label="密度 (kg/m³)"
+                variant="outlined"
+                type="number"
+                required
+                class="mb-3"
+              />
+              <v-text-field
+                v-model.number="densityForm.temperature"
+                label="参考温度 (°C)"
+                variant="outlined"
+                type="number"
+                class="mb-3"
+              />
+              <v-text-field
+                v-model="densityForm.source"
+                label="来源"
+                variant="outlined"
+                placeholder="如：实测、USDA"
+                class="mb-3"
+              />
+            </v-form>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn @click="showDensityDialog = false">取消</v-btn>
+            <v-btn color="primary" :loading="savingDensity" @click="saveDensity">保存</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
       <!-- 最新价格卡片 -->
       <v-card elevation="0" class="ma-4" v-if="product.latest_price">
         <v-card-title class="d-flex align-center pb-2">
@@ -105,7 +191,7 @@
         <v-divider />
         <v-card-text class="text-center py-6">
           <div class="text-h3 font-weight-bold text-tertiary">
-            ¥{{ formatPrice(product.latest_price) }}
+            ¥{{ formatPrice(product.latest_price) }}<span v-if="product.latest_price_unit" class="text-h6 font-weight-regular">/{{ product.latest_price_unit }}</span>
           </div>
           <div class="text-caption text-medium-emphasis mt-2">
             {{ formatDate(product.latest_price_date) }}
@@ -253,6 +339,135 @@
 
           <div class="mt-4 text-caption text-medium-emphasis ps-4">
             NRV = 营养素参考值百分比
+          </div>
+        </v-card-text>
+      </v-card>
+
+      <!-- 单位与密度管理卡片 -->
+      <v-card elevation="0" class="ma-4">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="secondary">mdi-ruler</v-icon>
+          单位与密度
+        </v-card-title>
+        <v-divider />
+
+        <!-- 自定义单位列表 -->
+        <v-card-text class="pb-0">
+          <div class="d-flex align-center mb-2">
+            <span class="text-body-2 font-weight-medium">自定义单位</span>
+            <v-spacer />
+            <v-btn
+              size="small"
+              variant="text"
+              color="primary"
+              prepend-icon="mdi-plus"
+              @click="openUnitDialog()"
+            >
+              添加单位
+            </v-btn>
+          </div>
+
+          <div v-if="loadingUnits" class="text-center py-4">
+            <v-progress-circular indeterminate color="primary" size="24" />
+          </div>
+
+          <v-list v-else-if="entityUnits.length > 0" density="compact" class="pa-0">
+            <v-list-item
+              v-for="unit in entityUnits"
+              :key="unit.id"
+              class="px-0"
+            >
+              <template #prepend>
+                <v-chip size="small" variant="tonal" color="primary" class="mr-3">
+                  {{ unit.unit_name }}
+                </v-chip>
+              </template>
+              <v-list-item-title class="text-body-2">
+                <span v-if="unit.conversion_factor">1{{ unit.unit_name }} = {{ unit.conversion_factor }}个</span>
+                <span v-if="unit.weight_per_unit" class="ml-2">
+                  <v-icon size="x-small">mdi-weight</v-icon>
+                  {{ unit.weight_per_unit }}g/个
+                </span>
+              </v-list-item-title>
+              <v-list-item-subtitle v-if="unit.is_default" class="text-caption text-primary">
+                默认单位
+              </v-list-item-subtitle>
+              <template #append>
+                <v-btn
+                  icon="mdi-pencil"
+                  size="x-small"
+                  variant="text"
+                  color="primary"
+                  @click.stop="openUnitDialog(unit)"
+                />
+                <v-btn
+                  icon="mdi-delete"
+                  size="x-small"
+                  variant="text"
+                  color="error"
+                  @click.stop="deleteEntityUnit(unit.id)"
+                />
+              </template>
+            </v-list-item>
+          </v-list>
+
+          <div v-else class="text-center py-4">
+            <v-icon size="32" color="medium-emphasis">mdi-ruler</v-icon>
+            <div class="text-caption text-medium-emphasis mt-1">暂无自定义单位</div>
+          </div>
+        </v-card-text>
+
+        <v-divider class="mx-4" />
+
+        <!-- 密度管理 -->
+        <v-card-text>
+          <div class="d-flex align-center mb-2">
+            <span class="text-body-2 font-weight-medium">密度信息</span>
+            <v-spacer />
+            <v-btn
+              v-if="!entityDensity"
+              size="small"
+              variant="text"
+              color="primary"
+              prepend-icon="mdi-plus"
+              @click="openDensityDialog()"
+            >
+              设置密度
+            </v-btn>
+            <template v-else>
+              <v-btn
+                icon="mdi-pencil"
+                size="x-small"
+                variant="text"
+                color="primary"
+                class="mr-1"
+                @click="openDensityDialog(entityDensity)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="x-small"
+                variant="text"
+                color="error"
+                @click="deleteDensity(entityDensity.id)"
+              />
+            </template>
+          </div>
+
+          <div v-if="entityDensity" class="d-flex align-center py-2">
+            <v-icon size="small" color="medium-emphasis" class="mr-2">mdi-water</v-icon>
+            <span class="text-body-2">
+              {{ entityDensity.density }} kg/m³
+            </span>
+            <span v-if="entityDensity.temperature" class="text-caption text-medium-emphasis ml-2">
+              ({{ entityDensity.temperature }}°C)
+            </span>
+            <span v-if="entityDensity.source" class="text-caption text-medium-emphasis ml-2">
+              来源: {{ entityDensity.source }}
+            </span>
+          </div>
+          <div v-else class="text-center py-4">
+            <v-icon size="32" color="medium-emphasis">mdi-water-off</v-icon>
+            <div class="text-caption text-medium-emphasis mt-1">暂未设置密度</div>
           </div>
         </v-card-text>
       </v-card>
@@ -561,6 +776,7 @@ interface Product {
   ingredient_name?: string
   tags?: string[]
   latest_price?: number | string
+  latest_price_unit?: string
   latest_price_date?: string
   created_at: string
   updated_at?: string
@@ -668,6 +884,182 @@ const openAddPriceDialog = () => {
     merchant_id: null
   }
   showAddPriceDialog.value = true
+}
+
+// 自定义单位相关
+import type { EntityUnitOverride, EntityDensity } from '@/types'
+const entityUnits = ref<EntityUnitOverride[]>([])
+const entityDensity = ref<EntityDensity | null>(null)
+const loadingUnits = ref(false)
+const showUnitDialog = ref(false)
+const showDensityDialog = ref(false)
+const savingUnit = ref(false)
+const savingDensity = ref(false)
+const unitForm = ref<{
+  id: number | null
+  unit_name: string
+  conversion_factor: number | null
+  weight_per_unit: number | null
+  is_default: boolean
+}>({
+  id: null,
+  unit_name: '',
+  conversion_factor: null,
+  weight_per_unit: null,
+  is_default: false
+})
+const densityForm = ref<{
+  id: number | null
+  density: number | null
+  temperature: number | null
+  source: string | null
+}>({
+  id: null,
+  density: null,
+  temperature: null,
+  source: null
+})
+
+// 加载自定义单位
+const loadEntityUnits = async () => {
+  loadingUnits.value = true
+  try {
+    const response = await api.get(`/entities/product/${productId.value}/units`)
+    entityUnits.value = response.items || response || []
+  } catch (e) {
+    console.error('加载自定义单位失败', e)
+    entityUnits.value = []
+  } finally {
+    loadingUnits.value = false
+  }
+}
+
+// 加载密度
+const loadDensity = async () => {
+  try {
+    const response = await api.get(`/entities/product/${productId.value}/density`)
+    entityDensity.value = response || null
+  } catch (e) {
+    entityDensity.value = null
+  }
+}
+
+// 打开单位对话框
+const openUnitDialog = (unit?: EntityUnitOverride) => {
+  if (unit) {
+    unitForm.value = {
+      id: unit.id,
+      unit_name: unit.unit_name,
+      conversion_factor: unit.conversion_factor,
+      weight_per_unit: unit.weight_per_unit,
+      is_default: unit.is_default
+    }
+  } else {
+    unitForm.value = {
+      id: null,
+      unit_name: '',
+      conversion_factor: null,
+      weight_per_unit: null,
+      is_default: false
+    }
+  }
+  showUnitDialog.value = true
+}
+
+// 保存单位
+const saveEntityUnit = async () => {
+  if (!unitForm.value.unit_name.trim()) {
+    showMessage('请输入单位名称', 'error')
+    return
+  }
+  savingUnit.value = true
+  try {
+    const payload = {
+      unit_name: unitForm.value.unit_name,
+      conversion_factor: unitForm.value.conversion_factor,
+      weight_per_unit: unitForm.value.weight_per_unit,
+      is_default: unitForm.value.is_default
+    }
+    if (unitForm.value.id) {
+      await api.put(`/entities/product/${productId.value}/units/${unitForm.value.id}`, payload)
+    } else {
+      await api.post(`/entities/product/${productId.value}/units`, payload)
+    }
+    showMessage('保存成功', 'success')
+    showUnitDialog.value = false
+    await loadEntityUnits()
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
+  } finally {
+    savingUnit.value = false
+  }
+}
+
+// 删除单位
+const deleteEntityUnit = async (unitId: number) => {
+  if (!confirm('确定删除此自定义单位？')) return
+  try {
+    await api.delete(`/entities/product/${productId.value}/units/${unitId}`)
+    showMessage('删除成功', 'success')
+    await loadEntityUnits()
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
+  }
+}
+
+// 打开密度对话框
+const openDensityDialog = (density?: EntityDensity) => {
+  if (density) {
+    densityForm.value = {
+      id: density.id,
+      density: density.density,
+      temperature: density.temperature,
+      source: density.source
+    }
+  } else {
+    densityForm.value = {
+      id: null,
+      density: null,
+      temperature: null,
+      source: null
+    }
+  }
+  showDensityDialog.value = true
+}
+
+// 保存密度
+const saveDensity = async () => {
+  if (!densityForm.value.density) {
+    showMessage('请输入密度值', 'error')
+    return
+  }
+  savingDensity.value = true
+  try {
+    await api.post(`/entities/product/${productId.value}/density`, {
+      density: densityForm.value.density,
+      temperature: densityForm.value.temperature,
+      source: densityForm.value.source
+    })
+    showMessage('保存成功', 'success')
+    showDensityDialog.value = false
+    await loadDensity()
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
+  } finally {
+    savingDensity.value = false
+  }
+}
+
+// 删除密度
+const deleteDensity = async (densityId: number) => {
+  if (!confirm('确定删除此密度数据？')) return
+  try {
+    await api.delete(`/entities/product/${productId.value}/density/${densityId}`)
+    showMessage('删除成功', 'success')
+    entityDensity.value = null
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
+  }
 }
 
 // 快速记录价格
@@ -935,7 +1327,9 @@ const loadData = async () => {
     // 并行加载其他数据
     await Promise.all([
       loadPriceRecords(),
-      loadNutritionData()
+      loadNutritionData(),
+      loadEntityUnits(),
+      loadDensity()
     ])
   } catch (e: any) {
     console.error('加载商品失败', e)
@@ -1254,18 +1648,14 @@ const formatPrice = (price: any) => {
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('zh-CN')
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const formatDateTime = (dateStr: string) => {
   if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const formatNutritionValue = (value: any, unit: string) => {

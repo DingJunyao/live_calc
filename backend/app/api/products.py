@@ -1,4 +1,5 @@
 # 价格记录 API - 支持通过食材别名搜索（最后修改: 2026-03-27 23:30）
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, or_, and_
@@ -19,6 +20,7 @@ from app.schemas.product import (
 from app.schemas.common import PaginatedResponse
 from app.utils.unit_converter import convert_to_standard
 from app.services.unit_matcher import UnitMatcher
+from app.services.unit_conversion_service import UnitConversionService
 
 router = APIRouter()
 
@@ -105,14 +107,34 @@ async def create_product_record(
         matcher = UnitMatcher(db)
         original_unit_obj = matcher.match_or_create_unit(record.original_unit)
 
-        # 单位转换
-        standard_quantity, standard_unit_str = convert_to_standard(
-            record.original_quantity,
-            record.original_unit
-        )
+        # 单位转换：优先使用新的 UnitConversionService，回退到旧转换器
+        standard_quantity = None
+        standard_unit_obj = None
 
-        # 获取标准单位对象
-        standard_unit_obj = matcher.match_or_create_unit(standard_unit_str)
+        if original_unit_obj:
+            conversion_service = UnitConversionService(db)
+            # 尝试转换为 g（质量的标准显示单位）
+            result = conversion_service.convert(
+                Decimal(str(record.original_quantity)),
+                original_unit_obj.abbreviation,
+                "g",
+                "product" if record.product_id else None,
+                record.product_id,
+            )
+            if result:
+                standard_quantity, _ = result
+                g_unit = matcher.match_or_create_unit("g")
+                if g_unit:
+                    standard_unit_obj = g_unit
+
+        # 回退到旧转换器
+        if standard_quantity is None:
+            sq, su_str = convert_to_standard(
+                record.original_quantity,
+                record.original_unit
+            )
+            standard_quantity = sq
+            standard_unit_obj = matcher.match_or_create_unit(su_str)
 
         # 处理商品ID
         if record.product_id:
@@ -265,7 +287,6 @@ async def get_product_records(
                         Ingredient.aliases.contains(alias_search)
                     )
                 )
-                print(f"[DEBUG] products.py - 搜索价格记录: {search_term}, 别名搜索: {alias_search}")
 
         # 添加日期范围过滤
         if start_date:
@@ -398,16 +419,15 @@ async def get_product_records(
             original_quantity = float(record.original_quantity)
             
             # 尝试转换数量到目标单位
-            converted_quantity = unit_service.convert(
+            convert_result = unit_service.convert(
                 original_quantity,
                 original_unit_abbr,
                 target_unit,
-                ingredient_name
             )
-            
-            if converted_quantity is not None:
+
+            if convert_result is not None:
                 # 转换成功，使用转换后的数量和目标单位
-                display_quantity = converted_quantity
+                display_quantity, _ = convert_result
                 display_unit = target_unit
             else:
                 # 转换失败，使用原始值
@@ -513,13 +533,31 @@ async def update_product_record(
         else:
             original_unit_obj = db_record.original_unit
 
-        # 单位转换
+        # 单位转换：优先使用新的 UnitConversionService
         if record.original_quantity and record.original_unit:
-            standard_quantity, standard_unit_str = convert_to_standard(
-                record.original_quantity,
-                record.original_unit
-            )
-            standard_unit_obj = matcher.match_or_create_unit(standard_unit_str)
+            standard_quantity = None
+            standard_unit_obj = None
+            if original_unit_obj:
+                conversion_service = UnitConversionService(db)
+                result = conversion_service.convert(
+                    Decimal(str(record.original_quantity)),
+                    original_unit_obj.abbreviation,
+                    "g",
+                    "product" if db_record.product_id else None,
+                    db_record.product_id,
+                )
+                if result:
+                    standard_quantity, _ = result
+                    g_unit = matcher.match_or_create_unit("g")
+                    if g_unit:
+                        standard_unit_obj = g_unit
+            if standard_quantity is None:
+                sq, su_str = convert_to_standard(
+                    record.original_quantity,
+                    record.original_unit
+                )
+                standard_quantity = sq
+                standard_unit_obj = matcher.match_or_create_unit(su_str)
         else:
             standard_quantity = db_record.standard_quantity
             standard_unit_obj = db_record.standard_unit

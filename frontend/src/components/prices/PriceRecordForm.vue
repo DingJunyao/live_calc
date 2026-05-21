@@ -116,7 +116,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed } from 'vue'
+import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { api } from '@/api/client'
 import type { PriceRecord } from '@/types'
 
 interface Props {
@@ -144,7 +145,26 @@ const form = reactive({
   record_date: new Date().toISOString().split('T')[0],
 })
 
-const units = ['个', '斤', 'kg', '克', '升', '毫升', '盒', '包', '袋', '瓶']
+// 单位选项（从 API 动态加载）
+const units = ref<string[]>([])
+
+// 基本单位列表（API 加载失败时的回退）
+const FALLBACK_UNITS = ['个', '斤', 'kg', '克', '升', '毫升', '盒', '包', '袋', '瓶']
+
+// 加载全局单位列表
+const loadUnits = async () => {
+  try {
+    const res = await api.get('/units/', { params: { limit: 100 } })
+    const unitList = res.items || res || []
+    units.value = unitList.map((u: any) => u.abbreviation)
+  } catch (e) {
+    units.value = [...FALLBACK_UNITS]
+  }
+}
+
+onMounted(() => {
+  loadUnits()
+})
 
 const saving = ref(false)
 
@@ -178,8 +198,9 @@ const resetForm = () => {
 }
 
 const formatDate = (dateStr: string) => {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN')
+  if (!dateStr) return '-'
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const close = () => {

@@ -324,21 +324,53 @@ const getCurrentLocalDateTime = () => {
 // 商家选项
 const merchantOptions = ref<Merchant[]>([])
 
-// 单位选项
-const unitOptions = [
-  { title: '克 (g)', value: 'g' },
-  { title: '千克 (kg)', value: 'kg' },
+// 单位选项（从 API 动态加载）
+const unitOptions = ref<{ title: string; value: string }[]>([])
+
+// 基本单位列表（API 加载失败时的回退）
+const FALLBACK_UNITS = [
+  { title: '克', value: 'g' },
+  { title: '千克', value: 'kg' },
   { title: '斤', value: '斤' },
   { title: '两', value: '两' },
-  { title: '毫升 (ml)', value: 'ml' },
-  { title: '升 (L)', value: 'L' },
+  { title: '毫升', value: 'ml' },
+  { title: '升', value: 'L' },
   { title: '个', value: '个' },
-  { title: '包', value: '包' },
-  { title: '袋', value: '袋' },
-  { title: '盒', value: '盒' },
-  { title: '瓶', value: '瓶' },
-  { title: '罐', value: '罐' },
 ]
+
+// 加载全局单位列表
+const loadUnits = async () => {
+  try {
+    const res = await api.get('/units/', { params: { limit: 100 } })
+    const units = res.items || res || []
+    unitOptions.value = units.map((u: any) => ({
+      title: `${u.name} (${u.abbreviation})`,
+      value: u.abbreviation,
+    }))
+  } catch (e) {
+    // 回退到基本单位列表
+    unitOptions.value = [...FALLBACK_UNITS]
+  }
+}
+
+// 加载实体自定义单位（商品选择后追加）
+const loadEntityUnits = async (productId: number) => {
+  try {
+    const res = await api.get(`/entities/product/${productId}/units`)
+    const entityUnits = (res.items || res || []).map((eu: any) => ({
+      title: eu.unit_name,
+      value: eu.unit_name,
+    }))
+    // 追加到全局单位列表前面（实体单位优先），避免重复
+    const existingValues = new Set(unitOptions.value.map(u => u.value))
+    const newOptions = entityUnits.filter((u: { title: string; value: string }) => !existingValues.has(u.value))
+    if (newOptions.length > 0) {
+      unitOptions.value = [...newOptions, ...unitOptions.value]
+    }
+  } catch (e) {
+    // 实体单位加载失败不影响全局单位
+  }
+}
 
 // 表单验证规则
 const productIdRules = [
@@ -453,18 +485,18 @@ watch(productSearch, (newSearch) => {
 // 监听选中的商品对象，同步 product_id 到表单
 watch(selectedProduct, (newProduct) => {
   form.value.product_id = newProduct?.id || null
+  // 商品选择后加载实体自定义单位
+  if (newProduct?.id) {
+    loadEntityUnits(newProduct.id)
+  }
 }, { immediate: true })
 
 const formatPrice = (price: any) => (parseFloat(price) || 0).toFixed(2)
 
 const formatDateTime = (dateTimeStr: string) => {
   if (!dateTimeStr) return ''
-  const date = new Date(dateTimeStr)
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${month}-${day} ${hours}:${minutes}`
+  const d = new Date(dateTimeStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 // 从会话存储加载记忆的值
@@ -622,6 +654,7 @@ const handleRefresh = () => {
 onMounted(() => {
   loadRecords()
   loadMerchants()
+  loadUnits()
   window.addEventListener('app-refresh', handleRefresh)
 })
 
