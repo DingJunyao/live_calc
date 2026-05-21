@@ -53,6 +53,13 @@
           <v-list-item-subtitle>{{ item.category || '未分类' }}</v-list-item-subtitle>
 
           <template #append>
+            <v-btn
+              icon="mdi-tag-plus"
+              size="small"
+              variant="text"
+              :loading="loadingProductsFor === item.id"
+              @click.prevent="openPriceDialog(item)"
+            />
             <v-btn icon="mdi-chevron-right" size="small" variant="text" />
           </template>
         </v-list-item>
@@ -99,6 +106,20 @@
       style="bottom: 80px; right: 24px"
       @click="showAddDialog = true"
     />
+
+    <!-- 快速记录价格对话框 -->
+    <QuickPriceRecordDialog
+      v-model="showPriceDialog"
+      :product-id="priceDialogProduct?.id ?? null"
+      :product-name="priceDialogProduct?.name ?? ''"
+      :products="priceDialogProducts"
+      @saved="onPriceSaved"
+    />
+
+    <!-- 提示消息 -->
+    <v-snackbar v-model="showSnackbar" :color="snackbarColor" :timeout="3000">
+      {{ snackbarText }}
+    </v-snackbar>
 
     <!-- 添加对话框 -->
     <v-dialog v-model="showAddDialog" max-width="500">
@@ -287,6 +308,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -331,6 +353,17 @@ const search = ref('')
 const showAddDialog = ref(false)
 const saving = ref(false)
 
+// 快速记录价格相关
+const showPriceDialog = ref(false)
+const priceDialogProduct = ref<{ id: number; name: string } | null>(null)
+const priceDialogProducts = ref<{ id: number; name: string }[]>([])
+const loadingProductsFor = ref<number | null>(null)
+
+// 提示消息
+const showSnackbar = ref(false)
+const snackbarText = ref('')
+const snackbarColor = ref('info')
+
 // 分类和单位列表
 const categories = ref<Category[]>([])
 const units = ref<Unit[]>([])
@@ -373,6 +406,45 @@ const debouncedSearch = () => {
     currentPage.value = 1
     loadIngredients()
   }, 300)
+}
+
+interface ProductItem {
+  id: number
+  name: string
+}
+
+const openPriceDialog = async (ingredient: Ingredient) => {
+  loadingProductsFor.value = ingredient.id
+  try {
+    const response = await api.get('/products/entity', {
+      params: { ingredient_id: ingredient.id, limit: 50 }
+    })
+    const products: ProductItem[] = response.items || []
+
+    if (products.length === 0) {
+      snackbarText.value = '该原料暂无关联商品，请先添加商品'
+      snackbarColor.value = 'warning'
+      showSnackbar.value = true
+      return
+    }
+
+    // 优先匹配同名商品，否则取第一个
+    const matched = products.find(p => p.name === ingredient.name) || products[0]
+    priceDialogProduct.value = matched
+    priceDialogProducts.value = products
+    showPriceDialog.value = true
+  } catch (e: any) {
+    console.error('加载商品失败', e)
+    snackbarText.value = '加载商品失败'
+    snackbarColor.value = 'error'
+    showSnackbar.value = true
+  } finally {
+    loadingProductsFor.value = null
+  }
+}
+
+const onPriceSaved = () => {
+  // 价格记录保存成功后无需刷新原料列表
 }
 
 // 加载选项数据（分类和单位）

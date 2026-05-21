@@ -53,6 +53,7 @@
           <v-list-item-subtitle>{{ item.brand || '无品牌' }}</v-list-item-subtitle>
 
           <template #append>
+            <v-btn icon="mdi-tag-plus" size="small" variant="text" @click.prevent="openPriceDialog(item)" />
             <v-btn icon="mdi-chevron-right" size="small" variant="text" />
           </template>
         </v-list-item>
@@ -98,6 +99,14 @@
       class="position-fixed"
       style="bottom: 80px; right: 24px"
       @click="showAddDialog = true"
+    />
+
+    <!-- 快速记录价格对话框 -->
+    <QuickPriceRecordDialog
+      v-model="showPriceDialog"
+      :product-id="priceDialogProduct?.id ?? null"
+      :product-name="priceDialogProduct?.name ?? ''"
+      @saved="onPriceSaved"
     />
 
     <!-- 添加对话框 -->
@@ -168,6 +177,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -193,6 +203,10 @@ const error = ref<string | null>(null)
 const search = ref('')
 const showAddDialog = ref(false)
 const saving = ref(false)
+
+// 快速记录价格相关
+const showPriceDialog = ref(false)
+const priceDialogProduct = ref<Product | null>(null)
 
 // 原料列表
 const ingredients = ref<Ingredient[]>([])
@@ -288,6 +302,15 @@ const handlePageSizeChange = () => {
 watch(currentPage, () => {
   loadProducts()
 })
+
+const openPriceDialog = (product: Product) => {
+  priceDialogProduct.value = product
+  showPriceDialog.value = true
+}
+
+const onPriceSaved = () => {
+  // 价格记录保存成功后无需刷新商品列表
+}
 
 const saveItem = async () => {
   if (!form.value.name.trim()) return

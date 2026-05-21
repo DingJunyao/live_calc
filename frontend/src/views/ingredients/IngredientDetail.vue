@@ -10,6 +10,7 @@
       </div>
     </v-app-bar-title>
     <template #append>
+      <v-btn icon="mdi-tag-plus" variant="text" @click="openQuickPriceDialog" />
       <v-btn icon="mdi-pencil" variant="text" @click="openEditDialog" />
       <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
     </template>
@@ -920,6 +921,15 @@
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000">
       {{ snackbar.message }}
     </v-snackbar>
+
+    <!-- 快速记录价格对话框 -->
+    <QuickPriceRecordDialog
+      v-model="showQuickPriceDialog"
+      :product-id="quickPriceProduct?.id ?? null"
+      :product-name="quickPriceProduct?.name ?? ''"
+      :products="quickPriceProducts"
+      @saved="onQuickPriceSaved"
+    />
   </v-container>
 </template>
 
@@ -930,6 +940,7 @@ import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import HierarchyGraph from '@/components/charts/HierarchyGraph.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
@@ -1128,6 +1139,35 @@ const loadingMergeTargets = ref(false)
 
 // 选中的合并目标对象（用于显示名称）
 const selectedMergeTarget = ref<Ingredient | null>(null)
+
+// 快速记录价格
+const showQuickPriceDialog = ref(false)
+const quickPriceProduct = ref<{ id: number; name: string } | null>(null)
+const quickPriceProducts = ref<{ id: number; name: string }[]>([])
+
+const openQuickPriceDialog = async () => {
+  if (!ingredient.value) return
+  try {
+    const response = await api.get('/products/entity', {
+      params: { ingredient_id: ingredientId.value, limit: 50 }
+    })
+    const products: { id: number; name: string }[] = response.items || []
+    if (products.length === 0) {
+      snackbar.value = { show: true, message: '该原料暂无关联商品，请先添加商品', color: 'warning' }
+      return
+    }
+    const matched = products.find(p => p.name === ingredient.value!.name) || products[0]
+    quickPriceProduct.value = matched
+    quickPriceProducts.value = products
+    showQuickPriceDialog.value = true
+  } catch (e: any) {
+    snackbar.value = { show: true, message: '加载商品失败', color: 'error' }
+  }
+}
+
+const onQuickPriceSaved = () => {
+  loadData()
+}
 
 // 提示消息
 const snackbar = ref({

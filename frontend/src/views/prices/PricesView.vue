@@ -51,6 +51,7 @@
           </v-list-item-subtitle>
 
           <template #append>
+            <v-btn icon="mdi-tag-multiple" size="small" variant="text" class="mr-1" @click="openRecordAgainDialog(record)" />
             <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" class="mr-1" @click="openEditDialog(record)" />
             <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="deleteRecord(record.id)" />
           </template>
@@ -506,6 +507,26 @@ const openAddDialog = () => {
   productSearch.value = ''
   productSuggestions.value = []
   selectedProduct.value = null
+  showDialog.value = true
+}
+
+const openRecordAgainDialog = (record: PriceRecord) => {
+  isEditing.value = false
+  editingId.value = null
+  form.value = {
+    product_id: record.product_id,
+    product_name: record.product_name,
+    price: null,
+    original_quantity: record.original_quantity,
+    original_unit: record.original_unit,
+    merchant_id: record.merchant_id || null,
+    recorded_at: getCurrentLocalDateTime(),
+    notes: '',
+    is_purchase: (record as any).record_type !== 'price'
+  }
+  productSearch.value = record.product_name
+  productSuggestions.value = [{ id: record.product_id, name: record.product_name }]
+  selectedProduct.value = { id: record.product_id, name: record.product_name }
   showDialog.value = true
 }
 

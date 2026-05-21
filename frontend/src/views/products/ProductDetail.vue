@@ -10,6 +10,7 @@
       </div>
     </v-app-bar-title>
     <template #append>
+      <v-btn icon="mdi-tag-plus" variant="text" @click="openQuickPriceDialog" />
       <v-btn icon="mdi-pencil" variant="text" @click="openEditDialog" />
       <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
     </template>
@@ -528,6 +529,14 @@
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000">
       {{ snackbar.message }}
     </v-snackbar>
+
+    <!-- 快速记录价格对话框 -->
+    <QuickPriceRecordDialog
+      v-model="showQuickPriceDialog"
+      :product-id="product?.id ?? null"
+      :product-name="product?.name ?? ''"
+      @saved="onQuickPriceSaved"
+    />
   </v-container>
 </template>
 
@@ -537,6 +546,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import { NUTRITION_LABEL_MAP } from '@/utils/nutritionLabels'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
@@ -658,6 +668,17 @@ const openAddPriceDialog = () => {
     merchant_id: null
   }
   showAddPriceDialog.value = true
+}
+
+// 快速记录价格
+const showQuickPriceDialog = ref(false)
+
+const openQuickPriceDialog = () => {
+  showQuickPriceDialog.value = true
+}
+
+const onQuickPriceSaved = () => {
+  loadData()
 }
 
 // 提示消息
