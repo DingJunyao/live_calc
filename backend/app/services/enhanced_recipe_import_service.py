@@ -178,7 +178,7 @@ class EnhancedRecipeImportService:
     # ------------------------------------------------------------------
 
     def _clone_repo_via_git(self, temp_dir: str) -> Optional[str]:
-        """使用 git clone 获取仓库（指定分支）"""
+        """使用 git clone 获取仓库（指定分支），实时显示 git 进度信息"""
         import subprocess
 
         repo_cfg = self._repo_config
@@ -198,34 +198,51 @@ class EnhancedRecipeImportService:
                     return repo_path
 
             self._report_progress("克隆仓库", 0, 100, f"克隆 {repo_url} (分支: {branch})...")
-            result = subprocess.run(
-                ["git", "clone", "--depth", "1", "--branch", branch, "--verbose",
-                 repo_url, repo_path],
+            print(f"\n>>> 开始 git clone {repo_url} (分支: {branch}) >>>")
+
+            process = subprocess.Popen(
+                ["git", "clone", "--depth", "1", "--branch", branch, "--verbose", "--single-branch", "--no-tags",
+                 "--progress", repo_url, repo_path],
                 cwd=temp_dir,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=self.DOWNLOAD_TIMEOUT
+                bufsize=1,  # 行缓冲
             )
 
-            if result.stdout:
-                print(f"[Git stdout]:\n{result.stdout}")
-            if result.stderr:
-                print(f"[Git stderr]:\n{result.stderr}")
+            # 实时读取并打印 stderr（git 的进度信息输出到 stderr）
+            assert process.stderr is not None
+            for line in iter(process.stderr.readline, ""):
+                line = line.rstrip("\n\r")
+                if line:
+                    print(f"  git: {line}", flush=True)
 
-            if result.returncode == 0:
+            # 等待进程结束（带超时）
+            try:
+                returncode = process.wait(timeout=self.DOWNLOAD_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                print("\n✗ git clone 超时（已强制终止）")
+                return None
+
+            # 读取剩余的 stdout（通常为空）
+            assert process.stdout is not None
+            remaining_stdout = process.stdout.read()
+            if remaining_stdout:
+                print(f"[Git stdout]:\n{remaining_stdout}")
+
+            if returncode == 0:
                 print("✓ Git clone 成功")
                 self._report_progress("克隆仓库", 100, 100, "克隆完成")
                 target_dir = os.path.join(repo_path, data_dir)
                 return repo_path if os.path.exists(target_dir) else None
             else:
-                print(f"✗ Git clone 失败，退出码: {result.returncode}")
+                print(f"✗ Git clone 失败，退出码: {returncode}")
                 return None
 
         except FileNotFoundError:
             print("git 命令未找到，将使用备用下载方式")
-            return None
-        except subprocess.TimeoutExpired:
-            print("git clone 超时")
             return None
         except Exception as e:
             print(f"git clone 异常: {type(e).__name__}: {str(e)}")
