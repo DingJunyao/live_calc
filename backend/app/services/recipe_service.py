@@ -142,13 +142,16 @@ def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, 
 
     visited = visited + [ingredient.id]
 
-    # 查找回退父级
-    hierarchy = db.query(IngredientHierarchy).filter(
+    # 查找所有回退父级（可能有多个，按 strength 降序尝试）
+    hierarchies = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.child_id == ingredient.id,
         IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
-    ).order_by(IngredientHierarchy.strength.desc()).first()
+    ).order_by(IngredientHierarchy.strength.desc()).all()
 
-    if hierarchy and hierarchy.parent:
+    for hierarchy in hierarchies:
+        if not hierarchy or not hierarchy.parent:
+            continue
+
         # 检查回退父级是否有价格
         product = db.query(Product).filter(
             Product.ingredient_id == hierarchy.parent.id,
@@ -209,13 +212,16 @@ def _get_ingredient_nutrition(
 
     visited = visited + [ingredient.id]
 
-    # 查找回退父级
-    hierarchy = db.query(IngredientHierarchy).filter(
+    # 查找所有回退父级（可能有多个，按 strength 降序尝试）
+    hierarchies = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.child_id == ingredient.id,
         IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
-    ).order_by(IngredientHierarchy.strength.desc()).first()
+    ).order_by(IngredientHierarchy.strength.desc()).all()
 
-    if hierarchy and hierarchy.parent:
+    for hierarchy in hierarchies:
+        if not hierarchy or not hierarchy.parent:
+            continue
+
         # 检查回退父级是否有营养数据
         nutrition = db.query(NutritionData).filter(
             NutritionData.ingredient_id == hierarchy.parent.id
@@ -663,9 +669,10 @@ def calculate_recipe_cost_range_trend(
     days: int = 90
 ) -> List[Dict]:
     """
-    计算菜谱的成本区间趋势
+    计算菜谱的成本区间趋势（批量优化版）
 
     遍历指定日期范围，对于每一天，计算菜谱在该日期的成本区间。
+    批量预加载所有食材、商品、价格记录和回退关系，避免逐天逐食材查询数据库。
 
     Args:
         recipe_id: 菜谱ID
@@ -697,6 +704,97 @@ def calculate_recipe_cost_range_trend(
     end_date = datetime.now().date()
     start_date = max(earliest_record.recorded_at.date(), end_date - timedelta(days=days))
 
+    # ========== 批量预加载所有数据 ==========
+
+    # 1. 收集所有有效食材ID（处理合并）
+    ingredient_ids = set()
+    ri_list = list(recipe.ingredients)
+    ri_ingredient_map = {}  # recipe_ingredient_id -> (ingredient, original_name_for_fallback)
+
+    for ri in ri_list:
+        ing = ri.ingredient
+        if ing and ing.is_merged and ing.merged_into_id:
+            ing = db.query(Ingredient).filter(Ingredient.id == ing.merged_into_id).first()
+        if ing:
+            ingredient_ids.add(ing.id)
+            ri_ingredient_map[ri.id] = ing
+
+    if not ingredient_ids:
+        return []
+
+    # 2. 批量加载所有商品
+    all_products = db.query(Product).filter(
+        Product.ingredient_id.in_(list(ingredient_ids)),
+        Product.is_active == True
+    ).all()
+
+    products_by_ingredient = defaultdict(list)
+    all_product_ids = set()
+    for p in all_products:
+        products_by_ingredient[p.ingredient_id].append(p)
+        all_product_ids.add(p.id)
+
+    if not all_product_ids:
+        return []
+
+    # 3. 批量加载所有价格记录（按 product_id 升序、recorded_at 升序排列）
+    all_records = db.query(ProductRecord).filter(
+        ProductRecord.user_id == user_id,
+        ProductRecord.product_id.in_(list(all_product_ids))
+    ).order_by(ProductRecord.product_id, ProductRecord.recorded_at.asc()).all()
+
+    records_by_product = defaultdict(list)
+    for r in all_records:
+        records_by_product[r.product_id].append(r)
+
+    # 4. 批量加载所有回退关系（按 strength 降序排列）
+    all_fallbacks = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
+    ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    fallback_by_child = defaultdict(list)
+    for f in all_fallbacks:
+        fallback_by_child[f.child_id].append(f)
+
+    # 5. 构建价格源缓存：为每个食材找到最佳价格源（商品ID + 价格记录列表）
+    price_source_cache = {}  # ingredient_id -> (product_id, records_list)
+
+    def _find_price_source(ing_id: int, visited: Optional[set] = None):
+        """在内存中查找食材的最佳价格源（替代 _get_ingredient_fallback 的数据库查询）"""
+        if visited is None:
+            visited = set()
+        if ing_id in visited:
+            return None
+        visited.add(ing_id)
+
+        if ing_id in price_source_cache:
+            return price_source_cache[ing_id]
+
+        # 尝试直接商品
+        for p in products_by_ingredient.get(ing_id, []):
+            if p.id in records_by_product and records_by_product[p.id]:
+                result = (p.id, records_by_product[p.id])
+                price_source_cache[ing_id] = result
+                return result
+
+        # 尝试回退父级
+        for f in fallback_by_child.get(ing_id, []):
+            if f.parent_id:
+                result = _find_price_source(f.parent_id, visited)
+                if result:
+                    price_source_cache[ing_id] = result
+                    return result
+
+        return None
+
+    # 计算每个食材的价格源
+    for ing_id in ingredient_ids:
+        _find_price_source(ing_id)
+
+    # ========== 逐天计算 ==========
+
+    import bisect
+
     # 生成日期列表
     date_list = []
     current_date = start_date
@@ -704,28 +802,67 @@ def calculate_recipe_cost_range_trend(
         date_list.append(current_date)
         current_date += timedelta(days=1)
 
-    # 计算每一天的成本区间
     cost_range_trend = []
     for date in date_list:
-        # 计算该日期 23:59:59 的成本区间（使用截至当天的最新价格）
         as_of_datetime = datetime.combine(date, datetime.max.time()) - timedelta(seconds=1)
 
-        # 调用成本区间计算函数
-        cost_result = calculate_recipe_cost_range_as_of(
-            recipe_id, user_id, as_of_datetime, db
-        )
+        total_min_cost = Decimal("0.00")
+        total_max_cost = Decimal("0.00")
+        total_avg_cost = Decimal("0.00")
+        valid_ingredients = 0
 
-        if cost_result and cost_result["avg_cost"] > 0:
-            # 转换为 Unix 时间戳（使用当天 12:00）
+        for ri in ri_list:
+            ing = ri_ingredient_map.get(ri.id)
+            if not ing:
+                continue
+
+            source = price_source_cache.get(ing.id)
+            if not source:
+                continue
+
+            product_id, records = source
+
+            # 二分查找截至 as_of_datetime 的最新记录
+            record_dates = [r.recorded_at for r in records]
+            idx = bisect.bisect_right(record_dates, as_of_datetime) - 1
+            if idx < 0:
+                # 没有截至该日期的记录，使用最早记录（前向填充）
+                latest_record = records[0]
+            else:
+                latest_record = records[idx]
+
+            # 计算单价
+            record_price = Decimal(str(latest_record.price))
+            std_qty = latest_record.standard_quantity
+            if std_qty is None or std_qty == 0:
+                unit_price = record_price
+            else:
+                unit_price = record_price / Decimal(str(std_qty))
+
+            # 计算该食材成本
+            quantity = _get_effective_quantity(ri)
+            if not quantity:
+                continue
+
+            try:
+                ingredient_cost = unit_price * quantity
+                total_min_cost += ingredient_cost
+                total_max_cost += ingredient_cost
+                total_avg_cost += ingredient_cost
+                valid_ingredients += 1
+            except Exception:
+                continue
+
+        if total_avg_cost > 0:
             recorded_at_dt = datetime.combine(date, datetime.min.time()) + timedelta(hours=12)
             recorded_at = int(recorded_at_dt.timestamp())
 
             cost_range_trend.append({
                 "date": date.strftime("%Y-%m-%d"),
                 "recorded_at": recorded_at,
-                "min_cost": cost_result["min_cost"],
-                "max_cost": cost_result["max_cost"],
-                "avg_cost": cost_result["avg_cost"]
+                "min_cost": float(total_min_cost),
+                "max_cost": float(total_max_cost),
+                "avg_cost": float(total_avg_cost)
             })
 
     return cost_range_trend
