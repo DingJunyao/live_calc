@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session, load_only
+import os
 from sqlalchemy import or_, and_
 from typing import List, Optional
 from decimal import Decimal
@@ -95,7 +96,7 @@ async def get_recipes(
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     tag: Optional[str] = Query(None, description="标签过滤"),
-    search: Optional[str] = Query(None, alias="q", description="搜索菜谱名称"),
+    search: Optional[str] = Query(None, description="搜索菜谱名称"),
     include_cost: bool = Query(True, description="是否包含成本和营养信息"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -173,6 +174,7 @@ async def get_recipes(
                     difficulty=recipe.difficulty,
                     servings=recipe.servings,
                     tips=tips_list,
+                    description=recipe.description,
                     images=images_list,
                     result_ingredient_id=recipe.result_ingredient_id,
                     created_at=recipe.created_at,
@@ -201,6 +203,7 @@ async def get_recipes(
                     difficulty=recipe.difficulty,
                     servings=recipe.servings,
                     tips=tips_list,
+                    description=recipe.description,
                     images=images_list,
                     result_ingredient_id=recipe.result_ingredient_id,
                     created_at=recipe.created_at,
@@ -288,6 +291,7 @@ async def get_recipe_detail(
             difficulty=recipe.difficulty,
             servings=recipe.servings,
             tips=recipe.tips,
+            description=recipe.description,
             images=recipe.images or [],
             created_at=recipe.created_at,
             updated_at=recipe.updated_at,
@@ -409,8 +413,8 @@ async def import_from_json_repo(
         raise HTTPException(status_code=403, detail="仅限管理员访问")
 
     try:
-        from app.services.json_recipe_import_service import check_and_import_from_json_repo
-        result = check_and_import_from_json_repo(db, user_id=current_user.id)
+        from app.services.enhanced_recipe_import_service import check_and_import_initial_recipes
+        result = check_and_import_initial_recipes(db, user_id=current_user.id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"从 JSON 仓库导入失败: {str(e)}")
@@ -431,11 +435,14 @@ async def get_recipe_images(
         if not recipe.images:
             return {"images": []}
 
-        # 将相对路径转换为完整的 GitHub raw URL
+        # 将相对路径转换为完整的远程 URL
         image_urls = []
+        repo_url = os.getenv("DATA_REPO_URL", "https://github.com/DingJunyao/HowToCook_json.git").rstrip("/").removesuffix(".git")
+        branch = os.getenv("DATA_REPO_BRANCH", "corr")
+        data_dir = os.getenv("DATA_REPO_DIR", "out")
+        repo_path = repo_url.split("github.com/")[-1]
         for image_path in recipe.images:
-            # 使用 GitHub raw URL
-            full_url = f"https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out/{image_path}"
+            full_url = f"https://raw.githubusercontent.com/{repo_path}/{branch}/{data_dir}/{image_path}"
             image_urls.append(full_url)
 
         return {"images": image_urls}

@@ -99,6 +99,18 @@
         </v-card-text>
       </v-card>
 
+      <!-- 菜谱介绍 -->
+      <v-card elevation="0" class="ma-4" v-if="recipe.description">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="primary">mdi-information-outline</v-icon>
+          菜谱介绍
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <div class="text-body-2" style="white-space: pre-wrap">{{ recipe.description }}</div>
+        </v-card-text>
+      </v-card>
+
       <!-- 成本趋势图表 -->
       <PriceTrendChart
         v-if="recipe"
@@ -121,6 +133,20 @@
           <v-chip size="small" class="ml-2" v-if="recipe.ingredients?.length">
             {{ recipe.ingredients.length }}
           </v-chip>
+          <v-spacer />
+          <span class="text-caption text-medium-emphasis mr-2">份数</span>
+          <v-btn-toggle
+            v-model="displayServings"
+            density="compact"
+            variant="outlined"
+            divided
+            mandatory
+          >
+            <v-btn :value="recipe.servings" size="x-small">{{ recipe.servings }}</v-btn>
+            <v-btn :value="1" size="x-small" v-if="recipe.servings !== 1">1</v-btn>
+            <v-btn :value="2" size="x-small" v-if="recipe.servings !== 2 && recipe.servings > 1">2</v-btn>
+            <v-btn :value="4" size="x-small">4</v-btn>
+          </v-btn-toggle>
         </v-card-title>
         <v-divider />
 
@@ -143,10 +169,13 @@
               </div>
               <!-- 用量：右对齐 -->
               <div class="ingredient-quantity text-body-2 text-right mr-4" style="min-width: 80px">
-                <span v-if="ingredient.quantity">{{ ingredient.quantity }} {{ ingredient.unit }}</span>
+                <span v-if="scaleQuantity(ingredient.quantity, recipe?.servings || 1)">
+                  {{ scaleQuantity(ingredient.quantity, recipe?.servings || 1) }} {{ ingredient.unit }}
+                </span>
                 <span v-else-if="ingredient.quantity_range">
                   {{ ingredient.quantity_range.min }}-{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
                 </span>
+                <span v-else-if="ingredient.original_quantity">{{ ingredient.original_quantity }}</span>
                 <span v-else>-</span>
               </div>
               <!-- 成本：右对齐 -->
@@ -174,7 +203,7 @@
             </div>
             <!-- 备注另起一行 -->
             <div v-if="ingredient.note" class="text-caption text-medium-emphasis pl-2 pb-1">
-              备注：{{ ingredient.note }}
+              {{ ingredient.note }}
             </div>
           </div>
         </v-card-text>
@@ -208,8 +237,29 @@
               <div class="step-content">
                 {{ typeof step === 'object' ? step.content : step }}
               </div>
+              <div
+                v-if="typeof step === 'object' && step.tips"
+                class="text-caption text-medium-emphasis mt-1 pl-2"
+                style="border-left: 2px solid var(--v-warning-base)"
+              >
+                💡 {{ step.tips }}
+              </div>
             </v-timeline-item>
           </v-timeline>
+        </v-card-text>
+      </v-card>
+
+      <!-- 小贴士 -->
+      <v-card elevation="0" class="ma-4" v-if="recipe.tips?.length">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="warning">mdi-lightbulb-outline</v-icon>
+          小贴士
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <ul class="text-body-2 pl-4 mb-0">
+            <li v-for="(tip, i) in recipe.tips" :key="i" class="mb-1">{{ tip }}</li>
+          </ul>
         </v-card-text>
       </v-card>
 
@@ -405,8 +455,9 @@ interface RecipeIngredient {
   id: number
   ingredient_id: number
   name: string
-  quantity?: number
+  quantity?: number | string
   quantity_range?: { min: number; max: number }
+  original_quantity?: string
   unit?: string
   is_optional?: boolean
   note?: string
@@ -462,6 +513,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const costData = ref<CostData | null>(null)
 const nutritionData = ref<NutritionData | null>(null)
+const displayServings = ref(1)
 
 // 图片灯箱相关
 const selectedImageIndex = ref(0)
@@ -671,6 +723,7 @@ const loadData = async () => {
     // 加载菜谱详情
     const response = await api.get(`/recipes/${recipeId.value}`)
     recipe.value = response
+    displayServings.value = response.servings || 1
 
     // 并行加载成本、营养和历史数据
     await Promise.all([
@@ -739,7 +792,7 @@ const chartData = computed(() => {
 const getImageUrl = (imagePath: string) => {
   if (imagePath.startsWith('http')) return imagePath
   if (imagePath.startsWith('/static/images/')) return `/api/v1${imagePath}`
-  return `https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out/${imagePath}`
+  return `${import.meta.env.VITE_DATA_REPO_IMAGE_BASE || 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out'}/${imagePath}`
 }
 
 // 灯箱相关方法
@@ -769,6 +822,18 @@ const formatNutritionValue = (value: number | undefined, unit: string) => {
   if (value === undefined || value === null) return '-'
   const num = parseFloat(String(value)) || 0
   return `${num.toFixed(1)} ${unit}`
+}
+
+// 缩放原料数量（根据显示份数）
+const scaleQuantity = (quantity: string | number | undefined, origServings: number): string => {
+  if (quantity === undefined || quantity === null || quantity === '') return ''
+  const num = typeof quantity === 'string' ? parseFloat(quantity) : quantity
+  if (isNaN(num) || num === 0) return ''
+  const ratio = displayServings.value / (origServings || 1)
+  const scaled = num * ratio
+  // 保留一位小数，去掉不必要的小数点
+  if (Number.isInteger(scaled)) return scaled.toString()
+  return scaled.toFixed(1).replace(/\.0$/, '')
 }
 
 // 格式化原料成本

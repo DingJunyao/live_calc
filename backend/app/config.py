@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     first_run_init_recipes: bool = False
     recipes_source_repo: Optional[str] = None
 
+    # 数据仓库配置（用于导入菜谱、原料、营养数据）
+    data_repo_url: str = "https://github.com/DingJunyao/HowToCook_json.git"
+    data_repo_branch: str = "main"
+    data_repo_dir: str = "out"
+
     class Config:
         env_file = ".env"
 

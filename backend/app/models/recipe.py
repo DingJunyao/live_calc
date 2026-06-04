@@ -18,6 +18,7 @@ class Recipe(Base, AuditMixin):
     difficulty = Column(String(20))
     servings = Column(Integer, default=1)
     tips = Column(JSON)
+    description = Column(Text)  # 菜谱介绍/描述
     images = Column(JSON, default=list)  # 菜谱图片路径列表
     # created_at, updated_at, created_by, updated_by, is_active 从 AuditMixin 继承
 

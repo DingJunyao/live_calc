@@ -6,7 +6,7 @@ from app.utils.datetime_utils import TimeZoneAwareModel
 
 
 class CookingStep(BaseModel):
-    step: int
+    step: Optional[int] = None
     content: str
     duration_minutes: Optional[float] = None
     tips: Optional[str] = None
@@ -33,6 +33,7 @@ class RecipeCreate(BaseModel):
     difficulty: Optional[str] = "simple"
     servings: int = 1
     tips: Optional[List[str]] = None
+    description: Optional[str] = None
     images: Optional[List[str]] = None
     result_ingredient_id: Optional[int] = None
 
@@ -47,8 +48,9 @@ class RecipeResponse(TimeZoneAwareModel):
     total_time_minutes: Optional[int]
     difficulty: Optional[str]
     servings: int
-    tips: Optional[List[str]]
-    images: Optional[List[str]]
+    tips: Optional[List[str]] = None
+    description: Optional[str] = None
+    images: Optional[List[str]] = None
     result_ingredient_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime]
@@ -71,6 +73,7 @@ class RecipeUpdate(BaseModel):
     difficulty: Optional[str] = None
     servings: Optional[int] = None
     tips: Optional[List[str]] = None
+    description: Optional[str] = None
     images: Optional[List[str]] = None
     result_ingredient_id: Optional[int] = None
 

@@ -892,7 +892,7 @@ async def calculate_recipe_nutrition(
                         # 记录使用了回退值（可在日志中查看）
 
                 # 如果是能量，检查单位并转换为 kcal
-                if nutrient_name == "能量" and source_unit == "kJ":
+                if nutrient_name == "能量" and source_unit in ("kJ", "千焦", "千焦(kJ)"):
                     # 先将 kJ 转换为 kcal（1 kJ = 0.239006 kcal）
                     value_kcal = value * 0.239006
                     total_core_nutrients[nutrient_name]["value"] += value_kcal * float(ratio)
@@ -920,7 +920,7 @@ async def calculate_recipe_nutrition(
                     total_all_nutrients[nutrient_name] = {"value": 0, "unit": source_unit}
 
                 # 如果是能量，检查单位并转换为 kcal
-                if nutrient_name == "能量" and source_unit == "kJ":
+                if nutrient_name == "能量" and source_unit in ("kJ", "千焦", "千焦(kJ)"):
                     # 先将 kJ 转换为 kcal（1 kJ = 0.239006 kcal）
                     value_kcal = value * 0.239006
                     total_all_nutrients[nutrient_name]["value"] += value_kcal * float(ratio)
@@ -1025,7 +1025,7 @@ async def calculate_recipe_nutrition(
     # 如果能量单位是 kJ，转换为 kcal，并处理 None 值
     energy_value = energy_data.get("value", 0) if energy_data else 0
     total_calories = float(energy_value) if energy_value is not None else 0.0
-    if energy_data and energy_data.get("unit") == "kJ":
+    if energy_data and energy_data.get("unit") in ("kJ", "千焦", "千焦(kJ)"):
         total_calories *= 0.239006
 
     protein_value = protein_data.get("value", 0) if protein_data else 0.0

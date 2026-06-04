@@ -241,7 +241,7 @@ const goToDetail = (id: number) => {
 const getImageUrl = (imagePath: string) => {
   if (imagePath.startsWith('http')) return imagePath
   if (imagePath.startsWith('/static/images/')) return `/api/v1${imagePath}`
-  return `https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out/${imagePath}`
+  return `${import.meta.env.VITE_DATA_REPO_IMAGE_BASE || 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out'}/${imagePath}`
 }
 
 onMounted(() => {

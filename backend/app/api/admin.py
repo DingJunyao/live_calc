@@ -203,8 +203,8 @@ async def import_initial_recipes(
         )
 
     try:
-        from app.services.recipe_import_service import check_and_import_initial_recipes
-        result = check_and_import_initial_recipes(db)
+        from app.services.enhanced_recipe_import_service import check_and_import_initial_recipes
+        result = check_and_import_initial_recipes(db, user_id=current_user.id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导入初始菜谱失败: {str(e)}")
