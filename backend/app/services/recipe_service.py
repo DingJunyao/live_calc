@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional, Tuple
+import json
 from datetime import datetime, timedelta
 from collections import defaultdict
 from app.models.recipe import Recipe, RecipeIngredient
@@ -9,7 +10,6 @@ from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData  # NutritionData 从 nutrition_data 导入，避免冲突
 from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelationType
 from decimal import Decimal
-import json
 
 
 def _get_price_record_with_fallback(
@@ -67,7 +67,8 @@ def _get_price_records_for_date(
     db: Session,
     user_id: int,
     ingredient_id: int,
-    as_of_date: datetime
+    as_of_date: datetime,
+    product_id: int = None
 ) -> List[ProductRecord]:
     """
     获取某食材在指定日期的所有价格记录
@@ -77,6 +78,7 @@ def _get_price_records_for_date(
         user_id: 用户ID
         ingredient_id: 食材ID
         as_of_date: 指定日期
+        product_id: 可选，指定商品ID，不指定则查找该食材下的第一个商品
 
     Returns:
         当天的所有价格记录列表
@@ -85,11 +87,18 @@ def _get_price_records_for_date(
     day_start = as_of_date.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + timedelta(days=1) - timedelta(microseconds=1)
 
-    # 获取食材对应的商品
-    product = db.query(Product).filter(
-        Product.ingredient_id == ingredient_id,
-        Product.is_active == True
-    ).first()
+    if product_id is not None:
+        # 使用指定的商品ID查询
+        product = db.query(Product).filter(
+            Product.id == product_id,
+            Product.is_active == True
+        ).first()
+    else:
+        # 获取食材对应的第一个商品（兼容旧行为）
+        product = db.query(Product).filter(
+            Product.ingredient_id == ingredient_id,
+            Product.is_active == True
+        ).first()
 
     if not product:
         return []
@@ -254,6 +263,36 @@ async def batch_calculate_recipes_cost_nutrition(
     return results
 
 
+def _get_effective_quantity(recipe_ingredient) -> Decimal:
+    """
+    从 recipe_ingredient 中提取有效数量。
+    优先使用 quantity，如果为 None 则尝试从 quantity_range 取平均值。
+    """
+    qty = recipe_ingredient.quantity
+
+    # 如果 quantity 为 None 或字符串 "None"，检查 quantity_range
+    if qty is None or (isinstance(qty, str) and qty.lower() == "none"):
+        q_range = recipe_ingredient.quantity_range
+        if q_range is not None and q_range != 'null':
+            try:
+                if isinstance(q_range, str):
+                    q_range = json.loads(q_range)
+                if isinstance(q_range, dict):
+                    q_min = q_range.get("min")
+                    q_max = q_range.get("max")
+                    if q_max is not None:
+                        return Decimal(str(q_max))
+                    elif q_min is not None:
+                        return Decimal(str(q_min))
+                    elif q_max is not None:
+                        return Decimal(str(q_max))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+        return Decimal("0")
+
+    return Decimal(str(qty))
+
+
 async def calculate_recipe_cost(
     recipe_id: int,
     user_id: int,
@@ -281,87 +320,108 @@ async def calculate_recipe_cost(
         if not ingredient:
             continue
 
-        # 首先通过ingredient_id查找商品（这个SB逻辑之前漏了）
+        # 通过ingredient_id查找所有关联商品（可能有多个品牌商品）
         from app.models.product_entity import Product
-        product = db.query(Product).filter(
+        products = db.query(Product).filter(
             Product.ingredient_id == ingredient.id,
             Product.is_active == True
-        ).first()
+        ).all()
 
         day_records = []
         unit_price = None
         fallback_chain = None  # 回退链信息
         original_ingredient_name = ingredient.name  # 保存原始食材名称
+        product = None
 
-        if product:
-            # 获取当天的所有价格记录
-            day_records = _get_price_records_for_date(db, user_id, ingredient.id, now)
+        # 遍历所有商品，找到第一个有价格记录的
+        if products:
+            for p in products:
+                day_records = _get_price_records_for_date(db, user_id, ingredient.id, now, product_id=p.id)
+                if day_records:
+                    product = p
+                    break
 
-            # 如果当天无记录，使用前向填充
+            # 如果所有商品都没有当天记录，使用前向填充（遍历所有商品查找最近的记录）
             if not day_records:
                 # 先尝试使用食材回退机制
                 fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
                 if fallback_result:
                     fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
-                    # 查找回退食材当天的价格记录
-                    fallback_product = db.query(Product).filter(
+                    # 查找回退食材的商品
+                    fallback_products = db.query(Product).filter(
                         Product.ingredient_id == fallback_ingredient.id,
                         Product.is_active == True
-                    ).first()
+                    ).all()
 
-                    if fallback_product:
-                        # 查找回退食材当天的价格记录
-                        day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now)
+                    if fallback_products:
+                        # 查找回退食材当天的价格记录（遍历所有商品）
+                        for fp in fallback_products:
+                            day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now, product_id=fp.id)
+                            if day_records:
+                                product = fp
+                                break
 
                         # 如果回退食材也没有当天记录，使用前向填充
                         if not day_records:
-                            fallback_record = _get_price_record_with_fallback(
-                                db=db,
-                                user_id=user_id,
-                                product_id=fallback_product.id,
-                                as_of_date=now
-                            )
-                            if fallback_record:
-                                day_records = [fallback_record]
+                            for fp in fallback_products:
+                                fallback_record = _get_price_record_with_fallback(
+                                    db=db,
+                                    user_id=user_id,
+                                    product_id=fp.id,
+                                    as_of_date=now
+                                )
+                                if fallback_record:
+                                    day_records = [fallback_record]
+                                    product = fp
+                                    break
+                            if day_records:
                                 ingredient = fallback_ingredient
                         else:
                             ingredient = fallback_ingredient
 
-                # 如果食材回退也没有，使用原食材前向填充
-                if not day_records:
-                    fallback_record = _get_price_record_with_fallback(
-                        db=db,
-                        user_id=user_id,
-                        product_id=product.id,
-                        as_of_date=now
-                    )
-                    if fallback_record:
-                        day_records = [fallback_record]
+                # 如果食材回退也没有，使用原食材前向填充（遍历所有商品）
+                if not day_records and products:
+                    for p in products:
+                        fallback_record = _get_price_record_with_fallback(
+                            db=db,
+                            user_id=user_id,
+                            product_id=p.id,
+                            as_of_date=now
+                        )
+                        if fallback_record:
+                            day_records = [fallback_record]
+                            product = p
+                            break
         else:
             # 如果找不到商品，尝试使用回退食材
             fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
             if fallback_result:
                 fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
-                # 查找回退食材的商品
-                fallback_product = db.query(Product).filter(
+                # 查找回退食材的所有商品
+                fallback_products = db.query(Product).filter(
                     Product.ingredient_id == fallback_ingredient.id,
                     Product.is_active == True
-                ).first()
+                ).all()
 
-                if fallback_product:
-                    # 查找回退食材当天的价格记录
-                    day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now)
+                if fallback_products:
+                    # 遍历所有商品，查找当天的价格记录
+                    for fp in fallback_products:
+                        day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now, product_id=fp.id)
+                        if day_records:
+                            break
 
-                    # 如果回退食材也没有当天记录，使用前向填充
+                    # 如果回退食材也没有当天记录，使用前向填充（遍历所有商品）
                     if not day_records:
-                        fallback_record = _get_price_record_with_fallback(
-                            db=db,
-                            user_id=user_id,
-                            product_id=fallback_product.id,
-                            as_of_date=now
-                        )
-                        if fallback_record:
-                            day_records = [fallback_record]
+                        for fp in fallback_products:
+                            fallback_record = _get_price_record_with_fallback(
+                                db=db,
+                                user_id=user_id,
+                                product_id=fp.id,
+                                as_of_date=now
+                            )
+                            if fallback_record:
+                                day_records = [fallback_record]
+                                break
 
                     ingredient = fallback_ingredient
 
@@ -394,18 +454,13 @@ async def calculate_recipe_cost(
 
         if unit_price is not None:
             # 计算成本：单价 × 菜谱中的数量 = 成本
-            ingredient_quantity = recipe_ingredient.quantity
-
-            # 将 None 或字符串 "None" 视为 0
-            if ingredient_quantity is None or (isinstance(ingredient_quantity, str) and ingredient_quantity.lower() == "none"):
-                ingredient_quantity = 0
+            # 优先使用 quantity，如果为 None 则从 quantity_range 取平均值
+            quantity = _get_effective_quantity(recipe_ingredient)
 
             # 只有当数量大于0时才计算成本
             # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
-            if ingredient_quantity:
+            if quantity:
                 try:
-                    # 尝试解析数量（可能是数字或字符串）
-                    quantity = Decimal(str(ingredient_quantity))
                     cost = unit_price * quantity if unit_price else Decimal("0")
                     total_cost += cost
 
@@ -414,7 +469,7 @@ async def calculate_recipe_cost(
                         "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                         "ingredient_id": ingredient.id,
                         "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
-                        "quantity": str(ingredient_quantity),
+                        "quantity": str(quantity),
                         "unit_price": float(unit_price) if unit_price else 0.0,
                         "cost": float(cost),
                         "fallback_chain": fallback_chain  # 回退链信息（如果有）
@@ -440,7 +495,7 @@ async def calculate_recipe_cost(
                     "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                     "ingredient_id": ingredient.id,
                     "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
-                    "quantity": str(ingredient_quantity),
+                    "quantity": str(quantity),
                     "unit_price": float(unit_price) if unit_price else 0.0,
                     "cost": 0.0,
                     "fallback_chain": fallback_chain  # 回退链信息（如果有）
@@ -494,17 +549,23 @@ def calculate_recipe_cost_range_as_of(
         if not ingredient:
             continue
 
-        # 获取食材对应的商品
-        product = db.query(Product).filter(
+        # 获取食材对应的所有商品（可能有多个品牌商品）
+        products = db.query(Product).filter(
             Product.ingredient_id == ingredient.id,
             Product.is_active == True
-        ).first()
+        ).all()
 
-        if not product:
+        if not products:
             continue
 
-        # 获取当天的所有价格记录
-        day_records = _get_price_records_for_date(db, user_id, ingredient.id, as_of_date)
+        # 遍历所有商品，查找当天有价格记录的商品
+        day_records = []
+        product = None
+        for p in products:
+            day_records = _get_price_records_for_date(db, user_id, ingredient.id, as_of_date, product_id=p.id)
+            if day_records:
+                product = p
+                break
 
         # 如果当天无记录，使用前向填充
         if not day_records:
@@ -512,33 +573,38 @@ def calculate_recipe_cost_range_as_of(
             fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
             if fallback_result:
                 fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
-                # 查找回退食材对应的商品
-                fallback_product = db.query(Product).filter(
+                # 查找回退食材的所有商品
+                fallback_products = db.query(Product).filter(
                     Product.ingredient_id == fallback_ingredient.id,
                     Product.is_active == True
-                ).first()
+                ).all()
 
-                if fallback_product:
-                    # 查找回退食材的价格记录（前向填充）
+                if fallback_products:
+                    # 遍历回退食材的所有商品，查找价格记录
+                    for fp in fallback_products:
+                        fallback_record = _get_price_record_with_fallback(
+                            db=db,
+                            user_id=user_id,
+                            product_id=fp.id,
+                            as_of_date=as_of_date
+                        )
+                        if fallback_record:
+                            day_records = [fallback_record]
+                            break
+
+            # 如果食材回退也没有，使用原食材前向填充（遍历所有商品）
+            if not day_records and products:
+                for p in products:
                     fallback_record = _get_price_record_with_fallback(
                         db=db,
                         user_id=user_id,
-                        product_id=fallback_product.id,
+                        product_id=p.id,
                         as_of_date=as_of_date
                     )
                     if fallback_record:
                         day_records = [fallback_record]
-
-            # 如果食材回退也没有，使用原食材前向填充
-            if not day_records:
-                fallback_record = _get_price_record_with_fallback(
-                    db=db,
-                    user_id=user_id,
-                    product_id=product.id,
-                    as_of_date=as_of_date
-                )
-                if fallback_record:
-                    day_records = [fallback_record]
+                        product = p
+                        break
 
         # 如果仍然没有记录，跳过该食材
         if not day_records:
@@ -565,13 +631,10 @@ def calculate_recipe_cost_range_as_of(
         avg_unit_price = sum(unit_prices) / len(unit_prices)
 
         # 计算该食材的成本
-        ingredient_quantity = recipe_ingredient.quantity
-        if ingredient_quantity is None or (isinstance(ingredient_quantity, str) and ingredient_quantity.lower() == "none"):
-            ingredient_quantity = 0
+        quantity = _get_effective_quantity(recipe_ingredient)
 
-        if ingredient_quantity:
+        if quantity:
             try:
-                quantity = Decimal(str(ingredient_quantity))
                 ingredient_min_cost = min_unit_price * quantity
                 ingredient_max_cost = max_unit_price * quantity
                 ingredient_avg_cost = avg_unit_price * quantity
@@ -1094,25 +1157,30 @@ def calculate_recipe_cost_as_of(
         if not ingredient:
             continue
 
-        # 首先通过ingredient_id查找商品
-        product = db.query(Product).filter(
+        # 首先通过ingredient_id查找所有商品（可能有多个品牌商品）
+        products = db.query(Product).filter(
             Product.ingredient_id == ingredient.id,
             Product.is_active == True
-        ).first()
+        ).all()
 
         latest_record = None
         unit_price = None
         fallback_chain = None  # 回退链信息
         original_ingredient_name = ingredient.name  # 保存原始食材名称
+        product = None
 
-        if product:
-            # 使用带前向填充机制的价格查找函数
-            latest_record = _get_price_record_with_fallback(
-                db=db,
-                user_id=user_id,
-                product_id=product.id,
-                as_of_date=as_of_date
-            )
+        if products:
+            # 遍历所有商品，找到第一个有价格记录的
+            for p in products:
+                latest_record = _get_price_record_with_fallback(
+                    db=db,
+                    user_id=user_id,
+                    product_id=p.id,
+                    as_of_date=as_of_date
+                )
+                if latest_record:
+                    product = p
+                    break
 
             # 如果找不到价格记录，尝试使用回退食材
             if not latest_record:
@@ -1141,20 +1209,24 @@ def calculate_recipe_cost_as_of(
             fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
             if fallback_result:
                 fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
-                # 查找回退食材的商品
-                product = db.query(Product).filter(
+                # 查找回退食材的所有商品
+                fallback_products = db.query(Product).filter(
                     Product.ingredient_id == fallback_ingredient.id,
                     Product.is_active == True
-                ).first()
+                ).all()
 
-                if product:
-                    # 使用带前向填充机制的价格查找函数
-                    latest_record = _get_price_record_with_fallback(
-                        db=db,
-                        user_id=user_id,
-                        product_id=product.id,
-                        as_of_date=as_of_date
-                    )
+                if fallback_products:
+                    # 遍历回退食材的所有商品，查找价格记录
+                    for fp in fallback_products:
+                        latest_record = _get_price_record_with_fallback(
+                            db=db,
+                            user_id=user_id,
+                            product_id=fp.id,
+                            as_of_date=as_of_date
+                        )
+                        if latest_record:
+                            product = fp
+                            break
                     # 更新ingredient为回退食材
                     ingredient = fallback_ingredient
 
@@ -1183,18 +1255,14 @@ def calculate_recipe_cost_as_of(
 
         if latest_record:
             # 计算成本：单价 × 菜谱中的数量 = 成本
-            ingredient_quantity = recipe_ingredient.quantity
-
-            # 将 None 或字符串 "None" 视为 0
-            if ingredient_quantity is None or (isinstance(ingredient_quantity, str) and ingredient_quantity.lower() == "none"):
-                ingredient_quantity = 0
+            # 计算成本：单价 × 菜谱中的数量 = 成本
+            # 优先使用 quantity，如果为 None 则从 quantity_range 取平均值
+            quantity = _get_effective_quantity(recipe_ingredient)
 
             # 只有当数量大于0时才计算成本
             # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
-            if ingredient_quantity:
+            if quantity:
                 try:
-                    # 尝试解析数量（可能是数字或字符串）
-                    quantity = Decimal(str(ingredient_quantity))
                     cost = unit_price * quantity if unit_price else Decimal("0")
                     total_cost += cost
 
@@ -1203,7 +1271,7 @@ def calculate_recipe_cost_as_of(
                         "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                         "ingredient_id": ingredient.id,
                         "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
-                        "quantity": str(ingredient_quantity),
+                        "quantity": str(quantity),
                         "unit_price": float(unit_price) if unit_price else 0.0,
                         "cost": float(cost),
                         "fallback_chain": fallback_chain  # 回退链信息（如果有）
@@ -1229,7 +1297,7 @@ def calculate_recipe_cost_as_of(
                     "original_ingredient_name": original_ingredient_name,  # 添加原始食材名称
                     "ingredient_id": ingredient.id,
                     "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID
-                    "quantity": str(ingredient_quantity),
+                    "quantity": str(quantity),
                     "unit_price": float(unit_price) if unit_price else 0.0,
                     "cost": 0.0,
                     "fallback_chain": fallback_chain  # 回退链信息（如果有）

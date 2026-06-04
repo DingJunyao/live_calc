@@ -501,9 +501,9 @@ class EnhancedRecipeImportService:
                     mapped_category = self.CATEGORY_MAPPING.get(category_name, category_name)
                     category = categories.get(mapped_category) or categories.get(category_name)
 
-                    # 获取默认单位（从 ingredients_raw.json）
+                    # 获取默认单位（从 ingredients_raw.json），未指定时默认为斤
                     unit_str = raw_units.get(ingredient_name, "")
-                    unit_obj = self.unit_matcher.match_or_create_unit(unit_str) if unit_str else None
+                    unit_obj = self.unit_matcher.match_or_create_unit(unit_str) if unit_str else self.unit_matcher.match_or_create_unit("斤")
                     unit_id = unit_obj.id if unit_obj else None
 
                     ingredient = Ingredient(

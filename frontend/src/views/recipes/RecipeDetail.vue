@@ -94,7 +94,7 @@
         <v-divider />
         <v-card-text class="text-center py-6">
           <div class="text-h3 font-weight-bold text-tertiary">
-            ¥{{ formatCost(costData.total_cost) }}
+            ¥{{ formatCost((costData.total_cost ?? 0) * servingRatio) }}
           </div>
         </v-card-text>
       </v-card>
@@ -514,6 +514,10 @@ const error = ref<string | null>(null)
 const costData = ref<CostData | null>(null)
 const nutritionData = ref<NutritionData | null>(null)
 const displayServings = ref(1)
+const servingRatio = computed(() => {
+  const orig = recipe.value?.servings || 1
+  return displayServings.value / orig
+})
 
 // 图片灯箱相关
 const selectedImageIndex = ref(0)
@@ -836,7 +840,7 @@ const scaleQuantity = (quantity: string | number | undefined, origServings: numb
   return scaled.toFixed(1).replace(/\.0$/, '')
 }
 
-// 格式化原料成本
+// 格式化原料成本（根据当前份数缩放）
 const formatIngredientCost = (ingredient: RecipeIngredient) => {
   if (!costData.value?.cost_breakdown) return '-'
   const breakdown = costData.value.cost_breakdown as CostBreakdownItem[]
@@ -844,7 +848,7 @@ const formatIngredientCost = (ingredient: RecipeIngredient) => {
   // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
   const item = breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id)
   if (!item) return '-'
-  return formatCost(item.cost || 0)
+  return formatCost((item.cost || 0) * servingRatio.value)
 }
 
 // 获取原料的回退链信息

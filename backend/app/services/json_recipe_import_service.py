@@ -156,8 +156,8 @@ class JsonRecipeImportService:
                     category_name = item.get("category", "others")
                     category = categories.get(category_name)
 
-                    # 获取单位
-                    unit_str = item.get("unit", "")
+                    # 获取单位，未指定时默认为斤
+                    unit_str = item.get("unit", "") or "斤"
                     unit_obj = self.unit_matcher.match_or_create_unit(unit_str)
                     unit_id = unit_obj.id if unit_obj else None
 

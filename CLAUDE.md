@@ -209,5 +209,7 @@ live_calc/
 - None值处理修复：详见 [NONE_VALUE_FIXES.md](cc/NONE_VALUE_FIXES.md) - 修复了在计算菜谱成本和营养素时未将None值视为0的问题
 - 地图配置持久化：实现了地图配置的数据库存储功能，解决了地图API密钥等配置重启后丢失的问题。详细信息请见 [MAP_CONFIG_PERSISTENCE.md](cc/MAP_CONFIG_PERSISTENCE.md)
 - 鸡蛋价格显示异常修复：修复了在原料管理中价格显示异常的问题，确保价格历史列表与价格趋势图表的显示逻辑一致。详细信息请见 [EGG_PRICE_DISPLAY_FIX.md](cc/EGG_PRICE_DISPLAY_FIX.md)
+- 默认单位改为斤：商品和原料的默认单位统一改为「斤」，涉及后端 API 创建接口、导入服务和前端表单默认值。详见 [DEFAULT_UNIT_JIN.md](cc/DEFAULT_UNIT_JIN.md)
+- quantity_range 成本计算修复：修复了使用 quantity_range（用量区间）的食材成本显示为 0 的问题。在成本计算函数中新增 `_get_effective_quantity()` 辅助函数，当 quantity 为 None 时从 quantity_range 取平均值计算成本。详见 [QUANTITY_RANGE_COST_FIX.md](cc/QUANTITY_RANGE_COST_FIX.md)
 
 ### 功能实现记录

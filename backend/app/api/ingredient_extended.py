@@ -299,6 +299,16 @@ async def get_ingredient_alternatives(
         raise HTTPException(status_code=500, detail=f"获取替代选项失败: {str(e)}")
 
 
+def _get_default_mass_unit_id(db: Session) -> Optional[int]:
+    """获取默认质量单位（斤）的 ID"""
+    jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
+    if jin_unit:
+        return jin_unit.id
+    # 回退：查找 kg 或 g
+    kg_unit = db.query(Unit).filter(Unit.abbreviation == "kg").first()
+    return kg_unit.id if kg_unit else None
+
+
 @router.post("", response_model=dict)
 async def create_ingredient(
     name: str = Body(..., min_length=1),
@@ -316,13 +326,15 @@ async def create_ingredient(
         if existing:
             raise HTTPException(status_code=400, detail="食材已存在")
 
-        # 使用单位匹配器获取单位 ID
+        # 使用单位匹配器获取单位 ID，未指定时默认为斤
         unit_id = None
         if default_unit:
             from app.services.unit_matcher import UnitMatcher
             matcher = UnitMatcher(db)
             unit_obj = matcher.match_or_create_unit(default_unit)
             unit_id = unit_obj.id if unit_obj else None
+        else:
+            unit_id = _get_default_mass_unit_id(db)
 
         new_ingredient = Ingredient(
             name=name,

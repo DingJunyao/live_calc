@@ -245,9 +245,18 @@ async def create_ingredient(
         if aliases:
             aliases_list = [alias.strip() for alias in aliases.split(',') if alias.strip()]
 
+        # 未指定默认单位时默认为斤
+        unit_id = default_unit_id
+        if unit_id is None:
+            from app.models.unit import Unit
+            jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
+            if jin_unit:
+                unit_id = jin_unit.id
+
         new_ingredient = Ingredient(
             name=name,
             aliases=aliases_list,
+            default_unit_id=unit_id,
             created_by=current_user.id,
             updated_by=current_user.id
         )
@@ -255,10 +264,19 @@ async def create_ingredient(
         db.commit()
         db.refresh(new_ingredient)
 
+        default_unit_name = None
+        if new_ingredient.default_unit_id:
+            from app.models.unit import Unit
+            unit = db.query(Unit).filter(Unit.id == new_ingredient.default_unit_id).first()
+            if unit:
+                default_unit_name = unit.name
+
         return {
             "id": new_ingredient.id,
             "name": new_ingredient.name,
             "aliases": new_ingredient.aliases or [],
+            "default_unit_id": new_ingredient.default_unit_id,
+            "default_unit_name": default_unit_name,
             "created_at": new_ingredient.created_at
         }
     except HTTPException:

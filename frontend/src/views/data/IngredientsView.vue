@@ -367,6 +367,7 @@ const snackbarColor = ref('info')
 // 分类和单位列表
 const categories = ref<Category[]>([])
 const units = ref<Unit[]>([])
+const jinUnitId = ref<number | null>(null)  // 默认质量单位（斤）的 ID
 const loadingOptions = ref(false)
 
 // 营养素展开状态
@@ -459,6 +460,14 @@ const loadOptions = async () => {
     categories.value = categoriesRes || []
     // 处理分页响应
     units.value = unitsRes.items || unitsRes || []
+    // 找到默认质量单位（斤）并设置为默认选中
+    const jinUnit = (unitsRes.items || unitsRes || []).find(
+      (u: Unit) => u.abbreviation === '斤'
+    )
+    if (jinUnit) {
+      jinUnitId.value = jinUnit.id
+      form.value.default_unit_id = jinUnit.id
+    }
   } catch (e: any) {
     console.error('加载选项失败', e)
   } finally {
@@ -579,7 +588,7 @@ const saveItem = async () => {
     form.value = {
       name: '',
       category_id: null,
-      default_unit_id: null,
+      default_unit_id: jinUnitId.value,
       aliases: [],
       nutrition: {
         energy_kcal: null,

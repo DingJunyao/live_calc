@@ -870,7 +870,7 @@ const hasCustomNutrition = ref(false)
 const priceForm = ref({
   price: 0,
   quantity: 1,
-  unit: 'g',
+  unit: '斤',
   merchant_id: null as number | null
 })
 
@@ -880,7 +880,7 @@ const openAddPriceDialog = () => {
   priceForm.value = {
     price: 0,
     quantity: 1,
-    unit: currentIngredientDefaultUnit.value || 'g',
+    unit: currentIngredientDefaultUnit.value || '斤',
     merchant_id: null
   }
   showAddPriceDialog.value = true
@@ -1585,7 +1585,7 @@ const savePriceRecord = async () => {
     })
     showAddPriceDialog.value = false
     // 重置表单
-    priceForm.value = { price: 0, quantity: 1, unit: 'g', merchant_id: null }
+    priceForm.value = { price: 0, quantity: 1, unit: '斤', merchant_id: null }
     // 重新加载数据
     await loadData()
     showMessage('添加成功', 'success')

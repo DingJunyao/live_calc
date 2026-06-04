@@ -133,7 +133,7 @@ def init_default_data(db: Session):
     db.commit()
 
     # 添加中国地区单位设置
-    jin_unit = db.query(Unit).filter(Unit.abbreviation == "jin").first()
+    jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
     g_unit = db.query(Unit).filter(Unit.abbreviation == "g").first()
     ml_unit = db.query(Unit).filter(Unit.abbreviation == "mL").first()
 

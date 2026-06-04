@@ -174,7 +174,7 @@
         <v-divider />
         <v-card-text class="text-center py-6">
           <div class="text-h3 font-weight-bold text-tertiary">
-            ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ ingredient.default_unit_name || 'g' }}</span>
+            ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ ingredient.default_unit_name || '斤' }}</span>
           </div>
           <div v-if="latestPriceDate" class="text-caption text-medium-emphasis mt-2">
             {{ formatDate(latestPriceDate) }}
@@ -1251,6 +1251,7 @@ const recipes = ref<Recipe[]>([])
 
 // 单位列表
 const units = ref<Unit[]>([])
+const jinUnitId = ref<number | null>(null)  // 默认质量单位（斤）的 ID
 
 // 层级关系数据
 const hierarchyData = ref<HierarchyData | null>(null)
@@ -1755,7 +1756,7 @@ const hasRelations = computed(() => {
 const chartData = computed(() => {
   if (!priceRecords.value || priceRecords.value.length === 0) return []
 
-  const defaultUnit = ingredient.value?.default_unit_name || 'g'
+  const defaultUnit = ingredient.value?.default_unit_name || '斤'
   const dailyMap = new Map<string, number[]>()
 
   for (const record of priceRecords.value) {
@@ -1836,7 +1837,7 @@ const chartData = computed(() => {
 
 // 获取图表使用的单位（始终使用原料的默认单位）
 const chartUnit = computed(() => {
-  return ingredient.value?.default_unit_name || 'g'
+  return ingredient.value?.default_unit_name || '斤'
 })
 
 // 加载数据
@@ -2267,6 +2268,11 @@ const loadUnits = async () => {
   try {
     const response = await api.get('/units/', { params: { limit: 100 } })
     units.value = response.items || response || []
+    // 找到默认质量单位（斤）
+    const jinUnit = units.value.find((u: Unit) => u.abbreviation === '斤')
+    if (jinUnit) {
+      jinUnitId.value = jinUnit.id
+    }
   } catch (e) {
     units.value = []
   }
@@ -2311,7 +2317,7 @@ const openEditDialog = () => {
 
   editForm.value = {
     name: ingredient.value.name || '',
-    default_unit_id: ingredient.value.default_unit_id || null,
+    default_unit_id: ingredient.value.default_unit_id || jinUnitId.value,
     aliases: ingredient.value.aliases || [],
     nutrition: loadNutritionValues()
   }
