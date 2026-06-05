@@ -144,7 +144,7 @@ def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, 
 
     visited = visited + [ingredient.id]
 
-    # 查找所有回退父级（按 fallback > substitutable 优先级，strength 降序尝试）
+    # 查找所有回退源（按 fallback > substitutable 优先级，strength 降序尝试）
     # substitutable（可替代）关系也可作为价格回退源
     hierarchies = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.child_id == ingredient.id,
@@ -154,16 +154,31 @@ def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, 
         ])
     ).order_by(IngredientHierarchy.strength.desc()).all()
 
-    # 按 fallback 优先于 substitutable 排序
+    # 对于 SUBSTITUTABLE，也需要检查反向关系（parent_id == ingredient.id）
+    # 因为可替代关系是双向的
+    reverse_substitutes = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.parent_id == ingredient.id,
+        IngredientHierarchy.relation_type == HierarchyRelationType.SUBSTITUTABLE.value,
+    ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    # 合并并排序：fallback 优先于 substitutable
+    hierarchies.extend(reverse_substitutes)
     hierarchies.sort(key=lambda h: 0 if h.relation_type == HierarchyRelationType.FALLBACK.value else 1)
 
     for hierarchy in hierarchies:
-        if not hierarchy or not hierarchy.parent:
+        # 确定回退源食材
+        # 对于反向 SUBSTITUTABLE（ingredient 是 parent），child 是回退源
+        if hierarchy.parent_id == ingredient.id and hierarchy.relation_type == HierarchyRelationType.SUBSTITUTABLE.value:
+            fallback_source = hierarchy.child
+        else:
+            fallback_source = hierarchy.parent
+
+        if not hierarchy or not fallback_source:
             continue
 
-        # 检查回退父级是否有价格
+        # 检查回退源是否有价格
         product = db.query(Product).filter(
-            Product.ingredient_id == hierarchy.parent.id,
+            Product.ingredient_id == fallback_source.id,
             Product.is_active == True
         ).first()
 
@@ -176,18 +191,213 @@ def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, 
 
             if latest_record:
                 # 找到了有价格的回退食材
-                fallback_chain = f"{ingredient.name} → {hierarchy.parent.name}"
-                return hierarchy.parent, latest_record, fallback_chain
+                fallback_chain = f"{ingredient.name} → {fallback_source.name}"
+                return fallback_source, latest_record, fallback_chain
 
-        # 如果当前回退父级没有价格，继续向上查找
-        result = _get_ingredient_fallback(db, hierarchy.parent, user_id, visited)
+        # 如果当前回退源没有价格，继续向上查找
+        result = _get_ingredient_fallback(db, fallback_source, user_id, visited)
         if result:
             fallback_ingredient, price_record, chain = result
+            # 如果回退链最终回到了原始食材，跳过此回退源（避免循环链）
+            if fallback_ingredient.id == ingredient.id:
+                continue
             # 在回退链的开头添加当前食材
             fallback_chain = f"{ingredient.name} → {chain}"
             return fallback_ingredient, price_record, fallback_chain
 
     return None
+
+
+def _convert_record_to_price_per_gram(
+    db: Session,
+    record: ProductRecord,
+    ingredient_id: int
+) -> Optional[Decimal]:
+    """
+    将价格记录转换为每克价格（元/克）
+
+    通过 UnitConversionService 将 standard_unit_id 转换为克(unit_id=3)，
+    得到标准化的每克价格，便于不同单位的子食材之间进行聚合。
+
+    Args:
+        db: 数据库会话
+        record: 价格记录
+        ingredient_id: 食材ID（用于单位转换的上下文）
+
+    Returns:
+        每克价格（元/克），如果转换失败则返回 None
+    """
+    if not record or record.price is None or record.standard_quantity is None or record.standard_quantity == 0:
+        return None
+
+    unit_price = Decimal(str(record.price)) / Decimal(str(record.standard_quantity))
+
+    # 如果已经是克单位，直接返回
+    if record.standard_unit_id is None or record.standard_unit_id == 3:
+        return unit_price
+
+    # 转换为克：先计算 1 个标准单位等于多少克，再用 unit_price 除以这个值
+    price_unit = db.query(Unit).filter(Unit.id == record.standard_unit_id).first()
+    gram_unit = db.query(Unit).filter(Unit.id == 3).first()
+
+    if not price_unit or not gram_unit:
+        return None
+
+    ucs = UnitConversionService(db)
+    converted = ucs.convert(
+        Decimal("1"),
+        price_unit.abbreviation,
+        gram_unit.abbreviation,
+        entity_type="ingredient",
+        entity_id=ingredient_id,
+    )
+    if converted:
+        grams_per_unit = Decimal(str(converted[0]))
+        if grams_per_unit > 0:
+            return unit_price / grams_per_unit
+
+    return None
+
+
+def _get_child_price_per_gram(
+    db: Session,
+    ingredient: Ingredient,
+    user_id: int,
+    as_of_date: datetime,
+    visited: Optional[List[int]] = None
+) -> Optional[Decimal]:
+    """
+    获取食材的每克价格（元/克），通过所有可能的途径依次尝试：
+    1. 直接商品价格
+    2. FALLBACK/SUBSTITUTABLE 回退
+    3. CONTAINS 子食材聚合（递归）
+
+    Args:
+        db: 数据库会话
+        ingredient: 食材
+        user_id: 用户ID
+        as_of_date: 指定日期
+        visited: 已访问的食材ID列表（防止循环）
+
+    Returns:
+        每克价格（元/克），全部失败则返回 None
+    """
+    if not ingredient:
+        return None
+
+    if visited is None:
+        visited = []
+
+    if ingredient.id in visited:
+        return None
+
+    visited = visited + [ingredient.id]
+
+    # 1. 尝试直接商品
+    products = db.query(Product).filter(
+        Product.ingredient_id == ingredient.id,
+        Product.is_active == True
+    ).all()
+
+    for p in products:
+        record = _get_price_record_with_fallback(
+            db=db,
+            user_id=user_id,
+            product_id=p.id,
+            as_of_date=as_of_date
+        )
+        if record:
+            ppg = _convert_record_to_price_per_gram(db, record, ingredient.id)
+            if ppg is not None:
+                return ppg
+
+    # 2. 尝试 FALLBACK/SUBSTITUTABLE 回退
+    fallback_result = _get_ingredient_fallback(db, ingredient, user_id, visited)
+    if fallback_result:
+        fallback_ingredient, fallback_price_record, _ = fallback_result
+        ppg = _convert_record_to_price_per_gram(db, fallback_price_record, fallback_ingredient.id)
+        if ppg is not None:
+            return ppg
+
+    # 3. 尝试 CONTAINS 子食材聚合（递归）
+    agg_result = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date, visited)
+    if agg_result:
+        ppg, _ = agg_result
+        return ppg
+
+    return None
+
+
+def _get_aggregated_cost_from_children(
+    db: Session,
+    ingredient: Ingredient,
+    user_id: int,
+    as_of_date: datetime,
+    visited: Optional[List[int]] = None
+) -> Optional[tuple[Decimal, str]]:
+    """
+    从包含关系的子食材中聚合加权平均成本
+
+    查找所有 CONTAINS 关系的子食材，对能获取到每克价格的子食材，
+    使用 strength 作为权重进行加权平均。可递归：子食材也可通过其自身的
+    子食材计算成本。
+
+    Args:
+        db: 数据库会话
+        ingredient: 父食材
+        user_id: 用户ID
+        as_of_date: 指定日期
+        visited: 已访问的食材ID列表（防止循环）
+
+    Returns:
+        (weighted_price_per_gram, aggregation_chain) 或 None
+        - weighted_price_per_gram: 加权平均每克价格（元/克）
+        - aggregation_chain: 聚合链描述（如 "猪肉 ← 子食材(猪五花肉,猪里脊)"）
+    """
+    if not ingredient:
+        return None
+
+    # 查找所有 CONTAINS 子食材（按 strength 降序排列）
+    hierarchies = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.parent_id == ingredient.id,
+        IngredientHierarchy.relation_type == HierarchyRelationType.CONTAINS.value
+    ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    if not hierarchies:
+        return None
+
+    children_prices = []  # (price_per_gram, strength, name)
+    total_strength = 0
+
+    for hierarchy in hierarchies:
+        if not hierarchy or not hierarchy.child:
+            continue
+
+        child_ppg = _get_child_price_per_gram(
+            db, hierarchy.child, user_id, as_of_date, visited
+        )
+        if child_ppg is not None:
+            strength = hierarchy.strength or 50  # 默认 strength 为 50
+            children_prices.append((child_ppg, strength, hierarchy.child.name))
+            total_strength += strength
+
+    if not children_prices:
+        return None
+
+    # 加权平均
+    if total_strength > 0:
+        weighted_avg = sum(
+            price * Decimal(str(strength)) for price, strength, _ in children_prices
+        ) / Decimal(str(total_strength))
+    else:
+        # 如果所有 strength 为 0，退化为简单平均
+        weighted_avg = sum(price for price, _, _ in children_prices) / Decimal(len(children_prices))
+
+    # 构造聚合链描述
+    child_names = ", ".join(name for _, _, name in children_prices)
+    chain = f"{ingredient.name} ← 子食材({child_names})"
+
+    return weighted_avg, chain
 
 
 def _get_ingredient_nutrition(
@@ -221,7 +431,7 @@ def _get_ingredient_nutrition(
 
     visited = visited + [ingredient.id]
 
-    # 查找所有回退父级（按 fallback > substitutable 优先级，strength 降序尝试）
+    # 查找所有回退源（按 fallback > substitutable 优先级，strength 降序尝试）
     # substitutable（可替代）关系也可作为营养回退源
     hierarchies = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.child_id == ingredient.id,
@@ -231,27 +441,43 @@ def _get_ingredient_nutrition(
         ])
     ).order_by(IngredientHierarchy.strength.desc()).all()
 
-    # 按 fallback 优先于 substitutable 排序
+    # 对于 SUBSTITUTABLE，也需要检查反向关系（parent_id == ingredient.id）
+    reverse_substitutes = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.parent_id == ingredient.id,
+        IngredientHierarchy.relation_type == HierarchyRelationType.SUBSTITUTABLE.value,
+    ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    # 合并并排序：fallback 优先于 substitutable
+    hierarchies.extend(reverse_substitutes)
     hierarchies.sort(key=lambda h: 0 if h.relation_type == HierarchyRelationType.FALLBACK.value else 1)
 
     for hierarchy in hierarchies:
-        if not hierarchy or not hierarchy.parent:
+        # 确定回退源食材
+        if hierarchy.parent_id == ingredient.id and hierarchy.relation_type == HierarchyRelationType.SUBSTITUTABLE.value:
+            fallback_source = hierarchy.child
+        else:
+            fallback_source = hierarchy.parent
+
+        if not hierarchy or not fallback_source:
             continue
 
-        # 检查回退父级是否有营养数据
+        # 检查回退源是否有营养数据
         nutrition = db.query(NutritionData).filter(
-            NutritionData.ingredient_id == hierarchy.parent.id
+            NutritionData.ingredient_id == fallback_source.id
         ).order_by(NutritionData.id.desc()).first()
 
         if nutrition:
             # 找到了有营养数据的回退食材
-            fallback_chain = f"{ingredient.name} → {hierarchy.parent.name}"
-            return hierarchy.parent, nutrition, fallback_chain
+            fallback_chain = f"{ingredient.name} → {fallback_source.name}"
+            return fallback_source, nutrition, fallback_chain
 
-        # 如果当前回退父级没有营养数据，继续向上查找
-        result = _get_ingredient_nutrition(db, hierarchy.parent, visited)
+        # 如果当前回退源没有营养数据，继续向上查找
+        result = _get_ingredient_nutrition(db, fallback_source, visited)
         if result:
             fallback_ingredient, nutrition_data, chain = result
+            # 如果回退链最终回到了原始食材，跳过此回退源（避免循环链）
+            if fallback_ingredient.id == ingredient.id:
+                continue
             # 在回退链的开头添加当前食材
             fallback_chain = f"{ingredient.name} → {chain}"
             return fallback_ingredient, nutrition_data, fallback_chain
@@ -389,6 +615,7 @@ async def calculate_recipe_cost(
         day_records = []
         unit_price = None
         fallback_chain = None  # 回退链信息
+        aggregation_chain = None  # 子食材聚合链信息
         original_ingredient_name = ingredient.name  # 保存原始食材名称
         product = None
 
@@ -494,8 +721,15 @@ async def calculate_recipe_cost(
                 if latest_record:
                     day_records = [latest_record]
 
-        if day_records:
-            # 计算当天所有记录的平均单价
+        # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
+        if not day_records:
+            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, now)
+            if child_agg:
+                unit_price, aggregation_chain = child_agg
+                # unit_price 已经是元/克
+
+        if day_records or aggregation_chain is not None:
+            # 计算当天所有记录的平均单价（仅在 day_records 有真实记录时计算）
             unit_prices = []
             for record in day_records:
                 record_price = Decimal(str(record.price))
@@ -519,25 +753,42 @@ async def calculate_recipe_cost(
 
             # 单位转换：将菜谱用量转换为价格记录的单位
             # price_record 的单价是基于 standard_unit_id，菜谱用量基于 effective_unit_id
-            if quantity and day_records and effective_unit_id:
-                price_unit_id = day_records[0].standard_unit_id
-                recipe_unit_id = effective_unit_id
-                if price_unit_id and price_unit_id != recipe_unit_id:
-                    # 需要做单位转换
-                    price_unit = db.query(Unit).filter(Unit.id == price_unit_id).first()
-                    recipe_unit = db.query(Unit).filter(Unit.id == recipe_unit_id).first()
-                    if price_unit and recipe_unit:
-                        ucs = UnitConversionService(db)
-                        # 将菜谱用量从 recipe_unit 转换为 price_unit
-                        converted = ucs.convert(
-                            Decimal(str(quantity)),
-                            recipe_unit.abbreviation,
-                            price_unit.abbreviation,
-                            entity_type="ingredient",
-                            entity_id=ingredient.id,
-                        )
-                        if converted:
-                            quantity = float(converted[0])
+            if quantity and effective_unit_id:
+                if aggregation_chain is not None:
+                    # 从子食材聚合得到的 unit_price 是元/克，需要将菜谱用量转换为克
+                    if effective_unit_id != 3:
+                        recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
+                        gram_unit = db.query(Unit).filter(Unit.id == 3).first()
+                        if recipe_unit and gram_unit:
+                            ucs = UnitConversionService(db)
+                            converted = ucs.convert(
+                                Decimal(str(quantity)),
+                                recipe_unit.abbreviation,
+                                gram_unit.abbreviation,
+                                entity_type="ingredient",
+                                entity_id=ingredient.id,
+                            )
+                            if converted:
+                                quantity = float(converted[0])
+                elif day_records:
+                    price_unit_id = day_records[0].standard_unit_id
+                    recipe_unit_id = effective_unit_id
+                    if price_unit_id and price_unit_id != recipe_unit_id:
+                        # 需要做单位转换
+                        price_unit = db.query(Unit).filter(Unit.id == price_unit_id).first()
+                        recipe_unit = db.query(Unit).filter(Unit.id == recipe_unit_id).first()
+                        if price_unit and recipe_unit:
+                            ucs = UnitConversionService(db)
+                            # 将菜谱用量从 recipe_unit 转换为 price_unit
+                            converted = ucs.convert(
+                                Decimal(str(quantity)),
+                                recipe_unit.abbreviation,
+                                price_unit.abbreviation,
+                                entity_type="ingredient",
+                                entity_id=ingredient.id,
+                            )
+                            if converted:
+                                quantity = float(converted[0])
 
             # 只有当数量大于0时才计算成本
             # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
@@ -554,7 +805,9 @@ async def calculate_recipe_cost(
                         "quantity": str(quantity),
                         "unit_price": float(unit_price) if unit_price else 0.0,
                         "cost": float(cost),
-                        "fallback_chain": fallback_chain  # 回退链信息（如果有）
+                        "fallback_chain": fallback_chain,  # 回退链信息（如果有）
+                        "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
+                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
                     })
                 except Exception as e:
                     # 数量解析失败，使用基础价格
@@ -567,7 +820,9 @@ async def calculate_recipe_cost(
                         "quantity": "1",  # 默认为1
                         "unit_price": float(unit_price) if unit_price else 0.0,
                         "cost": float(cost),
-                        "fallback_chain": fallback_chain  # 回退链信息（如果有）
+                        "fallback_chain": fallback_chain,  # 回退链信息（如果有）
+                        "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
+                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
                     })
             else:
                 # 对于数量为0的食材，我们仍然添加到明细中但成本为0
@@ -580,7 +835,9 @@ async def calculate_recipe_cost(
                     "quantity": str(quantity),
                     "unit_price": float(unit_price) if unit_price else 0.0,
                     "cost": 0.0,
-                    "fallback_chain": fallback_chain  # 回退链信息（如果有）
+                    "fallback_chain": fallback_chain,  # 回退链信息（如果有）
+                    "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
+                    "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
                 })
 
     return {
@@ -688,8 +945,34 @@ def calculate_recipe_cost_range_as_of(
                         product = p
                         break
 
-        # 如果仍然没有记录，跳过该食材
+        # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
         if not day_records:
+            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date)
+            if child_agg:
+                child_unit_price, aggregation_chain = child_agg
+                # child_unit_price 是元/克，将菜谱用量转换为克后计算成本
+                quantity, effective_unit_id = _get_effective_quantity(recipe_ingredient)
+                if quantity and effective_unit_id:
+                    if effective_unit_id != 3:
+                        recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
+                        gram_unit = db.query(Unit).filter(Unit.id == 3).first()
+                        if recipe_unit and gram_unit:
+                            ucs = UnitConversionService(db)
+                            converted = ucs.convert(
+                                Decimal(str(quantity)),
+                                recipe_unit.abbreviation,
+                                gram_unit.abbreviation,
+                                entity_type="ingredient",
+                                entity_id=ingredient.id,
+                            )
+                            if converted:
+                                quantity = float(converted[0])
+                    if quantity:
+                        ingredient_cost = child_unit_price * Decimal(str(quantity))
+                        total_min_cost += ingredient_cost
+                        total_max_cost += ingredient_cost
+                        total_avg_cost += ingredient_cost
+                        valid_ingredients += 1
             continue
 
         # 计算当天的单价列表
@@ -836,7 +1119,25 @@ def calculate_recipe_cost_range_trend(
     for f in all_fallbacks:
         fallback_by_child[f.child_id].append(f)
 
-    # 5. 构建价格源缓存：为每个食材找到最佳价格源（商品ID + 价格记录列表）
+    # 5b. 批量加载反向可替代关系（用于 SUBSTITUTABLE 双向查找）
+    all_reverse_substitutes = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.relation_type == HierarchyRelationType.SUBSTITUTABLE.value,
+    ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    fallback_by_parent = defaultdict(list)
+    for rs in all_reverse_substitutes:
+        fallback_by_parent[rs.parent_id].append(rs)
+
+    # 6. 批量加载所有包含关系
+    all_contains = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.relation_type == HierarchyRelationType.CONTAINS.value
+    ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    contains_by_parent = defaultdict(list)
+    for c in all_contains:
+        contains_by_parent[c.parent_id].append(c)
+
+    # 6. 构建价格源缓存：为每个食材找到最佳价格源（商品ID + 价格记录列表）
     price_source_cache = {}  # ingredient_id -> (product_id, records_list)
 
     def _find_price_source(ing_id: int, visited: Optional[set] = None):
@@ -861,6 +1162,14 @@ def calculate_recipe_cost_range_trend(
         for f in fallback_by_child.get(ing_id, []):
             if f.parent_id:
                 result = _find_price_source(f.parent_id, visited)
+                if result:
+                    price_source_cache[ing_id] = result
+                    return result
+
+        # 尝试反向可替代关系（SUBSTITUTABLE 是双向的）
+        for rs in fallback_by_parent.get(ing_id, []):
+            if rs.child_id:
+                result = _find_price_source(rs.child_id, visited)
                 if result:
                     price_source_cache[ing_id] = result
                     return result
@@ -898,6 +1207,64 @@ def calculate_recipe_cost_range_trend(
 
             source = price_source_cache.get(ing.id)
             if not source:
+                # 尝试从包含关系的子食材中聚合成本
+                children = contains_by_parent.get(ing.id, [])
+                if children:
+                    child_prices = []  # (unit_price_per_gram, strength)
+                    total_strength = 0
+                    for hierarchy in children:
+                        if not hierarchy.child_id:
+                            continue
+                        child_source = price_source_cache.get(hierarchy.child_id)
+                        if not child_source:
+                            continue
+                        child_product_id, child_records = child_source
+                        # 二分查找截至 as_of_datetime 的最新记录
+                        child_record_dates = [r.recorded_at for r in child_records]
+                        child_idx = bisect.bisect_right(child_record_dates, as_of_datetime) - 1
+                        if child_idx < 0:
+                            child_latest = child_records[0]
+                        else:
+                            child_latest = child_records[child_idx]
+                        # 转换为元/克
+                        child_ppg = _convert_record_to_price_per_gram(db, child_latest, hierarchy.child_id)
+                        if child_ppg is not None:
+                            strength = hierarchy.strength or 50
+                            child_prices.append((child_ppg, strength))
+                            total_strength += strength
+
+                    if child_prices:
+                        # 加权平均得到父食材的元/克价格
+                        if total_strength > 0:
+                            unit_price = sum(
+                                p * Decimal(str(s)) for p, s in child_prices
+                            ) / Decimal(str(total_strength))
+                        else:
+                            unit_price = sum(p for p, _ in child_prices) / Decimal(len(child_prices))
+
+                        # 将菜谱用量转换为克
+                        quantity, effective_unit_id = _get_effective_quantity(ri)
+                        if quantity and effective_unit_id:
+                            if effective_unit_id != 3:
+                                recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
+                                gram_unit = db.query(Unit).filter(Unit.id == 3).first()
+                                if recipe_unit and gram_unit:
+                                    ucs = UnitConversionService(db)
+                                    converted = ucs.convert(
+                                        Decimal(str(quantity)),
+                                        recipe_unit.abbreviation,
+                                        gram_unit.abbreviation,
+                                        entity_type="ingredient",
+                                        entity_id=ing.id,
+                                    )
+                                    if converted:
+                                        quantity = float(converted[0])
+                            if quantity:
+                                ingredient_cost = unit_price * Decimal(str(quantity))
+                                total_min_cost += ingredient_cost
+                                total_max_cost += ingredient_cost
+                                total_avg_cost += ingredient_cost
+                                valid_ingredients += 1
                 continue
 
             product_id, records = source
@@ -1400,6 +1767,7 @@ def calculate_recipe_cost_as_of(
         latest_record = None
         unit_price = None
         fallback_chain = None  # 回退链信息
+        aggregation_chain = None  # 子食材聚合链信息
         original_ingredient_name = ingredient.name  # 保存原始食材名称
         product = None
 
@@ -1465,7 +1833,7 @@ def calculate_recipe_cost_as_of(
                     ingredient = fallback_ingredient
 
             if not latest_record:
-                # 如果找不到回退食材的价格记录，尝试通过名称匹配（这个SB数据一致性问题）
+                # 如果找不到回退食材的价格记录，尝试通过名称匹配
                 # 使用带前向填充机制的价格查找函数
                 latest_record = _get_price_record_with_fallback(
                     db=db,
@@ -1487,7 +1855,14 @@ def calculate_recipe_cost_as_of(
                     record_quantity = Decimal(str(std_qty))
                     unit_price = record_price / record_quantity
 
-        if latest_record:
+        # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
+        if not latest_record and unit_price is None:
+            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date)
+            if child_agg:
+                unit_price, aggregation_chain = child_agg
+                # unit_price 已经是元/克
+
+        if latest_record or aggregation_chain is not None:
             # 计算成本：单价 × 菜谱中的数量 = 成本
             # 计算成本：单价 × 菜谱中的数量 = 成本
             # 优先使用 quantity，如果为 None 则从 quantity_range 取平均值
@@ -1495,23 +1870,40 @@ def calculate_recipe_cost_as_of(
             quantity, effective_unit_id = _get_effective_quantity(recipe_ingredient)
 
             # 单位转换：将菜谱用量转换为价格记录的单位
-            if quantity and latest_record and effective_unit_id:
-                price_unit_id = latest_record.standard_unit_id
-                recipe_unit_id = effective_unit_id
-                if price_unit_id and price_unit_id != recipe_unit_id:
-                    price_unit = db.query(Unit).filter(Unit.id == price_unit_id).first()
-                    recipe_unit = db.query(Unit).filter(Unit.id == recipe_unit_id).first()
-                    if price_unit and recipe_unit:
-                        ucs = UnitConversionService(db)
-                        converted = ucs.convert(
-                            Decimal(str(quantity)),
-                            recipe_unit.abbreviation,
-                            price_unit.abbreviation,
-                            entity_type="ingredient",
-                            entity_id=ingredient.id,
-                        )
-                        if converted:
-                            quantity = float(converted[0])
+            if quantity and effective_unit_id:
+                if aggregation_chain is not None:
+                    # 从子食材聚合得到的 unit_price 是元/克，需要将菜谱用量转换为克
+                    if effective_unit_id != 3:
+                        recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
+                        gram_unit = db.query(Unit).filter(Unit.id == 3).first()
+                        if recipe_unit and gram_unit:
+                            ucs = UnitConversionService(db)
+                            converted = ucs.convert(
+                                Decimal(str(quantity)),
+                                recipe_unit.abbreviation,
+                                gram_unit.abbreviation,
+                                entity_type="ingredient",
+                                entity_id=ingredient.id,
+                            )
+                            if converted:
+                                quantity = float(converted[0])
+                elif latest_record:
+                    price_unit_id = latest_record.standard_unit_id
+                    recipe_unit_id = effective_unit_id
+                    if price_unit_id and price_unit_id != recipe_unit_id:
+                        price_unit = db.query(Unit).filter(Unit.id == price_unit_id).first()
+                        recipe_unit = db.query(Unit).filter(Unit.id == recipe_unit_id).first()
+                        if price_unit and recipe_unit:
+                            ucs = UnitConversionService(db)
+                            converted = ucs.convert(
+                                Decimal(str(quantity)),
+                                recipe_unit.abbreviation,
+                                price_unit.abbreviation,
+                                entity_type="ingredient",
+                                entity_id=ingredient.id,
+                            )
+                            if converted:
+                                quantity = float(converted[0])
 
             # 只有当数量大于0时才计算成本
             # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
@@ -1528,7 +1920,9 @@ def calculate_recipe_cost_as_of(
                         "quantity": str(quantity),
                         "unit_price": float(unit_price) if unit_price else 0.0,
                         "cost": float(cost),
-                        "fallback_chain": fallback_chain  # 回退链信息（如果有）
+                        "fallback_chain": fallback_chain,  # 回退链信息（如果有）
+                        "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
+                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
                     })
                 except Exception as e:
                     # 数量解析失败，使用基础价格
@@ -1541,7 +1935,9 @@ def calculate_recipe_cost_as_of(
                         "quantity": "1",  # 默认为1
                         "unit_price": float(latest_record.price),
                         "cost": float(cost),
-                        "fallback_chain": fallback_chain  # 回退链信息（如果有）
+                        "fallback_chain": fallback_chain,  # 回退链信息（如果有）
+                        "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
+                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
                     })
             else:
                 # 对于数量为0的食材，我们仍然添加到明细中但成本为0
@@ -1554,7 +1950,9 @@ def calculate_recipe_cost_as_of(
                     "quantity": str(quantity),
                     "unit_price": float(unit_price) if unit_price else 0.0,
                     "cost": 0.0,
-                    "fallback_chain": fallback_chain  # 回退链信息（如果有）
+                    "fallback_chain": fallback_chain,  # 回退链信息（如果有）
+                    "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
+                    "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
                 })
 
     return {

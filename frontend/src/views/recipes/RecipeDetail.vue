@@ -472,6 +472,8 @@ interface CostBreakdownItem {
   unit_price: number
   cost: number
   fallback_chain?: string
+  aggregation_chain?: string
+  cost_source?: string
 }
 
 interface CostData {
@@ -858,6 +860,7 @@ const getIngredientFallbackChain = (ingredient: RecipeIngredient): string | null
   // 使用 recipe_ingredient_id 来匹配，而不是 ingredient_id
   // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
   const item = breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id)
+  if (item?.aggregation_chain) return item.aggregation_chain
   return item?.fallback_chain || null
 }
 
