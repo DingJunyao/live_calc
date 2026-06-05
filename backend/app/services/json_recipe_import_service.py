@@ -14,6 +14,7 @@ from app.models.recipe import Recipe, RecipeIngredient
 from app.models.nutrition import Ingredient
 from app.models.ingredient_category import IngredientCategory
 from app.services.unit_matcher import UnitMatcher
+from app.services.unit_conversion_service import UnitConversionService
 from sqlalchemy.exc import IntegrityError
 
 
@@ -50,6 +51,24 @@ class JsonRecipeImportService:
         self.unit_matcher = UnitMatcher(db)
         # 确保图片目录存在（包括 recipes 子目录）
         self.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _find_ingredient_by_name_or_alias(self, name: str):
+        """按名称或别名查找原料"""
+        ingredient = self.db.query(Ingredient).filter(
+            Ingredient.name == name
+        ).first()
+        if ingredient:
+            return ingredient
+
+        # 按别名查找：用 LIKE 粗筛后在 Python 层精确匹配
+        candidates = self.db.query(Ingredient).filter(
+            Ingredient.aliases.isnot(None),
+            Ingredient.aliases != "[]"
+        ).all()
+        for c in candidates:
+            if c.aliases and name in c.aliases:
+                return c
+        return None
 
     def _download_image(self, image_path: str, out_dir: str) -> Optional[str]:
         """
@@ -148,6 +167,22 @@ class JsonRecipeImportService:
                     ).first()
 
                     if existing:
+                        # 补充更新缺失的分类和单位信息
+                        updated = False
+                        if existing.category_id is None:
+                            category_name = item.get("category", "others")
+                            category = categories.get(category_name)
+                            if category:
+                                existing.category_id = category.id
+                                updated = True
+                        if existing.default_unit_id is None:
+                            unit_str = item.get("unit", "") or "斤"
+                            unit_obj = self.unit_matcher.match_or_create_unit(unit_str)
+                            if unit_obj:
+                                existing.default_unit_id = unit_obj.id
+                                updated = True
+                        if updated:
+                            self.db.flush()
                         result["skipped"] += 1
                         print(f"跳过已存在的原料: {ingredient_name}")
                         continue
@@ -370,10 +405,8 @@ class JsonRecipeImportService:
                 quantity_range = ing_data.get("quantity_range")
                 original_quantity = ing_data.get("original_quantity")
 
-                # 查找原料
-                ingredient = self.db.query(Ingredient).filter(
-                    Ingredient.name == ingredient_name
-                ).first()
+                # 查找原料（支持别名匹配）
+                ingredient = self._find_ingredient_by_name_or_alias(ingredient_name)
 
                 if ingredient:
                     # 获取单位
@@ -392,11 +425,19 @@ class JsonRecipeImportService:
                         original_quantity=original_quantity
                     )
                     self.db.add(recipe_ingredient)
+                    # 自动为 count 类型非标准单位创建实体覆盖（默认 100g）
+                    if unit_obj and ingredient:
+                        ucs = UnitConversionService(self.db)
+                        ucs.auto_create_entity_override(
+                            "ingredient", ingredient.id, unit_obj.abbreviation
+                        )
                 else:
-                    # 原料不存在，创建新原料
+                    # 原料不存在，创建新原料，默认单位为斤
+                    default_unit = self.unit_matcher.match_or_create_unit("斤")
                     new_ingredient = Ingredient(
                         name=ingredient_name,
-                        is_imported=True
+                        is_imported=True,
+                        default_unit_id=default_unit.id if default_unit else None
                     )
                     self.db.add(new_ingredient)
                     self.db.flush()
@@ -417,6 +458,12 @@ class JsonRecipeImportService:
                         original_quantity=original_quantity
                     )
                     self.db.add(recipe_ingredient)
+                    # 自动为 count 类型非标准单位创建实体覆盖（默认 100g）
+                    if unit_obj:
+                        ucs = UnitConversionService(self.db)
+                        ucs.auto_create_entity_override(
+                            "ingredient", new_ingredient.id, unit_obj.abbreviation
+                        )
 
             print(f"导入菜谱: {name}")
             return True

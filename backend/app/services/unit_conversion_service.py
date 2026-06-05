@@ -535,6 +535,119 @@ class UnitConversionService:
         return units
 
     # ------------------------------------------------------------------ #
+    #  自动创建实体覆盖 & 未映射单位查询
+    # ------------------------------------------------------------------ #
+
+    def auto_create_entity_override(
+        self,
+        entity_type: str,
+        entity_id: int,
+        unit_name: str,
+    ) -> Optional[EntityUnitOverride]:
+        """
+        自动为 count 类型单位创建实体覆盖（默认 100g/unit）
+
+        仅在以下条件同时满足时创建：
+        1. 该单位存在且为 count 类型
+        2. 该实体的该单位尚未配置 Override
+
+        Args:
+            entity_type: 'ingredient' 或 'product'
+            entity_id: 实体 ID
+            unit_name: 单位名称
+
+        Returns:
+            EntityUnitOverride 或 None
+        """
+        unit = self.get_unit_by_abbr(unit_name)
+        if not unit:
+            return None
+        if unit.unit_type != "count":
+            return None
+
+        # 检查是否已有覆盖
+        existing = self.get_entity_override(entity_type, entity_id, unit_name)
+        if existing:
+            return existing
+
+        # 查找 g 单位作为默认 weight_unit
+        weight_unit = self.get_unit_by_abbr("g")
+
+        override = EntityUnitOverride(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            unit_name=unit_name,
+            weight_per_unit=Decimal("100"),
+            weight_unit_id=weight_unit.id if weight_unit else None,
+            source="import",
+        )
+        self.db.add(override)
+        self.db.flush()
+        return override
+
+    def get_unmapped_units(
+        self,
+        entity_type: str,
+        entity_id: int,
+    ) -> List[Dict]:
+        """
+        获取实体在菜谱中使用的 count 类型单位中，尚未配置 Override 的列表
+
+        Args:
+            entity_type: 'ingredient' 或 'product'
+            entity_id: 实体 ID
+
+        Returns:
+            [{unit_id, unit_name, usage_count}, ...] 按使用次数降序
+        """
+        from app.models.recipe import RecipeIngredient
+
+        # 查询已配置的 Override 单位名
+        existing_overrides = (
+            self.db.query(EntityUnitOverride.unit_name)
+            .filter(
+                EntityUnitOverride.entity_type == entity_type,
+                EntityUnitOverride.entity_id == entity_id,
+            )
+            .all()
+        )
+        mapped_names = {row[0] for row in existing_overrides}
+
+        # 查询菜谱中该食材使用的所有单位
+        recipe_units = (
+            self.db.query(
+                Unit.id,
+                Unit.name,
+                Unit.abbreviation,
+            )
+            .join(RecipeIngredient, RecipeIngredient.unit_id == Unit.id)
+            .filter(
+                RecipeIngredient.ingredient_id == entity_id,
+                Unit.unit_type == "count",
+            )
+            .all()
+        )
+
+        # 按频率统计并过滤已映射的
+        from collections import Counter
+        unit_counts = Counter()
+        unit_ids = {}
+        for uid, name, abbr in recipe_units:
+            unit_counts[abbr] += 1
+            unit_ids[abbr] = uid
+
+        result = []
+        for unit_abbr, count in unit_counts.most_common():
+            if unit_abbr not in mapped_names:
+                result.append({
+                    "unit_id": unit_ids[unit_abbr],
+                    "unit_name": unit_abbr,
+                    "usage_count": count,
+                })
+
+        return result
+
+    # ------------------------------------------------------------------ #
     #  保留的区域/用户偏好方法
     # ------------------------------------------------------------------ #
 

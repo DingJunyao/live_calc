@@ -25,6 +25,7 @@ from app.schemas.unit import (
     EntityDensityResponse,
     UnitConvertRequest,
     UnitConvertResponse,
+    UnmappedUnitItem,
 )
 from app.services.unit_matcher import UnitMatcher
 from app.services.unit_conversion_service import UnitConversionService
@@ -526,6 +527,25 @@ def delete_entity_unit_override(
     db.delete(override)
     db.commit()
     return {"message": "实体单位覆盖已删除"}
+
+
+@entities_unit_router.get("/unmapped-units", response_model=List[UnmappedUnitItem])
+def get_unmapped_units(
+    entity_type: str,
+    entity_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    获取实体在菜谱中使用的 count 类型单位中，尚未配置 Override 的列表
+
+    按使用频率降序排列，供前端下拉选择。
+
+    - **entity_type**: 实体类型（ingredient 或 product）
+    - **entity_id**: 实体ID
+    """
+    _validate_entity_type(entity_type)
+    ucs = UnitConversionService(db)
+    return ucs.get_unmapped_units(entity_type, entity_id)
 
 
 # ============ 实体密度 API ============

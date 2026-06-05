@@ -17,6 +17,7 @@ class EntityUnitOverride(Base):
     weight_per_unit = Column(Numeric(10, 3))  # 单位重量，如 55（一个55g）
     weight_unit_id = Column(Integer, ForeignKey("units.id"))  # 指向质量单位
     is_default = Column(Boolean, default=False)  # 是否为该实体的默认单位
+    source = Column(String(20), default="manual")  # 来源：import(导入自动创建) / manual(手动维护)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

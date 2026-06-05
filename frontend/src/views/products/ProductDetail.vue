@@ -367,6 +367,26 @@
             </v-btn>
           </div>
 
+          <!-- 待配置单位（来自菜谱的 count 类型单位，尚未映射） -->
+          <div v-if="unmappedUnits.length > 0" class="mb-3">
+            <div class="text-caption text-medium-emphasis mb-1">
+              待配置单位（来自菜谱，点击快速添加，默认 100 g）
+            </div>
+            <v-chip
+              v-for="item in unmappedUnits"
+              :key="item.unit_id"
+              size="small"
+              variant="outlined"
+              color="warning"
+              class="mr-1 mb-1"
+              style="cursor: pointer"
+              @click="quickAddUnmappedUnit(item)"
+            >
+              {{ item.unit_name }}
+              <span class="text-caption ml-1">({{ item.usage_count }}次)</span>
+            </v-chip>
+          </div>
+
           <div v-if="loadingUnits" class="text-center py-4">
             <v-progress-circular indeterminate color="primary" size="24" />
           </div>
@@ -389,8 +409,12 @@
                   {{ unit.weight_per_unit }}g/个
                 </span>
               </v-list-item-title>
-              <v-list-item-subtitle v-if="unit.is_default" class="text-caption text-primary">
-                默认单位
+              <v-list-item-subtitle class="text-caption">
+                <template v-if="unit.is_default">
+                  <span class="text-primary">默认单位</span>
+                  <span class="mx-1">·</span>
+                </template>
+                <span class="text-medium-emphasis">{{ unit.source === 'import' ? '自动' : '手动' }}</span>
               </v-list-item-subtitle>
               <template #append>
                 <v-btn
@@ -887,8 +911,9 @@ const openAddPriceDialog = () => {
 }
 
 // 自定义单位相关
-import type { EntityUnitOverride, EntityDensity } from '@/types'
+import type { EntityUnitOverride, EntityDensity, UnmappedUnitItem } from '@/types'
 const entityUnits = ref<EntityUnitOverride[]>([])
+const unmappedUnits = ref<UnmappedUnitItem[]>([])
 const entityDensity = ref<EntityDensity | null>(null)
 const loadingUnits = ref(false)
 const showUnitDialog = ref(false)
@@ -944,9 +969,17 @@ const loadDensity = async () => {
   }
 }
 
-// 打开单位对话框
-const openUnitDialog = (unit?: EntityUnitOverride) => {
-  if (unit) {
+// 打开单位对话框（支持传入 EntityUnitOverride 或 unit_name 字符串）
+const openUnitDialog = (unit?: EntityUnitOverride | string) => {
+  if (typeof unit === 'string') {
+    unitForm.value = {
+      id: null,
+      unit_name: unit,
+      conversion_factor: null,
+      weight_per_unit: 100,
+      is_default: false
+    }
+  } else if (unit) {
     unitForm.value = {
       id: unit.id,
       unit_name: unit.unit_name,
@@ -964,6 +997,21 @@ const openUnitDialog = (unit?: EntityUnitOverride) => {
     }
   }
   showUnitDialog.value = true
+}
+
+// 加载未映射单位（来自菜谱的 count 类型单位，尚未配置 Override）
+const loadUnmappedUnits = async () => {
+  try {
+    const response = await api.get(`/entities/product/${productId.value}/units/unmapped-units`)
+    unmappedUnits.value = response || []
+  } catch (e) {
+    unmappedUnits.value = []
+  }
+}
+
+// 快速添加未映射单位
+const quickAddUnmappedUnit = (item: UnmappedUnitItem) => {
+  openUnitDialog(item.unit_name)
 }
 
 // 保存单位
@@ -988,6 +1036,7 @@ const saveEntityUnit = async () => {
     showMessage('保存成功', 'success')
     showUnitDialog.value = false
     await loadEntityUnits()
+    await loadUnmappedUnits()
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -1002,6 +1051,7 @@ const deleteEntityUnit = async (unitId: number) => {
     await api.delete(`/entities/product/${productId.value}/units/${unitId}`)
     showMessage('删除成功', 'success')
     await loadEntityUnits()
+    await loadUnmappedUnits()
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
@@ -1329,7 +1379,8 @@ const loadData = async () => {
       loadPriceRecords(),
       loadNutritionData(),
       loadEntityUnits(),
-      loadDensity()
+      loadDensity(),
+      loadUnmappedUnits()
     ])
   } catch (e: any) {
     console.error('加载商品失败', e)

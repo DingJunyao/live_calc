@@ -63,7 +63,7 @@ class EntityUnitOverrideBase(BaseModel):
 
 class EntityUnitOverrideCreate(EntityUnitOverrideBase):
     """创建实体单位覆盖模式"""
-    pass
+    source: Optional[str] = "manual"  # import / manual
 
 
 class EntityUnitOverrideUpdate(BaseModel):
@@ -81,6 +81,7 @@ class EntityUnitOverrideResponse(EntityUnitOverrideBase):
     entity_type: str
     entity_id: int
     base_unit_id: Optional[int] = None
+    source: Optional[str] = "manual"
 
     class Config:
         from_attributes = True
@@ -138,3 +139,12 @@ class UnitConvertResponse(BaseModel):
     from_unit: str
     to_unit: str
     method: str  # 'si_factor' / 'entity_override' / 'density' / 'not_supported'
+
+
+# ============ 未映射单位 Schemas ============
+
+class UnmappedUnitItem(BaseModel):
+    """未映射的 count 类型单位条目"""
+    unit_id: int
+    unit_name: str
+    usage_count: int  # 在菜谱中的使用次数

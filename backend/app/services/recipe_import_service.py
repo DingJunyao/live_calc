@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 import tempfile
 import re
 from app.services.unit_matcher import UnitMatcher
+from app.services.unit_conversion_service import UnitConversionService
 
 
 class RecipeImportService:
@@ -866,6 +867,12 @@ class RecipeImportService:
                         unit_id=unit_obj.id if unit_obj else None
                     )
                     self.db.add(recipe_ingredient)
+                    # 自动为 count 类型非标准单位创建实体覆盖（默认 100g）
+                    if unit_obj and ingredient:
+                        ucs = UnitConversionService(self.db)
+                        ucs.auto_create_entity_override(
+                            "ingredient", ingredient.id, unit_obj.abbreviation
+                        )
                 else:
                     print(f"警告: 未找到原料 {ingredient_data.ingredient_name}")
 
@@ -896,11 +903,13 @@ class RecipeImportService:
         if ingredient:
             return ingredient.name
 
-        # 如果没有找到，创建新的原料
+        # 如果没有找到，创建新的原料，默认单位为斤
         try:
+            default_unit = self.unit_matcher.match_or_create_unit("斤")
             new_ingredient = Ingredient(
                 name=clean_name,
-                aliases=[]
+                aliases=[],
+                default_unit_id=default_unit.id if default_unit else None
             )
             self.db.add(new_ingredient)
             self.db.flush()  # 确保插入但不提交事务

@@ -26,6 +26,7 @@ from app.models.recipe import Recipe, RecipeIngredient
 from app.models.nutrition import Ingredient
 from app.models.ingredient_category import IngredientCategory
 from app.services.unit_matcher import UnitMatcher
+from app.services.unit_conversion_service import UnitConversionService
 from sqlalchemy.exc import IntegrityError
 
 
@@ -50,8 +51,27 @@ class EnhancedRecipeImportService:
     MAX_RETRIES = 3
     RETRY_DELAY = 2
 
+    def _find_ingredient_by_name_or_alias(self, name: str):
+        """按名称或别名查找原料"""
+        ingredient = self.db.query(Ingredient).filter(
+            Ingredient.name == name
+        ).first()
+        if ingredient:
+            return ingredient
+
+        # 按别名查找：用 LIKE 粗筛后在 Python 层精确匹配
+        candidates = self.db.query(Ingredient).filter(
+            Ingredient.aliases.isnot(None),
+            Ingredient.aliases != "[]"
+        ).all()
+        for c in candidates:
+            if c.aliases and name in c.aliases:
+                return c
+        return None
+
     # 分类映射（中文 -> 系统分类 key）
     CATEGORY_MAPPING = {
+        "谷物": "grains",
         "肉类": "meat",
         "蔬菜": "vegetables",
         "水果": "fruits",
@@ -64,6 +84,7 @@ class EnhancedRecipeImportService:
         "饮品": "beverages",
         "其他": "others",
         # 兼容英文分类
+        "grains": "grains",
         "meat": "meat",
         "vegetables": "vegetables",
         "fruits": "fruits",
@@ -490,6 +511,23 @@ class EnhancedRecipeImportService:
                     ).first()
 
                     if existing:
+                        # 补充更新缺失的分类和单位信息
+                        updated = False
+                        if existing.category_id is None:
+                            category_name = item.get("category", "others")
+                            mapped_category = self.CATEGORY_MAPPING.get(category_name, category_name)
+                            category = categories.get(mapped_category) or categories.get(category_name)
+                            if category:
+                                existing.category_id = category.id
+                                updated = True
+                        if existing.default_unit_id is None:
+                            unit_str = raw_units.get(ingredient_name, "")
+                            unit_obj = self.unit_matcher.match_or_create_unit(unit_str) if unit_str else self.unit_matcher.match_or_create_unit("斤")
+                            if unit_obj:
+                                existing.default_unit_id = unit_obj.id
+                                updated = True
+                        if updated:
+                            self.db.flush()
                         result["skipped"] += 1
                         if idx % 100 == 0:
                             self._report_progress("处理原料", idx, len(ingredients_data),
@@ -675,18 +713,18 @@ class EnhancedRecipeImportService:
                 if not original_quantity and quantity_description:
                     original_quantity = quantity_description
 
-                ingredient = self.db.query(Ingredient).filter(
-                    Ingredient.name == ingredient_name
-                ).first()
+                ingredient = self._find_ingredient_by_name_or_alias(ingredient_name)
 
                 unit_str = ing_data.get("unit", "")
                 unit_obj = self.unit_matcher.match_or_create_unit(unit_str) if unit_str else None
                 unit_id = unit_obj.id if unit_obj else None
 
                 if not ingredient:
+                    default_unit = self.unit_matcher.match_or_create_unit("斤")
                     ingredient = Ingredient(
                         name=ingredient_name,
-                        is_imported=True
+                        is_imported=True,
+                        default_unit_id=default_unit.id if default_unit else None
                     )
                     self.db.add(ingredient)
                     self.db.flush()
@@ -703,6 +741,12 @@ class EnhancedRecipeImportService:
                     original_quantity=original_quantity
                 )
                 self.db.add(recipe_ingredient)
+                # 自动为 count 类型非标准单位创建实体覆盖（默认 100g）
+                if unit_obj and ingredient:
+                    ucs = UnitConversionService(self.db)
+                    ucs.auto_create_entity_override(
+                        "ingredient", ingredient.id, unit_obj.abbreviation
+                    )
 
             print(f"导入菜谱: {name}")
             return True

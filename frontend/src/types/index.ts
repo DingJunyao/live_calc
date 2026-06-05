@@ -107,6 +107,13 @@ export interface EntityUnitOverride {
   weight_per_unit: number | null
   weight_unit_id: number | null
   is_default: boolean
+  source: string | null
+}
+
+export interface UnmappedUnitItem {
+  unit_id: number
+  unit_name: string
+  usage_count: number
 }
 
 export interface EntityDensity {

@@ -163,7 +163,9 @@ live_calc/
 
 目录：`backend`，所有后端相关操作均在此目录下进行，并且使用虚拟环境。
 
-虚拟环境：先找 `conda` 下的 `live_calc` 环境，没有则使用 `.venv` 下的环境。
+开发时使用 `uv` 管理。
+
+虚拟环境：根目录下的 `.venv` 下的环境。
 
 所有后端的修改都必须确保无语法错误。
 
@@ -211,5 +213,8 @@ live_calc/
 - 鸡蛋价格显示异常修复：修复了在原料管理中价格显示异常的问题，确保价格历史列表与价格趋势图表的显示逻辑一致。详细信息请见 [EGG_PRICE_DISPLAY_FIX.md](cc/EGG_PRICE_DISPLAY_FIX.md)
 - 默认单位改为斤：商品和原料的默认单位统一改为「斤」，涉及后端 API 创建接口、导入服务和前端表单默认值。详见 [DEFAULT_UNIT_JIN.md](cc/DEFAULT_UNIT_JIN.md)
 - quantity_range 成本计算修复：修复了使用 quantity_range（用量区间）的食材成本显示为 0 的问题。在成本计算函数中新增 `_get_effective_quantity()` 辅助函数，当 quantity 为 None 时从 quantity_range 取平均值计算成本。详见 [QUANTITY_RANGE_COST_FIX.md](cc/QUANTITY_RANGE_COST_FIX.md)
+- 成本计算单位转换 & substitutable 回退：修复成本计算中价格记录单位（如"个"）与菜谱用量单位（如"克"）不同时直接相乘导致成本异常偏高的问题；同时让 substitutable（可替代）关系也能作为价格/营养回退源。详见 [BUGFIX_UNIT_CONVERSION_IN_COST.md](cc/BUGFIX_UNIT_CONVERSION_IN_COST.md)
+
+- 旧版数据库迁移：从 livecalc_bak.db 迁移用户、商家、商品和价格记录（475 条）到新数据库，含兼容 SQLite/MySQL/PostgreSQL 的 SQL 脚本。详见 [DATA_MIGRATION_BAK_DB.md](cc/DATA_MIGRATION_BAK_DB.md)
 
 ### 功能实现记录

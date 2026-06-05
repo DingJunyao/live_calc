@@ -563,6 +563,26 @@
             </v-btn>
           </div>
 
+          <!-- 待配置单位（来自菜谱的 count 类型单位，尚未映射） -->
+          <div v-if="unmappedUnits.length > 0" class="mb-3">
+            <div class="text-caption text-medium-emphasis mb-1">
+              待配置单位（来自菜谱，点击快速添加，默认 100 g）
+            </div>
+            <v-chip
+              v-for="item in unmappedUnits"
+              :key="item.unit_id"
+              size="small"
+              variant="outlined"
+              color="warning"
+              class="mr-1 mb-1"
+              style="cursor: pointer"
+              @click="quickAddUnmappedUnit(item)"
+            >
+              {{ item.unit_name }}
+              <span class="text-caption ml-1">({{ item.usage_count }}次)</span>
+            </v-chip>
+          </div>
+
           <div v-if="loadingUnits" class="text-center py-4">
             <v-progress-circular indeterminate color="primary" size="24" />
           </div>
@@ -585,8 +605,12 @@
                   {{ unit.weight_per_unit }}g/个
                 </span>
               </v-list-item-title>
-              <v-list-item-subtitle v-if="unit.is_default" class="text-caption text-primary">
-                默认单位
+              <v-list-item-subtitle class="text-caption">
+                <template v-if="unit.is_default">
+                  <span class="text-primary">默认单位</span>
+                  <span class="mx-1">·</span>
+                </template>
+                <span class="text-medium-emphasis">{{ unit.source === 'import' ? '自动' : '手动' }}</span>
               </v-list-item-subtitle>
               <template #append>
                 <v-btn
@@ -1334,21 +1358,40 @@ const relationTypeOptions = [
     label: '包含',
     description: '当前原料包含目标原料（父→子）',
     icon: 'mdi-arrow-down',
-    color: 'info'
+    color: 'info',
+    reverse: false
+  },
+  {
+    value: 'contained_by',
+    label: '被包含',
+    description: '当前原料属于目标原料（子→父）',
+    icon: 'mdi-arrow-up',
+    color: 'info',
+    reverse: true
   },
   {
     value: 'fallback',
     label: '回退',
     description: '当前原料可回退到目标原料',
     icon: 'mdi-arrow-left',
-    color: 'warning'
+    color: 'warning',
+    reverse: false
+  },
+  {
+    value: 'fallback_by',
+    label: '被回退',
+    description: '目标原料可回退到当前原料',
+    icon: 'mdi-arrow-right',
+    color: 'warning',
+    reverse: true
   },
   {
     value: 'substitutable',
     label: '可替代',
     description: '两个原料可以相互替代',
     icon: 'mdi-swap-horizontal',
-    color: 'success'
+    color: 'success',
+    reverse: false
   }
 ]
 
@@ -1361,8 +1404,9 @@ const loadingMergeTargets = ref(false)
 const selectedMergeTarget = ref<Ingredient | null>(null)
 
 // 自定义单位相关
-import type { EntityUnitOverride, EntityDensity } from '@/types'
+import type { EntityUnitOverride, EntityDensity, UnmappedUnitItem } from '@/types'
 const entityUnits = ref<EntityUnitOverride[]>([])
+const unmappedUnits = ref<UnmappedUnitItem[]>([])
 const entityDensity = ref<EntityDensity | null>(null)
 const loadingUnits = ref(false)
 const showUnitDialog = ref(false)
@@ -1418,9 +1462,17 @@ const loadDensity = async () => {
   }
 }
 
-// 打开单位对话框
-const openUnitDialog = (unit?: EntityUnitOverride) => {
-  if (unit) {
+// 打开单位对话框（支持传入 EntityUnitOverride 或 unit_name 字符串）
+const openUnitDialog = (unit?: EntityUnitOverride | string) => {
+  if (typeof unit === 'string') {
+    unitForm.value = {
+      id: null,
+      unit_name: unit,
+      conversion_factor: null,
+      weight_per_unit: 100,
+      is_default: false
+    }
+  } else if (unit) {
     unitForm.value = {
       id: unit.id,
       unit_name: unit.unit_name,
@@ -1438,6 +1490,21 @@ const openUnitDialog = (unit?: EntityUnitOverride) => {
     }
   }
   showUnitDialog.value = true
+}
+
+// 加载未映射单位（来自菜谱的 count 类型单位，尚未配置 Override）
+const loadUnmappedUnits = async () => {
+  try {
+    const response = await api.get(`/entities/ingredient/${ingredientId.value}/units/unmapped-units`)
+    unmappedUnits.value = response || []
+  } catch (e) {
+    unmappedUnits.value = []
+  }
+}
+
+// 快速添加未映射单位
+const quickAddUnmappedUnit = (item: UnmappedUnitItem) => {
+  openUnitDialog(item.unit_name)
 }
 
 // 保存单位
@@ -1462,6 +1529,7 @@ const saveEntityUnit = async () => {
     showMessage('保存成功', 'success')
     showUnitDialog.value = false
     await loadEntityUnits()
+    await loadUnmappedUnits()
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -1476,6 +1544,7 @@ const deleteEntityUnit = async (unitId: number) => {
     await api.delete(`/entities/ingredient/${ingredientId.value}/units/${unitId}`)
     showMessage('删除成功', 'success')
     await loadEntityUnits()
+    await loadUnmappedUnits()
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
@@ -1859,7 +1928,8 @@ const loadData = async () => {
       loadRecipes(),
       loadHierarchy(),
       loadEntityUnits(),
-      loadDensity()
+      loadDensity(),
+      loadUnmappedUnits()
     ])
   } catch (e: any) {
     console.error('加载原料失败', e)
@@ -1991,16 +2061,33 @@ const openAddRelationDialog = () => {
   showAddRelationDialog.value = true
 }
 
+// 反向关系类型映射到实际数据库类型
+const reverseTypeMapping: Record<string, string> = {
+  contained_by: 'contains',
+  fallback_by: 'fallback'
+}
+
 // 添加层级关系
 const addRelation = async () => {
   if (!relationForm.value.target_ingredient_id) return
 
   savingRelation.value = true
   try {
+    const selectedType = relationForm.value.relation_type
+    const option = relationTypeOptions.find(o => o.value === selectedType)
+    const isReverse = option?.reverse ?? false
+
+    // 将虚拟反向类型映射回实际数据库类型
+    const actualType = reverseTypeMapping[selectedType] || selectedType
+
+    // 反向关系时交换 parent_id 和 child_id
+    const parentId = isReverse ? relationForm.value.target_ingredient_id : ingredientId.value
+    const childId = isReverse ? ingredientId.value : relationForm.value.target_ingredient_id
+
     await api.post('/ingredients/hierarchy', {
-      parent_id: ingredientId.value,
-      child_id: relationForm.value.target_ingredient_id,
-      relation_type: relationForm.value.relation_type,
+      parent_id: parentId,
+      child_id: childId,
+      relation_type: actualType,
       strength: relationForm.value.strength
     })
     showMessage('关系添加成功', 'success')
@@ -2202,8 +2289,12 @@ const getRelationPreviewText = (relationType: string, direction: 'child' | 'pare
     switch (relationType) {
       case 'contains':
         return `${currentName} 包含 ${targetName}`
+      case 'contained_by':
+        return `${currentName} 属于 ${targetName}`
       case 'fallback':
         return `${currentName} 可回退到 ${targetName}`
+      case 'fallback_by':
+        return `${targetName} 可回退到 ${currentName}`
       case 'substitutable':
         return `${currentName} 和 ${targetName} 可相互替代`
       default:
@@ -2216,8 +2307,12 @@ const getRelationPreviewText = (relationType: string, direction: 'child' | 'pare
     switch (relationType) {
       case 'contains':
         return `${currentName} 属于 ${targetName}`
+      case 'contained_by':
+        return `${targetName} 包含 ${currentName}`
       case 'fallback':
         return `${currentName} 可回退到 ${targetName}`
+      case 'fallback_by':
+        return `${targetName} 可回退到 ${currentName}`
       case 'substitutable':
         return `${currentName} 和 ${targetName} 可相互替代`
       default:
@@ -2231,14 +2326,19 @@ const getRelationPreviewText = (relationType: string, direction: 'child' | 'pare
 // 获取关系描述文本（解释关系的含义）
 const getRelationDescriptionText = (relationType: string, direction: 'child' | 'parent') => {
   const targetName = selectedTargetIngredient.value?.name || '目标原料'
+  const currentName = ingredient.value?.name || '当前原料'
 
   // child_relations: 当前原料是父，目标原料是子
   if (direction === 'child') {
     switch (relationType) {
       case 'contains':
-        return `即 ${targetName} 是 ${ingredient.value?.name || '当前原料'} 的一部分`
+        return `即 ${targetName} 是 ${currentName} 的一部分`
+      case 'contained_by':
+        return `即 ${currentName} 是 ${targetName} 的一部分`
       case 'fallback':
-        return `即当无法获取 ${ingredient.value?.name || '当前原料'} 时，可使用 ${targetName} 代替`
+        return `即当无法获取 ${currentName} 时，可使用 ${targetName} 代替`
+      case 'fallback_by':
+        return `即当无法获取 ${targetName} 时，可使用 ${currentName} 代替`
       case 'substitutable':
         return `即两者可以在某些情况下互相替换使用`
       default:
@@ -2250,9 +2350,13 @@ const getRelationDescriptionText = (relationType: string, direction: 'child' | '
   if (direction === 'parent') {
     switch (relationType) {
       case 'contains':
-        return `即 ${ingredient.value?.name || '当前原料'} 是 ${targetName} 的一部分`
+        return `即 ${currentName} 是 ${targetName} 的一部分`
+      case 'contained_by':
+        return `即 ${targetName} 是 ${currentName} 的一部分`
       case 'fallback':
-        return `即当无法获取 ${ingredient.value?.name || '当前原料'} 时，可使用 ${targetName} 代替`
+        return `即当无法获取 ${currentName} 时，可使用 ${targetName} 代替`
+      case 'fallback_by':
+        return `即当无法获取 ${targetName} 时，可使用 ${currentName} 代替`
       case 'substitutable':
         return `即两者可以在某些情况下互相替换使用`
       default:

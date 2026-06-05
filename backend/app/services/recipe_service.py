@@ -9,6 +9,8 @@ from app.models.product_entity import Product
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData  # NutritionData 从 nutrition_data 导入，避免冲突
 from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelationType
+from app.services.unit_conversion_service import UnitConversionService
+from app.models.unit import Unit
 from decimal import Decimal
 
 
@@ -142,11 +144,18 @@ def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, 
 
     visited = visited + [ingredient.id]
 
-    # 查找所有回退父级（可能有多个，按 strength 降序尝试）
+    # 查找所有回退父级（按 fallback > substitutable 优先级，strength 降序尝试）
+    # substitutable（可替代）关系也可作为价格回退源
     hierarchies = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.child_id == ingredient.id,
-        IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
+        IngredientHierarchy.relation_type.in_([
+            HierarchyRelationType.FALLBACK.value,
+            HierarchyRelationType.SUBSTITUTABLE.value,
+        ])
     ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    # 按 fallback 优先于 substitutable 排序
+    hierarchies.sort(key=lambda h: 0 if h.relation_type == HierarchyRelationType.FALLBACK.value else 1)
 
     for hierarchy in hierarchies:
         if not hierarchy or not hierarchy.parent:
@@ -212,11 +221,18 @@ def _get_ingredient_nutrition(
 
     visited = visited + [ingredient.id]
 
-    # 查找所有回退父级（可能有多个，按 strength 降序尝试）
+    # 查找所有回退父级（按 fallback > substitutable 优先级，strength 降序尝试）
+    # substitutable（可替代）关系也可作为营养回退源
     hierarchies = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.child_id == ingredient.id,
-        IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
+        IngredientHierarchy.relation_type.in_([
+            HierarchyRelationType.FALLBACK.value,
+            HierarchyRelationType.SUBSTITUTABLE.value,
+        ])
     ).order_by(IngredientHierarchy.strength.desc()).all()
+
+    # 按 fallback 优先于 substitutable 排序
+    hierarchies.sort(key=lambda h: 0 if h.relation_type == HierarchyRelationType.FALLBACK.value else 1)
 
     for hierarchy in hierarchies:
         if not hierarchy or not hierarchy.parent:
@@ -269,10 +285,27 @@ async def batch_calculate_recipes_cost_nutrition(
     return results
 
 
-def _get_effective_quantity(recipe_ingredient) -> Decimal:
+# 模糊量关键词 → 默认克数映射
+VAGUE_QUANTITY_GRAM_MAP = {
+    "适量": Decimal("100"),
+    "少许": Decimal("5"),
+}
+
+
+def _get_effective_quantity(recipe_ingredient) -> tuple[Decimal, int | None]:
     """
-    从 recipe_ingredient 中提取有效数量。
+    从 recipe_ingredient 中提取有效数量和有效单位ID。
+
     优先使用 quantity，如果为 None 则尝试从 quantity_range 取平均值。
+    如果仍是 None，检查 original_quantity 中的模糊量关键词（适量→100g, 少许→5g）。
+
+    Returns:
+        (quantity, effective_unit_id):
+        - quantity: 有效数量（Decimal）
+        - effective_unit_id: 数量对应的单位ID。
+          当使用 VAGUE_QUANTITY_GRAM_MAP 回退时，返回克单位ID (3)；
+          否则返回 recipe_ingredient.unit_id。
+          如果无法确定单位，返回 None。
     """
     qty = recipe_ingredient.quantity
 
@@ -287,16 +320,36 @@ def _get_effective_quantity(recipe_ingredient) -> Decimal:
                     q_min = q_range.get("min")
                     q_max = q_range.get("max")
                     if q_max is not None:
-                        return Decimal(str(q_max))
+                        return Decimal(str(q_max)), recipe_ingredient.unit_id
                     elif q_min is not None:
-                        return Decimal(str(q_min))
-                    elif q_max is not None:
-                        return Decimal(str(q_max))
+                        return Decimal(str(q_min)), recipe_ingredient.unit_id
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
-        return Decimal("0")
 
-    return Decimal(str(qty))
+        # 检查 original_quantity 中的模糊量关键词
+        orig = recipe_ingredient.original_quantity
+        if orig:
+            if isinstance(orig, str):
+                orig_lower = orig.strip().lower()
+            else:
+                # original_quantity 可能是 JSON 字符串
+                try:
+                    orig_parsed = json.loads(orig) if isinstance(orig, str) else orig
+                    if isinstance(orig_parsed, str):
+                        orig_lower = orig_parsed.strip().lower()
+                    else:
+                        orig_lower = str(orig_parsed).lower()
+                except (json.JSONDecodeError, TypeError):
+                    orig_lower = str(orig).lower()
+
+            for keyword, default_qty in VAGUE_QUANTITY_GRAM_MAP.items():
+                if keyword in orig_lower:
+                    # VAGUE_QUANTITY_GRAM_MAP 中的值是克数，所以有效单位是"克" (id=3)
+                    return default_qty, 3
+
+        return Decimal("0"), recipe_ingredient.unit_id
+
+    return Decimal(str(qty)), recipe_ingredient.unit_id
 
 
 async def calculate_recipe_cost(
@@ -461,13 +514,36 @@ async def calculate_recipe_cost(
         if unit_price is not None:
             # 计算成本：单价 × 菜谱中的数量 = 成本
             # 优先使用 quantity，如果为 None 则从 quantity_range 取平均值
-            quantity = _get_effective_quantity(recipe_ingredient)
+            # 当使用 VAGUE_QUANTITY_GRAM_MAP 回退时，effective_unit_id 为克(3)
+            quantity, effective_unit_id = _get_effective_quantity(recipe_ingredient)
+
+            # 单位转换：将菜谱用量转换为价格记录的单位
+            # price_record 的单价是基于 standard_unit_id，菜谱用量基于 effective_unit_id
+            if quantity and day_records and effective_unit_id:
+                price_unit_id = day_records[0].standard_unit_id
+                recipe_unit_id = effective_unit_id
+                if price_unit_id and price_unit_id != recipe_unit_id:
+                    # 需要做单位转换
+                    price_unit = db.query(Unit).filter(Unit.id == price_unit_id).first()
+                    recipe_unit = db.query(Unit).filter(Unit.id == recipe_unit_id).first()
+                    if price_unit and recipe_unit:
+                        ucs = UnitConversionService(db)
+                        # 将菜谱用量从 recipe_unit 转换为 price_unit
+                        converted = ucs.convert(
+                            Decimal(str(quantity)),
+                            recipe_unit.abbreviation,
+                            price_unit.abbreviation,
+                            entity_type="ingredient",
+                            entity_id=ingredient.id,
+                        )
+                        if converted:
+                            quantity = float(converted[0])
 
             # 只有当数量大于0时才计算成本
             # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
             if quantity:
                 try:
-                    cost = unit_price * quantity if unit_price else Decimal("0")
+                    cost = unit_price * Decimal(str(quantity)) if unit_price else Decimal("0")
                     total_cost += cost
 
                     cost_breakdown.append({
@@ -637,7 +713,7 @@ def calculate_recipe_cost_range_as_of(
         avg_unit_price = sum(unit_prices) / len(unit_prices)
 
         # 计算该食材的成本
-        quantity = _get_effective_quantity(recipe_ingredient)
+        quantity, _effective_unit_id = _get_effective_quantity(recipe_ingredient)
 
         if quantity:
             try:
@@ -748,8 +824,12 @@ def calculate_recipe_cost_range_trend(
         records_by_product[r.product_id].append(r)
 
     # 4. 批量加载所有回退关系（按 strength 降序排列）
+    # 同时包含 fallback 和 substitutable 关系
     all_fallbacks = db.query(IngredientHierarchy).filter(
-        IngredientHierarchy.relation_type == HierarchyRelationType.FALLBACK.value
+        IngredientHierarchy.relation_type.in_([
+            HierarchyRelationType.FALLBACK.value,
+            HierarchyRelationType.SUBSTITUTABLE.value,
+        ])
     ).order_by(IngredientHierarchy.strength.desc()).all()
 
     fallback_by_child = defaultdict(list)
@@ -840,12 +920,29 @@ def calculate_recipe_cost_range_trend(
                 unit_price = record_price / Decimal(str(std_qty))
 
             # 计算该食材成本
-            quantity = _get_effective_quantity(ri)
+            quantity, effective_unit_id = _get_effective_quantity(ri)
             if not quantity:
                 continue
 
+            # 单位转换：将菜谱用量转换为价格记录的单位
+            # 当使用 VAGUE_QUANTITY_GRAM_MAP 回退时，effective_unit_id 为克(3)
+            if effective_unit_id and latest_record.standard_unit_id and effective_unit_id != latest_record.standard_unit_id:
+                price_unit = db.query(Unit).filter(Unit.id == latest_record.standard_unit_id).first()
+                recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
+                if price_unit and recipe_unit:
+                    ucs = UnitConversionService(db)
+                    converted = ucs.convert(
+                        Decimal(str(quantity)),
+                        recipe_unit.abbreviation,
+                        price_unit.abbreviation,
+                        entity_type="ingredient",
+                        entity_id=ing.id,
+                    )
+                    if converted:
+                        quantity = float(converted[0])
+
             try:
-                ingredient_cost = unit_price * quantity
+                ingredient_cost = unit_price * Decimal(str(quantity))
                 total_min_cost += ingredient_cost
                 total_max_cost += ingredient_cost
                 total_avg_cost += ingredient_cost
@@ -1394,7 +1491,27 @@ def calculate_recipe_cost_as_of(
             # 计算成本：单价 × 菜谱中的数量 = 成本
             # 计算成本：单价 × 菜谱中的数量 = 成本
             # 优先使用 quantity，如果为 None 则从 quantity_range 取平均值
-            quantity = _get_effective_quantity(recipe_ingredient)
+            # 当使用 VAGUE_QUANTITY_GRAM_MAP 回退时，effective_unit_id 为克(3)
+            quantity, effective_unit_id = _get_effective_quantity(recipe_ingredient)
+
+            # 单位转换：将菜谱用量转换为价格记录的单位
+            if quantity and latest_record and effective_unit_id:
+                price_unit_id = latest_record.standard_unit_id
+                recipe_unit_id = effective_unit_id
+                if price_unit_id and price_unit_id != recipe_unit_id:
+                    price_unit = db.query(Unit).filter(Unit.id == price_unit_id).first()
+                    recipe_unit = db.query(Unit).filter(Unit.id == recipe_unit_id).first()
+                    if price_unit and recipe_unit:
+                        ucs = UnitConversionService(db)
+                        converted = ucs.convert(
+                            Decimal(str(quantity)),
+                            recipe_unit.abbreviation,
+                            price_unit.abbreviation,
+                            entity_type="ingredient",
+                            entity_id=ingredient.id,
+                        )
+                        if converted:
+                            quantity = float(converted[0])
 
             # 只有当数量大于0时才计算成本
             # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
