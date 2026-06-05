@@ -1,0 +1,93 @@
+/* ========================================
+   Responsive Layout Utilities
+   - 宽屏幕下的多栏布局支持
+   - 详情页 CSS Grid 多列排版
+   - 超宽屏可读性约束
+   ======================================== */
+
+/* ---------- 详情页 CSS Grid 多列布局 ---------- */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* md (960px) 起切换为双列 */
+@media (min-width: 960px) {
+  .detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* 1400px 起切换为三列 */
+@media (min-width: 1400px) {
+  .detail-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+/* 跨列：全宽元素 */
+.detail-grid .detail-grid-full {
+  grid-column: 1 / -1;
+}
+
+/* 跨列：宽元素（3列布局中占2列） */
+@media (min-width: 1400px) {
+  .detail-grid .detail-grid-wide {
+    grid-column: span 2;
+  }
+}
+
+/* 图表高度约束 */
+.detail-grid .detail-chart {
+  max-height: 400px;
+}
+
+/* 嵌套的 v-card 在 grid 中移除多余的边距 */
+.detail-grid > .v-card {
+  margin: 0 !important;
+}
+
+/* ---------- 列表页统一容器 ---------- */
+.list-grid-container {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* 列表页卡片样式 */
+.list-grid-card {
+  height: 100%;
+}
+
+/* ---------- 详情页营养素表格适应 ---------- */
+.detail-grid .nutrition-row > div:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-grid .nutrition-row > div:nth-child(2) {
+  min-width: 60px;
+  width: 28%;
+}
+
+.detail-grid .nutrition-row > div:nth-child(3) {
+  min-width: 50px;
+  width: 20%;
+}
+
+.detail-grid .nutrition-header > div:first-child {
+  min-width: 0;
+}
+
+.detail-grid .nutrition-header > div:nth-child(2) {
+  min-width: 60px;
+  width: 28%;
+}
+
+.detail-grid .nutrition-header > div:nth-child(3) {
+  min-width: 50px;
+  width: 20%;
+}

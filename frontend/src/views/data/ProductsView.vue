@@ -8,7 +8,7 @@
     </template>
   </v-app-bar>
 
-  <v-container fluid>
+  <v-container fluid class="list-grid-container">
     <v-text-field
       v-model="search"
       label="搜索商品..."
@@ -36,35 +36,43 @@
     </v-alert>
 
     <!-- 商品列表 -->
-    <v-card v-else elevation="0">
-      <v-list lines="two">
-        <v-list-item
-          v-for="item in items"
-          :key="item.id"
+    <v-row v-else>
+      <v-col
+        v-for="item in items"
+        :key="item.id"
+        cols="12"
+        sm="6"
+        md="4"
+        lg="3"
+        xl="2"
+      >
+        <v-card
+          elevation="0"
+          class="list-grid-card"
           :to="`/data/products/${item.id}`"
+          hover
         >
-          <template #prepend>
-            <v-avatar color="primary" size="40">
-              <span class="text-white">{{ item.name?.charAt(0) }}</span>
-            </v-avatar>
-          </template>
-
-          <v-list-item-title>{{ item.name }}</v-list-item-title>
-          <v-list-item-subtitle>{{ item.brand || '无品牌' }}</v-list-item-subtitle>
-
-          <template #append>
+          <v-card-text>
+            <div class="d-flex align-center mb-2">
+              <v-avatar color="primary" size="40" class="mr-3">
+                <span class="text-white">{{ item.name?.charAt(0) }}</span>
+              </v-avatar>
+              <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
+            </div>
+            <div class="text-caption text-medium-emphasis">{{ item.brand || '无品牌' }}</div>
+          </v-card-text>
+          <v-divider />
+          <v-card-actions>
+            <v-spacer />
             <v-btn icon="mdi-tag-plus" size="small" variant="text" @click.prevent="openPriceDialog(item)" />
-            <v-btn icon="mdi-chevron-right" size="small" variant="text" />
-          </template>
-        </v-list-item>
+          </v-card-actions>
+        </v-card>
+      </v-col>
 
-        <v-list-item v-if="items.length === 0">
-          <v-list-item-title class="text-center text-medium-emphasis">
-            暂无商品
-          </v-list-item-title>
-        </v-list-item>
-      </v-list>
-    </v-card>
+      <v-col v-if="items.length === 0" cols="12">
+        <div class="text-center py-8 text-medium-emphasis">暂无商品</div>
+      </v-col>
+    </v-row>
 
     <!-- 分页器 -->
     <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 pa-4">

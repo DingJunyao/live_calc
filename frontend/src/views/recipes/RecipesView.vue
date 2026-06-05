@@ -8,7 +8,7 @@
     </template>
   </v-app-bar>
 
-  <v-container fluid>
+  <v-container fluid class="list-grid-container">
     <!-- 搜索栏 -->
     <v-text-field
       v-model="searchQuery"
@@ -42,6 +42,10 @@
         v-for="recipe in recipes"
         :key="recipe.id"
         cols="6"
+        sm="6"
+        md="4"
+        lg="3"
+        xl="2"
       >
         <v-card
           class="recipe-card"

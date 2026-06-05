@@ -8,7 +8,7 @@
     </template>
   </v-app-bar>
 
-  <v-container class="pa-4">
+  <v-container fluid class="pa-4 list-grid-container">
     <v-text-field
       v-model="searchQuery"
       label="搜索商品..."
@@ -30,38 +30,51 @@
       </template>
     </v-alert>
 
-    <v-card v-else elevation="0">
-      <v-list lines="three">
-        <v-list-item v-for="record in records" :key="record.id">
-          <template #prepend>
-            <v-avatar color="primary" size="40">
-              <span class="text-white">{{ record.product_name?.charAt(0) }}</span>
-            </v-avatar>
-          </template>
-
-          <v-list-item-title>{{ record.product_name }}</v-list-item-title>
-          <v-list-item-subtitle>
-            ¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
-          </v-list-item-subtitle>
-          <v-list-item-subtitle>
-            {{ record.merchant_name || '未知商家' }}
-          </v-list-item-subtitle>
-          <v-list-item-subtitle>
-            {{ formatDateTime(record.recorded_at) }}
-          </v-list-item-subtitle>
-
-          <template #append>
-            <v-btn icon="mdi-tag-multiple" size="small" variant="text" class="mr-1" @click="openRecordAgainDialog(record)" />
-            <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" class="mr-1" @click="openEditDialog(record)" />
+    <v-row v-else>
+      <v-col
+        v-for="record in records"
+        :key="record.id"
+        cols="12"
+        sm="6"
+        md="4"
+        lg="3"
+        xl="2"
+      >
+        <v-card elevation="0" class="list-grid-card">
+          <v-card-text>
+            <div class="d-flex align-center mb-2">
+              <v-avatar color="primary" size="40" class="mr-3">
+                <span class="text-white">{{ record.product_name?.charAt(0) }}</span>
+              </v-avatar>
+              <div class="text-body-2 font-weight-medium text-truncate">{{ record.product_name }}</div>
+            </div>
+            <div class="text-h6 font-weight-bold text-tertiary mb-1">
+              ¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
+            </div>
+            <div class="d-flex flex-wrap align-center ga-2">
+              <v-chip size="x-small" color="default" variant="outlined">
+                <v-icon start size="x-small">mdi-store</v-icon>
+                {{ record.merchant_name || '未知商家' }}
+              </v-chip>
+              <span class="text-caption text-medium-emphasis">
+                {{ formatDateTime(record.recorded_at) }}
+              </span>
+            </div>
+          </v-card-text>
+          <v-divider />
+          <v-card-actions>
+            <v-spacer />
+            <v-btn icon="mdi-tag-multiple" size="small" variant="text" @click="openRecordAgainDialog(record)" />
+            <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" @click="openEditDialog(record)" />
             <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="deleteRecord(record.id)" />
-          </template>
-        </v-list-item>
+          </v-card-actions>
+        </v-card>
+      </v-col>
 
-        <v-list-item v-if="records.length === 0">
-          <v-list-item-title class="text-center">暂无记录</v-list-item-title>
-        </v-list-item>
-      </v-list>
-    </v-card>
+      <v-col v-if="records.length === 0" cols="12">
+        <div class="text-center py-8 text-medium-emphasis">暂无记录</div>
+      </v-col>
+    </v-row>
 
     <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
       <v-pagination
