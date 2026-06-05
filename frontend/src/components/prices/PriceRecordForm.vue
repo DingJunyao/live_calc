@@ -139,7 +139,7 @@ const form = reactive({
   product_name: '',
   price: '',
   quantity: 1,
-  unit: '个',
+  unit: '斤',
   merchant_name: '',
   is_purchase: true,
   record_date: new Date().toISOString().split('T')[0],
@@ -149,7 +149,7 @@ const form = reactive({
 const units = ref<string[]>([])
 
 // 基本单位列表（API 加载失败时的回退）
-const FALLBACK_UNITS = ['个', '斤', 'kg', '克', '升', '毫升', '盒', '包', '袋', '瓶']
+const FALLBACK_UNITS = ['斤', '个', 'kg', '克', '升', '毫升', '盒', '包', '袋', '瓶']
 
 // 加载全局单位列表
 const loadUnits = async () => {
@@ -191,7 +191,7 @@ const resetForm = () => {
   form.product_name = ''
   form.price = ''
   form.quantity = 1
-  form.unit = '个'
+  form.unit = '斤'
   form.merchant_name = ''
   form.is_purchase = true
   form.record_date = new Date().toISOString().split('T')[0]

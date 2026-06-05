@@ -133,14 +133,28 @@
           <v-card-title>{{ densityForm.id ? '编辑密度' : '设置密度' }}</v-card-title>
           <v-card-text>
             <v-form @submit.prevent="saveDensity">
-              <v-text-field
-                v-model.number="densityForm.density"
-                label="密度 (kg/m³)"
-                variant="outlined"
-                type="number"
-                required
-                class="mb-3"
-              />
+              <div class="d-flex align-start ga-2 mb-3">
+                <v-text-field
+                  v-model.number="densityForm.density"
+                  :label="'密度 (' + densityInputUnitLabel + ')'"
+                  variant="outlined"
+                  type="number"
+                  required
+                  class="flex-grow-1"
+                />
+                <v-btn-toggle
+                  v-model="densityInputUnit"
+                  mandatory
+                  color="primary"
+                  density="compact"
+                  variant="outlined"
+                  divided
+                  class="mt-2"
+                >
+                  <v-btn value="g/cm3" size="small">g/cm³</v-btn>
+                  <v-btn value="kg/m3" size="small">kg/m³</v-btn>
+                </v-btn-toggle>
+              </div>
               <v-text-field
                 v-model.number="densityForm.temperature"
                 label="参考温度 (°C)"
@@ -676,8 +690,19 @@
           <div v-if="entityDensity" class="d-flex align-center py-2">
             <v-icon size="small" color="medium-emphasis" class="mr-2">mdi-water</v-icon>
             <span class="text-body-2">
-              {{ entityDensity.density }} kg/m³
+              {{ displayDensityValue }}
             </span>
+            <v-chip
+              size="x-small"
+              variant="tonal"
+              color="primary"
+              class="ml-1 cursor-pointer"
+              @click="toggleDisplayDensityUnit"
+              :title="'点击切换为 ' + (densityDisplayUnit === 'g/cm3' ? 'kg/m³' : 'g/cm³')"
+            >
+              {{ densityDisplayUnit === 'g/cm3' ? 'g/cm³' : 'kg/m³' }}
+              <v-icon end size="x-small">mdi-swap-horizontal</v-icon>
+            </v-chip>
             <span v-if="entityDensity.temperature" class="text-caption text-medium-emphasis ml-2">
               ({{ entityDensity.temperature }}°C)
             </span>
@@ -1437,6 +1462,36 @@ const densityForm = ref<{
   temperature: null,
   source: null
 })
+const densityInputUnit = ref<string>('g/cm3') // 输入单位，默认 g/cm³
+const densityDisplayUnit = ref<string>('g/cm3') // 显示单位，默认 g/cm³
+
+const densityInputUnitLabel = computed(() => densityInputUnit.value === 'g/cm3' ? 'g/cm³' : 'kg/m³')
+
+// 显示密度值（根据选中的显示单位换算）
+const displayDensityValue = computed(() => {
+  if (!entityDensity.value || typeof entityDensity.value.density !== 'number') return ''
+  const val = entityDensity.value.density
+  if (densityDisplayUnit.value === 'g/cm3') {
+    return (val / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
+  }
+  return val.toLocaleString('zh-CN', { maximumFractionDigits: 1 })
+})
+
+// 切换显示单位
+const toggleDisplayDensityUnit = () => {
+  densityDisplayUnit.value = densityDisplayUnit.value === 'g/cm3' ? 'kg/m3' : 'g/cm3'
+}
+
+// 输入单位切换时自动转换当前值
+watch(densityInputUnit, (newUnit, oldUnit) => {
+  if (densityForm.value.density !== null && densityForm.value.density !== undefined && oldUnit && newUnit !== oldUnit) {
+    if (oldUnit === 'g/cm3' && newUnit === 'kg/m3') {
+      densityForm.value.density = densityForm.value.density * 1000
+    } else if (oldUnit === 'kg/m3' && newUnit === 'g/cm3') {
+      densityForm.value.density = densityForm.value.density / 1000
+    }
+  }
+})
 
 // 加载自定义单位
 const loadEntityUnits = async () => {
@@ -1452,11 +1507,11 @@ const loadEntityUnits = async () => {
   }
 }
 
-// 加载密度
+// 加载密度（API 返回列表，取第一项）
 const loadDensity = async () => {
   try {
     const response = await api.get(`/entities/ingredient/${ingredientId.value}/density`)
-    entityDensity.value = response || null
+    entityDensity.value = (Array.isArray(response) && response.length > 0) ? response[0] : null
   } catch (e) {
     entityDensity.value = null
   }
@@ -1555,7 +1610,8 @@ const openDensityDialog = (density?: EntityDensity) => {
   if (density) {
     densityForm.value = {
       id: density.id,
-      density: density.density,
+      // 按当前输入单位显示（后端存储为 kg/m³）
+      density: densityInputUnit.value === 'g/cm3' ? density.density / 1000 : density.density,
       temperature: density.temperature,
       source: density.source
     }
@@ -1578,8 +1634,13 @@ const saveDensity = async () => {
   }
   savingDensity.value = true
   try {
+    // 转换为 kg/m³ 后存储
+    let density = densityForm.value.density
+    if (densityInputUnit.value === 'g/cm3') {
+      density = density * 1000
+    }
     await api.post(`/entities/ingredient/${ingredientId.value}/density`, {
-      density: densityForm.value.density,
+      density: density,
       temperature: densityForm.value.temperature,
       source: densityForm.value.source
     })

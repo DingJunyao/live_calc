@@ -6,6 +6,10 @@
 3. 支持 entity override 查询（商品>原料>全局优先级链）
 4. 支持密度查询（entity_densities 优先级链，默认水=1000 kg/m³）
 5. 不再依赖 base_unit_id 和旧的 UnitConversion 直接查表
+
+注意：体积单位的 SI 基准为 L（升），质量单位的 SI 基准为 kg（千克）。
+     密度采用 kg/m³（国际标准），故体积↔质量跨类型换算时需要额外 ÷1000（L→m³）。
+     详见 convert_volume_to_mass / convert_mass_to_volume。
 """
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
@@ -141,9 +145,10 @@ class UnitConversionService:
         """
         体积 -> 质量（通过密度）
         步骤：
-        1. 将体积转为 SI 基本单位 m³
-        2. 乘以密度得到 kg
-        3. 将 kg 转为目标质量单位
+        1. 将体积转为 SI 基本单位 L（体积 si_factor 换算到 L）
+        2. L → m³（1 m³ = 1000 L）
+        3. 乘以密度(kg/m³) 得到 kg
+        4. 将 kg 转为目标质量单位
         返回 (结果值, 质量单位对象)
         """
         if from_unit.unit_type != "volume":
@@ -153,8 +158,10 @@ class UnitConversionService:
 
         density = self.get_density(entity_type, entity_id)
 
-        # SI 体积单位是 m³，si_factor 将当前单位换算为 m³
-        volume_m3 = value * from_unit.si_factor
+        # 体积 si_factor 换算到 SI 基本单位 L（不是 m³）
+        volume_L = value * from_unit.si_factor
+        # L → m³：1 m³ = 1000 L
+        volume_m3 = volume_L / Decimal("1000")
 
         # 质量 = 体积(m³) * 密度(kg/m³)
         mass_kg = volume_m3 * density
@@ -190,8 +197,9 @@ class UnitConversionService:
         质量 -> 体积（通过密度反向计算）
         步骤：
         1. 将质量转为 SI 基本单位 kg
-        2. 除以密度得到 m³
-        3. 将 m³ 转为常见体积单位（L 或 mL）
+        2. 除以密度(kg/m³) 得到 m³
+        3. m³ → L（1 m³ = 1000 L，体积 si_factor 以 L 为基准）
+        4. L 转为目标体积单位
         返回 (结果值, 体积单位对象)
         """
         if from_unit.unit_type != "mass":
@@ -208,6 +216,9 @@ class UnitConversionService:
 
         # 体积 = 质量(kg) / 密度(kg/m³) => m³
         volume_m3 = mass_kg / density
+
+        # m³ → L：1 m³ = 1000 L（体积 si_factor 以 L 为基准）
+        volume_L = volume_m3 * Decimal("1000")
 
         # 查找一个合适的体积单位来表示结果（优先 L）
         target_unit = (
@@ -233,9 +244,9 @@ class UnitConversionService:
             return None
 
         if target_unit.si_factor is not None and target_unit.si_factor != 0:
-            volume_in_unit = volume_m3 / target_unit.si_factor
+            volume_in_unit = volume_L / target_unit.si_factor
         else:
-            volume_in_unit = volume_m3
+            volume_in_unit = volume_L
 
         return (volume_in_unit, target_unit)
 
