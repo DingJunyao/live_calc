@@ -32,8 +32,9 @@
     </v-alert>
 
     <template v-else-if="product">
-      <!-- 基本信息卡片 -->
-      <v-card elevation="0" class="ma-4">
+      <div class="product-layout">
+      <!-- 基本信息 -->
+      <v-card elevation="0" class="grid-item item-basic-info">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="primary">mdi-information-outline</v-icon>
           基本信息
@@ -95,6 +96,338 @@
           </v-list>
         </v-card-text>
       </v-card>
+
+      <!-- 最新价格卡片 -->
+      <v-card elevation="0" class="grid-item item-latest-price" v-if="product.latest_price">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="tertiary">mdi-currency-cny</v-icon>
+          最新价格
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="text-center py-6">
+          <div class="text-h3 font-weight-bold text-tertiary">
+            ¥{{ formatPrice(product.latest_price) }}<span v-if="product.latest_price_unit" class="text-h6 font-weight-regular">/{{ product.latest_price_unit }}</span>
+          </div>
+          <div class="text-caption text-medium-emphasis mt-2">
+            {{ formatDate(product.latest_price_date) }}
+          </div>
+        </v-card-text>
+      </v-card>
+
+      <!-- Group 2: 单位与密度 | 价格趋势（行不对齐，独立高度） -->
+      <div class="group-mid-wrapper">
+        <div class="group-mid-left">
+          <!-- 单位与密度管理卡片 -->
+          <v-card elevation="0" class="grid-item item-units">
+            <v-card-title class="d-flex align-center pb-2">
+              <v-icon start color="secondary">mdi-ruler</v-icon>
+              单位与密度
+            </v-card-title>
+            <v-divider />
+
+            <!-- 自定义单位列表 -->
+            <v-card-text class="pb-0">
+              <div class="d-flex align-center mb-2">
+                <span class="text-body-2 font-weight-medium">自定义单位</span>
+                <v-spacer />
+                <v-btn
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  prepend-icon="mdi-plus"
+                  @click="openUnitDialog()"
+                >
+                  添加单位
+                </v-btn>
+              </div>
+
+              <!-- 待配置单位（来自菜谱的 count 类型单位，尚未映射） -->
+              <div v-if="unmappedUnits.length > 0" class="mb-3">
+                <div class="text-caption text-medium-emphasis mb-1">
+                  待配置单位（来自菜谱，点击快速添加，默认 100 g）
+                </div>
+                <v-chip
+                  v-for="item in unmappedUnits"
+                  :key="item.unit_id"
+                  size="small"
+                  variant="outlined"
+                  color="warning"
+                  class="mr-1 mb-1"
+                  style="cursor: pointer"
+                  @click="quickAddUnmappedUnit(item)"
+                >
+                  {{ item.unit_name }}
+                  <span class="text-caption ml-1">({{ item.usage_count }}次)</span>
+                </v-chip>
+              </div>
+
+              <div v-if="loadingUnits" class="text-center py-4">
+                <v-progress-circular indeterminate color="primary" size="24" />
+              </div>
+
+              <v-list v-else-if="entityUnits.length > 0" density="compact" class="pa-0">
+                <v-list-item
+                  v-for="unit in entityUnits"
+                  :key="unit.id"
+                  class="px-0"
+                >
+                  <template #prepend>
+                    <v-chip size="small" variant="tonal" color="primary" class="mr-3">
+                      {{ unit.unit_name }}
+                    </v-chip>
+                  </template>
+                  <v-list-item-title class="text-body-2">
+                    <span v-if="unit.conversion_factor">1{{ unit.unit_name }} = {{ unit.conversion_factor }}个</span>
+                    <span v-if="unit.weight_per_unit" class="ml-2">
+                      <v-icon size="x-small">mdi-weight</v-icon>
+                      {{ unit.weight_per_unit }}g/个
+                    </span>
+                  </v-list-item-title>
+                  <v-list-item-subtitle class="text-caption">
+                    <template v-if="unit.is_default">
+                      <span class="text-primary">默认单位</span>
+                      <span class="mx-1">·</span>
+                    </template>
+                    <span class="text-medium-emphasis">{{ unit.source === 'import' ? '自动' : '手动' }}</span>
+                  </v-list-item-subtitle>
+                  <template #append>
+                    <v-btn
+                      icon="mdi-pencil"
+                      size="x-small"
+                      variant="text"
+                      color="primary"
+                      @click.stop="openUnitDialog(unit)"
+                    />
+                    <v-btn
+                      icon="mdi-delete"
+                      size="x-small"
+                      variant="text"
+                      color="error"
+                      @click.stop="deleteEntityUnit(unit.id)"
+                    />
+                  </template>
+                </v-list-item>
+              </v-list>
+
+              <div v-else class="text-center py-4">
+                <v-icon size="32" color="medium-emphasis">mdi-ruler</v-icon>
+                <div class="text-caption text-medium-emphasis mt-1">暂无自定义单位</div>
+              </div>
+            </v-card-text>
+
+            <v-divider class="mx-4" />
+
+            <!-- 密度管理 -->
+            <v-card-text>
+              <div class="d-flex align-center mb-2">
+                <span class="text-body-2 font-weight-medium">密度信息</span>
+                <v-spacer />
+                <v-btn
+                  v-if="!entityDensity"
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  prepend-icon="mdi-plus"
+                  @click="openDensityDialog()"
+                >
+                  设置密度
+                </v-btn>
+                <template v-else>
+                  <v-btn
+                    icon="mdi-pencil"
+                    size="x-small"
+                    variant="text"
+                    color="primary"
+                    class="mr-1"
+                    @click="openDensityDialog(entityDensity)"
+                  />
+                  <v-btn
+                    icon="mdi-delete"
+                    size="x-small"
+                    variant="text"
+                    color="error"
+                    @click="deleteDensity(entityDensity.id)"
+                  />
+                </template>
+              </div>
+
+              <div v-if="entityDensity" class="d-flex align-center py-2">
+                <v-icon size="small" color="medium-emphasis" class="mr-2">mdi-water</v-icon>
+                <span class="text-body-2">
+                  {{ displayDensityValue }}
+                </span>
+                <v-chip
+                  size="x-small"
+                  variant="tonal"
+                  color="primary"
+                  class="ml-1 cursor-pointer"
+                  @click="toggleDisplayDensityUnit"
+                  :title="'点击切换为 ' + (densityDisplayUnit === 'g/cm3' ? 'kg/m³' : 'g/cm³')"
+                >
+                  {{ densityDisplayUnit === 'g/cm3' ? 'g/cm³' : 'kg/m³' }}
+                  <v-icon end size="x-small">mdi-swap-horizontal</v-icon>
+                </v-chip>
+                <span v-if="entityDensity.temperature" class="text-caption text-medium-emphasis ml-2">
+                  ({{ entityDensity.temperature }}°C)
+                </span>
+                <span v-if="entityDensity.source" class="text-caption text-medium-emphasis ml-2">
+                  来源: {{ entityDensity.source }}
+                </span>
+              </div>
+              <div v-else class="text-center py-4">
+                <v-icon size="32" color="medium-emphasis">mdi-water-off</v-icon>
+                <div class="text-caption text-medium-emphasis mt-1">暂未设置密度</div>
+              </div>
+            </v-card-text>
+          </v-card>
+        </div>
+        <div class="group-mid-right">
+          <!-- 价格趋势图表 -->
+          <PriceTrendChart
+            v-if="product"
+            title="价格趋势"
+            icon="mdi-chart-line"
+            icon-color="tertiary"
+            :unit="chartUnit"
+            empty-text="暂无价格历史数据"
+            :data="chartData"
+            :loading="loadingPrices"
+            color="#ff9800"
+            class="grid-item item-price-trend"
+          />
+        </div>
+      </div>
+
+      <!-- 价格记录列表 -->
+      <v-card elevation="0" class="grid-item item-price-records">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="primary">mdi-history</v-icon>
+          价格记录
+          <v-spacer />
+          <v-btn
+            v-if="priceRecords.length > 0"
+            size="small"
+            variant="text"
+            color="primary"
+            @click="openAddPriceDialog"
+          >
+            添加记录
+          </v-btn>
+        </v-card-title>
+        <v-divider />
+
+        <!-- 价格记录加载中 -->
+        <div v-if="loadingPrices" class="text-center py-8">
+          <v-progress-circular indeterminate color="primary" size="32" />
+        </div>
+
+        <!-- 价格记录列表 -->
+        <v-list v-else-if="priceRecords.length > 0" lines="two">
+          <v-list-item v-for="record in priceRecords" :key="record.id">
+            <template #prepend>
+              <v-avatar color="tertiary-container" size="40">
+                <v-icon color="tertiary">mdi-receipt-text</v-icon>
+              </v-avatar>
+            </template>
+
+            <v-list-item-title>
+              ¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
+            </v-list-item-title>
+            <v-list-item-subtitle>
+              <template v-if="record.merchant_name">
+                {{ record.merchant_name }} ·
+              </template>
+              {{ formatDateTime(record.recorded_at) }}
+            </v-list-item-subtitle>
+
+            <template #append>
+              <v-btn
+                icon="mdi-delete"
+                size="small"
+                variant="text"
+                color="error"
+                @click="deletePriceRecord(record.id)"
+              />
+            </template>
+          </v-list-item>
+        </v-list>
+
+        <!-- 空状态 -->
+        <v-card-text v-else class="text-center py-8">
+          <v-icon size="64" color="medium-emphasis">mdi-receipt-text-outline</v-icon>
+          <div class="text-body-1 text-medium-emphasis mt-4">暂无价格记录</div>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            class="mt-4"
+            prepend-icon="mdi-plus"
+            @click="openAddPriceDialog"
+          >
+            添加价格记录
+          </v-btn>
+        </v-card-text>
+
+        <!-- 分页器 -->
+        <div v-if="priceTotal > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
+          <v-pagination
+            v-model="pricePage"
+            :length="priceTotalPages"
+            :total-visible="3"
+            rounded="circle"
+            density="comfortable"
+          />
+          <span class="text-caption text-medium-emphasis">共 {{ priceTotal }} 条</span>
+        </div>
+      </v-card>
+
+      <!-- 营养数据卡片 -->
+      <v-card elevation="0" class="grid-item item-nutrition" v-if="nutritionData">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="success">mdi-food-apple-outline</v-icon>
+          营养成分
+          <span class="text-caption text-medium-emphasis ml-2">（每100g）</span>
+          <v-spacer />
+          <v-btn
+            v-if="otherNutrientsCount > 0"
+            size="small"
+            variant="text"
+            color="primary"
+            class="text-caption"
+            @click="showAllNutrients = !showAllNutrients"
+          >
+            {{ showAllNutrients ? '收起' : `展开 +${otherNutrientsCount} 项` }}
+            <v-icon :icon="showAllNutrients ? 'mdi-chevron-up' : 'mdi-chevron-down'" end />
+          </v-btn>
+        </v-card-title>
+        <v-divider />
+
+        <v-card-text class="pa-0">
+          <div class="nutrition-header d-flex py-2 border-bottom">
+            <div class="text-caption text-medium-emphasis ps-4 flex-grow-1">营养素</div>
+            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 80px">数量</div>
+            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 60px">NRV%</div>
+          </div>
+          <div
+            v-for="item in displayNutritionItems"
+            :key="item.key"
+            class="nutrition-row d-flex py-2"
+            :class="{ 'border-bottom': item.key !== displayNutritionItems[displayNutritionItems.length - 1].key }"
+          >
+            <div class="text-body-2 ps-4 flex-grow-1">{{ item.label }}</div>
+            <div class="text-body-2 text-end pe-4" style="min-width: 80px">
+              {{ formatNutritionValue(getNutritionValue(item), getNutritionUnit(item) || item.unit) }}
+            </div>
+            <div class="text-body-2 text-end pe-4" style="min-width: 60px">
+              {{ getNutritionNRV(item) }}%
+            </div>
+          </div>
+
+          <div class="mt-4 text-caption text-medium-emphasis ps-4">
+            NRV = 营养素参考值百分比
+          </div>
+        </v-card-text>
+      </v-card>
+      </div>
 
       <!-- 添加/编辑单位对话框 -->
       <v-dialog v-model="showUnitDialog" max-width="450">
@@ -195,331 +528,6 @@
           </v-card-actions>
         </v-card>
       </v-dialog>
-
-      <!-- 最新价格卡片 -->
-      <v-card elevation="0" class="ma-4" v-if="product.latest_price">
-        <v-card-title class="d-flex align-center pb-2">
-          <v-icon start color="tertiary">mdi-currency-cny</v-icon>
-          最新价格
-        </v-card-title>
-        <v-divider />
-        <v-card-text class="text-center py-6">
-          <div class="text-h3 font-weight-bold text-tertiary">
-            ¥{{ formatPrice(product.latest_price) }}<span v-if="product.latest_price_unit" class="text-h6 font-weight-regular">/{{ product.latest_price_unit }}</span>
-          </div>
-          <div class="text-caption text-medium-emphasis mt-2">
-            {{ formatDate(product.latest_price_date) }}
-          </div>
-        </v-card-text>
-      </v-card>
-
-      <!-- 价格趋势图表 -->
-      <PriceTrendChart
-        v-if="product"
-        title="价格趋势"
-        icon="mdi-chart-line"
-        icon-color="tertiary"
-        :unit="chartUnit"
-        empty-text="暂无价格历史数据"
-        :data="chartData"
-        :loading="loadingPrices"
-        color="#ff9800"
-        class="ma-4"
-      />
-
-      <!-- 价格记录列表 -->
-      <v-card elevation="0" class="ma-4">
-        <v-card-title class="d-flex align-center pb-2">
-          <v-icon start color="primary">mdi-history</v-icon>
-          价格记录
-          <v-spacer />
-          <v-btn
-            v-if="priceRecords.length > 0"
-            size="small"
-            variant="text"
-            color="primary"
-            @click="openAddPriceDialog"
-          >
-            添加记录
-          </v-btn>
-        </v-card-title>
-        <v-divider />
-
-        <!-- 价格记录加载中 -->
-        <div v-if="loadingPrices" class="text-center py-8">
-          <v-progress-circular indeterminate color="primary" size="32" />
-        </div>
-
-        <!-- 价格记录列表 -->
-        <v-list v-else-if="priceRecords.length > 0" lines="two">
-          <v-list-item v-for="record in priceRecords" :key="record.id">
-            <template #prepend>
-              <v-avatar color="tertiary-container" size="40">
-                <v-icon color="tertiary">mdi-receipt-text</v-icon>
-              </v-avatar>
-            </template>
-
-            <v-list-item-title>
-              ¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
-            </v-list-item-title>
-            <v-list-item-subtitle>
-              <template v-if="record.merchant_name">
-                {{ record.merchant_name }} ·
-              </template>
-              {{ formatDateTime(record.recorded_at) }}
-            </v-list-item-subtitle>
-
-            <template #append>
-              <v-btn
-                icon="mdi-delete"
-                size="small"
-                variant="text"
-                color="error"
-                @click="deletePriceRecord(record.id)"
-              />
-            </template>
-          </v-list-item>
-        </v-list>
-
-        <!-- 空状态 -->
-        <v-card-text v-else class="text-center py-8">
-          <v-icon size="64" color="medium-emphasis">mdi-receipt-text-outline</v-icon>
-          <div class="text-body-1 text-medium-emphasis mt-4">暂无价格记录</div>
-          <v-btn
-            color="primary"
-            variant="tonal"
-            class="mt-4"
-            prepend-icon="mdi-plus"
-            @click="openAddPriceDialog"
-          >
-            添加价格记录
-          </v-btn>
-        </v-card-text>
-
-        <!-- 分页器 -->
-        <div v-if="priceTotal > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
-          <v-pagination
-            v-model="pricePage"
-            :length="priceTotalPages"
-            :total-visible="3"
-            rounded="circle"
-            density="comfortable"
-          />
-          <span class="text-caption text-medium-emphasis">共 {{ priceTotal }} 条</span>
-        </div>
-      </v-card>
-
-      <!-- 营养数据卡片 -->
-      <v-card elevation="0" class="ma-4" v-if="nutritionData">
-        <v-card-title class="d-flex align-center pb-2">
-          <v-icon start color="success">mdi-food-apple-outline</v-icon>
-          营养成分
-          <span class="text-caption text-medium-emphasis ml-2">（每100g）</span>
-          <v-spacer />
-          <v-btn
-            v-if="otherNutrientsCount > 0"
-            size="small"
-            variant="text"
-            color="primary"
-            class="text-caption"
-            @click="showAllNutrients = !showAllNutrients"
-          >
-            {{ showAllNutrients ? '收起' : `展开 +${otherNutrientsCount} 项` }}
-            <v-icon :icon="showAllNutrients ? 'mdi-chevron-up' : 'mdi-chevron-down'" end />
-          </v-btn>
-        </v-card-title>
-        <v-divider />
-
-        <v-card-text class="pa-0">
-          <div class="nutrition-header d-flex py-2 border-bottom">
-            <div class="text-caption text-medium-emphasis ps-4 flex-grow-1">营养素</div>
-            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 80px">数量</div>
-            <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 60px">NRV%</div>
-          </div>
-          <div
-            v-for="item in displayNutritionItems"
-            :key="item.key"
-            class="nutrition-row d-flex py-2"
-            :class="{ 'border-bottom': item.key !== displayNutritionItems[displayNutritionItems.length - 1].key }"
-          >
-            <div class="text-body-2 ps-4 flex-grow-1">{{ item.label }}</div>
-            <div class="text-body-2 text-end pe-4" style="min-width: 80px">
-              {{ formatNutritionValue(getNutritionValue(item), getNutritionUnit(item) || item.unit) }}
-            </div>
-            <div class="text-body-2 text-end pe-4" style="min-width: 60px">
-              {{ getNutritionNRV(item) }}%
-            </div>
-          </div>
-
-          <div class="mt-4 text-caption text-medium-emphasis ps-4">
-            NRV = 营养素参考值百分比
-          </div>
-        </v-card-text>
-      </v-card>
-
-      <!-- 单位与密度管理卡片 -->
-      <v-card elevation="0" class="ma-4">
-        <v-card-title class="d-flex align-center pb-2">
-          <v-icon start color="secondary">mdi-ruler</v-icon>
-          单位与密度
-        </v-card-title>
-        <v-divider />
-
-        <!-- 自定义单位列表 -->
-        <v-card-text class="pb-0">
-          <div class="d-flex align-center mb-2">
-            <span class="text-body-2 font-weight-medium">自定义单位</span>
-            <v-spacer />
-            <v-btn
-              size="small"
-              variant="text"
-              color="primary"
-              prepend-icon="mdi-plus"
-              @click="openUnitDialog()"
-            >
-              添加单位
-            </v-btn>
-          </div>
-
-          <!-- 待配置单位（来自菜谱的 count 类型单位，尚未映射） -->
-          <div v-if="unmappedUnits.length > 0" class="mb-3">
-            <div class="text-caption text-medium-emphasis mb-1">
-              待配置单位（来自菜谱，点击快速添加，默认 100 g）
-            </div>
-            <v-chip
-              v-for="item in unmappedUnits"
-              :key="item.unit_id"
-              size="small"
-              variant="outlined"
-              color="warning"
-              class="mr-1 mb-1"
-              style="cursor: pointer"
-              @click="quickAddUnmappedUnit(item)"
-            >
-              {{ item.unit_name }}
-              <span class="text-caption ml-1">({{ item.usage_count }}次)</span>
-            </v-chip>
-          </div>
-
-          <div v-if="loadingUnits" class="text-center py-4">
-            <v-progress-circular indeterminate color="primary" size="24" />
-          </div>
-
-          <v-list v-else-if="entityUnits.length > 0" density="compact" class="pa-0">
-            <v-list-item
-              v-for="unit in entityUnits"
-              :key="unit.id"
-              class="px-0"
-            >
-              <template #prepend>
-                <v-chip size="small" variant="tonal" color="primary" class="mr-3">
-                  {{ unit.unit_name }}
-                </v-chip>
-              </template>
-              <v-list-item-title class="text-body-2">
-                <span v-if="unit.conversion_factor">1{{ unit.unit_name }} = {{ unit.conversion_factor }}个</span>
-                <span v-if="unit.weight_per_unit" class="ml-2">
-                  <v-icon size="x-small">mdi-weight</v-icon>
-                  {{ unit.weight_per_unit }}g/个
-                </span>
-              </v-list-item-title>
-              <v-list-item-subtitle class="text-caption">
-                <template v-if="unit.is_default">
-                  <span class="text-primary">默认单位</span>
-                  <span class="mx-1">·</span>
-                </template>
-                <span class="text-medium-emphasis">{{ unit.source === 'import' ? '自动' : '手动' }}</span>
-              </v-list-item-subtitle>
-              <template #append>
-                <v-btn
-                  icon="mdi-pencil"
-                  size="x-small"
-                  variant="text"
-                  color="primary"
-                  @click.stop="openUnitDialog(unit)"
-                />
-                <v-btn
-                  icon="mdi-delete"
-                  size="x-small"
-                  variant="text"
-                  color="error"
-                  @click.stop="deleteEntityUnit(unit.id)"
-                />
-              </template>
-            </v-list-item>
-          </v-list>
-
-          <div v-else class="text-center py-4">
-            <v-icon size="32" color="medium-emphasis">mdi-ruler</v-icon>
-            <div class="text-caption text-medium-emphasis mt-1">暂无自定义单位</div>
-          </div>
-        </v-card-text>
-
-        <v-divider class="mx-4" />
-
-        <!-- 密度管理 -->
-        <v-card-text>
-          <div class="d-flex align-center mb-2">
-            <span class="text-body-2 font-weight-medium">密度信息</span>
-            <v-spacer />
-            <v-btn
-              v-if="!entityDensity"
-              size="small"
-              variant="text"
-              color="primary"
-              prepend-icon="mdi-plus"
-              @click="openDensityDialog()"
-            >
-              设置密度
-            </v-btn>
-            <template v-else>
-              <v-btn
-                icon="mdi-pencil"
-                size="x-small"
-                variant="text"
-                color="primary"
-                class="mr-1"
-                @click="openDensityDialog(entityDensity)"
-              />
-              <v-btn
-                icon="mdi-delete"
-                size="x-small"
-                variant="text"
-                color="error"
-                @click="deleteDensity(entityDensity.id)"
-              />
-            </template>
-          </div>
-
-          <div v-if="entityDensity" class="d-flex align-center py-2">
-            <v-icon size="small" color="medium-emphasis" class="mr-2">mdi-water</v-icon>
-            <span class="text-body-2">
-              {{ displayDensityValue }}
-            </span>
-            <v-chip
-              size="x-small"
-              variant="tonal"
-              color="primary"
-              class="ml-1 cursor-pointer"
-              @click="toggleDisplayDensityUnit"
-              :title="'点击切换为 ' + (densityDisplayUnit === 'g/cm3' ? 'kg/m³' : 'g/cm³')"
-            >
-              {{ densityDisplayUnit === 'g/cm3' ? 'g/cm³' : 'kg/m³' }}
-              <v-icon end size="x-small">mdi-swap-horizontal</v-icon>
-            </v-chip>
-            <span v-if="entityDensity.temperature" class="text-caption text-medium-emphasis ml-2">
-              ({{ entityDensity.temperature }}°C)
-            </span>
-            <span v-if="entityDensity.source" class="text-caption text-medium-emphasis ml-2">
-              来源: {{ entityDensity.source }}
-            </span>
-          </div>
-          <div v-else class="text-center py-4">
-            <v-icon size="32" color="medium-emphasis">mdi-water-off</v-icon>
-            <div class="text-caption text-medium-emphasis mt-1">暂未设置密度</div>
-          </div>
-        </v-card-text>
-      </v-card>
 
       <!-- 操作按钮 -->
       <div class="pa-4">
@@ -1808,5 +1816,77 @@ onMounted(() => {
 
 .nutrition-row:hover {
   background: rgba(var(--v-theme-primary), 0.04);
+}
+
+/* === 响应式布局 === */
+
+/* 移动端：flex 纵向堆叠 + CSS order 保持原顺序 */
+.product-layout {
+  display: flex;
+  flex-direction: column;
+}
+
+.product-layout > .grid-item,
+.group-mid-left > .grid-item,
+.group-mid-right > .grid-item {
+  margin: 16px;
+}
+
+/* 移动端：Group 2 容器透明化，子元素直接参与父 flex 流 */
+.group-mid-wrapper {
+  display: contents;
+}
+.group-mid-left, .group-mid-right {
+  display: contents;
+}
+
+/* 移动端顺序（保持原模板顺序） */
+.item-basic-info { order: 1; }
+.item-latest-price { order: 2; }
+.item-price-trend { order: 3; }
+.item-price-records { order: 4; }
+.item-nutrition { order: 5; }
+.item-units { order: 6; }
+
+/* 桌面端：CSS Grid + Flexbox 混合布局 */
+@media (min-width: 960px) {
+  .product-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .product-layout > .grid-item {
+    margin: 0 !important;
+  }
+
+  /* Group 1: 基本信息 | 最新价格（行对齐） */
+  .item-basic-info { grid-column: 1; grid-row: 1; }
+  .item-latest-price { grid-column: 2; grid-row: 1; }
+
+  /* Group 2: 单位与密度 | 价格趋势（行不对齐，独立高度） */
+  .group-mid-wrapper {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .group-mid-left, .group-mid-right {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    gap: 16px;
+  }
+  .group-mid-left > .grid-item,
+  .group-mid-right > .grid-item {
+    margin: 0 !important;
+  }
+
+  /* Group 3: 营养成分 | 价格记录（行对齐） */
+  .item-nutrition { grid-column: 1; grid-row: 3; }
+  .item-price-records { grid-column: 2; grid-row: 3; }
 }
 </style>

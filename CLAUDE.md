@@ -218,3 +218,4 @@ live_calc/
 - 旧版数据库迁移：从 livecalc_bak.db 迁移用户、商家、商品和价格记录（475 条）到新数据库，含兼容 SQLite/MySQL/PostgreSQL 的 SQL 脚本。详见 [DATA_MIGRATION_BAK_DB.md](cc/DATA_MIGRATION_BAK_DB.md)
 
 ### 功能实现记录
+- 详情页宽屏响应式布局：菜谱、原料、商品三个详情页实现宽屏（≥960px）双栏布局，行对齐区域用 CSS Grid，不对齐区域用 Flexbox。详见 [FEATURE_WIDESCREEN_DETAIL_LAYOUT.md](cc/FEATURE_WIDESCREEN_DETAIL_LAYOUT.md)

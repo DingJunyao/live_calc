@@ -1180,6 +1180,44 @@ def calculate_recipe_cost_range_trend(
     for ing_id in ingredient_ids:
         _find_price_source(ing_id)
 
+    # 也为 CONTAINS 子食材预加载价格源（父食材可能需要从子食材聚合成本）
+    # 注意：子食材只查直接产品价格，不走 fallback 链，与 calculate_recipe_cost 中
+    # _get_child_price_per_gram 的行为保持一致
+    child_ids_to_preload = set()
+    for ing_id in ingredient_ids:
+        if ing_id not in price_source_cache or price_source_cache[ing_id] is None:
+            for hierarchy in contains_by_parent.get(ing_id, []):
+                if hierarchy.child_id:
+                    child_ids_to_preload.add(hierarchy.child_id)
+    if child_ids_to_preload:
+        # 批量加载子食材的商品
+        child_products = db.query(Product).filter(
+            Product.ingredient_id.in_(list(child_ids_to_preload)),
+            Product.is_active == True
+        ).all()
+        child_product_ids = set()
+        for p in child_products:
+            products_by_ingredient[p.ingredient_id].append(p)
+            child_product_ids.add(p.id)
+
+        # 批量加载子食材商品的价格记录
+        if child_product_ids:
+            child_records = db.query(ProductRecord).filter(
+                ProductRecord.user_id == user_id,
+                ProductRecord.product_id.in_(list(child_product_ids))
+            ).order_by(ProductRecord.product_id, ProductRecord.recorded_at.asc()).all()
+            for r in child_records:
+                records_by_product[r.product_id].append(r)
+
+        # 为子食材仅查找直接产品价格源（不使用 _find_price_source 的 fallback 链）
+        for child_id in child_ids_to_preload:
+            if child_id in price_source_cache:
+                continue
+            for p in products_by_ingredient.get(child_id, []):
+                if p.id in records_by_product and records_by_product[p.id]:
+                    price_source_cache[child_id] = (p.id, records_by_product[p.id])
+                    break
+
     # ========== 逐天计算 ==========
 
     import bisect
@@ -1192,9 +1230,38 @@ def calculate_recipe_cost_range_trend(
         current_date += timedelta(days=1)
 
     cost_range_trend = []
-    for date in date_list:
-        as_of_datetime = datetime.combine(date, datetime.max.time()) - timedelta(seconds=1)
 
+    def _compute_unit_price(record):
+        """从价格记录计算单价"""
+        record_price = Decimal(str(record.price))
+        std_qty = record.standard_quantity
+        if std_qty is None or std_qty == 0:
+            return record_price
+        return record_price / Decimal(str(std_qty))
+
+    def _find_day_records(records_list, target_date):
+        """找出某天的所有记录（二分查找），如果没有则返回 None（由调用方做前向填充）"""
+        day_start = datetime.combine(target_date, datetime.min.time())
+        day_end = datetime.combine(target_date, datetime.max.time())
+        record_dates = [r.recorded_at for r in records_list]
+
+        left = bisect.bisect_left(record_dates, day_start)
+        right = bisect.bisect_right(record_dates, day_end)
+
+        if left < right:
+            return records_list[left:right]
+        return None
+
+    def _find_forward_fill_record(records_list, target_date):
+        """前向填充：找截至该日期的最新记录，若没有则用最早记录"""
+        as_of_datetime = datetime.combine(target_date, datetime.max.time())
+        record_dates = [r.recorded_at for r in records_list]
+        idx = bisect.bisect_right(record_dates, as_of_datetime) - 1
+        if idx < 0:
+            return records_list[0]
+        return records_list[idx]
+
+    for date in date_list:
         total_min_cost = Decimal("0.00")
         total_max_cost = Decimal("0.00")
         total_avg_cost = Decimal("0.00")
@@ -1219,9 +1286,9 @@ def calculate_recipe_cost_range_trend(
                         if not child_source:
                             continue
                         child_product_id, child_records = child_source
-                        # 二分查找截至 as_of_datetime 的最新记录
+                        # 二分查找截至该日期的最新记录
                         child_record_dates = [r.recorded_at for r in child_records]
-                        child_idx = bisect.bisect_right(child_record_dates, as_of_datetime) - 1
+                        child_idx = bisect.bisect_right(child_record_dates, datetime.combine(date, datetime.max.time())) - 1
                         if child_idx < 0:
                             child_latest = child_records[0]
                         else:
@@ -1269,32 +1336,25 @@ def calculate_recipe_cost_range_trend(
 
             product_id, records = source
 
-            # 二分查找截至 as_of_datetime 的最新记录
-            record_dates = [r.recorded_at for r in records]
-            idx = bisect.bisect_right(record_dates, as_of_datetime) - 1
-            if idx < 0:
-                # 没有截至该日期的记录，使用最早记录（前向填充）
-                latest_record = records[0]
-            else:
-                latest_record = records[idx]
+            # 查找该食材当天所有价格记录
+            day_records = _find_day_records(records, date)
+            if day_records is None:
+                # 当天无记录，使用前向填充（单条记录，min=max=avg）
+                fill_record = _find_forward_fill_record(records, date)
+                day_records = [fill_record]
 
-            # 计算单价
-            record_price = Decimal(str(latest_record.price))
-            std_qty = latest_record.standard_quantity
-            if std_qty is None or std_qty == 0:
-                unit_price = record_price
-            else:
-                unit_price = record_price / Decimal(str(std_qty))
+            # 计算当天每条记录的单价
+            unit_prices = [_compute_unit_price(r) for r in day_records]
 
-            # 计算该食材成本
+            # 获取菜谱用量并做单位转换
             quantity, effective_unit_id = _get_effective_quantity(ri)
             if not quantity:
                 continue
 
-            # 单位转换：将菜谱用量转换为价格记录的单位
-            # 当使用 VAGUE_QUANTITY_GRAM_MAP 回退时，effective_unit_id 为克(3)
-            if effective_unit_id and latest_record.standard_unit_id and effective_unit_id != latest_record.standard_unit_id:
-                price_unit = db.query(Unit).filter(Unit.id == latest_record.standard_unit_id).first()
+            # 用第一条记录的单位做转换基准
+            ref_record = day_records[0]
+            if effective_unit_id and ref_record.standard_unit_id and effective_unit_id != ref_record.standard_unit_id:
+                price_unit = db.query(Unit).filter(Unit.id == ref_record.standard_unit_id).first()
                 recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
                 if price_unit and recipe_unit:
                     ucs = UnitConversionService(db)
@@ -1309,10 +1369,11 @@ def calculate_recipe_cost_range_trend(
                         quantity = float(converted[0])
 
             try:
-                ingredient_cost = unit_price * Decimal(str(quantity))
-                total_min_cost += ingredient_cost
-                total_max_cost += ingredient_cost
-                total_avg_cost += ingredient_cost
+                quantity_dec = Decimal(str(quantity))
+                costs = [up * quantity_dec for up in unit_prices]
+                total_min_cost += min(costs)
+                total_max_cost += max(costs)
+                total_avg_cost += sum(costs) / len(costs)
                 valid_ingredients += 1
             except Exception:
                 continue

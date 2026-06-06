@@ -32,8 +32,9 @@
     </v-alert>
 
     <template v-else-if="ingredient">
-      <!-- 基本信息卡片 -->
-      <v-card elevation="0" class="ma-4">
+      <div class="ingredient-layout">
+      <!-- 基本信息 -->
+      <v-card elevation="0" class="grid-item item-basic-info">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="primary">mdi-information-outline</v-icon>
           基本信息
@@ -78,109 +79,8 @@
         </v-card-text>
       </v-card>
 
-
-      <!-- 添加/编辑单位对话框 -->
-      <v-dialog v-model="showUnitDialog" max-width="450">
-        <v-card>
-          <v-card-title>{{ unitForm.id ? '编辑单位' : '添加单位' }}</v-card-title>
-          <v-card-text>
-            <v-form @submit.prevent="saveEntityUnit">
-              <v-text-field
-                v-model="unitForm.unit_name"
-                label="单位名称"
-                variant="outlined"
-                placeholder="如：盒(12个)、根、袋"
-                required
-                class="mb-3"
-              />
-              <v-text-field
-                v-model.number="unitForm.conversion_factor"
-                label="换算系数"
-                variant="outlined"
-                type="number"
-                hint="1单位 = 几个基础单位"
-                persistent-hint
-                class="mb-3"
-              />
-              <v-text-field
-                v-model.number="unitForm.weight_per_unit"
-                label="单个重量 (g)"
-                variant="outlined"
-                type="number"
-                hint="每个单位对应的重量（克）"
-                persistent-hint
-                class="mb-3"
-              />
-              <v-checkbox
-                v-model="unitForm.is_default"
-                label="设为默认单位"
-                density="compact"
-                hide-details
-              />
-            </v-form>
-          </v-card-text>
-          <v-card-actions>
-            <v-spacer />
-            <v-btn @click="showUnitDialog = false">取消</v-btn>
-            <v-btn color="primary" :loading="savingUnit" @click="saveEntityUnit">保存</v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-dialog>
-
-      <!-- 添加/编辑密度对话框 -->
-      <v-dialog v-model="showDensityDialog" max-width="450">
-        <v-card>
-          <v-card-title>{{ densityForm.id ? '编辑密度' : '设置密度' }}</v-card-title>
-          <v-card-text>
-            <v-form @submit.prevent="saveDensity">
-              <div class="d-flex align-start ga-2 mb-3">
-                <v-text-field
-                  v-model.number="densityForm.density"
-                  :label="'密度 (' + densityInputUnitLabel + ')'"
-                  variant="outlined"
-                  type="number"
-                  required
-                  class="flex-grow-1"
-                />
-                <v-btn-toggle
-                  v-model="densityInputUnit"
-                  mandatory
-                  color="primary"
-                  density="compact"
-                  variant="outlined"
-                  divided
-                  class="mt-2"
-                >
-                  <v-btn value="g/cm3" size="small">g/cm³</v-btn>
-                  <v-btn value="kg/m3" size="small">kg/m³</v-btn>
-                </v-btn-toggle>
-              </div>
-              <v-text-field
-                v-model.number="densityForm.temperature"
-                label="参考温度 (°C)"
-                variant="outlined"
-                type="number"
-                class="mb-3"
-              />
-              <v-text-field
-                v-model="densityForm.source"
-                label="来源"
-                variant="outlined"
-                placeholder="如：实测、USDA"
-                class="mb-3"
-              />
-            </v-form>
-          </v-card-text>
-          <v-card-actions>
-            <v-spacer />
-            <v-btn @click="showDensityDialog = false">取消</v-btn>
-            <v-btn color="primary" :loading="savingDensity" @click="saveDensity">保存</v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-dialog>
-
-      <!-- 最新价格卡片 -->
-      <v-card elevation="0" class="ma-4" v-if="latestPrice">
+      <!-- 最新价格 -->
+      <v-card elevation="0" class="grid-item item-latest-price" v-if="latestPrice">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="tertiary">mdi-currency-cny</v-icon>
           最新价格
@@ -207,11 +107,11 @@
         :data="chartData"
         :loading="loadingPrices"
         color="#ff9800"
-        class="ma-4"
+        class="grid-item item-price-trend"
       />
 
-      <!-- 关联商品卡片 -->
-      <v-card elevation="0" class="ma-4">
+      <!-- 关联商品 -->
+      <v-card elevation="0" class="grid-item item-products">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="primary">mdi-package-variant</v-icon>
           关联商品
@@ -246,8 +146,8 @@
         </v-card-text>
       </v-card>
 
-      <!-- 价格记录列表 -->
-      <v-card elevation="0" class="ma-4">
+      <!-- 价格记录 -->
+      <v-card elevation="0" class="grid-item item-price-records">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="primary">mdi-history</v-icon>
           价格记录
@@ -313,8 +213,59 @@
         </div>
       </v-card>
 
-      <!-- 营养数据卡片 -->
-      <v-card elevation="0" class="ma-4" v-if="nutritionData">
+      <!-- 相关菜谱 -->
+      <v-card elevation="0" class="grid-item item-recipes">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="primary">mdi-chef-hat</v-icon>
+          相关菜谱
+          <v-chip size="small" class="ml-2" v-if="recipeTotal > 0">
+            {{ recipeTotal }}
+          </v-chip>
+        </v-card-title>
+        <v-divider />
+
+        <v-list v-if="recipes.length > 0" lines="two">
+          <v-list-item
+            v-for="recipe in recipes"
+            :key="recipe.id"
+            @click="goToRecipe(recipe.id)"
+          >
+            <template #prepend>
+              <v-avatar color="secondary" size="36">
+                <v-icon color="white">mdi-food</v-icon>
+              </v-avatar>
+            </template>
+            <v-list-item-title>{{ recipe.name }}</v-list-item-title>
+            <v-list-item-subtitle v-if="recipe.category">{{ recipe.category }}</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+        </v-list>
+
+        <v-card-text v-else class="text-center py-8">
+          <v-icon size="48" color="medium-emphasis">mdi-book-open-variant</v-icon>
+          <div class="text-body-2 text-medium-emphasis mt-2">暂无相关菜谱</div>
+        </v-card-text>
+
+        <!-- 分页器 -->
+        <div v-if="recipeTotal > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
+          <v-pagination
+            v-model="recipePage"
+            :length="recipeTotalPages"
+            :total-visible="3"
+            rounded="circle"
+            density="comfortable"
+          />
+          <span class="text-caption text-medium-emphasis">共 {{ recipeTotal }} 条</span>
+        </div>
+      </v-card>
+
+      <!-- Group 3: 营养成分 | 层级关系 + 关系列表 + 单位与密度（独立列高） -->
+      <div class="group-3-wrapper">
+        <div class="group-3-left">
+      <!-- 营养成分 -->
+      <v-card elevation="0" class="grid-item item-nutrition" v-if="nutritionData">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="success">mdi-food-apple-outline</v-icon>
           营养成分
@@ -360,9 +311,11 @@
           </div>
         </v-card-text>
       </v-card>
+        </div>
+        <div class="group-3-right">
 
-      <!-- 层级关系卡片 -->
-      <v-card elevation="0" class="ma-4">
+      <!-- 层级关系 -->
+      <v-card elevation="0" class="grid-item item-hierarchy">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="info">mdi-graph</v-icon>
           层级关系
@@ -422,8 +375,8 @@
         </v-card-text>
       </v-card>
 
-      <!-- 层级关系列表（折叠面板） -->
-      <v-card v-if="hasRelations" elevation="0" class="ma-4">
+      <!-- 关系列表 -->
+      <v-card v-if="hasRelations" elevation="0" class="grid-item item-relation-list">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="primary">mdi-format-list-bulleted</v-icon>
           关系列表
@@ -517,44 +470,8 @@
         </v-list>
       </v-card>
 
-      <!-- 关联菜谱卡片 -->
-      <v-card elevation="0" class="ma-4">
-        <v-card-title class="d-flex align-center pb-2">
-          <v-icon start color="primary">mdi-chef-hat</v-icon>
-          相关菜谱
-          <v-chip size="small" class="ml-2" v-if="recipes.length > 0">
-            {{ recipes.length }}
-          </v-chip>
-        </v-card-title>
-        <v-divider />
-
-        <v-list v-if="recipes.length > 0" lines="one">
-          <v-list-item
-            v-for="recipe in recipes"
-            :key="recipe.id"
-            @click="goToRecipe(recipe.id)"
-          >
-            <template #prepend>
-              <v-avatar color="secondary" size="36">
-                <v-icon color="white">mdi-food</v-icon>
-              </v-avatar>
-            </template>
-            <v-list-item-title>{{ recipe.name }}</v-list-item-title>
-            <v-list-item-subtitle v-if="recipe.category">{{ recipe.category }}</v-list-item-subtitle>
-            <template #append>
-              <v-icon>mdi-chevron-right</v-icon>
-            </template>
-          </v-list-item>
-        </v-list>
-
-        <v-card-text v-else class="text-center py-8">
-          <v-icon size="48" color="medium-emphasis">mdi-book-open-variant</v-icon>
-          <div class="text-body-2 text-medium-emphasis mt-2">暂无相关菜谱</div>
-        </v-card-text>
-      </v-card>
-
-      <!-- 单位与密度管理卡片 -->
-      <v-card elevation="0" class="ma-4">
+      <!-- 单位与密度 -->
+      <v-card elevation="0" class="grid-item item-units">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="secondary">mdi-ruler</v-icon>
           单位与密度
@@ -716,6 +633,9 @@
           </div>
         </v-card-text>
       </v-card>
+        </div>
+      </div>
+      </div>
 
       <!-- 操作按钮 -->
       <div class="pa-4">
@@ -739,6 +659,106 @@
           删除原料
         </v-btn>
       </div>
+
+      <!-- 添加/编辑单位对话框 -->
+      <v-dialog v-model="showUnitDialog" max-width="450">
+        <v-card>
+          <v-card-title>{{ unitForm.id ? '编辑单位' : '添加单位' }}</v-card-title>
+          <v-card-text>
+            <v-form @submit.prevent="saveEntityUnit">
+              <v-text-field
+                v-model="unitForm.unit_name"
+                label="单位名称"
+                variant="outlined"
+                placeholder="如：盒(12个)、根、袋"
+                required
+                class="mb-3"
+              />
+              <v-text-field
+                v-model.number="unitForm.conversion_factor"
+                label="换算系数"
+                variant="outlined"
+                type="number"
+                hint="1单位 = 几个基础单位"
+                persistent-hint
+                class="mb-3"
+              />
+              <v-text-field
+                v-model.number="unitForm.weight_per_unit"
+                label="单个重量 (g)"
+                variant="outlined"
+                type="number"
+                hint="每个单位对应的重量（克）"
+                persistent-hint
+                class="mb-3"
+              />
+              <v-checkbox
+                v-model="unitForm.is_default"
+                label="设为默认单位"
+                density="compact"
+                hide-details
+              />
+            </v-form>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn @click="showUnitDialog = false">取消</v-btn>
+            <v-btn color="primary" :loading="savingUnit" @click="saveEntityUnit">保存</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- 添加/编辑密度对话框 -->
+      <v-dialog v-model="showDensityDialog" max-width="450">
+        <v-card>
+          <v-card-title>{{ densityForm.id ? '编辑密度' : '设置密度' }}</v-card-title>
+          <v-card-text>
+            <v-form @submit.prevent="saveDensity">
+              <div class="d-flex align-start ga-2 mb-3">
+                <v-text-field
+                  v-model.number="densityForm.density"
+                  :label="'密度 (' + densityInputUnitLabel + ')'"
+                  variant="outlined"
+                  type="number"
+                  required
+                  class="flex-grow-1"
+                />
+                <v-btn-toggle
+                  v-model="densityInputUnit"
+                  mandatory
+                  color="primary"
+                  density="compact"
+                  variant="outlined"
+                  divided
+                  class="mt-2"
+                >
+                  <v-btn value="g/cm3" size="small">g/cm³</v-btn>
+                  <v-btn value="kg/m3" size="small">kg/m³</v-btn>
+                </v-btn-toggle>
+              </div>
+              <v-text-field
+                v-model.number="densityForm.temperature"
+                label="参考温度 (°C)"
+                variant="outlined"
+                type="number"
+                class="mb-3"
+              />
+              <v-text-field
+                v-model="densityForm.source"
+                label="来源"
+                variant="outlined"
+                placeholder="如：实测、USDA"
+                class="mb-3"
+              />
+            </v-form>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn @click="showDensityDialog = false">取消</v-btn>
+            <v-btn color="primary" :loading="savingDensity" @click="saveDensity">保存</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
     </template>
 
     <!-- 编辑对话框 -->
@@ -1297,6 +1317,10 @@ const nutritionData = ref<any>(null)
 
 // 关联菜谱
 const recipes = ref<Recipe[]>([])
+const recipePage = ref(1)
+const recipePageSize = ref(10)
+const recipeTotal = ref(0)
+const recipeTotalPages = computed(() => Math.ceil(recipeTotal.value / recipePageSize.value))
 
 // 单位列表
 const units = ref<Unit[]>([])
@@ -2064,10 +2088,12 @@ const loadNutritionData = async () => {
 // 加载关联菜谱
 const loadRecipes = async () => {
   try {
+    const skip = (recipePage.value - 1) * recipePageSize.value
     const response = await api.get(`/nutrition/ingredients/${ingredientId.value}/recipes`, {
-      params: { limit: 50 }
+      params: { skip, limit: recipePageSize.value }
     })
     recipes.value = response.items || []
+    recipeTotal.value = response.total || 0
   } catch (e) {
     recipes.value = []
   }
@@ -2704,6 +2730,9 @@ const showMessage = (message: string, color: string = 'success') => {
 // 监听分页变化
 watch(pricePage, loadPriceRecords)
 
+// 监听菜谱分页变化
+watch(recipePage, loadRecipes)
+
 // 监听原料搜索输入，执行防抖搜索
 watch(ingredientSearchQuery, (newSearch) => {
   if (ingredientSearchTimeout) clearTimeout(ingredientSearchTimeout)
@@ -2798,5 +2827,83 @@ onMounted(() => {
 
 .relation-item-content:hover {
   background: rgba(var(--v-theme-primary), 0.08);
+}
+
+/* === 响应式布局 === */
+
+/* 移动端：flex 纵向堆叠 + CSS order 重排序 */
+.ingredient-layout {
+  display: flex;
+  flex-direction: column;
+}
+
+.ingredient-layout > .grid-item,
+.group-3-left > .grid-item,
+.group-3-right > .grid-item {
+  margin: 16px;
+}
+
+/* 移动端：Group 3 容器透明化，子元素直接参与父 flex 流 */
+.group-3-wrapper {
+  display: contents;
+}
+.group-3-left, .group-3-right {
+  display: contents;
+}
+
+/* 移动端顺序 */
+.item-basic-info { order: 1; }
+.item-latest-price { order: 2; }
+.item-price-trend { order: 3; }
+.item-products { order: 4; }
+.item-price-records { order: 5; }
+.item-recipes { order: 6; }
+.item-nutrition { order: 7; }
+.item-hierarchy { order: 8; }
+.item-relation-list { order: 8; }
+.item-units { order: 9; }
+
+/* 桌面端：CSS Grid + Flexbox 混合布局 */
+@media (min-width: 960px) {
+  .ingredient-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .ingredient-layout > .grid-item {
+    margin: 0 !important;
+  }
+
+  /* Group 1: 基本信息 | 最新价格 / 关联商品 | 价格趋势（行对齐） */
+  .item-basic-info { grid-column: 1; grid-row: 1; }
+  .item-latest-price { grid-column: 2; grid-row: 1; }
+  .item-products { grid-column: 1; grid-row: 2; }
+  .item-price-trend { grid-column: 2; grid-row: 2; }
+
+  /* Group 2: 相关菜谱 | 价格记录（行对齐） */
+  .item-recipes { grid-column: 1; grid-row: 3; }
+  .item-price-records { grid-column: 2; grid-row: 3; }
+
+  /* Group 3: 独立 flex 容器，左右列互不影响 */
+  .group-3-wrapper {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 4;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .group-3-left, .group-3-right {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    gap: 16px;
+  }
+  .group-3-left > .grid-item,
+  .group-3-right > .grid-item {
+    margin: 0 !important;
+  }
 }
 </style>
