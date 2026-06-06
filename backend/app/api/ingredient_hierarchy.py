@@ -1,9 +1,9 @@
 """
 食材层级关系管理API
 """
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Set
 from app.core.security import get_current_user
 from app.core.database import get_db
 from app.models.user import User
@@ -46,9 +46,17 @@ class IngredientMergeResponse(BaseModel):
     updated_mappings_count: int
     stats_change: dict
 
+class ExpandedIngredientRelations(BaseModel):
+    """某个关联食材的下一级关系"""
+    ingredient_id: int
+    ingredient_name: str
+    parent_relations: List[HierarchyRelationResponse]
+    child_relations: List[HierarchyRelationResponse]
+
 class HierarchyRelationsResponse(BaseModel):
     parent_relations: List[HierarchyRelationResponse]
     child_relations: List[HierarchyRelationResponse]
+    expanded_relations: Optional[List[ExpandedIngredientRelations]] = None
 
 class MergeRecordResponse(BaseModel):
     id: int
@@ -160,88 +168,103 @@ def create_hierarchy_relation(
 @router.get("/ingredients/{ingredient_id}/hierarchy", response_model=HierarchyRelationsResponse)
 def get_ingredient_hierarchy(
     ingredient_id: int,
+    depth: int = Query(1, ge=1, le=3, description="层级展开深度，1=仅直接关系，2=含下一级关系"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     获取食材的层级关系（作为父节点和子节点的关系）
     """
-    # 获取作为父节点的关系（child relations）
-    child_relations = db.query(IngredientHierarchy).filter(
-        IngredientHierarchy.parent_id == ingredient_id
-    ).all()
-
-    child_responses = []
-    for rel in child_relations:
+    def _build_relation_response(rel: IngredientHierarchy, db: Session) -> Optional[HierarchyRelationResponse]:
+        """构建单个关系的响应对象"""
+        parent_ingredient = db.query(Ingredient).filter(Ingredient.id == rel.parent_id).first()
         child_ingredient = db.query(Ingredient).filter(Ingredient.id == rel.child_id).first()
-        if child_ingredient:
-            child_responses.append(HierarchyRelationResponse(
+        if parent_ingredient and child_ingredient:
+            return HierarchyRelationResponse(
                 id=rel.id,
                 parent_id=rel.parent_id,
-                parent_name=child_ingredient.name,  # 这里应该是parent_ingredient，修正
+                parent_name=parent_ingredient.name,
                 child_id=rel.child_id,
                 child_name=child_ingredient.name,
                 relation_type=rel.relation_type,
                 strength=rel.strength,
                 created_at=rel.created_at
-            ))
+            )
+        return None
+
+    # 获取作为父节点的关系（child relations）
+    child_relations = db.query(IngredientHierarchy).filter(
+        IngredientHierarchy.parent_id == ingredient_id
+    ).all()
+
+    child_responses = [r for r in (_build_relation_response(rel, db) for rel in child_relations) if r]
 
     # 获取作为子节点的关系（parent relations）
     parent_relations = db.query(IngredientHierarchy).filter(
         IngredientHierarchy.child_id == ingredient_id
     ).all()
 
-    parent_responses = []
-    for rel in parent_relations:
-        parent_ingredient = db.query(Ingredient).filter(Ingredient.id == rel.parent_id).first()
-        if parent_ingredient:
-            parent_responses.append(HierarchyRelationResponse(
-                id=rel.id,
-                parent_id=rel.parent_id,
-                parent_name=parent_ingredient.name,
-                child_id=rel.child_id,
-                child_name=parent_ingredient.name,  # 这里应该是child_ingredient，修正
-                relation_type=rel.relation_type,
-                strength=rel.strength,
-                created_at=rel.created_at
-            ))
+    parent_responses = [r for r in (_build_relation_response(rel, db) for rel in parent_relations) if r]
 
-    # 修正上述错误
-    child_responses = []
-    for rel in child_relations:
-        parent_ingredient = db.query(Ingredient).filter(Ingredient.id == rel.parent_id).first()
-        child_ingredient = db.query(Ingredient).filter(Ingredient.id == rel.child_id).first()
-        if parent_ingredient and child_ingredient:
-            child_responses.append(HierarchyRelationResponse(
-                id=rel.id,
-                parent_id=rel.parent_id,
-                parent_name=parent_ingredient.name,
-                child_id=rel.child_id,
-                child_name=child_ingredient.name,
-                relation_type=rel.relation_type,
-                strength=rel.strength,
-                created_at=rel.created_at
-            ))
+    # 当 depth >= 2 时，展开下一级关系
+    expanded_relations = None
+    if depth >= 2:
+        # 收集一级关系中出现的所有食材 ID（排除当前食材自身）
+        visited: Set[int] = {ingredient_id}
+        related_ids: Set[int] = set()
+        for rel in child_responses:
+            related_ids.add(rel.child_id)
+            related_ids.add(rel.parent_id)
+        for rel in parent_responses:
+            related_ids.add(rel.parent_id)
+            related_ids.add(rel.child_id)
+        related_ids.discard(ingredient_id)
 
-    parent_responses = []
-    for rel in parent_relations:
-        parent_ingredient = db.query(Ingredient).filter(Ingredient.id == rel.parent_id).first()
-        child_ingredient = db.query(Ingredient).filter(Ingredient.id == rel.child_id).first()
-        if parent_ingredient and child_ingredient:
-            parent_responses.append(HierarchyRelationResponse(
-                id=rel.id,
-                parent_id=rel.parent_id,
-                parent_name=parent_ingredient.name,
-                child_id=rel.child_id,
-                child_name=child_ingredient.name,
-                relation_type=rel.relation_type,
-                strength=rel.strength,
-                created_at=rel.created_at
-            ))
+        expanded = []
+        for rid in related_ids:
+            visited.add(rid)
+            rel_ingredient = db.query(Ingredient).filter(Ingredient.id == rid).first()
+            if not rel_ingredient:
+                continue
+
+            # 获取该食材的直接关系，排除已访问的食材
+            rel_children = db.query(IngredientHierarchy).filter(
+                IngredientHierarchy.parent_id == rid
+            ).all()
+            rel_parents = db.query(IngredientHierarchy).filter(
+                IngredientHierarchy.child_id == rid
+            ).all()
+
+            rel_child_responses = []
+            for r in rel_children:
+                # 排除当前食材自身（已在中心节点）和当前食材的其他一级关系
+                if r.child_id not in visited:
+                    resp = _build_relation_response(r, db)
+                    if resp:
+                        rel_child_responses.append(resp)
+
+            rel_parent_responses = []
+            for r in rel_parents:
+                if r.parent_id not in visited:
+                    resp = _build_relation_response(r, db)
+                    if resp:
+                        rel_parent_responses.append(resp)
+
+            # 只有存在二级关系时才加入结果
+            if rel_child_responses or rel_parent_responses:
+                expanded.append(ExpandedIngredientRelations(
+                    ingredient_id=rid,
+                    ingredient_name=rel_ingredient.name,
+                    parent_relations=rel_parent_responses,
+                    child_relations=rel_child_responses
+                ))
+
+        expanded_relations = expanded if expanded else None
 
     return HierarchyRelationsResponse(
         parent_relations=parent_responses,
-        child_relations=child_responses
+        child_relations=child_responses,
+        expanded_relations=expanded_relations
     )
 
 

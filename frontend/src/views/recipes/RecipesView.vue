@@ -101,11 +101,12 @@
     <!-- 分页器 -->
     <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
       <v-pagination
-        v-model="currentPage"
+        :model-value="currentPage"
         :length="totalPages"
-        :total-visible="3"
+        :total-visible="totalVisible"
         rounded="circle"
         density="comfortable"
+        @update:model-value="onPageChange"
       />
       <div class="d-flex align-center ga-2">
         <v-select
@@ -152,12 +153,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { md, lgAndUp } = useDisplay()
+
+const route = useRoute()
 
 interface Recipe {
   id: number
@@ -178,15 +183,28 @@ const router = useRouter()
 const recipes = ref<Recipe[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
-const searchQuery = ref('')
+const searchQuery = ref((route.query.search as string) || '')
 const showAddDialog = ref(false)
 
-// 分页相关
-const currentPage = ref(1)
-const pageSize = ref(20)
+// 分页相关（从 URL 查询参数初始化）
+const currentPage = ref(Number(route.query.page) || 1)
+const pageSize = ref(Number(route.query.pageSize) || 20)
 const total = ref(0)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
+const totalVisible = computed(() => lgAndUp.value ? 7 : md.value ? 5 : 3)
+
+// 同步分页状态到 URL 查询参数
+const syncToUrl = () => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: String(currentPage.value),
+      pageSize: String(pageSize.value),
+      ...(searchQuery.value ? { search: searchQuery.value } : {}),
+    }
+  })
+}
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
@@ -194,6 +212,7 @@ const debouncedSearch = () => {
   if (searchTimeout) clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
     currentPage.value = 1
+    syncToUrl()
     loadRecipes()
   }, 300)
 }
@@ -225,12 +244,15 @@ const loadRecipes = async () => {
 
 const handlePageSizeChange = () => {
   currentPage.value = 1
+  syncToUrl()
   loadRecipes()
 }
 
-watch(currentPage, () => {
+const onPageChange = (page: number) => {
+  currentPage.value = page
+  syncToUrl()
   loadRecipes()
-})
+}
 
 const formatCost = (cost: any) => {
   const num = parseFloat(cost) || 0

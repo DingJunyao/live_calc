@@ -2077,7 +2077,9 @@ const loadRecipes = async () => {
 const loadHierarchy = async () => {
   loadingHierarchy.value = true
   try {
-    const response = await api.get(`/ingredients/${ingredientId.value}/hierarchy`)
+    const response = await api.get(`/ingredients/${ingredientId.value}/hierarchy`, {
+      params: { depth: 2 }
+    })
     hierarchyData.value = response
   } catch (e) {
     console.error('加载层级关系失败', e)
@@ -2668,7 +2670,7 @@ const goToIngredient = (id: number) => {
 
 // 返回
 const goBack = () => {
-  router.push('/data/ingredients')
+  router.back()
 }
 
 // 格式化函数

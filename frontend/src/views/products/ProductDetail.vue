@@ -1749,7 +1749,7 @@ const goToIngredient = () => {
 
 // 返回
 const goBack = () => {
-  router.push('/data/products')
+  router.back()
 }
 
 // 格式化函数

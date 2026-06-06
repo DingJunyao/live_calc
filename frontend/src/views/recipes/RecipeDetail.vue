@@ -906,7 +906,7 @@ const getColorByIndex = (index: number) => {
 }
 
 const goBack = () => {
-  router.push('/recipes')
+  router.back()
 }
 
 // 跳转到原料详情

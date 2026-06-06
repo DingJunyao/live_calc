@@ -44,12 +44,20 @@ interface HierarchyRelation {
 interface HierarchyData {
   parent_relations: HierarchyRelation[]
   child_relations: HierarchyRelation[]
+  expanded_relations?: ExpandedIngredientRelations[]
+}
+
+interface ExpandedIngredientRelations {
+  ingredient_id: number
+  ingredient_name: string
+  parent_relations: HierarchyRelation[]
+  child_relations: HierarchyRelation[]
 }
 
 interface IngredientNode {
   id: number
   name: string
-  category: number // 0=当前原料, 1=相关原料
+  category: number // 0=当前原料, 1=一级关系, 2=二级关系
 }
 
 const props = defineProps({
@@ -99,12 +107,100 @@ const relationTypes = {
   }
 }
 
+// 节点样式配置（按级别）
+const nodeStyles: Record<number, {
+  symbolSize: number
+  color: string
+  borderColor: string
+  borderWidth: number
+  fontSize: number
+  fontWeight: string
+}> = {
+  0: { symbolSize: 70, color: '#E91E63', borderColor: '#fff', borderWidth: 3, fontSize: 14, fontWeight: 'bold' },
+  1: { symbolSize: 50, color: '#2196F3', borderColor: '#2196F3', borderWidth: 2, fontSize: 12, fontWeight: 'normal' },
+  2: { symbolSize: 35, color: '#90CAF9', borderColor: '#90CAF9', borderWidth: 1, fontSize: 10, fontWeight: 'normal' }
+}
+
+/**
+ * 根据关系信息添加一条边，返回是否成功
+ */
+function addLink(
+  rel: { relation_type: string; id: number; strength: number },
+  source: number,
+  target: number,
+  links: any[],
+  edgeCounts: Map<string, number>,
+  edgeIndices: Map<string, number>,
+  opacity: number = 0.8
+): void {
+  const rt = rel.relation_type as keyof typeof relationTypes
+  const config = relationTypes[rt] || { label: rel.relation_type, color: '#666', lineStyle: 'solid' }
+
+  // 边唯一键
+  const edgeKey = `${Math.min(source, target)}-${Math.max(source, target)}-${rel.relation_type}`
+  const directionKey = `${source}-${target}`
+
+  if (!edgeCounts.has(directionKey)) edgeCounts.set(directionKey, 0)
+  const count = edgeCounts.get(directionKey)!
+  edgeCounts.set(directionKey, count + 1)
+
+  if (!edgeIndices.has(edgeKey)) edgeIndices.set(edgeKey, 0)
+  const index = edgeIndices.get(edgeKey)!
+  edgeIndices.set(edgeKey, index + 1)
+
+  // 同方向多条边分散弯曲度
+  const totalEdges = edgeCounts.get(directionKey)!
+  let curveness = 0.2
+  if (totalEdges > 1) {
+    const offset = (index - (totalEdges - 1) / 2) * 0.15
+    curveness = 0.2 + offset
+  }
+
+  // 根据关系类型决定标签
+  let label: string
+  if (rel.relation_type === 'contains') {
+    label = '包含'
+  } else if (rel.relation_type === 'fallback') {
+    label = '回退到'
+  } else if (rel.relation_type === 'substitutable') {
+    label = '可替代'
+  } else {
+    label = rel.relation_type
+  }
+
+  links.push({
+    id: `edge-${rel.id}`,
+    source: String(source),
+    target: String(target),
+    name: label,
+    relationType: rel.relation_type,
+    strength: rel.strength,
+    level: opacity < 0.8 ? 2 : 1,
+    lineStyle: {
+      color: config.color,
+      type: config.lineStyle,
+      width: opacity < 0.8 ? 1 : 2,
+      curveness,
+      opacity
+    },
+    label: {
+      show: opacity >= 0.8,
+      fontSize: opacity < 0.8 ? 9 : 11,
+      formatter: label,
+      color: '#666'
+    },
+    symbolSize: opacity < 0.8 ? 6 : 8
+  })
+}
+
 // 构建图表数据
 const buildChartData = () => {
   if (!props.hierarchyData) return { nodes: [], links: [] }
 
   const nodes: Map<number, IngredientNode> = new Map()
   const links: any[] = []
+  const edgeCounts = new Map<string, number>()
+  const edgeIndices = new Map<string, number>()
 
   // 添加当前原料节点（中心节点）
   nodes.set(props.ingredientId, {
@@ -113,125 +209,71 @@ const buildChartData = () => {
     category: 0
   })
 
-  // 处理所有关系
+  // ---- 一级关系 ----
   const allRelations = [
     ...(props.hierarchyData.parent_relations || []).map(r => ({ ...r, direction: 'in' })),
     ...(props.hierarchyData.child_relations || []).map(r => ({ ...r, direction: 'out' }))
   ]
 
-  // 统计同一对节点之间的边数
-  const edgeCounts = new Map<string, number>()
-  const edgeIndices = new Map<string, number>()
-
   allRelations.forEach(rel => {
     const otherId = rel.direction === 'in' ? rel.parent_id : rel.child_id
     const otherName = rel.direction === 'in' ? rel.parent_name : rel.child_name
 
-    // 添加相关节点
     if (!nodes.has(otherId)) {
-      nodes.set(otherId, {
-        id: otherId,
-        name: otherName,
-        category: 1
-      })
+      nodes.set(otherId, { id: otherId, name: otherName, category: 1 })
     }
 
-    // 根据关系类型确定边的方向和标签
-    let source: number, target: number, label: string
-
+    let source: number, target: number
     if (rel.relation_type === 'contains') {
-      // 包含关系：parent → child
-      if (rel.direction === 'in') {
-        // 当前是child，显示 parent → 当前
-        source = rel.parent_id
-        target = props.ingredientId
-        label = '包含'
-      } else {
-        // 当前是parent，显示 当前 → child
-        source = props.ingredientId
-        target = rel.child_id
-        label = '包含'
-      }
+      source = rel.direction === 'in' ? rel.parent_id : props.ingredientId
+      target = rel.direction === 'in' ? props.ingredientId : rel.child_id
     } else if (rel.relation_type === 'fallback') {
-      // 回退关系：child 可回退到 parent
-      // 箭头指向 parent（数据来源方向）
-      if (rel.direction === 'in') {
-        // 当前是child，可回退到 parent
-        source = props.ingredientId
-        target = rel.parent_id
-        label = '回退到'
-      } else {
-        // 当前是parent，child 可回退到当前
-        source = rel.child_id
-        target = props.ingredientId
-        label = '回退到'
-      }
+      source = rel.direction === 'in' ? props.ingredientId : rel.child_id
+      target = rel.direction === 'in' ? rel.parent_id : props.ingredientId
     } else if (rel.relation_type === 'substitutable') {
-      // 可替代关系：双向箭头
-      // 始终从当前指向其他（表示可以相互替代）
-      if (rel.direction === 'in') {
-        source = props.ingredientId
-        target = rel.parent_id
-      } else {
-        source = props.ingredientId
-        target = rel.child_id
-      }
-      label = '可替代'
+      source = props.ingredientId
+      target = rel.direction === 'in' ? rel.parent_id : rel.child_id
     } else {
-      // 默认：按照数据库存储的方向
       source = rel.parent_id
       target = rel.child_id
-      label = rel.relation_type
     }
 
-    // 生成边的唯一键
-    const edgeKey = `${Math.min(source, target)}-${Math.max(source, target)}-${rel.relation_type}`
+    addLink(rel, source, target, links, edgeCounts, edgeIndices, 0.8)
+  })
 
-    // 统计同一方向的边数
-    const directionKey = `${source}-${target}`
-    if (!edgeCounts.has(directionKey)) {
-      edgeCounts.set(directionKey, 0)
-    }
-    const count = edgeCounts.get(directionKey)!
-    edgeCounts.set(directionKey, count + 1)
+  // ---- 二级关系（expanded_relations） ----
+  const expanded = props.hierarchyData.expanded_relations || []
+  expanded.forEach(exp => {
+    // 展开节点的自身关系
+    const expRels = [
+      ...exp.parent_relations.map(r => ({ ...r, direction: 'in' })),
+      ...exp.child_relations.map(r => ({ ...r, direction: 'out' }))
+    ]
 
-    if (!edgeIndices.has(edgeKey)) {
-      edgeIndices.set(edgeKey, 0)
-    }
-    const index = edgeIndices.get(edgeKey)!
-    edgeIndices.set(edgeKey, index + 1)
+    expRels.forEach(rel => {
+      const otherId = rel.direction === 'in' ? rel.parent_id : rel.child_id
+      const otherName = rel.direction === 'in' ? rel.parent_name : rel.child_name
 
-    // 计算curveness：同一方向的边使用不同的弯曲度
-    const totalEdges = edgeCounts.get(directionKey)!
-    const baseCurveness = 0.2
-    // 如果同一方向有多条边，分散它们的弯曲度
-    let curveness = baseCurveness
-    if (totalEdges > 1) {
-      const offset = (index - (totalEdges - 1) / 2) * 0.15
-      curveness = baseCurveness + offset
-    }
+      if (!nodes.has(otherId)) {
+        nodes.set(otherId, { id: otherId, name: otherName, category: 2 })
+      }
 
-    links.push({
-      id: `edge-${rel.id}`, // 添加唯一ID
-      source: String(source),
-      target: String(target),
-      name: label,
-      relationType: rel.relation_type,
-      strength: rel.strength,
-      lineStyle: {
-        color: relationTypes[rel.relation_type as keyof typeof relationTypes]?.color || '#666',
-        type: relationTypes[rel.relation_type as keyof typeof relationTypes]?.lineStyle || 'solid',
-        width: 2,
-        curveness: curveness,
-        opacity: 0.8
-      },
-      label: {
-        show: true,
-        fontSize: 11,
-        formatter: label,
-        color: '#666'
-      },
-      symbolSize: 8
+      let source: number, target: number
+      if (rel.relation_type === 'contains') {
+        source = rel.direction === 'in' ? rel.parent_id : exp.ingredient_id
+        target = rel.direction === 'in' ? exp.ingredient_id : rel.child_id
+      } else if (rel.relation_type === 'fallback') {
+        source = rel.direction === 'in' ? exp.ingredient_id : rel.child_id
+        target = rel.direction === 'in' ? rel.parent_id : exp.ingredient_id
+      } else if (rel.relation_type === 'substitutable') {
+        source = exp.ingredient_id
+        target = rel.direction === 'in' ? rel.parent_id : rel.child_id
+      } else {
+        source = rel.parent_id
+        target = rel.child_id
+      }
+
+      addLink(rel, source, target, links, edgeCounts, edgeIndices, 0.4)
     })
   })
 
@@ -266,10 +308,12 @@ const updateChart = () => {
       trigger: 'item',
       formatter: (params: any) => {
         if (params.dataType === 'node') {
-          const isCurrent = params.data.category === 0
-          return `<strong>${params.data.name}</strong><br/>${isCurrent ? '当前原料' : '相关原料'}`
+          const style = nodeStyles[params.data.category]
+          const levelLabel = params.data.category === 0 ? '当前原料' : params.data.category === 1 ? '一级关系' : '二级关系'
+          return `<strong>${params.data.name}</strong><br/>${levelLabel}`
         } else if (params.dataType === 'edge') {
-          return `<strong>${params.data.sourceName}</strong> ${params.data.name} <strong>${params.data.targetName}</strong><br/>类型: ${params.data.relationType}<br/>强度: ${params.data.strength}%`
+          const levelLabel = params.data.level === 2 ? '（二级）' : ''
+          return `<strong>${params.data.sourceName}</strong> ${params.data.name} <strong>${params.data.targetName}</strong>${levelLabel}<br/>类型: ${params.data.relationType}<br/>强度: ${params.data.strength}%`
         }
         return ''
       }
@@ -278,25 +322,27 @@ const updateChart = () => {
       {
         type: 'graph',
         layout: 'force',
-        data: nodes.map(node => ({
-          id: String(node.id),
-          name: node.name,
-          category: node.category,
-          symbolSize: node.category === 0 ? 70 : 50,
-          itemStyle: {
-            color: node.category === 0 ? '#E91E63' : '#2196F3',
-            borderColor: node.category === 0 ? '#fff' : '#2196F3',
-            borderWidth: node.category === 0 ? 3 : 2
-          },
-          label: {
-            show: true,
-            fontSize: node.category === 0 ? 14 : 12,
-            fontWeight: node.category === 0 ? 'bold' : 'normal',
-            color: '#333'
+        data: nodes.map(node => {
+          const style = nodeStyles[node.category] || nodeStyles[1]
+          return {
+            id: String(node.id),
+            name: node.name,
+            category: node.category,
+            symbolSize: style.symbolSize,
+            itemStyle: {
+              color: style.color,
+              borderColor: style.borderColor,
+              borderWidth: style.borderWidth
+            },
+            label: {
+              show: true,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight as 'bold' | 'normal',
+              color: '#333'
+            }
           }
-        })),
-        links: links.map((link, index) => {
-          // 查找源和目标节点名称
+        }),
+        links: links.map((link) => {
           const sourceNode = nodes.find(n => String(n.id) === link.source)
           const targetNode = nodes.find(n => String(n.id) === link.target)
 

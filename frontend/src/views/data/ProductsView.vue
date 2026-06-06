@@ -111,11 +111,12 @@
     <!-- 分页器 -->
     <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 pa-4">
       <v-pagination
-        v-model="currentPage"
+        :model-value="currentPage"
         :length="totalPages"
-        :total-visible="3"
+        :total-visible="totalVisible"
         rounded="circle"
         density="comfortable"
+        @update:model-value="onPageChange"
       />
       <div class="d-flex align-center ga-2">
         <v-select
@@ -217,13 +218,16 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 
+const route = useRoute()
+const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
-const { smAndDown } = useDisplay()
+const { smAndDown, md, lgAndUp } = useDisplay()
 
 interface Product {
   id: number
@@ -244,7 +248,7 @@ interface Ingredient {
 const items = ref<Product[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
-const search = ref('')
+const search = ref((route.query.search as string) || '')
 const showAddDialog = ref(false)
 const saving = ref(false)
 
@@ -265,12 +269,25 @@ const form = ref({
   ingredient_id: null as number | null
 })
 
-// 分页相关
-const currentPage = ref(1)
-const pageSize = ref(20)
+// 分页相关（从 URL 查询参数初始化）
+const currentPage = ref(Number(route.query.page) || 1)
+const pageSize = ref(Number(route.query.pageSize) || 20)
 const total = ref(0)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
+const totalVisible = computed(() => lgAndUp.value ? 7 : md.value ? 5 : 3)
+
+// 同步分页状态到 URL 查询参数
+const syncToUrl = () => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: String(currentPage.value),
+      pageSize: String(pageSize.value),
+      ...(search.value ? { search: search.value } : {}),
+    }
+  })
+}
 
 // 加载原料列表
 const loadIngredients = async (searchText?: string) => {
@@ -309,6 +326,7 @@ const debouncedSearch = () => {
   if (searchTimeout) clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
     currentPage.value = 1
+    syncToUrl()
     loadProducts()
   }, 300)
 }
@@ -340,12 +358,15 @@ const loadProducts = async () => {
 
 const handlePageSizeChange = () => {
   currentPage.value = 1
+  syncToUrl()
   loadProducts()
 }
 
-watch(currentPage, () => {
+const onPageChange = (page: number) => {
+  currentPage.value = page
+  syncToUrl()
   loadProducts()
-})
+}
 
 const openPriceDialog = (product: Product) => {
   priceDialogProduct.value = product
