@@ -36,51 +36,91 @@
     </v-alert>
 
     <!-- 原料列表 -->
-    <v-row v-else>
-      <v-col
-        v-for="item in items"
-        :key="item.id"
-        cols="12"
-        sm="6"
-        md="4"
-        lg="3"
-        xl="2"
-      >
-        <v-card
-          elevation="0"
-          class="list-grid-card"
-          :to="`/data/ingredients/${item.id}`"
-          hover
-        >
-          <v-card-text>
-            <div class="d-flex align-center mb-2">
-              <v-avatar color="secondary" size="40" class="mr-3">
+    <template v-else>
+      <!-- 移动端：列表样式 -->
+      <v-card v-if="smAndDown" elevation="0">
+        <v-list lines="two">
+          <v-list-item
+            v-for="item in items"
+            :key="item.id"
+            :to="`/data/ingredients/${item.id}`"
+          >
+            <template #prepend>
+              <v-avatar color="secondary" size="40">
                 <span class="text-white font-weight-bold">{{ item.name?.charAt(0) }}</span>
               </v-avatar>
-              <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
-            </div>
-            <v-chip size="x-small" color="default" variant="outlined">
-              {{ item.category || '未分类' }}
-            </v-chip>
-          </v-card-text>
-          <v-divider />
-          <v-card-actions>
-            <v-spacer />
-            <v-btn
-              icon="mdi-tag-plus"
-              size="small"
-              variant="text"
-              :loading="loadingProductsFor === item.id"
-              @click.prevent="openPriceDialog(item)"
-            />
-          </v-card-actions>
-        </v-card>
-      </v-col>
+            </template>
 
-      <v-col v-if="items.length === 0" cols="12">
-        <div class="text-center py-8 text-medium-emphasis">暂无原料</div>
-      </v-col>
-    </v-row>
+            <v-list-item-title>{{ item.name }}</v-list-item-title>
+            <v-list-item-subtitle>{{ item.category || '未分类' }}</v-list-item-subtitle>
+
+            <template #append>
+              <v-btn
+                icon="mdi-tag-plus"
+                size="small"
+                variant="text"
+                :loading="loadingProductsFor === item.id"
+                @click.prevent="openPriceDialog(item)"
+              />
+              <v-btn icon="mdi-chevron-right" size="small" variant="text" />
+            </template>
+          </v-list-item>
+
+          <v-list-item v-if="items.length === 0">
+            <v-list-item-title class="text-center text-medium-emphasis">
+              暂无原料
+            </v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </v-card>
+
+      <!-- 桌面端：卡片网格 -->
+      <v-row v-else>
+        <v-col
+          v-for="item in items"
+          :key="item.id"
+          cols="12"
+          sm="6"
+          md="4"
+          lg="3"
+          xl="2"
+        >
+          <v-card
+            elevation="0"
+            class="list-grid-card"
+            :to="`/data/ingredients/${item.id}`"
+            hover
+          >
+            <v-card-text>
+              <div class="d-flex align-center mb-2">
+                <v-avatar color="secondary" size="40" class="mr-3">
+                  <span class="text-white font-weight-bold">{{ item.name?.charAt(0) }}</span>
+                </v-avatar>
+                <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
+              </div>
+              <v-chip size="x-small" color="default" variant="outlined">
+                {{ item.category || '未分类' }}
+              </v-chip>
+            </v-card-text>
+            <v-divider />
+            <v-card-actions>
+              <v-spacer />
+              <v-btn
+                icon="mdi-tag-plus"
+                size="small"
+                variant="text"
+                :loading="loadingProductsFor === item.id"
+                @click.prevent="openPriceDialog(item)"
+              />
+            </v-card-actions>
+          </v-card>
+        </v-col>
+
+        <v-col v-if="items.length === 0" cols="12">
+          <div class="text-center py-8 text-medium-emphasis">暂无原料</div>
+        </v-col>
+      </v-row>
+    </template>
 
     <!-- 分页器 -->
     <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 pa-4">
@@ -316,11 +356,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { smAndDown } = useDisplay()
 
 interface Ingredient {
   id: number
