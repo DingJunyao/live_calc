@@ -97,6 +97,8 @@ async def get_recipes(
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
     tag: Optional[str] = Query(None, description="标签过滤"),
     search: Optional[str] = Query(None, description="搜索菜谱名称"),
+    categories: Optional[str] = Query(None, description="菜谱分类列表，逗号分隔"),
+    difficulties: Optional[str] = Query(None, description="难度列表，逗号分隔"),
     include_cost: bool = Query(True, description="是否包含成本和营养信息"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -123,6 +125,18 @@ async def get_recipes(
         # 应用搜索过滤（如果指定了搜索关键词）
         if search:
             all_recipes_query = all_recipes_query.filter(Recipe.name.contains(search))
+
+        # 应用分类筛选
+        if categories:
+            cat_list = [c.strip() for c in categories.split(',') if c.strip()]
+            if cat_list:
+                all_recipes_query = all_recipes_query.filter(Recipe.category.in_(cat_list))
+
+        # 应用难度筛选
+        if difficulties:
+            diff_list = [d.strip() for d in difficulties.split(',') if d.strip()]
+            if diff_list:
+                all_recipes_query = all_recipes_query.filter(Recipe.difficulty.in_(diff_list))
 
         total = all_recipes_query.count()
         recipes = all_recipes_query.order_by(Recipe.created_at.desc()).offset(skip).limit(limit).all()
