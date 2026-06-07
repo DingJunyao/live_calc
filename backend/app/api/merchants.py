@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from typing import List, Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -18,6 +18,19 @@ from app.schemas.merchant import (
 )
 from app.schemas.common import PaginatedResponse
 from app.services.map_service import calculate_route
+from app.models.product import ProductRecord
+from app.models.product_entity import Product
+from app.models.unit import Unit
+from app.schemas.product import ProductRecordResponse
+
+def _to_iso(value) -> str | None:
+    """安全转 ISO 字符串：兼容 datetime 对象与 SQLite 返回的字符串。"""
+    if not value:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
 
 router = APIRouter()
 
@@ -105,6 +118,216 @@ async def get_merchant(
         raise HTTPException(
             status_code=500,
             detail="获取商家详情时发生错误"
+        )
+
+
+@router.get("/{merchant_id}/prices", response_model=PaginatedResponse)
+async def get_merchant_prices(
+    merchant_id: int,
+    skip: int = Query(0, ge=0, description="跳过的记录数"),
+    limit: int = Query(20, ge=1, le=100, description="每页记录数"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取商家的价格记录列表（分页）"""
+    try:
+        # 校验商家存在且属于当前用户
+        merchant = db.query(Merchant).filter(
+            Merchant.id == merchant_id,
+            Merchant.user_id == current_user.id
+        ).first()
+        if not merchant:
+            raise HTTPException(status_code=404, detail="商家不存在")
+
+        query = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit),
+            joinedload(ProductRecord.standard_unit),
+            joinedload(ProductRecord.merchant)
+        ).filter(
+            ProductRecord.user_id == current_user.id,
+            ProductRecord.merchant_id == merchant_id
+        )
+
+        total = query.count()
+        records = query.order_by(ProductRecord.recorded_at.desc()).offset(skip).limit(limit).all()
+
+        items = [
+            ProductRecordResponse(
+                id=record.id,
+                product_id=record.product_id,
+                product_name=record.product_name,
+                merchant_id=record.merchant_id,
+                merchant_name=record.merchant.name if record.merchant else None,
+                price=record.price,
+                currency=record.currency,
+                original_quantity=record.original_quantity,
+                original_unit=record.original_unit.abbreviation if record.original_unit else "",
+                standard_quantity=record.standard_quantity,
+                standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
+                record_type=record.record_type,
+                exchange_rate=record.exchange_rate,
+                recorded_at=record.recorded_at,
+                notes=record.notes
+            )
+            for record in records
+        ]
+
+        page = (skip // limit) + 1
+        return PaginatedResponse.create(
+            items=items,
+            total=total,
+            page=page,
+            page_size=limit
+        )
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=500,
+            detail="获取商家价格记录时发生错误，请稍后重试"
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="获取商家价格记录时发生未知错误"
+        )
+
+
+@router.get("/{merchant_id}/product-prices")
+async def get_merchant_product_prices(
+    merchant_id: int,
+    skip: int = Query(0, ge=0, description="跳过的记录数"),
+    limit: int = Query(20, ge=1, le=100, description="每页记录数"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取商家每个商品的最新价格，价格换算为该商品/原料默认单位的单价。"""
+    from decimal import Decimal
+    from app.services.unit_conversion_service import UnitConversionService
+
+    try:
+        # 校验商家存在且属于当前用户
+        merchant = db.query(Merchant).filter(
+            Merchant.id == merchant_id,
+            Merchant.user_id == current_user.id
+        ).first()
+        if not merchant:
+            raise HTTPException(status_code=404, detail="商家不存在")
+
+        # 原生 SQL：CTE 取每商品最新价，外层 JOIN 出 standard_unit 缩写与
+        # 商品关联原料的默认单位缩写，供 Python 层做单位换算。
+        sql = text("""
+            WITH latest AS (
+                SELECT product_id, price, original_quantity, standard_quantity,
+                       standard_unit_id, recorded_at,
+                       ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY recorded_at DESC) AS rn
+                FROM product_records
+                WHERE user_id = :uid AND merchant_id = :mid
+            )
+            SELECT l.product_id, l.price, l.original_quantity, l.standard_quantity,
+                   l.recorded_at,
+                   su.abbreviation AS standard_unit_abbr,
+                   su.unit_type     AS standard_unit_type,
+                   du.abbreviation AS default_unit_abbr,
+                   du.unit_type     AS default_unit_type,
+                   p.name
+            FROM latest l
+            JOIN units su ON su.id = l.standard_unit_id
+            JOIN products p ON p.id = l.product_id
+            LEFT JOIN ingredients i ON i.id = p.ingredient_id
+            LEFT JOIN units du ON du.id = i.default_unit_id
+            WHERE l.rn = 1
+            ORDER BY p.name ASC
+            LIMIT :limit OFFSET :skip
+        """)
+
+        rows = db.execute(sql, {
+            "uid": current_user.id,
+            "mid": merchant_id,
+            "limit": limit,
+            "skip": skip,
+        }).fetchall()
+
+        # 去重后的商品总数（用于分页）
+        count_sql = text("""
+            SELECT COUNT(*) FROM (
+                SELECT product_id,
+                       ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY recorded_at DESC) AS rn
+                FROM product_records
+                WHERE user_id = :uid AND merchant_id = :mid
+            ) WHERE rn = 1
+        """)
+        total = db.execute(count_sql, {"uid": current_user.id, "mid": merchant_id}).scalar() or 0
+
+        unit_service = UnitConversionService(db)
+        items = []
+        for r in rows:
+            price = float(r.price) if r.price else 0
+            std_qty = float(r.standard_quantity) if r.standard_quantity else 0
+
+            unit_price = None
+            unit_label = None
+
+            # 优先换算到商品/原料的默认单位
+            if std_qty > 0 and r.default_unit_abbr and r.standard_unit_abbr:
+                try:
+                    result = unit_service.convert(
+                        Decimal(str(std_qty)),
+                        r.standard_unit_abbr,
+                        r.default_unit_abbr,
+                        "product",
+                        r.product_id,
+                    )
+                    if result is not None:
+                        target_qty = float(result[0])
+                        if target_qty > 0:
+                            unit_price = price / target_qty
+                            unit_label = f"元/{r.default_unit_abbr}"
+                except Exception:
+                    unit_price = None
+                    unit_label = None
+
+            # 回退：按固定参考单位换算（质量->元/斤，体积->元/L）
+            if unit_price is None and std_qty > 0:
+                if r.standard_unit_type == "mass":
+                    unit_price = price / std_qty * 500
+                    unit_label = "元/斤"
+                elif r.standard_unit_type == "volume":
+                    unit_price = price / std_qty * 1000
+                    unit_label = "元/L"
+
+            items.append({
+                "product_id": r.product_id,
+                "product_name": r.name,
+                "price": round(price, 2),
+                "standard_unit_price": round(unit_price, 2) if unit_price is not None else None,
+                "standard_unit_label": unit_label,
+                "original_quantity": float(r.original_quantity) if r.original_quantity is not None else 0,
+                "recorded_at": _to_iso(r.recorded_at),
+            })
+
+        page = (skip // limit) + 1 if limit else 1
+        return PaginatedResponse.create(
+            items=items,
+            total=total,
+            page=page,
+            page_size=limit
+        )
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        import traceback as _tb
+        _tb.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="获取商家商品最新价格时发生错误，请稍后重试"
+        )
+    except Exception:
+        import traceback as _tb
+        _tb.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="获取商家商品最新价格时发生未知错误"
         )
 
 

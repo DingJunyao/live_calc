@@ -67,12 +67,17 @@ const router = createRouter({
           component: () => import('@/views/ingredients/IngredientDetail.vue'),
         },
         {
-          path: 'data/merchants',
-          name: 'merchants',
-          component: () => import('@/views/data/MerchantsView.vue'),
-        },
+         path: 'data/merchants',
+         name: 'merchants',
+         component: () => import('@/views/data/MerchantsView.vue'),
+       },
         {
-          path: 'profile',
+          path: 'data/merchants/:id',
+          name: 'merchant-detail',
+          component: () => import('@/views/merchants/MerchantDetail.vue'),
+        },
+       {
+         path: 'profile',
           name: 'profile',
           component: () => import('@/views/profile/ProfileView.vue'),
         },

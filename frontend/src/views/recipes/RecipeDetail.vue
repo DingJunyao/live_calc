@@ -41,7 +41,7 @@
                 <!-- 主图片 -->
                 <v-img
                   :src="getImageUrl(recipe.images[selectedImageIndex])"
-                  height="480"
+                  height="max(320px, 33vh)"
                   cover
                   class="bg-surface-variant cursor-pointer recipe-main-img"
                   @click="openLightbox(selectedImageIndex)"

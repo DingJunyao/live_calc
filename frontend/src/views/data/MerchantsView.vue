@@ -295,7 +295,8 @@ const onPageChange = (page: number) => {
  * 选择商家
  */
 const selectMerchant = (item: Merchant) => {
-  selectedMerchant.value = item
+  // 点击商家进入详情页
+  router.push(`/data/merchants/${item.id}`)
 }
 
 /**
