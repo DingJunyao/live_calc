@@ -78,6 +78,9 @@ def list_products(
     ingredient_id: Optional[int] = Query(None, description="原料ID过滤"),
     search: Optional[str] = Query(None, description="搜索关键词（商品名称或食材别名）"),
     sort_by: str = Query("created_at", enum=["created_at", "updated_at", "price_records"], description="排序方式"),
+    ingredient_ids: Optional[str] = Query(None, description="原料ID列表，逗号分隔"),
+    ingredient_category_ids: Optional[str] = Query(None, description="原料分类ID列表，逗号分隔"),
+    brands: Optional[str] = Query(None, description="品牌列表，逗号分隔"),
     db: Session = Depends(get_db)
 ):
     """获取商品列表（分页）
@@ -121,6 +124,21 @@ def list_products(
             )
             query = query.filter(search_filter)
 
+        if ingredient_ids:
+            ids = [int(x.strip()) for x in ingredient_ids.split(',') if x.strip()]
+            if ids:
+                query = query.filter(Product.ingredient_id.in_(ids))
+
+        if ingredient_category_ids:
+            cat_ids = [int(x.strip()) for x in ingredient_category_ids.split(',') if x.strip()]
+            if cat_ids:
+                query = query.filter(Product.ingredient.has(Ingredient.category_id.in_(cat_ids)))
+
+        if brands:
+            brand_list = [b.strip() for b in brands.split(',') if b.strip()]
+            if brand_list:
+                query = query.filter(Product.brand.in_(brand_list))
+
         total = query.count()
 
         # 按价格记录数量排序，然后按商品创建时间排序以确保一致性
@@ -147,6 +165,21 @@ def list_products(
                 )
             )
             query = query.filter(search_filter)
+
+        if ingredient_ids:
+            ids = [int(x.strip()) for x in ingredient_ids.split(',') if x.strip()]
+            if ids:
+                query = query.filter(Product.ingredient_id.in_(ids))
+
+        if ingredient_category_ids:
+            cat_ids = [int(x.strip()) for x in ingredient_category_ids.split(',') if x.strip()]
+            if cat_ids:
+                query = query.filter(Product.ingredient.has(Ingredient.category_id.in_(cat_ids)))
+
+        if brands:
+            brand_list = [b.strip() for b in brands.split(',') if b.strip()]
+            if brand_list:
+                query = query.filter(Product.brand.in_(brand_list))
 
         total = query.count()
 
