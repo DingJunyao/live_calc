@@ -21,6 +21,11 @@
       @update:model-value="debouncedSearch"
     />
 
+    <FilterBar
+      :filters="ingredientFilters"
+      @change="onFilterChange"
+    />
+
     <!-- 加载中 -->
     <div v-if="loading" class="text-center py-8">
       <v-progress-circular indeterminate color="primary" size="64" />
@@ -368,6 +373,8 @@ import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
+import FilterBar from '@/components/common/FilterBar.vue'
+import type { FilterConfig } from '@/components/common/FilterBar.vue'
 import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 
 const route = useRoute()
@@ -481,6 +488,39 @@ const syncToUrl = () => {
   })
 }
 
+// 筛选器相关
+const categoryOptions = ref<{ value: number; title: string }[]>([])
+const requestFilters = ref<Record<string, any>>({})
+
+const ingredientFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'category_ids',
+    label: '分类',
+    type: 'select',
+    items: categoryOptions.value,
+    minWidth: '160px',
+    maxWidth: '240px',
+  },
+])
+
+const onFilterChange = (filterState: Record<string, any>) => {
+  currentPage.value = 1
+  requestFilters.value = filterState
+  loadIngredients()
+}
+
+const loadCategories = async () => {
+  try {
+    const response = await api.get('/categories')
+    categoryOptions.value = (response || []).map((c: any) => ({
+      value: c.id,
+      title: c.display_name,
+    }))
+  } catch (e: any) {
+    console.error('加载分类失败', e)
+  }
+}
+
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
 const debouncedSearch = () => {
@@ -570,6 +610,10 @@ const loadIngredients = async () => {
     }
     if (search.value) {
       params.q = search.value
+    }
+    // 筛选参数
+    if (requestFilters.value.category_ids?.length) {
+      params.category_ids = requestFilters.value.category_ids.join(',')
     }
 
     const response = await api.get('/ingredients', { params })
@@ -699,6 +743,7 @@ const saveItem = async () => {
 onMounted(() => {
   loadIngredients()
   loadOptions()
+  loadCategories()
   window.addEventListener('app-refresh', loadIngredients)
 })
 
