@@ -9,7 +9,7 @@
   <v-container class="pa-4">
     <v-row>
       <!-- 从 GitHub 导入 -->
-      <v-col cols="12" md="6">
+      <v-col cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2" color="github">mdi-github</v-icon>
@@ -56,7 +56,7 @@
       </v-col>
 
       <!-- 初始数据导入 -->
-      <v-col cols="12" md="6">
+      <v-col cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2" color="warning">mdi-database-import</v-icon>
@@ -90,6 +90,55 @@
             >
               <v-icon start>mdi-database-import</v-icon>
               导入初始数据
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+
+      <!-- 从本地路径导入 -->
+      <v-col cols="12" md="6" lg="4">
+        <v-card class="rounded-lg h-100">
+          <v-card-title class="d-flex align-center py-4">
+            <v-icon class="mr-2" color="primary">mdi-folder-open</v-icon>
+            <span>从本地路径导入</span>
+          </v-card-title>
+          <v-divider />
+          <v-card-text class="pt-6">
+            <p class="text-body-2 mb-4">
+              从服务器上的本地目录导入菜谱数据。目录格式需与 HowToCook_json/out/ 一致。
+            </p>
+            <v-text-field
+              v-model="localPath"
+              label="本地目录路径"
+              variant="outlined"
+              placeholder="例如：/data/recipes/out"
+              prepend-icon="mdi-folder-path"
+              hint="输入服务器上的数据目录绝对路径"
+              persistent-hint
+              :disabled="importingLocal"
+            />
+            <v-alert type="info" variant="tonal" class="mt-4" density="compact">
+              <div class="text-caption">
+                <strong>目录格式：</strong><br />
+                • ingredients.json — 原料数据<br />
+                • units.json — 单位数据<br />
+                • nutritions.json — 营养数据<br />
+                • *.json — 菜谱文件
+              </div>
+            </v-alert>
+          </v-card-text>
+          <v-divider />
+          <v-card-actions class="pa-4">
+            <v-spacer />
+            <v-btn
+              color="primary"
+              variant="tonal"
+              size="large"
+              :loading="importingLocal"
+              @click="importFromLocalPath"
+            >
+              <v-icon start>mdi-folder-open</v-icon>
+              开始导入
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -225,6 +274,8 @@ interface ImportRecord {
 const githubUrl = ref('')
 const importing = ref(false)
 const importingInitial = ref(false)
+const localPath = ref('')
+const importingLocal = ref(false)
 
 const resultDialog = ref(false)
 const importResult = reactive<ImportResult>({
@@ -301,6 +352,46 @@ const importInitialRecipes = async () => {
     })
   } finally {
     importingInitial.value = false
+    resultDialog.value = true
+  }
+}
+
+const importFromLocalPath = async () => {
+  if (!localPath.value.trim()) {
+    alert('请输入本地目录路径')
+    return
+  }
+
+  importingLocal.value = true
+  try {
+    const response = await api.post('/admin/import-from-local-path', {
+      local_path: localPath.value,
+    })
+    Object.assign(importResult, {
+      success: true,
+      imported: response.imported || 0,
+      updated: response.updated || 0,
+      failed: response.failed || 0,
+    })
+    addImportHistory({
+      source: `本地路径: ${localPath.value}`,
+      success: true,
+      timestamp: new Date().toLocaleString('zh-CN'),
+      message: `导入 ${response.imported || 0} 个菜谱`,
+    })
+  } catch (error: any) {
+    Object.assign(importResult, {
+      success: false,
+      error: error.response?.data?.detail || error.message || '导入失败',
+    })
+    addImportHistory({
+      source: `本地路径: ${localPath.value}`,
+      success: false,
+      timestamp: new Date().toLocaleString('zh-CN'),
+      message: error.response?.data?.detail || error.message,
+    })
+  } finally {
+    importingLocal.value = false
     resultDialog.value = true
   }
 }

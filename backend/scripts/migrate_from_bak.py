@@ -1,670 +1,309 @@
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-数据迁移脚本：从旧版本数据库迁移到新版本数据库
+从 livecalc_bak.db 向 livecalc.db 迁移数据。
 
 迁移内容：
-1. 用户 (users)
-2. 商家 (merchants)
-3. 新商品 (products) - 仅迁移新库中不存在的商品
-4. 价格记录 (product_records)
+1. 商家（merchants）—— 按名称匹配，新增不存在的商家
+2. 食材（ingredients）—— 按名称匹配，新增不存在的食材
+3. 商品（products）—— 按名称匹配，新增不存在的商品
+4. 价格记录（product_records）—— 按商品名映射 product_id，按商家名映射 merchant_id
+5. 食材层级关系（ingredient_hierarchies）—— 按食材名映射 parent_id / child_id
+6. 实体单位覆盖（entity_unit_overrides）—— 按 entity_type + 名称 + unit_name 映射
 
-使用方法：
-    cd backend
-    python scripts/migrate_from_bak.py
-
-注意：
-    - 执行前会自动备份新数据库
-    - 单位 ID 在 product_records 使用的范围内（2-18）完全一致，无需映射
+不修改已有数据，仅做追加。不改动默认单位、食材分类、菜谱类型。
 """
 
 import sqlite3
-import json
-import shutil
-import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
-# 数据库路径
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-OLD_DB = PROJECT_ROOT / "backend" / "data" / "livecalc_bak.db"
-NEW_DB = PROJECT_ROOT / "backend" / "data" / "livecalc.db"
-SQL_OUTPUT = PROJECT_ROOT / "backend" / "scripts" / "migration_data.sql"
+BAK_PATH = Path(__file__).parent.parent / "data" / "livecalc_bak.db"
+NEW_PATH = Path(__file__).parent.parent / "data" / "livecalc.db"
 
 
-def backup_database(db_path: Path) -> Path:
-    """备份数据库"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = db_path.with_name(f"livecalc_pre_migration_{timestamp}.db")
-    shutil.copy2(db_path, backup_path)
-    print(f"✅ 数据库已备份到: {backup_path}")
-    return backup_path
+def log(msg: str):
+    print(f"  ✓ {msg}")
 
 
-def build_ingredient_lookup(new_conn: sqlite3.Connection) -> dict:
-    """构建新库原料查找表：{名称/别名: ingredient_id}"""
-    lookup = {}
-    for row in new_conn.execute(
-        "SELECT id, name, aliases FROM ingredients WHERE is_active = 1"
-    ).fetchall():
-        ing_id, name, aliases_json = row
-        lookup[name] = ing_id
-        if aliases_json:
-            for alias in json.loads(aliases_json):
-                lookup[alias] = ing_id
-    return lookup
+def warn(msg: str):
+    print(f"  ⚠ {msg}")
 
 
-def build_product_lookup(new_conn: sqlite3.Connection) -> dict:
-    """构建新库商品查找表：{名称: product_id}"""
-    lookup = {}
-    for row in new_conn.execute(
-        "SELECT id, name FROM products WHERE is_active = 1"
-    ).fetchall():
-        lookup[row[1]] = row[0]
-    return lookup
-
-
-def build_product_by_ingredient_lookup(new_conn: sqlite3.Connection) -> dict:
-    """构建 ingredient_id -> product_id 的映射（每个原料取第一个商品）"""
-    lookup = {}
-    for row in new_conn.execute(
-        "SELECT ingredient_id, MIN(id) FROM products WHERE is_active = 1 GROUP BY ingredient_id"
-    ).fetchall():
-        lookup[row[0]] = row[1]
-    return lookup
-
-
-def build_unit_name_map(conn: sqlite3.Connection) -> dict:
-    """构建 unit_id -> unit_name 的映射"""
-    return {r[0]: r[1] for r in conn.execute("SELECT id, name FROM units").fetchall()}
-
-
-def build_unit_id_by_name(conn: sqlite3.Connection) -> dict:
-    """构建 unit_name -> unit_id 的映射"""
-    return {r[1]: r[0] for r in conn.execute("SELECT id, name FROM units").fetchall()}
-
-
-def find_matching_product(
-    old_product_name: str,
-    new_product_lookup: dict,
-    ingredient_lookup: dict,
-    product_by_ingredient: dict,
-) -> tuple:
-    """
-    查找旧商品在新库中的对应商品。
-    返回 (new_product_id, match_method) 或 (None, None)
-    match_method: 'product_name' | 'ingredient_name' | 'ingredient_alias' | None
-    """
-    # 1. 直接匹配商品名称
-    if old_product_name in new_product_lookup:
-        return new_product_lookup[old_product_name], "product_name"
-
-    # 2. 匹配原料名称/别名
-    if old_product_name in ingredient_lookup:
-        ing_id = ingredient_lookup[old_product_name]
-        if ing_id in product_by_ingredient:
-            return product_by_ingredient[ing_id], "ingredient_match"
-
-    return None, None
-
-
-def migrate_user(old_conn: sqlite3.Connection, new_conn: sqlite3.Connection) -> int:
-    """迁移用户，返回新库中的 user_id"""
-    old_user = old_conn.execute("SELECT * FROM users LIMIT 1").fetchone()
-    if not old_user:
-        print("⚠️  旧库无用户数据")
-        return None
-
-    old_id = old_user[0]
-    username = old_user[1]
-    email = old_user[2]
-
-    # 检查新库是否已有该用户
-    existing = new_conn.execute(
-        "SELECT id FROM users WHERE username = ? OR email = ?",
-        (username, email),
-    ).fetchone()
-
-    if existing:
-        print(f"  用户 '{username}' 已存在 (id={existing[0]})")
-        return existing[0]
-
-    # 新库 users 表结构可能略有不同，插入时指定列名
-    cols = [desc[0] for desc in new_conn.execute("SELECT * FROM users LIMIT 0").description]
-
-    # 构建插入数据
-    user_data = {
-        "username": username,
-        "email": email,
-        "phone": old_user[3],
-        "password_hash": old_user[4],
-        "is_admin": old_user[5],
-        "is_active": old_user[6],
-        "email_verified": old_user[7],
-        "created_at": old_user[8],
-        "updated_at": old_user[9],
-    }
-
-    # 只插入新库表存在的字段
-    insert_cols = [c for c in user_data.keys() if c in cols]
-    insert_vals = [user_data[c] for c in insert_cols]
-
-    placeholders = ", ".join(["?"] * len(insert_cols))
-    col_names = ", ".join(insert_cols)
-    new_conn.execute(
-        f"INSERT INTO users ({col_names}) VALUES ({placeholders})", insert_vals
-    )
-    new_user_id = new_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    print(f"  用户 '{username}' 已迁移 (old_id={old_id} -> new_id={new_user_id})")
-    return new_user_id
-
-
-def migrate_merchants(
-    old_conn: sqlite3.Connection, new_conn: sqlite3.Connection, new_user_id: int
-) -> dict:
-    """迁移商家，返回 {old_merchant_id: new_merchant_id} 映射"""
-    id_mapping = {}
-    count = 0
-
-    # 获取新库 merchants 表列
-    cols = [desc[0] for desc in new_conn.execute("SELECT * FROM merchants LIMIT 0").description]
-
-    for row in old_conn.execute(
-        "SELECT id, user_id, name, address, latitude, longitude, created_at, updated_at, "
-        "created_by, updated_by, is_active FROM merchants WHERE is_active = 1"
-    ).fetchall():
-        old_id = row[0]
-        merchant_data = {
-            "user_id": new_user_id,
-            "name": row[2],
-            "address": row[3],
-            "latitude": row[4],
-            "longitude": row[5],
-            "created_at": row[6],
-            "updated_at": row[7],
-            "created_by": new_user_id if "created_by" in cols else None,
-            "updated_by": new_user_id if "updated_by" in cols else None,
-            "is_active": 1 if "is_active" in cols else None,
-        }
-
-        insert_cols = [c for c in merchant_data.keys() if c in cols and merchant_data[c] is not None]
-        insert_vals = [merchant_data[c] for c in insert_cols]
-
-        placeholders = ", ".join(["?"] * len(insert_cols))
-        col_names = ", ".join(insert_cols)
-        new_conn.execute(
-            f"INSERT INTO merchants ({col_names}) VALUES ({placeholders})", insert_vals
-        )
-        new_id = new_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        id_mapping[old_id] = new_id
-        count += 1
-        print(f"  商家 '{row[2]}' (old_id={old_id} -> new_id={new_id})")
-
-    print(f"✅ 迁移商家: {count} 条")
-    return id_mapping
-
-
-def migrate_products_and_records(
-    old_conn: sqlite3.Connection,
-    new_conn: sqlite3.Connection,
-    new_user_id: int,
-    merchant_id_mapping: dict,
-) -> dict:
-    """
-    迁移商品（仅新建的）和价格记录。
-    返回迁移统计信息。
-    """
-    # 构建查找表
-    ingredient_lookup = build_ingredient_lookup(new_conn)
-    new_product_lookup = build_product_lookup(new_conn)
-    product_by_ingredient = build_product_by_ingredient_lookup(new_conn)
-
-    # 获取新库表列
-    prod_cols = [desc[0] for desc in new_conn.execute("SELECT * FROM products LIMIT 0").description]
-    record_cols = [desc[0] for desc in new_conn.execute("SELECT * FROM product_records LIMIT 0").description]
-
-    # 获取旧库中有价格记录的商品
-    products_with_records = {}
-    for row in old_conn.execute(
-        "SELECT DISTINCT p.id, p.name, p.brand, p.barcode, p.ingredient_id, "
-        "p.image_url, p.tags, p.custom_nutrition_data, p.custom_nutrition_source "
-        "FROM products p "
-        "INNER JOIN product_records pr ON pr.product_id = p.id "
-        "WHERE p.is_active = 1 AND pr.is_active = 1"
-    ).fetchall():
-        products_with_records[row[0]] = {
-            "id": row[0],
-            "name": row[1],
-            "brand": row[2],
-            "barcode": row[3],
-            "ingredient_id": row[4],
-            "image_url": row[5],
-            "tags": row[6],
-            "custom_nutrition_data": row[7],
-            "custom_nutrition_source": row[8],
-        }
-
-    # 也获取没有价格记录但需要迁移的商品（如果用户要求）
-    # 这里先只处理有价格记录的
-
-    # 建立旧商品ID -> 新商品ID的映射
-    product_id_mapping = {}
-    unmatched_products = {}
-    new_products_created = 0
-
-    for old_prod_id, prod_info in products_with_records.items():
-        new_prod_id, match_method = find_matching_product(
-            prod_info["name"], new_product_lookup, ingredient_lookup, product_by_ingredient
-        )
-
-        if new_prod_id:
-            product_id_mapping[old_prod_id] = new_prod_id
-            continue
-
-        # 未找到匹配，需要在 new_ingredients 和 new_products 中创建
-        # 先尝试找对应的 ingredient_id
-        ing_id = ingredient_lookup.get(prod_info["name"])
-
-        if not ing_id:
-            # 需要创建新的 ingredient
-            # 使用默认分类（id=1 或第一个分类）
-            default_category = new_conn.execute(
-                "SELECT id FROM ingredient_categories WHERE is_active = 1 LIMIT 1"
-            ).fetchone()[0]
-
-            new_conn.execute(
-                "INSERT INTO ingredients (name, category_id, is_imported, is_merged, created_at, updated_at, is_active) "
-                "VALUES (?, ?, 0, 0, datetime('now'), datetime('now'), 1)",
-                (prod_info["name"], default_category),
-            )
-            ing_id = new_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-            # 更新查找表
-            ingredient_lookup[prod_info["name"]] = ing_id
-            print(f"    新建原料: '{prod_info['name']}' (id={ing_id})")
-
-        # 创建新商品
-        new_conn.execute(
-            "INSERT INTO products (name, brand, barcode, image_url, ingredient_id, tags, "
-            "custom_nutrition_data, custom_nutrition_source, created_at, updated_at, is_active) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), 1)",
-            (
-                prod_info["name"],
-                prod_info["brand"],
-                prod_info["barcode"],
-                prod_info["image_url"],
-                ing_id,
-                prod_info["tags"],
-                prod_info["custom_nutrition_data"],
-                prod_info["custom_nutrition_source"],
-            ),
-        )
-        new_prod_id = new_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        product_id_mapping[old_prod_id] = new_prod_id
-        new_product_lookup[prod_info["name"]] = new_prod_id
-        new_products_created += 1
-        print(f"    新建商品: '{prod_info['name']}' (old_id={old_prod_id} -> new_id={new_prod_id})")
-
-    print(f"  商品映射: {len(product_id_mapping)} 个（新建 {new_products_created} 个）")
-
-    # 迁移价格记录
-    records_migrated = 0
-    records_skipped = 0
-
-    for row in old_conn.execute(
-        "SELECT id, user_id, product_id, product_name, merchant_id, price, currency, "
-        "original_quantity, original_unit_id, standard_quantity, standard_unit_id, "
-        "record_type, exchange_rate, recorded_at, notes "
-        "FROM product_records WHERE is_active = 1 "
-        "ORDER BY id"
-    ).fetchall():
-        old_product_id = row[2]
-        old_merchant_id = row[4]
-
-        # 检查商品映射
-        new_product_id = product_id_mapping.get(old_product_id)
-        if not new_product_id:
-            # 尝试通过 product_name 直接匹配
-            new_product_id = new_product_lookup.get(row[3])
-            if not new_product_id:
-                records_skipped += 1
-                continue
-
-        # 处理商家映射
-        new_merchant_id = merchant_id_mapping.get(old_merchant_id) if old_merchant_id else None
-
-        # 构建插入数据
-        record_data = {
-            "user_id": new_user_id,
-            "product_id": new_product_id,
-            "product_name": row[3],
-            "merchant_id": new_merchant_id,
-            "price": row[5],
-            "currency": row[6],
-            "original_quantity": row[7],
-            "original_unit_id": row[8],
-            "standard_quantity": row[9],
-            "standard_unit_id": row[10],
-            "record_type": row[11],
-            "exchange_rate": row[12],
-            "recorded_at": row[13],
-            "notes": row[14],
-        }
-
-        insert_cols = [c for c in record_data.keys() if c in record_cols]
-        insert_vals = [record_data[c] for c in insert_cols]
-
-        placeholders = ", ".join(["?"] * len(insert_cols))
-        col_names = ", ".join(insert_cols)
-        new_conn.execute(
-            f"INSERT INTO product_records ({col_names}) VALUES ({placeholders})", insert_vals
-        )
-        records_migrated += 1
-
-    print(f"✅ 价格记录迁移完成: {records_migrated} 条成功, {records_skipped} 条跳过")
-
-    return {
-        "products_mapped": len(product_id_mapping),
-        "products_created": new_products_created,
-        "records_migrated": records_migrated,
-        "records_skipped": records_skipped,
-    }
-
-
-def generate_sql_script(
-    old_conn: sqlite3.Connection,
-    new_conn: sqlite3.Connection,
-    new_user_id: int,
-    merchant_id_mapping: dict,
-    stats: dict,
-) -> str:
-    """生成可移植的 SQL 脚本"""
-    lines = []
-    lines.append("-- ============================================================")
-    lines.append("-- 数据迁移 SQL 脚本")
-    lines.append(f"-- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append("-- 源: livecalc_bak.db (旧版本)")
-    lines.append("-- 目标: livecalc.db (新版本)")
-    lines.append("-- ============================================================")
-    lines.append("")
-
-    # 重建查找表
-    ingredient_lookup = build_ingredient_lookup(new_conn)
-    new_product_lookup = build_product_lookup(new_conn)
-    product_by_ingredient = build_product_by_ingredient_lookup(new_conn)
-
-    # 获取新库表列
-    user_cols = [desc[0] for desc in new_conn.execute("SELECT * FROM users LIMIT 0").description]
-    merchant_cols = [desc[0] for desc in new_conn.execute("SELECT * FROM merchants LIMIT 0").description]
-    prod_cols = [desc[0] for desc in new_conn.execute("SELECT * FROM products LIMIT 0").description]
-    record_cols = [desc[0] for desc in new_conn.execute("SELECT * FROM product_records LIMIT 0").description]
-
-    # 用户
-    lines.append("-- ============================================================")
-    lines.append("-- 1. 用户迁移")
-    lines.append("-- ============================================================")
-    old_user = old_conn.execute("SELECT * FROM users LIMIT 1").fetchone()
-    if old_user:
-        user_data = {
-            "username": old_user[1],
-            "email": old_user[2],
-            "phone": _sql_val(old_user[3]),
-            "password_hash": _sql_val(old_user[4]),
-            "is_admin": _sql_val(old_user[5]),
-            "is_active": _sql_val(old_user[6]),
-            "email_verified": _sql_val(old_user[7]),
-            "created_at": _sql_val(old_user[8]),
-            "updated_at": _sql_val(old_user[9]),
-        }
-        insert_cols = [c for c in user_data.keys() if c in user_cols]
-        col_str = ", ".join(insert_cols)
-        val_str = ", ".join([str(user_data[c]) for c in insert_cols])
-        lines.append(f"INSERT INTO users ({col_str}) VALUES ({val_str});")
-        lines.append(f"-- 新用户 ID = {new_user_id}")
-    lines.append("")
-
-    # 商家
-    lines.append("-- ============================================================")
-    lines.append("-- 2. 商家迁移")
-    lines.append("-- ============================================================")
-    for row in old_conn.execute(
-        "SELECT id, name, address, latitude, longitude, created_at, updated_at "
-        "FROM merchants WHERE is_active = 1"
-    ).fetchall():
-        old_id = row[0]
-        new_id = merchant_id_mapping.get(old_id)
-        m_data = {
-            "user_id": new_user_id,
-            "name": _sql_val(row[1]),
-            "address": _sql_val(row[2]),
-            "latitude": _sql_val(row[3]),
-            "longitude": _sql_val(row[4]),
-            "created_at": _sql_val(row[5]),
-            "updated_at": _sql_val(row[6]),
-        }
-        insert_cols = [c for c in m_data.keys() if c in merchant_cols]
-        col_str = ", ".join(insert_cols)
-        val_str = ", ".join([str(m_data[c]) for c in insert_cols])
-        lines.append(f"-- 旧ID={old_id} -> 新ID={new_id}")
-        lines.append(f"INSERT INTO merchants ({col_str}) VALUES ({val_str});")
-    lines.append("")
-
-    # 商品（仅新建的）
-    lines.append("-- ============================================================")
-    lines.append("-- 3. 新商品迁移（旧库有价格记录但新库不存在的商品）")
-    lines.append("-- ============================================================")
-    lines.append("-- 注意：需要先确保对应原料存在，如果没有则需要创建")
-    lines.append("")
-
-    # 收集需要新建的商品
-    products_with_records = {}
-    for row in old_conn.execute(
-        "SELECT DISTINCT p.id, p.name, p.brand, p.barcode, p.ingredient_id, "
-        "p.image_url, p.tags FROM products p "
-        "INNER JOIN product_records pr ON pr.product_id = p.id "
-        "WHERE p.is_active = 1 AND pr.is_active = 1"
-    ).fetchall():
-        products_with_records[row[0]] = {
-            "name": row[1], "brand": row[2], "barcode": row[3],
-            "ingredient_id": row[4], "image_url": row[5], "tags": row[6],
-        }
-
-    new_product_sql_list = []
-    for old_prod_id, prod_info in products_with_records.items():
-        new_prod_id, _ = find_matching_product(
-            prod_info["name"], new_product_lookup, ingredient_lookup, product_by_ingredient
-        )
-        if not new_prod_id:
-            new_product_sql_list.append((old_prod_id, prod_info))
-
-    if new_product_sql_list:
-        for old_prod_id, prod_info in new_product_sql_list:
-            ing_id = ingredient_lookup.get(prod_info["name"])
-            if not ing_id:
-                lines.append(f"-- 需要先创建原料: {prod_info['name']}")
-                lines.append(f"INSERT INTO ingredients (name, category_id, is_imported, is_merged, created_at, updated_at, is_active)")
-                lines.append(f"VALUES ('{_escape_sql(prod_info['name'])}', 1, 0, 0, datetime('now'), datetime('now'), 1);")
-                lines.append(f"SET @new_ing_id = LAST_INSERT_ID(); -- MySQL")
-                lines.append(f"-- SQLite: 需要手动获取新ID")
-                lines.append("")
-
-            ing_id_val = f"'{ing_id}'" if ing_id else "@new_ing_id"
-            p_data = {
-                "name": _sql_val(prod_info["name"]),
-                "brand": _sql_val(prod_info.get("brand")),
-                "barcode": _sql_val(prod_info.get("barcode")),
-                "image_url": _sql_val(prod_info.get("image_url")),
-                "ingredient_id": ing_id_val,
-                "tags": _sql_val(prod_info.get("tags")),
-                "is_active": 1,
-            }
-            insert_cols = [c for c in p_data.keys() if c in prod_cols]
-            col_str = ", ".join(insert_cols)
-            val_str = ", ".join([str(p_data[c]) for c in insert_cols])
-            lines.append(f"-- 商品: {prod_info['name']} (旧ID={old_prod_id})")
-            lines.append(f"INSERT INTO products ({col_str}) VALUES ({val_str});")
-            lines.append("")
-
-    # 价格记录
-    lines.append("-- ============================================================")
-    lines.append("-- 4. 价格记录迁移")
-    lines.append("-- ============================================================")
-    lines.append("-- 注意：product_id 和 merchant_id 需要替换为新库中的ID")
-    lines.append("-- 以下 SQL 中的 {NEW_PRODUCT_ID} 和 {NEW_MERCHANT_ID} 为占位符")
-    lines.append("-- 实际执行时需要根据映射关系替换")
-    lines.append("")
-
-    # 为了生成准确的SQL，重建完整的映射
-    product_id_mapping = {}
-    for old_prod_id, prod_info in products_with_records.items():
-        new_prod_id, _ = find_matching_product(
-            prod_info["name"], new_product_lookup, ingredient_lookup, product_by_ingredient
-        )
-        if new_prod_id:
-            product_id_mapping[old_prod_id] = new_prod_id
-
-    record_count = 0
-    for row in old_conn.execute(
-        "SELECT id, user_id, product_id, product_name, merchant_id, price, currency, "
-        "original_quantity, original_unit_id, standard_quantity, standard_unit_id, "
-        "record_type, exchange_rate, recorded_at, notes "
-        "FROM product_records WHERE is_active = 1 ORDER BY id"
-    ).fetchall():
-        new_prod_id = product_id_mapping.get(row[2])
-        if not new_prod_id:
-            new_prod_id = new_product_lookup.get(row[3])
-            if not new_prod_id:
-                continue
-
-        new_merchant_id = merchant_id_mapping.get(row[4]) if row[4] else "NULL"
-
-        r_data = {
-            "user_id": new_user_id,
-            "product_id": new_prod_id,
-            "product_name": _sql_val(row[3]),
-            "merchant_id": new_merchant_id,
-            "price": _sql_val(row[5]),
-            "currency": _sql_val(row[6]),
-            "original_quantity": _sql_val(row[7]),
-            "original_unit_id": _sql_val(row[8]),
-            "standard_quantity": _sql_val(row[9]),
-            "standard_unit_id": _sql_val(row[10]),
-            "record_type": _sql_val(row[11]),
-            "exchange_rate": _sql_val(row[12]),
-            "recorded_at": _sql_val(row[13]),
-            "notes": _sql_val(row[14]),
-        }
-        insert_cols = [c for c in r_data.keys() if c in record_cols]
-        col_str = ", ".join(insert_cols)
-        val_str = ", ".join([str(r_data[c]) for c in insert_cols])
-        lines.append(f"INSERT INTO product_records ({col_str}) VALUES ({val_str});")
-        record_count += 1
-
-    lines.append("")
-    lines.append(f"-- 共 {record_count} 条价格记录")
-    lines.append("")
-    lines.append("-- ============================================================")
-    lines.append("-- 迁移统计")
-    lines.append("-- ============================================================")
-    lines.append(f"-- 商家: {len(merchant_id_mapping)} 条")
-    lines.append(f"-- 新建商品: {stats.get('products_created', 0)} 个")
-    lines.append(f"-- 价格记录: {stats.get('records_migrated', 0)} 条成功, {stats.get('records_skipped', 0)} 条跳过")
-    lines.append(f"-- 总计 SQL 语句: {len([l for l in lines if l.startswith('INSERT')])} 条")
-
-    return "\n".join(lines)
-
-
-def _sql_val(val) -> str:
-    """将 Python 值转为 SQL 值"""
-    if val is None:
-        return "NULL"
-    if isinstance(val, bool):
-        return "1" if val else "0"
-    if isinstance(val, (int, float)):
-        return str(val)
-    return f"'{_escape_sql(str(val))}'"
-
-
-def _escape_sql(val: str) -> str:
-    """转义 SQL 字符串"""
-    return val.replace("'", "''")
+def connect(db_path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = OFF")
+    return conn
 
 
 def main():
-    print("=" * 60)
-    print("数据迁移：livecalc_bak.db -> livecalc.db")
-    print("=" * 60)
-
-    # 验证文件存在
-    if not OLD_DB.exists():
-        print(f"❌ 旧数据库不存在: {OLD_DB}")
+    if not BAK_PATH.exists():
+        print(f"❌ 找不到备份数据库: {BAK_PATH}")
         sys.exit(1)
-    if not NEW_DB.exists():
-        print(f"❌ 新数据库不存在: {NEW_DB}")
+    if not NEW_PATH.exists():
+        print(f"❌ 找不到目标数据库: {NEW_PATH}")
         sys.exit(1)
 
-    # 确认执行
-    print(f"\n旧数据库: {OLD_DB}")
-    print(f"新数据库: {NEW_DB}")
-    print(f"SQL 输出: {SQL_OUTPUT}")
-    response = input("\n⚠️  确认执行迁移？(yes/no): ")
-    if response.lower() != "yes":
-        print("已取消")
-        sys.exit(0)
+    bak = connect(BAK_PATH)
+    new = connect(NEW_PATH)
 
-    # 备份
-    backup_database(NEW_DB)
+    # =========================================================
+    # 1. 迁移商家
+    # =========================================================
+    print("\n=== 1. 迁移商家 ===")
+    new_merchant_names = {r["name"] for r in new.execute("SELECT name FROM merchants")}
+    bak_merchants = bak.execute("SELECT * FROM merchants").fetchall()
+    merchant_name_to_new_id = {}
 
-    # 连接数据库
-    old_conn = sqlite3.connect(str(OLD_DB))
-    new_conn = sqlite3.connect(str(NEW_DB))
+    for m in bak_merchants:
+        if m["name"] in new_merchant_names:
+            existing = new.execute(
+                "SELECT id FROM merchants WHERE name = ?", (m["name"],)
+            ).fetchone()
+            merchant_name_to_new_id[m["name"]] = existing["id"]
+            continue
 
-    try:
-        # 1. 迁移用户
-        print("\n--- 步骤 1: 迁移用户 ---")
-        new_user_id = migrate_user(old_conn, new_conn)
-        if not new_user_id:
-            print("❌ 无法迁移用户，终止")
-            sys.exit(1)
-
-        # 2. 迁移商家
-        print("\n--- 步骤 2: 迁移商家 ---")
-        merchant_id_mapping = migrate_merchants(old_conn, new_conn, new_user_id)
-
-        # 3. 迁移商品和价格记录
-        print("\n--- 步骤 3: 迁移商品和价格记录 ---")
-        stats = migrate_products_and_records(
-            old_conn, new_conn, new_user_id, merchant_id_mapping
+        new.execute(
+            """INSERT INTO merchants (user_id, name, address, latitude, longitude, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (1, m["name"], m["address"], m["latitude"], m["longitude"],
+             m["created_at"], m["updated_at"]),
         )
+        merchant_name_to_new_id[m["name"]] = new.execute(
+            "SELECT last_insert_rowid()"
+        ).fetchone()[0]
+        log(f"商家「{m['name']}」-> new.id={merchant_name_to_new_id[m['name']]}")
 
-        # 4. 生成 SQL 脚本
-        print("\n--- 步骤 4: 生成 SQL 脚本 ---")
-        sql_content = generate_sql_script(
-            old_conn, new_conn, new_user_id, merchant_id_mapping, stats
+    # =========================================================
+    # 2. 迁移缺失的食材
+    # =========================================================
+    print("\n=== 2. 迁移缺失的食材 ===")
+    bak_ing = {r["name"]: r for r in bak.execute("SELECT * FROM ingredients").fetchall()}
+    new_ing_names = {r["name"] for r in new.execute("SELECT name FROM ingredients").fetchall()}
+    ing_name_to_new_id = {r["name"]: r["id"] for r in new.execute("SELECT id, name FROM ingredients").fetchall()}
+
+    missing_ingredients = sorted(set(bak_ing.keys()) - new_ing_names)
+    for name in missing_ingredients:
+        row = bak_ing[name]
+        new.execute(
+            """INSERT INTO ingredients
+               (name, category_id, density, default_unit_id, aliases,
+                nutrition_id, piece_weight, piece_weight_unit_id,
+                is_imported, is_merged, merged_into_id,
+                created_at, updated_at, created_by, updated_by, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (row["name"], row["category_id"], row["density"],
+             row["default_unit_id"], row["aliases"],
+             row["nutrition_id"], row["piece_weight"], row["piece_weight_unit_id"],
+             row["is_imported"], row["is_merged"], row["merged_into_id"],
+             row["created_at"], row["updated_at"], None, None, 1),
         )
-        os.makedirs(SQL_OUTPUT.parent, exist_ok=True)
-        with open(SQL_OUTPUT, "w", encoding="utf-8") as f:
-            f.write(sql_content)
-        print(f"✅ SQL 脚本已生成: {SQL_OUTPUT}")
+        ing_name_to_new_id[name] = new.execute("SELECT last_insert_rowid()").fetchone()[0]
+        log(f"食材「{name}」-> new.id={ing_name_to_new_id[name]}")
 
-        # 提交事务
-        new_conn.commit()
-        print("\n✅ 迁移完成！所有数据已提交。")
+    # =========================================================
+    # 3. 迁移缺失的商品
+    # =========================================================
+    print("\n=== 3. 迁移缺失的商品 ===")
+    bak_prod = {r["name"]: r for r in bak.execute("SELECT * FROM products").fetchall()}
+    new_prod_names = {r["name"] for r in new.execute("SELECT name FROM products").fetchall()}
+    prod_name_to_new_id = {r["name"]: r["id"] for r in new.execute("SELECT id, name FROM products").fetchall()}
 
-        # 验证
-        print("\n--- 验证 ---")
-        for table in ["users", "merchants", "products", "product_records"]:
-            count = new_conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            print(f"  {table}: {count} 条记录")
+    missing_products = sorted(set(bak_prod.keys()) - new_prod_names)
+    for name in missing_products:
+        row = bak_prod[name]
+        bak_ing_name = bak.execute(
+            "SELECT name FROM ingredients WHERE id = ?", (row["ingredient_id"],)
+        ).fetchone()["name"]
+        new_ing_id = ing_name_to_new_id.get(bak_ing_name)
 
-    except Exception as e:
-        new_conn.rollback()
-        print(f"\n❌ 迁移失败: {e}")
-        print("已回滚所有更改。")
-        raise
-    finally:
-        old_conn.close()
-        new_conn.close()
+        new.execute(
+            """INSERT INTO products
+               (name, brand, barcode, image_url, ingredient_id, tags,
+                custom_nutrition_data, custom_nutrition_source,
+                created_at, updated_at, created_by, updated_by, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (row["name"], row["brand"], row["barcode"], row["image_url"],
+             new_ing_id, row["tags"],
+             row["custom_nutrition_data"], row["custom_nutrition_source"],
+             row["created_at"], row["updated_at"], None, None, 1),
+        )
+        prod_name_to_new_id[name] = new.execute("SELECT last_insert_rowid()").fetchone()[0]
+        log(f"商品「{name}」-> new.id={prod_name_to_new_id[name]}")
+
+    # =========================================================
+    # 4. 迁移价格记录
+    # =========================================================
+    print("\n=== 4. 迁移价格记录 ===")
+    bak_records = bak.execute("SELECT * FROM product_records ORDER BY id").fetchall()
+    migrated = 0
+    skipped = 0
+
+    for rec in bak_records:
+        bak_prod_name = bak.execute(
+            "SELECT name FROM products WHERE id = ?", (rec["product_id"],)
+        ).fetchone()
+        if not bak_prod_name:
+            warn(f"product_id={rec['product_id']} 在 bak.products 中找不到，跳过")
+            skipped += 1
+            continue
+        new_prod_id = prod_name_to_new_id.get(bak_prod_name["name"])
+        if not new_prod_id:
+            warn(f"商品「{bak_prod_name['name']}」在 new.products 中找不到，跳过")
+            skipped += 1
+            continue
+
+        new_merchant_id = None
+        if rec["merchant_id"] is not None:
+            bak_merchant_name = bak.execute(
+                "SELECT name FROM merchants WHERE id = ?", (rec["merchant_id"],)
+            ).fetchone()
+            if bak_merchant_name:
+                new_merchant_id = merchant_name_to_new_id.get(bak_merchant_name["name"])
+
+        new.execute(
+            """INSERT INTO product_records
+               (user_id, product_id, product_name, merchant_id,
+                price, currency, original_quantity, original_unit_id,
+                standard_quantity, standard_unit_id, record_type,
+                exchange_rate, recorded_at, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (rec["user_id"], new_prod_id, rec["product_name"] or bak_prod_name["name"],
+             new_merchant_id, rec["price"], rec["currency"],
+             rec["original_quantity"], rec["original_unit_id"],
+             rec["standard_quantity"], rec["standard_unit_id"],
+             rec["record_type"], rec["exchange_rate"],
+             rec["recorded_at"], rec["notes"]),
+        )
+        migrated += 1
+
+    log(f"迁移 {migrated} 条价格记录")
+    if skipped:
+        warn(f"跳过 {skipped} 条")
+
+    # =========================================================
+    # 5. 迁移食材层级关系
+    # =========================================================
+    print("\n=== 5. 迁移食材层级关系 ===")
+    bak_hierarchies = bak.execute(
+        """SELECT h.*, p.name AS parent_name, c.name AS child_name
+           FROM ingredient_hierarchies h
+           JOIN ingredients p ON h.parent_id = p.id
+           JOIN ingredients c ON h.child_id = c.id
+           ORDER BY h.id"""
+    ).fetchall()
+
+    hier_migrated = 0
+    hier_skipped = 0
+    existing_rels = set()
+    for r in new.execute(
+        "SELECT p.name, c.name, h.relation_type FROM ingredient_hierarchies h "
+        "JOIN ingredients p ON h.parent_id = p.id "
+        "JOIN ingredients c ON h.child_id = c.id"
+    ).fetchall():
+        existing_rels.add((r[0], r[1], r[2]))
+
+    for h in bak_hierarchies:
+        p_name = h["parent_name"]
+        c_name = h["child_name"]
+        if (p_name, c_name, h["relation_type"]) in existing_rels:
+            continue
+        new_parent_id = ing_name_to_new_id.get(p_name)
+        new_child_id = ing_name_to_new_id.get(c_name)
+        if not new_parent_id:
+            warn(f"层级关系: parent「{p_name}」不存在，跳过")
+            hier_skipped += 1
+            continue
+        if not new_child_id:
+            warn(f"层级关系: child「{c_name}」不存在，跳过")
+            hier_skipped += 1
+            continue
+        new.execute(
+            """INSERT INTO ingredient_hierarchies
+               (parent_id, child_id, relation_type, strength,
+                created_at, updated_at, created_by, updated_by, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (new_parent_id, new_child_id, h["relation_type"], h["strength"],
+             h["created_at"], h["updated_at"], None, None, 1),
+        )
+        hier_migrated += 1
+
+    log(f"迁移 {hier_migrated} 条层级关系")
+    if hier_skipped:
+        warn(f"跳过 {hier_skipped} 条")
+
+    # =========================================================
+    # 6. 迁移实体单位覆盖
+    # =========================================================
+    print("\n=== 6. 迁移实体单位覆盖 ===")
+    new_overrides = set()
+    for r in new.execute(
+        "SELECT entity_type, entity_id, unit_name FROM entity_unit_overrides"
+    ).fetchall():
+        new_overrides.add((r["entity_type"], r["entity_id"], r["unit_name"]))
+
+    bak_overrides = bak.execute(
+        """SELECT e.*, i.name AS ing_name
+           FROM entity_unit_overrides e
+           LEFT JOIN ingredients i ON e.entity_id = i.id AND e.entity_type = 'ingredient'
+           ORDER BY e.id"""
+    ).fetchall()
+
+    ov_migrated = 0
+    ov_skipped = 0
+    for ov in bak_overrides:
+        new_entity_id = None
+        if ov["entity_type"] == "ingredient":
+            new_entity_id = ing_name_to_new_id.get(ov["ing_name"]) if ov["ing_name"] else None
+        elif ov["entity_type"] == "product":
+            prod_row = bak.execute(
+                "SELECT name FROM products WHERE id = ?", (ov["entity_id"],)
+            ).fetchone()
+            if prod_row:
+                new_entity_id = prod_name_to_new_id.get(prod_row["name"])
+        if new_entity_id is None:
+            warn(f"实体单位覆盖: {ov['entity_type']} id={ov['entity_id']} 映射失败，跳过")
+            ov_skipped += 1
+            continue
+        if (ov["entity_type"], new_entity_id, ov["unit_name"]) in new_overrides:
+            continue
+        new.execute(
+            """INSERT INTO entity_unit_overrides
+               (entity_type, entity_id, unit_name, base_unit_id,
+                conversion_factor, weight_per_unit, weight_unit_id,
+                is_default, source, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ov["entity_type"], new_entity_id, ov["unit_name"],
+             ov["base_unit_id"], ov["conversion_factor"],
+             ov["weight_per_unit"], ov["weight_unit_id"],
+             ov["is_default"], ov["source"],
+             ov["created_at"], ov["updated_at"]),
+        )
+        ov_migrated += 1
+
+    log(f"迁移 {ov_migrated} 条单位覆盖")
+    if ov_skipped:
+        warn(f"跳过 {ov_skipped} 条")
+
+    # =========================================================
+    # 提交 & 清理
+    # =========================================================
+    new.commit()
+    new.execute("PRAGMA foreign_keys = ON")
+    bak.close()
+    new.close()
+
+    print("\n" + "=" * 40)
+    print("🎉 迁移完成！")
+    new_merchants_count = sum(1 for n in merchant_name_to_new_id if n not in new_merchant_names)
+    print(f"   商家:      {new_merchants_count} 条新插入 (+{len(merchant_name_to_new_id)} 总映射)")
+    print(f"   食材:      {len(missing_ingredients)} 条新插入")
+    print(f"   商品:      {len(missing_products)} 条新插入")
+    print(f"   价格记录:   {migrated} 条")
+    print(f"   层级关系:   {hier_migrated} 条")
+    print(f"   单位覆盖:   {ov_migrated} 条")
+    print("=" * 40)
 
 
 if __name__ == "__main__":

@@ -72,16 +72,24 @@ class EnhancedRecipeImportService:
     # 分类映射（中文 -> 系统分类 key）
     CATEGORY_MAPPING = {
         "谷物": "grains",
+        "主食/谷物": "grains",
+        "淀粉/粉类": "grains",
         "肉类": "meat",
         "蔬菜": "vegetables",
         "水果": "fruits",
         "海鲜": "seafood",
+        "水产": "seafood",
         "禽蛋": "eggs",
         "乳制品": "dairy",
+        "豆制品": "dairy",
         "调味品": "seasoning",
+        "调料": "seasoning",
         "油脂": "oil",
         "坚果": "nuts",
         "饮品": "beverages",
+        "干货": "others",
+        "菌菇": "others",
+        "糖/蜂蜜": "others",
         "其他": "others",
         # 兼容英文分类
         "grains": "grains",
@@ -480,20 +488,8 @@ class EnhancedRecipeImportService:
             with open(ingredients_file, "r", encoding="utf-8") as f:
                 ingredients_data = json.load(f)
 
-            # 读取 ingredients_raw.json（单位映射）
-            raw_units: Dict[str, str] = {}
-            raw_file = os.path.join(out_dir, "ingredients_raw.json")
-            if os.path.exists(raw_file):
-                with open(raw_file, "r", encoding="utf-8") as f:
-                    raw_list = json.load(f)
-                raw_units = {
-                    item["ingredient_name"]: item.get("unit", "")
-                    for item in raw_list
-                    if item.get("ingredient_name")
-                }
-
             self._report_progress("准备导入原料", 1, 1,
-                                  f"共 {len(ingredients_data)} 个原料，{len(raw_units)} 个单位映射")
+                                  f"共 {len(ingredients_data)} 个原料")
 
             categories = {cat.name: cat for cat in self.db.query(IngredientCategory).all()}
 
@@ -521,8 +517,8 @@ class EnhancedRecipeImportService:
                                 existing.category_id = category.id
                                 updated = True
                         if existing.default_unit_id is None:
-                            unit_str = raw_units.get(ingredient_name, "")
-                            unit_obj = self.unit_matcher.match_or_create_unit(unit_str) if unit_str else self.unit_matcher.match_or_create_unit("斤")
+                            # 默认单位统一为斤，不随导入数据改变
+                            unit_obj = self.unit_matcher.match_or_create_unit("斤")
                             if unit_obj:
                                 existing.default_unit_id = unit_obj.id
                                 updated = True
@@ -539,9 +535,8 @@ class EnhancedRecipeImportService:
                     mapped_category = self.CATEGORY_MAPPING.get(category_name, category_name)
                     category = categories.get(mapped_category) or categories.get(category_name)
 
-                    # 获取默认单位（从 ingredients_raw.json），未指定时默认为斤
-                    unit_str = raw_units.get(ingredient_name, "")
-                    unit_obj = self.unit_matcher.match_or_create_unit(unit_str) if unit_str else self.unit_matcher.match_or_create_unit("斤")
+                    # 获取默认单位，统一使用斤
+                    unit_obj = self.unit_matcher.match_or_create_unit("斤")
                     unit_id = unit_obj.id if unit_obj else None
 
                     ingredient = Ingredient(
@@ -760,6 +755,91 @@ class EnhancedRecipeImportService:
             return False
 
 
+    # ------------------------------------------------------------------
+    # 从本地路径导入
+    # ------------------------------------------------------------------
+
+    def import_from_local_dir(self, local_path: str) -> Dict[str, any]:
+        """
+        从本地目录导入所有数据（单位、原料、菜谱、营养数据）
+
+        Args:
+            local_path: 本地数据路径（可以是仓库根目录或 out/ 目录）
+
+        Returns:
+            导入结果统计
+        """
+        self._report_progress("开始", 0, 1, f"准备从本地路径导入: {local_path}")
+
+        if not os.path.isdir(local_path):
+            raise Exception(f"本地路径不存在或不是目录: {local_path}")
+
+        results = {
+            "units": {"imported": 0, "skipped": 0, "failed": 0},
+            "ingredients": {"imported": 0, "skipped": 0, "failed": 0},
+            "recipes": {"imported": 0, "skipped": 0, "failed": 0},
+            "nutrition": {"imported": 0, "updated": 0, "skipped": 0, "failed": 0},
+            "errors": []
+        }
+
+        try:
+            # 判断本地路径下是否有 data_dir 子目录（如 out/），以兼容
+            # 直接指向仓库根目录和直接指向 out/ 目录两种情况
+            data_dir_name = self._repo_config["data_dir"]
+            candidate_out = os.path.join(local_path, data_dir_name)
+            if os.path.isdir(candidate_out):
+                out_dir = candidate_out
+                repo_dir = local_path
+                print(f"检测到数据子目录 '{data_dir_name}'，使用: {out_dir}")
+            else:
+                out_dir = local_path
+                repo_dir = os.path.dirname(local_path)
+                print(f"直接使用本地路径作为数据目录: {out_dir}")
+
+            # 0. 导入 units.json
+            results["units"] = self._import_units(out_dir)
+
+            # 1. 导入原料
+            results["ingredients"] = self._import_ingredients(out_dir)
+
+            # 2. 导入菜谱
+            results["recipes"] = self._import_recipes_from_dir(out_dir)
+
+            # 3. 导入营养数据
+            try:
+                self._report_progress("导入营养", 0, 1, "")
+                from app.services.nutrition_import_service import check_and_import_nutrition
+                nutrition_result = check_and_import_nutrition(
+                    self.db,
+                    mode="incremental",
+                    force_update=False,
+                    repo_dir=repo_dir
+                )
+                results["nutrition"] = nutrition_result
+                self._report_progress("导入营养", 1, 1, "导入完成")
+            except Exception as e:
+                print(f"营养数据导入失败: {str(e)}")
+                results["errors"].append(f"营养数据导入失败: {str(e)}")
+                results["nutrition"]["failed"] = 1
+
+            results["success"] = True
+            results["message"] = (
+                f"导入完成：单位 {results['units']['imported']} 个，"
+                f"原料 {results['ingredients']['imported']} 个，"
+                f"菜谱 {results['recipes']['imported']} 个，"
+                f"营养数据 {results['nutrition'].get('imported', 0)} 个"
+            )
+            self._report_progress("完成", 1, 1, "本地导入成功")
+
+        except Exception as e:
+            results["success"] = False
+            results["message"] = f"导入失败: {str(e)}"
+            results["errors"].append(str(e))
+            self._report_progress("失败", 0, 1, str(e))
+
+        return results
+
+
 # ======================================================================
 # 便捷函数
 # ======================================================================
@@ -819,3 +899,24 @@ def check_and_import_initial_recipes(
 
 # 别名函数
 check_and_import_from_json_repo = check_and_import_initial_recipes
+
+
+def check_and_import_from_local_dir(
+    db: Session,
+    local_path: str,
+    user_id: Optional[int] = None
+) -> Dict[str, any]:
+    """
+    从本地路径导入数据
+
+    Args:
+        db: 数据库会话
+        local_path: 本地数据目录路径
+        user_id: 用户 ID（可选）
+
+    Returns:
+        导入结果统计
+    """
+    print(f"开始从本地路径导入: {local_path}")
+    service = EnhancedRecipeImportService(db, user_id=user_id)
+    return service.import_from_local_dir(local_path)

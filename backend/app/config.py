@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     data_repo_branch: str = "main"
     data_repo_dir: str = "out"
 
+    # 本地数据路径（如设置，启动时自动从该路径导入菜谱/食材等）
+    data_local_path: Optional[str] = None
+
     class Config:
         env_file = ".env"
 

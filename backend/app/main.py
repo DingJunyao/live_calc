@@ -187,9 +187,22 @@ async def lifespan(app: FastAPI):
         # 初始化默认数据（单位、分类等）
         init_default_data(db)
 
-        # 检查并导入初始数据（原料、菜谱和营养数据）
-        result = check_and_import_initial_recipes(db, user_id=1)  # 使用默认用户 ID 1
-        print(f"数据导入结果: {result}")
+        # 如果配置了本地数据路径，优先从本地导入，跳过 GitHub 远程导入
+        from app.config import settings
+        if settings.data_local_path:
+            local_path = settings.data_local_path
+            print(f"检测到本地数据路径配置: {local_path}")
+            if os.path.isdir(local_path):
+                from app.services.enhanced_recipe_import_service import EnhancedRecipeImportService
+                service = EnhancedRecipeImportService(db, user_id=1)
+                local_result = service.import_from_local_dir(local_path)
+                print(f"本地数据导入结果: {local_result.get('message', local_result)}")
+            else:
+                print(f"警告: 本地数据路径不存在或不是目录: {local_path}")
+        else:
+            # 未配置本地路径时，从远程仓库导入初始数据
+            result = check_and_import_initial_recipes(db, user_id=1)
+            print(f"远程数据导入结果: {result}")
 
         # 检查是否需要为现有原料批量创建商品
         from app.models.nutrition import Ingredient

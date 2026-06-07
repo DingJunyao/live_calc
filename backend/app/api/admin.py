@@ -18,6 +18,10 @@ class TiandituConfig(BaseModel):
     type: str = 'vec'
 
 
+class LocalImportRequest(BaseModel):
+    local_path: str
+
+
 class MapApiKeys(BaseModel):
     amap: Optional[str] = None
     amap_security: Optional[str] = None
@@ -208,3 +212,25 @@ async def import_initial_recipes(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导入初始菜谱失败: {str(e)}")
+
+
+@router.post("/import-from-local-path")
+async def import_from_local_path(
+    request: LocalImportRequest,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """从本地路径导入菜谱数据 - 仅限管理员"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="仅限管理员访问"
+        )
+
+    try:
+        from app.services.enhanced_recipe_import_service import EnhancedRecipeImportService
+        service = EnhancedRecipeImportService(db, user_id=current_user.id)
+        result = service.import_from_local_dir(request.local_path)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"从本地路径导入失败: {str(e)}")

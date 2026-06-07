@@ -9,23 +9,26 @@
   </v-app-bar>
 
   <v-container fluid class="list-grid-container">
-    <!-- 搜索栏 -->
-    <v-text-field
-      v-model="searchQuery"
-      label="搜索菜谱..."
-      prepend-inner-icon="mdi-magnify"
-      variant="outlined"
-      density="compact"
-      hide-details
-      clearable
-      class="mb-4"
-      @update:model-value="debouncedSearch"
-    />
-
-    <FilterBar
-      :filters="recipeFilters"
-      @change="onFilterChange"
-    />
+    <!-- 搜索栏 + 筛选器（桌面端同行） -->
+    <div class="d-flex flex-column flex-md-row ga-2 mb-4">
+      <v-text-field
+        v-model="searchQuery"
+        label="搜索菜谱..."
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        class="flex-grow-1"
+        style="min-width: 180px"
+        @update:model-value="debouncedSearch"
+      />
+      <FilterBar
+        :filters="recipeFilters"
+        class="flex-shrink-0"
+        @change="onFilterChange"
+      />
+    </div>
 
     <!-- 加载中 -->
     <div v-if="loading" class="text-center py-8">
@@ -250,9 +253,11 @@ const recipeFilters: FilterConfig[] = [
     label: '难度',
     type: 'select',
     items: [
-      { value: '简单', title: '简单' },
-      { value: '中等', title: '中等' },
-      { value: '困难', title: '困难' },
+      { value: 'simple', title: '简易' },
+      { value: 'easy', title: '简单' },
+      { value: 'medium', title: '中等' },
+      { value: 'hard', title: '困难' },
+      { value: 'expert', title: '专家' },
     ],
     minWidth: '120px',
     maxWidth: '160px',

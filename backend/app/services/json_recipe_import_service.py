@@ -176,8 +176,8 @@ class JsonRecipeImportService:
                                 existing.category_id = category.id
                                 updated = True
                         if existing.default_unit_id is None:
-                            unit_str = item.get("unit", "") or "斤"
-                            unit_obj = self.unit_matcher.match_or_create_unit(unit_str)
+                            # 默认单位统一为斤，不随导入数据改变
+                            unit_obj = self.unit_matcher.match_or_create_unit("斤")
                             if unit_obj:
                                 existing.default_unit_id = unit_obj.id
                                 updated = True
@@ -191,9 +191,8 @@ class JsonRecipeImportService:
                     category_name = item.get("category", "others")
                     category = categories.get(category_name)
 
-                    # 获取单位，未指定时默认为斤
-                    unit_str = item.get("unit", "") or "斤"
-                    unit_obj = self.unit_matcher.match_or_create_unit(unit_str)
+                    # 获取默认单位，统一使用斤
+                    unit_obj = self.unit_matcher.match_or_create_unit("斤")
                     unit_id = unit_obj.id if unit_obj else None
 
                     # 创建原料

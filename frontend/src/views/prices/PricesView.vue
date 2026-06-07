@@ -9,22 +9,25 @@
   </v-app-bar>
 
   <v-container fluid class="pa-4 list-grid-container">
-    <v-text-field
-      v-model="searchQuery"
-      label="搜索商品..."
-      prepend-inner-icon="mdi-magnify"
-      variant="outlined"
-      density="compact"
-      hide-details
-      clearable
-      class="mb-4"
-      @update:model-value="debouncedSearch"
-    />
-
-    <FilterBar
-      :filters="priceFilters"
-      @change="onFilterChange"
-    />
+    <div class="d-flex flex-column flex-md-row ga-2 mb-4">
+      <v-text-field
+        v-model="searchQuery"
+        label="搜索商品..."
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        class="flex-grow-1"
+        style="min-width: 180px"
+        @update:model-value="debouncedSearch"
+      />
+      <FilterBar
+        :filters="priceFilters"
+        class="flex-shrink-0"
+        @change="onFilterChange"
+      />
+    </div>
 
     <v-progress-circular v-if="loading" indeterminate color="primary" class="ma-4" />
 
@@ -394,7 +397,7 @@ const onFilterChange = (filterState: Record<string, any>) => {
 
 const loadCategories = async () => {
   try {
-    const response = await api.get('/categories')
+    const response = await api.get('/ingredients/categories')
     categoryOptions.value = (response || []).map((c: any) => ({
       value: c.id,
       title: c.display_name,

@@ -124,7 +124,8 @@ async def search_ingredients_by_name(
             if ingredient.is_active:
                 # 显式加载 default_unit 关系以获取单位信息
                 ingredient_with_unit = db.query(Ingredient).options(
-                    joinedload(Ingredient.default_unit)
+                    joinedload(Ingredient.default_unit),
+                    joinedload(Ingredient.category_obj)
                 ).filter(Ingredient.id == ingredient.id).first()
 
                 default_unit = ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None
@@ -133,6 +134,7 @@ async def search_ingredients_by_name(
                     "id": ingredient.id,
                     "name": ingredient.name,
                     "category_id": ingredient.category_id,
+                    "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
                     "density": ingredient.density,
                     "default_unit": default_unit,
                     "aliases": ingredient.aliases or [],
@@ -155,7 +157,8 @@ async def get_ingredient_hierarchy(
         from app.models.ingredient_hierarchy import IngredientHierarchy
 
         ingredient = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit)
+            joinedload(Ingredient.default_unit),
+            joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
@@ -198,6 +201,7 @@ async def get_ingredient_hierarchy(
                 "id": ingredient.id,
                 "name": ingredient.name,
                 "category_id": ingredient.category_id,
+                "category": ingredient.category_obj.display_name if ingredient.category_obj else None,
                 "density": ingredient.density,
                 "default_unit": ingredient.default_unit.abbreviation if ingredient.default_unit else None,
                 "aliases": ingredient.aliases or []
@@ -253,13 +257,15 @@ async def resolve_ingredient_hierarchy(
         if ingredient:
             # 重新查询以加载 default_unit 关系
             ingredient_with_unit = db.query(Ingredient).options(
-                joinedload(Ingredient.default_unit)
+                joinedload(Ingredient.default_unit),
+                joinedload(Ingredient.category_obj)
             ).filter(Ingredient.id == ingredient.id).first()
 
             return {
                 "id": ingredient.id,
                 "name": ingredient.name,
                 "category_id": ingredient.category_id,
+                "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
                 "density": ingredient.density,
                 "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
                 "aliases": ingredient.aliases or []
@@ -279,7 +285,8 @@ async def get_ingredient_alternatives(
     """获取食材替代选项"""
     try:
         ingredient = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit)
+            joinedload(Ingredient.default_unit),
+            joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
@@ -291,6 +298,7 @@ async def get_ingredient_alternatives(
             "id": alt.id,
             "name": alt.name,
             "category_id": alt.category_id,
+            "category": alt.category_obj.display_name if alt.category_obj else None,
             "density": alt.density,
             "default_unit": alt.default_unit.abbreviation if alt.default_unit else None,
             "aliases": alt.aliases or []
@@ -434,15 +442,17 @@ async def create_ingredient(
             # 创建商品失败不影响原料创建
             print(f"Warning: Failed to create product for ingredient {new_ingredient.name}: {str(e)}")
 
-        # 重新查询以加载 default_unit 关系
+        # 重新查询以加载 default_unit 和 category_obj 关系
         ingredient_with_unit = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit)
+            joinedload(Ingredient.default_unit),
+            joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == new_ingredient.id).first()
 
         return {
             "id": new_ingredient.id,
             "name": new_ingredient.name,
             "category_id": new_ingredient.category_id,
+            "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
             "density": new_ingredient.density,
             "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
             "aliases": new_ingredient.aliases or [],
@@ -599,15 +609,17 @@ async def update_ingredient(
         else:
             print(f"[更新原料] 未提供营养素数据")
 
-        # 重新查询以加载 default_unit 关系
+        # 重新查询以加载 default_unit 和 category_obj 关系
         ingredient_with_unit = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit)
+            joinedload(Ingredient.default_unit),
+            joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == ingredient.id).first()
 
         return {
             "id": ingredient.id,
             "name": ingredient.name,
             "category_id": ingredient.category_id,
+            "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
             "density": ingredient.density,
             "default_unit_id": ingredient.default_unit_id,
             "default_unit_name": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
@@ -689,7 +701,8 @@ async def get_ingredients(
 
             # 然后将此子查询与主查询连接，并按记录数量排序
             query = db.query(Ingredient).options(
-                joinedload(Ingredient.default_unit)
+                joinedload(Ingredient.default_unit),
+                joinedload(Ingredient.category_obj)
             ).join(
                 subquery, Ingredient.id == subquery.c.ingredient_id
             ).filter(Ingredient.is_active == True)
@@ -729,7 +742,8 @@ async def get_ingredients(
         else:
             # 按名称或创建时间排序
             query = db.query(Ingredient).options(
-                joinedload(Ingredient.default_unit)
+                joinedload(Ingredient.default_unit),
+                joinedload(Ingredient.category_obj)
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
@@ -758,6 +772,7 @@ async def get_ingredients(
             "id": ing.id,
             "name": ing.name,
             "category_id": ing.category_id,
+            "category": ing.category_obj.display_name if ing.category_obj else None,
             "density": ing.density,
             "default_unit": ing.default_unit.abbreviation if ing.default_unit else None,
             "aliases": ing.aliases or [],
@@ -784,7 +799,8 @@ async def get_ingredient(
     """获取食材详情"""
     try:
         ingredient = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit)
+            joinedload(Ingredient.default_unit),
+            joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
@@ -793,6 +809,7 @@ async def get_ingredient(
             "id": ingredient.id,
             "name": ingredient.name,
             "category_id": ingredient.category_id,
+            "category": ingredient.category_obj.display_name if ingredient.category_obj else None,
             "density": ingredient.density,
             "default_unit": ingredient.default_unit.abbreviation if ingredient.default_unit else None,
             "aliases": ingredient.aliases or [],

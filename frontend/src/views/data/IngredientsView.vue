@@ -9,22 +9,25 @@
   </v-app-bar>
 
   <v-container fluid class="list-grid-container">
-    <v-text-field
-      v-model="search"
-      label="搜索原料..."
-      prepend-inner-icon="mdi-magnify"
-      variant="outlined"
-      density="compact"
-      hide-details
-      clearable
-      class="mb-4"
-      @update:model-value="debouncedSearch"
-    />
-
-    <FilterBar
-      :filters="ingredientFilters"
-      @change="onFilterChange"
-    />
+    <div class="d-flex flex-column flex-md-row ga-2 mb-4">
+      <v-text-field
+        v-model="search"
+        label="搜索原料..."
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        class="flex-grow-1"
+        style="min-width: 180px"
+        @update:model-value="debouncedSearch"
+      />
+      <FilterBar
+        :filters="ingredientFilters"
+        class="flex-shrink-0"
+        @change="onFilterChange"
+      />
+    </div>
 
     <!-- 加载中 -->
     <div v-if="loading" class="text-center py-8">
@@ -511,7 +514,7 @@ const onFilterChange = (filterState: Record<string, any>) => {
 
 const loadCategories = async () => {
   try {
-    const response = await api.get('/categories')
+    const response = await api.get('/ingredients/categories')
     categoryOptions.value = (response || []).map((c: any) => ({
       value: c.id,
       title: c.display_name,
