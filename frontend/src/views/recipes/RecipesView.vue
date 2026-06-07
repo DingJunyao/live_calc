@@ -22,6 +22,11 @@
       @update:model-value="debouncedSearch"
     />
 
+    <FilterBar
+      :filters="recipeFilters"
+      @change="onFilterChange"
+    />
+
     <!-- 加载中 -->
     <div v-if="loading" class="text-center py-8">
       <v-progress-circular indeterminate color="primary" size="64" />
@@ -158,6 +163,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import FilterBar from '@/components/common/FilterBar.vue'
+import type { FilterConfig } from '@/components/common/FilterBar.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { md, lgAndUp } = useDisplay()
@@ -217,6 +224,49 @@ const debouncedSearch = () => {
   }, 300)
 }
 
+// 筛选器配置
+const recipeFilters: FilterConfig[] = [
+  {
+    key: 'categories',
+    label: '分类',
+    type: 'select',
+    items: [
+      { value: '荤菜', title: '荤菜' },
+      { value: '素菜', title: '素菜' },
+      { value: '水产', title: '水产' },
+      { value: '主食', title: '主食' },
+      { value: '汤与粥', title: '汤与粥' },
+      { value: '早餐', title: '早餐' },
+      { value: '甜品', title: '甜品' },
+      { value: '调料', title: '调料' },
+      { value: '半成品', title: '半成品' },
+      { value: '小食', title: '小食' },
+    ],
+    minWidth: '140px',
+    maxWidth: '200px',
+  },
+  {
+    key: 'difficulties',
+    label: '难度',
+    type: 'select',
+    items: [
+      { value: '简单', title: '简单' },
+      { value: '中等', title: '中等' },
+      { value: '困难', title: '困难' },
+    ],
+    minWidth: '120px',
+    maxWidth: '160px',
+  },
+]
+
+const requestFilters = ref<Record<string, any>>({})
+
+const onFilterChange = (filterState: Record<string, any>) => {
+  currentPage.value = 1
+  requestFilters.value = filterState
+  loadRecipes()
+}
+
 const loadRecipes = async () => {
   loading.value = true
   error.value = null
@@ -229,6 +279,13 @@ const loadRecipes = async () => {
     }
     if (searchQuery.value) {
       params.search = searchQuery.value
+    }
+    // 筛选参数
+    if (requestFilters.value.categories?.length) {
+      params.categories = requestFilters.value.categories.join(',')
+    }
+    if (requestFilters.value.difficulties?.length) {
+      params.difficulties = requestFilters.value.difficulties.join(',')
     }
 
     const response = await api.get('/recipes', { params })
