@@ -223,6 +223,9 @@ async def get_product_records(
     start_date: Optional[datetime] = Query(None, description="开始日期"),
     end_date: Optional[datetime] = Query(None, description="结束日期"),
     target_unit: Optional[str] = Query(None, description="目标单位（用于价格单位转换）"),
+    merchant_ids: Optional[str] = Query(None, description="商家ID列表，逗号分隔"),
+    record_types: Optional[str] = Query(None, description="记录类型列表，逗号分隔（purchase,price）"),
+    ingredient_category_ids: Optional[str] = Query(None, description="原料分类ID列表，逗号分隔"),
     sort_by: str = Query("created_at", enum=["created_at", "updated_at", "price_records"], description="排序方式"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -298,6 +301,26 @@ async def get_product_records(
                 end_date = datetime.fromtimestamp(end_date.timestamp())
             record_counts = record_counts.filter(ProductRecord.recorded_at <= end_date)
 
+        # 多选商家筛选
+        if merchant_ids:
+            ids = [int(x.strip()) for x in merchant_ids.split(',') if x.strip()]
+            if ids:
+                record_counts = record_counts.filter(ProductRecord.merchant_id.in_(ids))
+
+        # 多选记录类型筛选
+        if record_types:
+            types_list = [x.strip() for x in record_types.split(',') if x.strip()]
+            if types_list:
+                record_counts = record_counts.filter(ProductRecord.record_type.in_(types_list))
+
+        # 跨表：按原料分类筛选
+        if ingredient_category_ids:
+            cat_ids = [int(x.strip()) for x in ingredient_category_ids.split(',') if x.strip()]
+            if cat_ids:
+                record_counts = record_counts.join(ProductRecord.product).join(
+                    Product.ingredient
+                ).filter(Ingredient.category_id.in_(cat_ids))
+
         record_counts = record_counts.group_by(ProductRecord.product_id).subquery()
 
         # 主查询：获取记录，并关联商品的记录数量
@@ -345,6 +368,26 @@ async def get_product_records(
             if end_date.tzinfo:
                 end_date = datetime.fromtimestamp(end_date.timestamp())
             query = query.filter(ProductRecord.recorded_at <= end_date)
+
+        # 多选商家筛选
+        if merchant_ids:
+            ids = [int(x.strip()) for x in merchant_ids.split(',') if x.strip()]
+            if ids:
+                query = query.filter(ProductRecord.merchant_id.in_(ids))
+
+        # 多选记录类型筛选
+        if record_types:
+            types_list = [x.strip() for x in record_types.split(',') if x.strip()]
+            if types_list:
+                query = query.filter(ProductRecord.record_type.in_(types_list))
+
+        # 跨表：按原料分类筛选
+        if ingredient_category_ids:
+            cat_ids = [int(x.strip()) for x in ingredient_category_ids.split(',') if x.strip()]
+            if cat_ids:
+                query = query.join(ProductRecord.product).join(
+                    Product.ingredient
+                ).filter(Ingredient.category_id.in_(cat_ids))
 
         total = query.count()
 
@@ -399,6 +442,30 @@ async def get_product_records(
                 # 先转换为时间戳，再转换为本地时间
                 end_date = datetime.fromtimestamp(end_date.timestamp())
             query = query.filter(ProductRecord.recorded_at <= end_date)
+
+        # 多选商家筛选
+        if merchant_ids:
+            ids = [int(x.strip()) for x in merchant_ids.split(',') if x.strip()]
+            if ids:
+                query = query.filter(ProductRecord.merchant_id.in_(ids))
+
+        # 多选记录类型筛选
+        if record_types:
+            types_list = [x.strip() for x in record_types.split(',') if x.strip()]
+            if types_list:
+                query = query.filter(ProductRecord.record_type.in_(types_list))
+
+        # 跨表：按原料分类筛选（使用 has() 避免重复 join）
+        if ingredient_category_ids:
+            cat_ids = [int(x.strip()) for x in ingredient_category_ids.split(',') if x.strip()]
+            if cat_ids:
+                query = query.filter(
+                    ProductRecord.product.has(
+                        Product.ingredient.has(
+                            Ingredient.category_id.in_(cat_ids)
+                        )
+                    )
+                )
 
         total = query.count()
 
