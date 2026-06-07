@@ -10,7 +10,7 @@
 
   <v-container fluid class="list-grid-container">
     <!-- 搜索栏 + 筛选器（桌面端同行） -->
-    <div class="d-flex flex-column flex-md-row ga-2 mb-4">
+    <div class="d-flex ga-2 mb-4 align-center">
       <v-text-field
         v-model="searchQuery"
         label="搜索菜谱..."
@@ -20,12 +20,11 @@
         hide-details
         clearable
         class="flex-grow-1"
-        style="min-width: 180px"
         @update:model-value="debouncedSearch"
       />
       <FilterBar
         :filters="recipeFilters"
-        class="flex-shrink-0"
+        :mobile="mdAndDown"
         @change="onFilterChange"
       />
     </div>
@@ -170,7 +169,7 @@ import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
-const { md, lgAndUp } = useDisplay()
+const { smAndDown, mdAndDown, md, lgAndUp } = useDisplay()
 
 const route = useRoute()
 

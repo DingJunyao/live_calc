@@ -9,7 +9,7 @@
   </v-app-bar>
 
   <v-container fluid class="list-grid-container">
-    <div class="d-flex flex-column flex-md-row ga-2 mb-4">
+    <div class="d-flex ga-2 mb-4 align-center">
       <v-text-field
         v-model="search"
         label="搜索商品..."
@@ -19,12 +19,11 @@
         hide-details
         clearable
         class="flex-grow-1"
-        style="min-width: 180px"
         @update:model-value="debouncedSearch"
       />
       <FilterBar
         :filters="productFilters"
-        class="flex-shrink-0"
+        :mobile="mdAndDown"
         @change="onFilterChange"
       />
     </div>
@@ -244,7 +243,7 @@ import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
-const { smAndDown, md, lgAndUp } = useDisplay()
+const { smAndDown, mdAndDown, md, lgAndUp } = useDisplay()
 
 interface Product {
   id: number
