@@ -21,6 +21,11 @@
       @update:model-value="debouncedSearch"
     />
 
+    <FilterBar
+      :filters="priceFilters"
+      @change="onFilterChange"
+    />
+
     <v-progress-circular v-if="loading" indeterminate color="primary" class="ma-4" />
 
     <v-alert v-else-if="error" type="error" class="mb-4">
@@ -297,6 +302,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import FilterBar from '@/components/common/FilterBar.vue'
+import type { FilterConfig } from '@/components/common/FilterBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -338,6 +345,64 @@ const searchQuery = ref((route.query.search as string) || '')
 const pageSize = ref(Number(route.query.pageSize) || 20)
 const currentPage = ref(Number(route.query.page) || 1)
 const total = ref(0)
+
+// 筛选器相关
+const categoryOptions = ref<{ value: number; title: string }[]>([])
+const requestFilters = ref<Record<string, any>>({})
+
+const priceFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'merchant_ids',
+    label: '商家',
+    type: 'select',
+    items: merchantOptions.value.map(m => ({ value: m.id, title: m.name })),
+    minWidth: '180px',
+    maxWidth: '240px',
+  },
+  {
+    key: 'ingredient_category_ids',
+    label: '原料分类',
+    type: 'select',
+    items: categoryOptions.value,
+    minWidth: '160px',
+    maxWidth: '220px',
+  },
+  {
+    key: 'record_types',
+    label: '记录类型',
+    type: 'select',
+    items: [
+      { value: 'purchase', title: '购买' },
+      { value: 'price', title: '比价' },
+    ],
+    minWidth: '140px',
+    maxWidth: '180px',
+  },
+  {
+    key: 'date_range',
+    label: '日期',
+    type: 'date-range',
+    minWidth: '260px',
+  },
+])
+
+const onFilterChange = (filterState: Record<string, any>) => {
+  currentPage.value = 1
+  requestFilters.value = filterState
+  loadRecords()
+}
+
+const loadCategories = async () => {
+  try {
+    const response = await api.get('/categories')
+    categoryOptions.value = (response || []).map((c: any) => ({
+      value: c.id,
+      title: c.display_name,
+    }))
+  } catch (e: any) {
+    console.error('加载分类失败', e)
+  }
+}
 
 // 对话框相关
 const showDialog = ref(false)
@@ -497,6 +562,22 @@ const loadRecords = async () => {
     const skip = (currentPage.value - 1) * pageSize.value
     const params: Record<string, any> = { skip, limit: pageSize.value }
     if (searchQuery.value) params.search = searchQuery.value
+    // 筛选参数
+    if (requestFilters.value.merchant_ids?.length) {
+      params.merchant_ids = requestFilters.value.merchant_ids.join(',')
+    }
+    if (requestFilters.value.ingredient_category_ids?.length) {
+      params.ingredient_category_ids = requestFilters.value.ingredient_category_ids.join(',')
+    }
+    if (requestFilters.value.record_types?.length) {
+      params.record_types = requestFilters.value.record_types.join(',')
+    }
+    if (requestFilters.value.date_range_start) {
+      params.start_date = requestFilters.value.date_range_start
+    }
+    if (requestFilters.value.date_range_end) {
+      params.end_date = requestFilters.value.date_range_end
+    }
     const response = await api.get('/products', { params })
     records.value = response.items || []
     total.value = response.total || 0
@@ -729,6 +810,7 @@ const handleRefresh = () => {
 onMounted(() => {
   loadRecords()
   loadMerchants()
+  loadCategories()
   loadUnits()
   window.addEventListener('app-refresh', handleRefresh)
 })
