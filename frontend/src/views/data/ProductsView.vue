@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
   <v-app-bar elevation="0" color="background" density="comfortable" fixed>
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
@@ -57,6 +57,9 @@
             <template #append>
               <v-btn icon="mdi-tag-plus" size="small" variant="text" @click.prevent="openPriceDialog(item)" />
               <v-btn icon="mdi-chevron-right" size="small" variant="text" />
+              <div v-if="item.latest_price != null" class="text-tertiary font-weight-bold text-body-2">
+                ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
+              </div>
             </template>
           </v-list-item>
 
@@ -91,6 +94,9 @@
                   <span class="text-white">{{ item.name?.charAt(0) }}</span>
                 </v-avatar>
                 <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
+              </div>
+              <div v-if="item.latest_price != null" class="text-subtitle-1 font-weight-bold text-tertiary mb-1">
+                ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
               </div>
               <div class="text-caption text-medium-emphasis">{{ item.brand || '无品牌' }}</div>
             </v-card-text>
@@ -223,6 +229,7 @@ import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
+import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 
 const route = useRoute()
 const router = useRouter()
@@ -246,6 +253,12 @@ interface Ingredient {
 }
 
 const items = ref<Product[]>([])
+
+// 当天平均单价
+const { load: loadLatestPrices } = useLatestPrices(
+  items,
+  (item) => `/products/entity/${item.id}/latest-price`
+)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const search = ref((route.query.search as string) || '')
@@ -348,6 +361,7 @@ const loadProducts = async () => {
     const response = await api.get('/products/entity', { params })
     items.value = response.items || []
     total.value = response.total || 0
+    await loadLatestPrices()
   } catch (e: any) {
     console.error('加载商品失败', e)
     error.value = e.message || '加载失败'

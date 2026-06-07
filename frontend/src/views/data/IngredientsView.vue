@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
   <v-app-bar elevation="0" color="background" density="comfortable" fixed>
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
@@ -63,6 +63,9 @@
                 @click.prevent="openPriceDialog(item)"
               />
               <v-btn icon="mdi-chevron-right" size="small" variant="text" />
+              <div v-if="item.latest_price != null" class="text-tertiary font-weight-bold text-body-2">
+                ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
+              </div>
             </template>
           </v-list-item>
 
@@ -101,6 +104,9 @@
               <v-chip size="x-small" color="default" variant="outlined">
                 {{ item.category || '未分类' }}
               </v-chip>
+              <div v-if="item.latest_price != null" class="text-subtitle-1 font-weight-bold text-tertiary mb-1">
+                ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
+              </div>
             </v-card-text>
             <v-divider />
             <v-card-actions>
@@ -362,6 +368,7 @@ import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
+import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 
 const route = useRoute()
 const router = useRouter()
@@ -403,6 +410,12 @@ interface CoreNutrients {
 }
 
 const items = ref<Ingredient[]>([])
+
+// 当天平均单价
+const { load: loadLatestPrices } = useLatestPrices(
+  items,
+  (item) => `/nutrition/ingredients/${item.id}/latest-price`
+)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const search = ref((route.query.search as string) || '')
@@ -562,6 +575,7 @@ const loadIngredients = async () => {
     const response = await api.get('/ingredients', { params })
     items.value = response.items || []
     total.value = response.total || 0
+    await loadLatestPrices()
   } catch (e: any) {
     console.error('加载原料失败', e)
     error.value = e.message || '加载失败'
