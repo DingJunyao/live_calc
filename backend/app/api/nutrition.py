@@ -87,6 +87,7 @@ async def get_ingredients(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     search: str = Query(None, alias="q"),
+    category_ids: Optional[str] = Query(None, description="原料分类ID列表，逗号分隔"),
     sort_by: str = Query("price_records", enum=["name", "created_at", "price_records"], description="排序方式"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -108,6 +109,11 @@ async def get_ingredients(
         if search is not None:
             base_query = base_query.filter(Ingredient.name.contains(search))
 
+        if category_ids:
+            ids = [int(x.strip()) for x in category_ids.split(',') if x.strip()]
+            if ids:
+                base_query = base_query.filter(Ingredient.category_id.in_(ids))
+
         # 根据排序方式进行查询
         if sort_by == "price_records":
             # 按价格记录数量排序
@@ -124,6 +130,11 @@ async def get_ingredients(
             if search is not None:
                 subquery = subquery.filter(Ingredient.name.contains(search))
 
+            if category_ids:
+                ids = [int(x.strip()) for x in category_ids.split(',') if x.strip()]
+                if ids:
+                    subquery = subquery.filter(Ingredient.category_id.in_(ids))
+
             subquery = subquery.group_by(Ingredient.id).subquery()
 
             # 然后将此子查询与主查询连接，并按记录数量排序
@@ -134,6 +145,11 @@ async def get_ingredients(
             # 显式检查search是否为None
             if search is not None:
                 query = query.filter(Ingredient.name.contains(search))
+
+            if category_ids:
+                ids = [int(x.strip()) for x in category_ids.split(',') if x.strip()]
+                if ids:
+                    query = query.filter(Ingredient.category_id.in_(ids))
 
             # 按价格记录数量降序排列，没有记录的排在后面，然后按ID确保一致性
             ingredients = query.order_by(
@@ -160,6 +176,10 @@ async def get_ingredients(
             total_query = db.query(Ingredient.id).filter(Ingredient.is_active == True)
             if search is not None:
                 total_query = total_query.filter(Ingredient.name.contains(search))
+            if category_ids:
+                ids = [int(x.strip()) for x in category_ids.split(',') if x.strip()]
+                if ids:
+                    total_query = total_query.filter(Ingredient.category_id.in_(ids))
             total = total_query.count()
         else:
             # 为其他排序方式查询总数量
