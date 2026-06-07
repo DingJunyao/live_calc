@@ -21,6 +21,11 @@
       @update:model-value="debouncedSearch"
     />
 
+    <FilterBar
+      :filters="productFilters"
+      @change="onFilterChange"
+    />
+
     <!-- 加载中 -->
     <div v-if="loading" class="text-center py-8">
       <v-progress-circular indeterminate color="primary" size="64" />
@@ -229,6 +234,8 @@ import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
+import FilterBar from '@/components/common/FilterBar.vue'
+import type { FilterConfig } from '@/components/common/FilterBar.vue'
 import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 
 const route = useRoute()
@@ -302,6 +309,67 @@ const syncToUrl = () => {
   })
 }
 
+// 筛选器相关
+const categoryOptions = ref<{ value: number; title: string }[]>([])
+const brandOptions = ref<{ value: string; title: string }[]>([])
+const requestFilters = ref<Record<string, any>>({})
+
+const productFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'ingredient_ids',
+    label: '关联原料',
+    type: 'select',
+    items: ingredients.value.map(i => ({ value: i.id, title: i.name })),
+    minWidth: '180px',
+    maxWidth: '240px',
+  },
+  {
+    key: 'ingredient_category_ids',
+    label: '原料分类',
+    type: 'select',
+    items: categoryOptions.value,
+    minWidth: '160px',
+    maxWidth: '220px',
+  },
+  {
+    key: 'brands',
+    label: '品牌',
+    type: 'select',
+    items: brandOptions.value,
+    minWidth: '140px',
+    maxWidth: '200px',
+  },
+])
+
+const onFilterChange = (filterState: Record<string, any>) => {
+  currentPage.value = 1
+  requestFilters.value = filterState
+  loadProducts()
+}
+
+const loadCategories = async () => {
+  try {
+    const response = await api.get('/categories')
+    categoryOptions.value = (response || []).map((c: any) => ({
+      value: c.id,
+      title: c.display_name,
+    }))
+  } catch (e: any) {
+    console.error('加载分类失败', e)
+  }
+}
+
+const loadBrands = async () => {
+  try {
+    const response = await api.get('/products/entity', { params: { limit: 1000 } })
+    const products: any[] = response.items || []
+    const uniqueBrands = [...new Set(products.map((p: any) => p.brand).filter(Boolean))]
+    brandOptions.value = uniqueBrands.map(b => ({ value: b, title: b }))
+  } catch (e: any) {
+    console.error('加载品牌列表失败', e)
+  }
+}
+
 // 加载原料列表
 const loadIngredients = async (searchText?: string) => {
   loadingIngredients.value = true
@@ -356,6 +424,16 @@ const loadProducts = async () => {
     }
     if (search.value) {
       params.search = search.value
+    }
+    // 筛选参数
+    if (requestFilters.value.ingredient_ids?.length) {
+      params.ingredient_ids = requestFilters.value.ingredient_ids.join(',')
+    }
+    if (requestFilters.value.ingredient_category_ids?.length) {
+      params.ingredient_category_ids = requestFilters.value.ingredient_category_ids.join(',')
+    }
+    if (requestFilters.value.brands?.length) {
+      params.brands = requestFilters.value.brands.join(',')
     }
 
     const response = await api.get('/products/entity', { params })
@@ -417,6 +495,8 @@ const saveItem = async () => {
 onMounted(() => {
   loadProducts()
   loadIngredients()
+  loadCategories()
+  loadBrands()
   window.addEventListener('app-refresh', loadProducts)
 })
 
