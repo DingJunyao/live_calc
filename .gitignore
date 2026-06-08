@@ -1,2 +1,9 @@
 .spec-workflow
 .playwright-mcp/
+
+# 临时文件
+*.bak
+debug_*.py
+debug_*.js
+verify_*.py
+tmp/
