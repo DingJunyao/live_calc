@@ -1044,14 +1044,34 @@ async def edit_ingredient_nutrition(
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
 
-        # 构建营养数据字典
-        nutrients_dict = {}
+        # 构建结构化营养数据字典（与 import 格式一致）
+        # 格式: { core_nutrients: {...}, all_nutrients: {...}, nutrient_details: {...} }
+        from app.services.nutrition_import_service import NutritionImportService
+        core_display_map = NutritionImportService.CORE_DISPLAY_MAP
+
+        structured_nutrients = {
+            "core_nutrients": {},
+            "all_nutrients": {},
+            "nutrient_details": {}
+        }
+
         for nutrient in request.nutrients:
-            nutrients_dict[nutrient.name] = {
+            key = nutrient.key or nutrient.name
+            info = {
                 "value": nutrient.value,
                 "unit": nutrient.unit,
-                "key": nutrient.key
+                "key": key
             }
+
+            structured_nutrients["all_nutrients"][key] = info
+            structured_nutrients["nutrient_details"][key] = info
+
+            # 检查是否为核心营养素（通过中文名查找 CORE_DISPLAY_MAP）
+            display_name = core_display_map.get(nutrient.name)
+            if display_name:
+                structured_nutrients["core_nutrients"][display_name] = {
+                    **info, "key": key
+                }
 
         # 查找或创建营养数据
         nutrition_data = db.query(NutritionData).filter(
@@ -1060,7 +1080,7 @@ async def edit_ingredient_nutrition(
 
         if nutrition_data:
             # 更新现有数据
-            nutrition_data.nutrients = nutrients_dict
+            nutrition_data.nutrients = structured_nutrients
             nutrition_data.reference_amount = request.base_quantity
             nutrition_data.reference_unit = request.base_unit
             nutrition_data.source = request.source
@@ -1069,7 +1089,7 @@ async def edit_ingredient_nutrition(
             # 创建新数据
             nutrition_data = NutritionData(
                 ingredient_id=ingredient_id,
-                nutrients=nutrients_dict,
+                nutrients=structured_nutrients,
                 reference_amount=request.base_quantity,
                 reference_unit=request.base_unit,
                 source=request.source,
@@ -1112,17 +1132,33 @@ async def edit_product_nutrition(
         if not product:
             raise HTTPException(status_code=404, detail="商品不存在")
 
-        # 构建营养数据字典
-        nutrients_dict = {}
+        # 构建结构化营养数据字典（与 import 格式一致）
+        from app.services.nutrition_import_service import NutritionImportService
+        core_display_map = NutritionImportService.CORE_DISPLAY_MAP
+
+        structured_nutrients = {
+            "core_nutrients": {},
+            "all_nutrients": {},
+            "nutrient_details": {}
+        }
+
         for nutrient in request.nutrients:
-            nutrients_dict[nutrient.name] = {
+            key = nutrient.key or nutrient.name
+            info = {
                 "value": nutrient.value,
                 "unit": nutrient.unit,
-                "key": nutrient.key
+                "key": key
             }
+            structured_nutrients["all_nutrients"][key] = info
+            structured_nutrients["nutrient_details"][key] = info
+            display_name = core_display_map.get(nutrient.name)
+            if display_name:
+                structured_nutrients["core_nutrients"][display_name] = {
+                    **info, "key": key
+                }
 
         # 更新商品的自定义营养数据
-        product.custom_nutrition_data = nutrients_dict
+        product.custom_nutrition_data = structured_nutrients
         product.custom_nutrition_source = request.source
         product.updated_by = current_user.id
 

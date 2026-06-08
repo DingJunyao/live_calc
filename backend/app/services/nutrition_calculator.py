@@ -555,6 +555,31 @@ class NutritionCalculator:
         """
         计算按比例缩放后的营养值
         """
+        # 兼容旧版扁平格式：自定义编辑保存的格式是
+        # { "能量": {"value": 100, "unit": "kcal", "key": "energy"}, ... }
+        # 自动转为结构化格式
+        if isinstance(nutrients, dict) and nutrients:
+            has_structured = any(k in nutrients for k in ("core_nutrients", "all_nutrients", "nutrient_details"))
+            if not has_structured:
+                from app.services.nutrition_import_service import NutritionImportService
+                core_display_map = getattr(NutritionImportService, 'CORE_DISPLAY_MAP', {})
+                structured = {
+                    "core_nutrients": {},
+                    "all_nutrients": {},
+                    "nutrient_details": {}
+                }
+                for name, data in nutrients.items():
+                    if not isinstance(data, dict) or 'value' not in data:
+                        continue
+                    key = data.get('key', name)
+                    info = {"value": data.get('value', 0), "unit": data.get('unit', ''), "key": key}
+                    structured["all_nutrients"][key] = info
+                    structured["nutrient_details"][key] = info
+                    display_name = core_display_map.get(name)
+                    if display_name:
+                        structured["core_nutrients"][display_name] = {**info, "key": key}
+                nutrients = structured
+
         result = {
             "core_nutrients": {},
             "all_nutrients": {},

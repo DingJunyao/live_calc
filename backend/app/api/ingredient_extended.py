@@ -575,7 +575,8 @@ async def update_ingredient(
                         print(f"[更新原料] 更新现有营养数据 id={existing_nutrition.id}")
                         existing_nutrition.nutrients = {
                             'core_nutrients': core_nutrients,
-                            'all_nutrients': all_nutrients
+                            'all_nutrients': all_nutrients,
+                            'nutrient_details': {**all_nutrients}
                         }
                         existing_nutrition.updated_by = current_user.id
                     else:
@@ -586,7 +587,8 @@ async def update_ingredient(
                             source='custom',
                             nutrients={
                                 'core_nutrients': core_nutrients,
-                                'all_nutrients': all_nutrients
+                                'all_nutrients': all_nutrients,
+                                'nutrient_details': {**all_nutrients}
                             },
                             reference_amount=100.0,
                             reference_unit='g',

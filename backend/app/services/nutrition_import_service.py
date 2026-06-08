@@ -105,7 +105,7 @@ class NutritionImportService:
         "叶酸": "叶酸",
     }
 
-    # 中文名到旧版 key 的映射（用于向后兼容查询）
+    # 中文名到 key 的映射（用于生成一致的英文 key）
     CN_TO_KEY = {
         # 能量
         "热量（Atwater 通用系数）": "energy_kcal",
@@ -122,22 +122,155 @@ class NutritionImportService:
         "铁": "iron",
         "钠": "sodium",
         "钾": "potassium",
+        "镁": "magnesium",
+        "磷": "phosphorus",
+        "锌": "zinc",
+        "铜": "copper",
+        "锰": "manganese",
+        "硒": "selenium",
+        "氟": "fluoride_f",
         # 维生素
         "维生素A": "vitamin_a_rae",
         "维生素A (RAE)": "vitamin_a_rae",
+        "维生素A (IU)": "vitamin_a_iu",
         "维生素C": "vitamin_c",
         "维生素B1": "vitamin_b1",
         "维生素B1（硫胺素）": "vitamin_b1",
         "维生素B2": "vitamin_b2",
         "维生素B2（核黄素）": "vitamin_b2",
+        "维生素B3（烟酸）": "niacin",
+        "维生素B5（泛酸）": "pantothenic_acid",
+        "维生素B6": "vitamin_b6",
         "维生素B12": "vitamin_b12",
+        "维生素B12（添加）": "vitamin_b_12_added",
         "维生素D": "vitamin_d",
+        "维生素D (IU)": "vitamin_d_(d2_+_d3)_international_units",
+        "维生素D3": "vitamin_d3",
+        "维生素D2（麦角钙化醇）": "vitamin_d2",
         "维生素E": "vitamin_e",
+        "维生素E（添加）": "vitamin_e_added",
         "维生素K": "vitamin_k",
+        "维生素K（二氢叶绿醌）": "vitamin_k_(dihydrophylloquinone)",
+        "生物素": "biotin",
         # 其他
         "饱和脂肪酸": "saturated_fat",
+        "单不饱和脂肪酸": "monounsaturated_fat",
+        "多不饱和脂肪酸": "polyunsaturated_fat",
+        "反式脂肪酸": "fatty_acids_total_trans",
+        "反式单烯脂肪酸": "fatty_acids_total_trans_monoenoic",
+        "反式多烯脂肪酸": "fatty_acids_total_trans_polyenoic",
         "胆固醇": "cholesterol",
         "叶酸": "folate",
+        "叶酸（合成）": "folic_acid",
+        "食物叶酸": "folate_food",
+        "叶酸 (DFE)": "folate_dfe",
+        "胆碱": "choline_total",
+        "甜菜碱": "betaine",
+        "水分": "water",
+        "灰分": "ash",
+        "酒精": "alcohol_ethyl",
+        "咖啡因": "caffeine",
+        "可可碱": "theobromine",
+        "总糖": "total_sugars",
+        "蔗糖": "sucrose",
+        "葡萄糖": "glucose",
+        "果糖": "fructose",
+        "乳糖": "lactose",
+        "麦芽糖": "maltose",
+        "半乳糖": "galactose",
+        "淀粉": "starch",
+        "视黄醇": "retinol",
+        "β-胡萝卜素": "carotene_beta",
+        "α-胡萝卜素": "carotene_alpha",
+        "β-隐黄素": "cryptoxanthin_beta",
+        "番茄红素": "lycopene",
+        "叶黄素+玉米黄质": "lutein_plus_zeaxanthin",
+        "植物甾醇": "phytosterols",
+        "氮": "nitrogen",
+    }
+
+    # 英文名到 key 的映射（作为 CN_TO_KEY 的补充）
+    EN_NAME_TO_KEY = {
+        "Energy (Atwater General Factors)": "energy_kcal",
+        "Energy (Atwater Specific Factors)": "energy_kcal_alt",
+        "Protein": "protein",
+        "Total lipid (fat)": "fat",
+        "Carbohydrate, by difference": "carbohydrate",
+        "Fiber, total dietary": "fiber",
+        "Calcium, Ca": "calcium",
+        "Iron, Fe": "iron",
+        "Sodium, Na": "sodium",
+        "Potassium, K": "potassium",
+        "Magnesium, Mg": "magnesium",
+        "Phosphorus, P": "phosphorus",
+        "Zinc, Zn": "zinc",
+        "Copper, Cu": "copper",
+        "Manganese, Mn": "manganese",
+        "Selenium, Se": "selenium",
+        "Fluoride, F": "fluoride_f",
+        "Vitamin A, RAE": "vitamin_a_rae",
+        "Vitamin A, IU": "vitamin_a_iu",
+        "Vitamin C, total ascorbic acid": "vitamin_c",
+        "Thiamin": "vitamin_b1",
+        "Riboflavin": "vitamin_b2",
+        "Niacin": "niacin",
+        "Pantothenic acid": "pantothenic_acid",
+        "Vitamin B-6": "vitamin_b6",
+        "Vitamin B-12": "vitamin_b12",
+        "Vitamin B-12, added": "vitamin_b_12_added",
+        "Vitamin D (D2 + D3)": "vitamin_d",
+        "Vitamin D (D2 + D3), International Units": "vitamin_d_(d2_+_d3)_international_units",
+        "Vitamin D3 (cholecalciferol)": "vitamin_d3",
+        "Vitamin D2 (ergocalciferol)": "vitamin_d2",
+        "Vitamin E (alpha-tocopherol)": "vitamin_e",
+        "Vitamin E, added": "vitamin_e_added",
+        "Vitamin K (phylloquinone)": "vitamin_k",
+        "Vitamin K (Dihydrophylloquinone)": "vitamin_k_(dihydrophylloquinone)",
+        "Vitamin K (Menaquinone-4)": "vitamin_k_(menaquinone_4)",
+        "Fatty acids, total saturated": "saturated_fat",
+        "Fatty acids, total monounsaturated": "monounsaturated_fat",
+        "Fatty acids, total polyunsaturated": "polyunsaturated_fat",
+        "Fatty acids, total trans": "fatty_acids_total_trans",
+        "Fatty acids, total trans-monoenoic": "fatty_acids_total_trans_monoenoic",
+        "Fatty acids, total trans-polyenoic": "fatty_acids_total_trans_polyenoic",
+        "Cholesterol": "cholesterol",
+        "Folate, total": "folate",
+        "Folate, food": "folate_food",
+        "Folate, DFE": "folate_dfe",
+        "Folic acid": "folic_acid",
+        "Choline, total": "choline_total",
+        "Betaine": "betaine",
+        "Alcohol, ethyl": "alcohol_ethyl",
+        "Caffeine": "caffeine",
+        "Theobromine": "theobromine",
+        "Water": "water",
+        "Ash": "ash",
+        "Retinol": "retinol",
+        "Carotene, beta": "carotene_beta",
+        "Carotene, alpha": "carotene_alpha",
+        "Cryptoxanthin, beta": "cryptoxanthin_beta",
+        "Lycopene": "lycopene",
+        "Lutein + zeaxanthin": "lutein_plus_zeaxanthin",
+        "Phytosterols": "phytosterols",
+        "Total Sugars": "total_sugars",
+        "Sugars, Total": "total_sugars",
+        "Nitrogen": "nitrogen",
+    }
+
+    # 单位规范化映射（HowToCook_json 中使用中文单位名）
+    UNIT_NORMALIZE = {
+        "毫克": "mg",
+        "毫g": "mg",
+        "微克": "μg",
+        "ug": "μg",
+        "mcg": "μg",
+        "千卡": "kcal",
+        "大卡": "kcal",
+        "卡路里": "kcal",
+        "千焦": "kJ",
+        "千焦耳": "kJ",
+        "克": "g",
+        "千克": "kg",
     }
 
     def __init__(self, db: Session):
@@ -280,6 +413,16 @@ class NutritionImportService:
         response.raise_for_status()
         return response.json()
 
+    @staticmethod
+    def _normalize_unit(unit: str) -> str:
+        """规范化单位：中文单位名 -> 标准英文缩写"""
+        if not unit:
+            return unit
+        unit_key = unit.strip()
+        if unit_key in NutritionImportService.UNIT_NORMALIZE:
+            return NutritionImportService.UNIT_NORMALIZE[unit_key]
+        return unit
+
     def _prepare_nutrients_dict(self, nutrients: List[Dict]) -> Dict:
         """
         准备营养数据字典
@@ -296,13 +439,19 @@ class NutritionImportService:
             "nutrient_details": {}
         }
 
+        has_energy_kcal = False  # 记录 all_nutrients 中是否已有 kcal 版能量
+
         for nutrient_item in nutrients:
             cn_name = nutrient_item.get("name", "")
             en_name = nutrient_item.get("name_en", "")
 
+            # 规范化单位
+            raw_unit = nutrient_item.get("unit", "")
+            normalized_unit = self._normalize_unit(raw_unit)
+
             nutrient_info = {
                 "value": nutrient_item.get("value", 0),
-                "unit": nutrient_item.get("unit", ""),
+                "unit": normalized_unit,
                 "nrp_pct": nutrient_item.get("nrp_pct", 0),
                 "standard": nutrient_item.get("standard", "无标准"),
                 "note": nutrient_item.get("note", ""),
@@ -311,6 +460,16 @@ class NutritionImportService:
 
             # 用英文名作为 key 存储（与旧版格式对齐，便于前端查询）
             key = self._get_nutrient_key(cn_name, en_name)
+
+            # Energy kJ/kcal 去重：同一个食材可能同时有千卡和千焦两个 Energy 条目，
+            # 都生成 key="energy"，后面的覆盖前面的。优先保留千卡版。
+            if key == "energy" and normalized_unit == "kJ":
+                if has_energy_kcal:
+                    continue  # 已有千卡版，跳过千焦版
+                # 如果还没有千卡版，暂时记录位置但继续处理，
+                # 等后面遇到千卡版时再覆盖
+            elif key == "energy" and normalized_unit == "kcal":
+                has_energy_kcal = True
 
             nutrients_dict["all_nutrients"][key] = nutrient_info
             nutrients_dict["nutrient_details"][key] = nutrient_info
@@ -333,10 +492,15 @@ class NutritionImportService:
         """
         获取营养素的 key
 
-        优先用已知的中文 -> key 映射，否则用英文名生成
+        优先级：
+        1. 中文名 -> key 映射（CN_TO_KEY）
+        2. 英文名 -> key 映射（EN_NAME_TO_KEY，覆盖 USDA 原始 name_en）
+        3. 用英文名自动生成 key
         """
         if cn_name in self.CN_TO_KEY:
             return self.CN_TO_KEY[cn_name]
+        if en_name in self.EN_NAME_TO_KEY:
+            return self.EN_NAME_TO_KEY[en_name]
         # 用英文名生成 key：小写、替换空格和特殊字符为下划线
         key = en_name.lower()
         key = key.replace(", ", "_").replace(" ", "_").replace("(", "").replace(")", "")

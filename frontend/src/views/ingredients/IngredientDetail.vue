@@ -476,7 +476,7 @@
               variant="tonal"
               color="primary"
               prepend-icon="mdi-plus"
-              @click="showAddNutrientPicker = true"
+              @click="addEmptyNutrientRow"
             >
               添加营养素
             </v-btn>
@@ -566,7 +566,7 @@
             <span class="text-caption text-medium-emphasis">暂无营养素，点击下方按钮添加</span>
           </div>
           <div class="pa-3">
-            <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-plus" @click="showAddNutrientPicker = true">
+            <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-plus" @click="addEmptyNutrientRow">
               添加营养素
             </v-btn>
             <div class="d-flex justify-end mt-3">
@@ -1313,45 +1313,6 @@
       </v-card>
     </v-dialog>
 
-    <!-- 添加营养素选择器 -->
-    <v-dialog v-model="showAddNutrientPicker" max-width="400">
-      <v-card>
-        <v-card-title>添加营养素</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="nutrientPickerSearch"
-            label="搜索营养素"
-            variant="outlined"
-            density="compact"
-            prepend-inner-icon="mdi-magnify"
-            clearable
-            class="mb-3"
-          />
-          <v-list density="compact" max-height="300" class="overflow-y-auto">
-            <v-list-item
-              v-for="item in availableNutrientsToAdd"
-              :key="item.key"
-              @click="addExtraNutrient(item)"
-            >
-              <v-list-item-title>{{ item.label }}</v-list-item-title>
-              <v-list-item-subtitle class="text-caption">
-                {{ item.defaultUnit }}{{ item.units.length > 1 ? ' / ' + item.units.filter(u => u !== item.defaultUnit).join(' / ') : '' }}
-              </v-list-item-subtitle>
-              <template #append>
-                <v-icon size="small">mdi-plus</v-icon>
-              </template>
-            </v-list-item>
-            <v-list-item v-if="availableNutrientsToAdd.length === 0">
-              <v-list-item-title class="text-medium-emphasis text-center">没有更多可添加的营养素</v-list-item-title>
-            </v-list-item>
-          </v-list>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn @click="showAddNutrientPicker = false">关闭</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
 
     <!-- 提示消息 -->
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000">
@@ -1530,8 +1491,6 @@ const basicEditForm = ref({
 // 营养编辑
 const editingNutrition = ref(false)
 const savingNutrition = ref(false)
-const showAddNutrientPicker = ref(false)
-const nutrientPickerSearch = ref('')
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名
 const NUTRIENT_DEFINITIONS = [
@@ -1567,6 +1526,11 @@ const NUTRIENT_DEFINITIONS = [
   { key: 'polyunsaturated_fat', label: '多不饱和脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
 ]
 
+// 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
+const NUTRIENT_PARENT_MAP: Record<string, string> = {
+  'energy': 'energy_kcal',     // USDA energy 是 energy_kcal 的另一种计算
+}
+
 // IU ↔ 质量换算系数（1 IU = ? 质量单位）
 const IU_TO_MASS: Record<string, { factor: number, unit: string }> = {
   'vitamin_a_rae': { factor: 0.3, unit: 'μg' },   // 1 IU = 0.3 μg RAE
@@ -1588,7 +1552,68 @@ const ENERGY_FACTORS: Record<string, number> = {
 }
 
 // 查找营养素定义
-const findNutrientDef = (key: string) => NUTRIENT_DEFINITIONS.find(n => n.key === key)
+const findNutrientDef = (key: string) => {
+  const def = NUTRIENT_DEFINITIONS.find(n => n.key === key)
+  if (def) return def
+  return buildDynamicDef(key)
+}
+
+// 从 ENGLISH_TO_CHINESE_MAP 或 USDA all_nutrients 数据中动态构建营养素定义
+const buildDynamicDef = (key: string) => {
+  // 优先从 ENGLISH_TO_CHINESE_MAP 查找（覆盖 USDA 全部营养素）
+  // 注意：直接使用 zhName 作为 label，不使用 NUTRITION_LABEL_MAP 映射，
+  // 因为那是显示层（如"能量"→"热量"）的规范，编辑表单应与 NUTRIENT_DEFINITIONS 一致
+  const zhName = ENGLISH_TO_CHINESE_MAP[key]
+  if (zhName) {
+    const label = zhName
+    const isEnergy = key.startsWith('energy_') || key === 'energy'
+    const isIUvitamin = /^vitamin_(a|d|e)/.test(key)
+    const units = isEnergy ? ['kcal', 'kJ'] : isIUvitamin ? ['μg', 'mg', 'IU'] : ['g', 'mg', 'μg']
+    const defaultUnit = isEnergy ? 'kcal' : isIUvitamin ? 'μg' : 'g'
+    return { key, label, units, defaultUnit }
+  }
+  // 兜底：从 all_nutrients 数据动态构建
+  const allNutrients = nutritionData.value?.nutrition?.all_nutrients
+  if (!allNutrients) return undefined
+  const data: any = allNutrients[key]
+  if (!data || typeof data !== 'object') return undefined
+  const rawUnit = (data.unit || 'g').toLowerCase()
+  const label = key
+  // 标准化单位名：USDA 数据可能用 "milligrams"、"grams" 等全称
+  const isMassUnit = (u: string) => ['g', 'gram', 'grams', 'mg', 'milligram', 'milligrams', 'μg', 'mcg', 'ug', 'microgram', 'micrograms'].includes(u)
+  const isEnergyUnit = (u: string) => ['kcal', 'kj', 'calorie', 'calories', 'kilocalorie', 'kilocalories', '千卡', '千焦'].includes(u)
+  const units = isEnergyUnit(rawUnit) ? ['kcal', 'kJ'] : isMassUnit(rawUnit) ? ['g', 'mg', 'μg'] : [rawUnit]
+  return { key, label, units, defaultUnit: rawUnit }
+}
+
+// 完整营养素列表：静态定义 + ENGLISH_TO_CHINESE_MAP 全部 USDA 营养素 + 数据中额外营养素
+const getAllNutrientDefs = () => {
+  const defs = [...NUTRIENT_DEFINITIONS]
+  const existingKeys = new Set(NUTRIENT_DEFINITIONS.map(d => d.key))
+  // 从 ENGLISH_TO_CHINESE_MAP 添加
+  for (const key of Object.keys(ENGLISH_TO_CHINESE_MAP)) {
+    if (existingKeys.has(key)) continue
+    // 跳过同义别名（如 energy → energy_kcal，energy_kcal 已在列表中）
+    const parentKey = NUTRIENT_PARENT_MAP[key]
+    if (parentKey && existingKeys.has(parentKey)) continue
+    const def = buildDynamicDef(key)
+    if (def) { defs.push(def); existingKeys.add(key) }
+  }
+  // 从当前营养数据中补充未覆盖的 key（如稀有营养素）
+  const allNutrients = nutritionData.value?.nutrition?.all_nutrients
+  if (allNutrients) {
+    for (const key of Object.keys(allNutrients)) {
+      if (existingKeys.has(key)) continue
+      // 跳过与已有定义同义的 key（如 all_nutrients 中的中文 key 对应已存在的英文 key）
+      const data = allNutrients[key]
+      const canonicalKey = data?.original_key || data?.key
+      if (canonicalKey && canonicalKey !== key && existingKeys.has(canonicalKey)) continue
+      const def = buildDynamicDef(key)
+      if (def) { defs.push(def); existingKeys.add(key) }
+    }
+  }
+  return defs
+}
 
 // 获取营养素的可用单位列表
 const getUnitsForKey = (key: string): string[] => {
@@ -1649,19 +1674,9 @@ const getNutrientOptionsForRow = (currentKey: string) => {
       .filter(i => i.key !== currentKey)
       .map(i => i.key)
   )
-  return NUTRIENT_DEFINITIONS.filter(n => !usedKeys.has(n.key))
+  return getAllNutrientDefs().filter(n => !usedKeys.has(n.key))
 }
 
-// 可添加的营养素列表（添加按钮弹窗用，过滤已存在的）
-const availableNutrientsToAdd = computed(() => {
-  const existingKeys = new Set(nutritionEditItems.value.map(i => i.key))
-  const search = nutrientPickerSearch.value?.trim().toLowerCase() || ''
-  return NUTRIENT_DEFINITIONS.filter(n => {
-    if (existingKeys.has(n.key)) return false
-    if (search && !n.label.toLowerCase().includes(search) && !n.key.toLowerCase().includes(search)) return false
-    return true
-  })
-})
 
 const priceForm = ref({
   product_id: null as number | null
@@ -2825,20 +2840,25 @@ const startEditNutrition = () => {
   // 遍历 all_nutrients 中所有已有数据的营养素
   for (const [key, data] of Object.entries(allNutrients)) {
     if (!data || typeof data !== 'object' || !('value' in data)) continue
-    if (addedKeys.has(key)) continue
 
-    const def = findNutrientDef(key)
-    const zhName = ENGLISH_TO_CHINESE_MAP[key] || key
+    // 提取英文键：优先用 original_key（计算器转换时保留），其次是 data.key，最后才是遍历键
+    let engKey = (data as any)?.original_key || (data as any)?.key || key
+    // 将同义别名映射到标准 key（如 energy → energy_kcal），避免显示为重复
+    engKey = NUTRIENT_PARENT_MAP[engKey] || engKey
+    if (addedKeys.has(engKey)) continue
+
+    const def = findNutrientDef(engKey)
+    const zhName = ENGLISH_TO_CHINESE_MAP[engKey] || key
     const label = NUTRITION_LABEL_MAP[zhName] || zhName
 
     items.push({
-      key,
+      key: engKey,
       name: def ? def.label : label,
       value: data.value ?? null,
       unit: data.unit || (def ? def.defaultUnit : 'g'),
       units: def ? def.units : ['g', 'mg', 'μg'],
     })
-    addedKeys.add(key)
+    addedKeys.add(engKey)
   }
 
   // 按核心顺序排序：NUTRIENT_DEFINITIONS 中排前面的优先
@@ -2877,6 +2897,20 @@ const removeNutrientEditItem = (index: number) => {
 
 // 行内营养素下拉改变
 const onNutrientKeyChange = (index: number, newKey: string) => {
+  if (!newKey) return
+  // 检查是否与其他行重复（涵盖中英文 key 变体）
+  const variants = [newKey]
+  if (ENGLISH_TO_CHINESE_MAP[newKey]) variants.push(ENGLISH_TO_CHINESE_MAP[newKey])
+  for (const [eng, zh] of Object.entries(ENGLISH_TO_CHINESE_MAP)) {
+    if (zh === newKey && !variants.includes(eng)) variants.push(eng)
+  }
+  const exists = nutritionEditItems.value.some((item, i) =>
+    i !== index && variants.includes(item.key)
+  )
+  if (exists) {
+    showMessage('该营养素已存在', 'error')
+    return
+  }
   const def = findNutrientDef(newKey)
   if (!def) return
   const item = nutritionEditItems.value[index]
@@ -2901,15 +2935,15 @@ const onUnitChange = (index: number, newUnit: string) => {
   item.unit = newUnit
 }
 
-const addExtraNutrient = (item: { key: string; label: string; defaultUnit: string; units: string[] }) => {
+// 直接添加一个新行，用户通过行内 autocomplete 选择营养素
+const addEmptyNutrientRow = () => {
   nutritionEditItems.value.push({
-    key: item.key,
-    name: item.label,
+    key: '',
+    name: '',
     value: null,
-    unit: item.defaultUnit || item.units[0],
-    units: [...item.units],
+    unit: 'g',
+    units: ['g', 'mg', 'μg', 'kcal', 'kJ', 'IU'],
   })
-  nutrientPickerSearch.value = ''
 }
 
 const saveNutritionEdit = async () => {
@@ -3142,7 +3176,7 @@ onMounted(() => {
 /* 营养编辑表格 — 四列精确网格 */
 .nutrition-edit-table {
   display: grid;
-  grid-template-columns: 1fr 72px 72px 36px;
+  grid-template-columns: 1fr 144px 144px 36px;
   gap: 2px;
 }
 .nutrition-edit-table.header-row {

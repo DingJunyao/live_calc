@@ -164,6 +164,7 @@ export const NUTRITION_LABEL_MAP: Record<string, string> = {
  */
 export const ENGLISH_TO_CHINESE_MAP: Record<string, string> = {
   'energy_kcal': '能量',
+  'energy': '能量',
   'protein': '蛋白质',
   'fat': '脂肪',
   'carbohydrate': '碳水化合物',
@@ -329,5 +330,42 @@ export const ENGLISH_TO_CHINESE_MAP: Record<string, string> = {
   'pufa_18:3i': '亚麻酸异构体',
   'pufa_21:5': '二十一碳五烯酸',
   'sfa_13:0': '十三烷酸',
-  'fluoride_f': '氟'
+  'fluoride_f': '氟',
+  // 高频缺失营养素（来自 HowToCook_json 导入数据）
+  'nitrogen': '氮',
+  'molybdenum_mo': '钼',
+  // 脂肪酸变体（无括号版，与 _get_nutrient_key 自动生成一致）
+  'pufa_22:6_n_3_dha': '二十二碳六烯酸（DHA）',
+  'pufa_20:5_n_3_epa': '二十碳五烯酸（EPA）',
+  'pufa_22:5_n_3_dpa': '二十二碳五烯酸（DPA）',
+  'pufa_20:2_n_6_c,c': '二十碳二烯酸',
+  'pufa_18:3_n_3_c,c,c_ala': 'α-亚麻酸',
+  'pufa_18:3_n_6_c,c,c': 'γ-亚麻酸',
+  'pufa_18:2_n_6_c,c': '亚油酸',
+  'pufa_20:4_n_6': '花生四烯酸',
+  'tfa_18:2_t,t': '反式-亚油酸',
+  'energy_kcal_alt': '能量（特定系数）',
+  // 罕见植物固醇/甾醇
+  'delta_7_stigmastenol': 'δ7-豆甾烷醇',
+  'beta_sitostanol': 'β-谷烷醇',
+  'delta_5_avenasterol': 'δ5-燕麦固醇',
+  'ergosterol': '麦角固醇',
+  'ergothioneine': '麦角硫因',
+  'brassicasterol': '菜籽固醇',
+  'campestanol': '菜烷醇',
+  'cysteine': '半胱氨酸',
+  'lutein': '叶黄素',
+  'zeaxanthin': '玉米黄质',
+  // 微量营养素变体
+  'pufa_22:2': '二十二碳二烯酸',
+  'sfa_11:0': '十一烷酸',
+  'total_fat_nlea': '总脂肪（NLEA）',
+  'beta_glucan': 'β-葡聚糖',
+  'glutathione': '谷胱甘肽',
+  // 胆碱衍生物
+  'choline_from_sphingomyelin': '鞘磷脂来源胆碱',
+  'choline_free': '游离胆碱',
+  'choline_from_glycerophosphocholine': '甘油磷胆碱来源胆碱',
+  'choline_from_phosphotidyl_choline': '磷脂酰胆碱来源胆碱',
+  'choline_from_phosphocholine': '磷酸胆碱来源胆碱',
 }
