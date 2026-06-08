@@ -318,7 +318,7 @@
                     class="text-caption text-medium-emphasis mt-1 pl-2"
                     style="border-left: 2px solid var(--v-warning-base)"
                   >
-                    💡 {{ step.tips }}
+                    {{ step.tips }}
                   </div>
                 </v-timeline-item>
               </v-timeline>
@@ -505,9 +505,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { usePageTitle } from '@/composables/usePageTitle'
 import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { setDetailTitle } = usePageTitle()
 
 interface CostHistoryRecord {
   date: string
@@ -812,6 +814,7 @@ const loadData = async () => {
     // 加载菜谱详情
     const response = await api.get(`/recipes/${recipeId.value}`)
     recipe.value = response
+    setDetailTitle(response.name, '菜谱', '菜谱详情')
     displayServings.value = response.servings || 1
 
     // 并行加载成本、营养和历史数据

@@ -269,6 +269,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { usePageTitle } from '@/composables/usePageTitle'
 import { useDisplay } from 'vuetify'
 import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
@@ -277,6 +278,7 @@ import type { Coordinate } from '@/utils/map/mapTypes'
 const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { setDetailTitle } = usePageTitle()
 const { smAndDown, md, lgAndUp } = useDisplay()
 
 interface Merchant {
@@ -323,6 +325,7 @@ const loadData = async () => {
   error.value = null
   try {
     merchant.value = await api.get(`/merchants/${merchantId.value}`)
+    setDetailTitle(merchant.value.name, '商家', '商家详情')
     await loadProductPrices()
   } catch (e: any) {
     console.error('加载商家详情失败', e)

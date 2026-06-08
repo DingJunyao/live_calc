@@ -112,6 +112,35 @@
             {{ formatDate(product.latest_price_date) }}
           </div>
         </v-card-text>
+
+        <!-- 各商家最新价格 -->
+        <template v-if="merchantPrices.length > 0">
+          <v-divider />
+          <v-card-text class="pa-3">
+            <div class="text-caption text-medium-emphasis mb-2">各商家价格</div>
+            <div class="merchant-price-list">
+              <div
+                v-for="mp in merchantPrices"
+                :key="mp.merchant_id"
+                class="merchant-price-item"
+                :class="{ 'merchant-price-lowest': mp.is_lowest }"
+              >
+                <div class="merchant-price-name text-truncate">{{ mp.merchant_name }}</div>
+                <div class="merchant-price-value">
+                  <span class="font-weight-bold" :class="mp.is_lowest ? 'text-success' : ''">
+                    ¥{{ mp.price.toFixed(2) }}
+                  </span>
+                </div>
+                <div v-if="mp.recorded_at" class="merchant-price-date">
+                  {{ formatDate(mp.recorded_at) }}
+                </div>
+                <div v-if="mp.is_lowest" class="merchant-price-badge">
+                  <v-chip size="x-small" color="success" variant="flat" label>最低</v-chip>
+                </div>
+              </div>
+            </div>
+          </v-card-text>
+        </template>
       </v-card>
 
       <!-- Group 2: 单位与密度 | 价格趋势（行不对齐，独立高度） -->
@@ -818,10 +847,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { usePageTitle } from '@/composables/usePageTitle'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import { NUTRITION_LABEL_MAP } from '@/utils/nutritionLabels'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { setDetailTitle } = usePageTitle()
 
 interface Product {
   id: number
@@ -870,6 +901,19 @@ const productId = computed(() => Number(route.params.id))
 const product = ref<Product | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+// 按商家分组的最新价格
+interface MerchantPrice {
+  merchant_id: number
+  merchant_name: string
+  price: number
+  unit: string
+  recorded_at: string | null
+  product_name: string
+  is_lowest: boolean
+}
+const merchantPrices = ref<MerchantPrice[]>([])
+const merchantPriceUnit = ref<string | null>(null)
 
 // 价格记录相关
 const priceRecords = ref<PriceRecord[]>([])
@@ -1433,6 +1477,18 @@ const unitOptions = [
   'g', 'kg', '斤', '两', 'ml', 'L', '个', '包', '袋', '盒', '瓶', '罐'
 ]
 
+// 加载按商家分组的最新价格
+const loadMerchantPrices = async () => {
+  try {
+    const response = await api.get(`/products/entity/${productId.value}/latest-price-by-merchant`)
+    merchantPrices.value = response.prices || []
+    merchantPriceUnit.value = response.unit || null
+  } catch (e) {
+    merchantPrices.value = []
+    merchantPriceUnit.value = null
+  }
+}
+
 // 加载数据
 const loadData = async () => {
   loading.value = true
@@ -1442,9 +1498,11 @@ const loadData = async () => {
     // 加载商品详情
     const response = await api.get(`/products/entity/${productId.value}`)
     product.value = response
+    setDetailTitle(response.name, '商品', '商品详情')
 
     // 并行加载其他数据
     await Promise.all([
+      loadMerchantPrices(),
       loadPriceRecords(),
       loadNutritionData(),
       loadEntityUnits(),
@@ -1816,6 +1874,62 @@ onMounted(() => {
 
 .nutrition-row:hover {
   background: rgba(var(--v-theme-primary), 0.04);
+}
+
+/* === 商家价格横向列表 === */
+.merchant-price-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 2px 4px 2px;
+  scrollbar-width: thin;
+}
+
+.merchant-price-item {
+  flex: 0 0 auto;
+  min-width: 100px;
+  max-width: 140px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  text-align: center;
+  position: relative;
+  transition: background-color 0.2s;
+}
+
+.merchant-price-item:hover {
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.merchant-price-lowest {
+  background: rgba(var(--v-theme-success), 0.08);
+  border: 1px solid rgba(var(--v-theme-success), 0.3);
+}
+
+.merchant-price-lowest:hover {
+  background: rgba(var(--v-theme-success), 0.12);
+}
+
+.merchant-price-name {
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  margin-bottom: 4px;
+}
+
+.merchant-price-value {
+  font-size: 0.95rem;
+}
+
+.merchant-price-date {
+  font-size: 0.65rem;
+  color: rgba(var(--v-theme-on-surface), var(--v-disabled-opacity));
+  margin-top: 2px;
+}
+
+.merchant-price-badge {
+  position: absolute;
+  top: -8px;
+  right: -4px;
 }
 
 /* === 响应式布局 === */

@@ -557,6 +557,101 @@ def get_product_latest_price(
         raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")
 
 
+@router.get("/products/entity/{product_id}/latest-price-by-merchant")
+def get_product_latest_price_by_merchant(
+    product_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    获取商品按商家分组的最新价格
+
+    返回每个商家的最新一条价格记录。
+    按价格从低到高排序，并标注最低价。
+    """
+    try:
+        from app.models.merchant import Merchant
+        from sqlalchemy import func
+
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            return {"prices": [], "unit": None}
+
+        # 确定目标单位：优先使用关联原料的默认单位
+        target_unit_abbr = None
+        if product.ingredient and product.ingredient.default_unit:
+            target_unit_abbr = product.ingredient.default_unit.abbreviation
+
+        records = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit),
+            joinedload(ProductRecord.merchant)
+        ).filter(
+            ProductRecord.product_id == product_id,
+            ProductRecord.merchant_id.isnot(None)
+        ).order_by(ProductRecord.recorded_at.desc()).all()
+
+        # 按商家分组，每组只保留最新一条
+        merchant_latest: dict = {}
+        for record in records:
+            mid = record.merchant_id
+            if mid not in merchant_latest:
+                merchant_latest[mid] = record
+
+        unit_service = None
+        results = []
+        for mid, record in merchant_latest.items():
+            if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
+                continue
+
+            total_price = float(record.price)
+            original_quantity = float(record.original_quantity)
+            original_unit_abbr = record.original_unit.abbreviation
+
+            unit_price = None
+            # 如果有关联原料且有默认单位，尝试转换
+            if target_unit_abbr and original_unit_abbr != target_unit_abbr and product.ingredient_id:
+                if unit_service is None:
+                    from app.services.unit_conversion_service import UnitConversionService
+                    unit_service = UnitConversionService(db)
+                convert_result = unit_service.convert(
+                    original_quantity,
+                    original_unit_abbr,
+                    target_unit_abbr,
+                    entity_type="ingredient",
+                    entity_id=product.ingredient_id,
+                )
+                if convert_result is not None:
+                    converted_quantity, _ = convert_result
+                    if converted_quantity and float(converted_quantity) > 0:
+                        unit_price = total_price / float(converted_quantity)
+
+            if unit_price is None:
+                unit_price = total_price / original_quantity
+
+            results.append({
+                "merchant_id": mid,
+                "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
+                "price": round(unit_price, 2),
+                "unit": target_unit_abbr or original_unit_abbr,
+                "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
+                "product_name": record.product_name,
+            })
+
+        results.sort(key=lambda x: x["price"])
+
+        if results:
+            results[0]["is_lowest"] = True
+            for r in results[1:]:
+                r["is_lowest"] = False
+
+        return {"prices": results, "unit": target_unit_abbr}
+
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取商品商家价格失败: {str(e)}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取商品商家价格失败: {str(e)}")
+
+
 @router.get("/products/autocomplete")
 @router.get("/products/autocomplete/")
 def product_autocomplete(

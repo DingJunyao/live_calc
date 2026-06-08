@@ -65,6 +65,66 @@ def _get_price_record_with_fallback(
     return earliest_record
 
 
+def _get_price_records_with_fallback(
+    db: Session,
+    user_id: int,
+    product_id: int,
+    as_of_date: datetime
+) -> List[ProductRecord]:
+    """
+    获取前向填充日期的所有价格记录（而非仅一条）。
+
+    先找到截至指定日期的最新记录，然后返回该记录所在日期的所有记录。
+    这样可以正确处理同一天有多条价格记录的情况，通过取平均值得到更准确的成本。
+
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        product_id: 商品ID
+        as_of_date: 截止日期
+
+    Returns:
+        同一日期的所有价格记录列表，找不到则返回空列表
+    """
+    # 找到截至指定日期的最新记录
+    latest_record = db.query(ProductRecord).filter(
+        ProductRecord.user_id == user_id,
+        ProductRecord.product_id == product_id,
+        ProductRecord.recorded_at <= as_of_date
+    ).order_by(ProductRecord.recorded_at.desc()).first()
+
+    if latest_record:
+        # 获取同一天的所有记录
+        fill_date = latest_record.recorded_at.date()
+        day_start = datetime.combine(fill_date, datetime.min.time())
+        day_end = datetime.combine(fill_date, datetime.max.time())
+        return db.query(ProductRecord).filter(
+            ProductRecord.user_id == user_id,
+            ProductRecord.product_id == product_id,
+            ProductRecord.recorded_at >= day_start,
+            ProductRecord.recorded_at <= day_end
+        ).all()
+
+    # 如果指定日期之前没有记录，获取所有记录中最早日期的所有记录
+    earliest_record = db.query(ProductRecord).filter(
+        ProductRecord.user_id == user_id,
+        ProductRecord.product_id == product_id
+    ).order_by(ProductRecord.recorded_at.asc()).first()
+
+    if earliest_record:
+        fill_date = earliest_record.recorded_at.date()
+        day_start = datetime.combine(fill_date, datetime.min.time())
+        day_end = datetime.combine(fill_date, datetime.max.time())
+        return db.query(ProductRecord).filter(
+            ProductRecord.user_id == user_id,
+            ProductRecord.product_id == product_id,
+            ProductRecord.recorded_at >= day_start,
+            ProductRecord.recorded_at <= day_end
+        ).all()
+
+    return []
+
+
 def _get_price_records_for_date(
     db: Session,
     user_id: int,
@@ -647,17 +707,16 @@ async def calculate_recipe_cost(
                                 product = fp
                                 break
 
-                        # 如果回退食材也没有当天记录，使用前向填充
+                        # 如果回退食材也没有当天记录，使用前向填充（获取同日所有记录取平均）
                         if not day_records:
                             for fp in fallback_products:
-                                fallback_record = _get_price_record_with_fallback(
+                                day_records = _get_price_records_with_fallback(
                                     db=db,
                                     user_id=user_id,
                                     product_id=fp.id,
                                     as_of_date=now
                                 )
-                                if fallback_record:
-                                    day_records = [fallback_record]
+                                if day_records:
                                     product = fp
                                     break
                             if day_records:
@@ -665,17 +724,16 @@ async def calculate_recipe_cost(
                         else:
                             ingredient = fallback_ingredient
 
-                # 如果食材回退也没有，使用原食材前向填充（遍历所有商品）
+                # 如果食材回退也没有，使用原食材前向填充（获取同日所有记录取平均）
                 if not day_records and products:
                     for p in products:
-                        fallback_record = _get_price_record_with_fallback(
+                        day_records = _get_price_records_with_fallback(
                             db=db,
                             user_id=user_id,
                             product_id=p.id,
                             as_of_date=now
                         )
-                        if fallback_record:
-                            day_records = [fallback_record]
+                        if day_records:
                             product = p
                             break
         else:
@@ -696,17 +754,16 @@ async def calculate_recipe_cost(
                         if day_records:
                             break
 
-                    # 如果回退食材也没有当天记录，使用前向填充（遍历所有商品）
+                    # 如果回退食材也没有当天记录，使用前向填充（获取同日所有记录取平均）
                     if not day_records:
                         for fp in fallback_products:
-                            fallback_record = _get_price_record_with_fallback(
+                            day_records = _get_price_records_with_fallback(
                                 db=db,
                                 user_id=user_id,
                                 product_id=fp.id,
                                 as_of_date=now
                             )
-                            if fallback_record:
-                                day_records = [fallback_record]
+                            if day_records:
                                 break
 
                     ingredient = fallback_ingredient
@@ -1218,6 +1275,55 @@ def calculate_recipe_cost_range_trend(
                     price_source_cache[child_id] = (p.id, records_by_product[p.id])
                     break
 
+    # 为 fallback 链上的食材预加载价格源
+    # _find_price_source 依赖 products_by_ingredient，但只预加载了菜谱食材的商品。
+    # 当 fallback 链指向非菜谱食材时（如 ingredient 606 -> ingredient 32），
+    # 需要额外加载那些食材的商品和价格记录，否则 fallback 链会断裂。
+    fallback_ids_to_preload = set()
+    for ing_id in ingredient_ids:
+        if ing_id not in price_source_cache or price_source_cache[ing_id] is None:
+            # 沿 fallback 链收集需要加载的食材 ID
+            visited = set()
+            stack = [ing_id]
+            while stack:
+                cur = stack.pop()
+                if cur in visited:
+                    continue
+                visited.add(cur)
+                for f in fallback_by_child.get(cur, []):
+                    if f.parent_id and f.parent_id not in products_by_ingredient:
+                        fallback_ids_to_preload.add(f.parent_id)
+                        stack.append(f.parent_id)
+                for rs in fallback_by_parent.get(cur, []):
+                    if rs.child_id and rs.child_id not in products_by_ingredient:
+                        fallback_ids_to_preload.add(rs.child_id)
+                        stack.append(rs.child_id)
+    if fallback_ids_to_preload:
+        # 批量加载 fallback 食材的商品
+        fb_products = db.query(Product).filter(
+            Product.ingredient_id.in_(list(fallback_ids_to_preload)),
+            Product.is_active == True
+        ).all()
+        fb_product_ids = set()
+        for p in fb_products:
+            if p not in products_by_ingredient[p.ingredient_id]:
+                products_by_ingredient[p.ingredient_id].append(p)
+            fb_product_ids.add(p.id)
+
+        # 批量加载 fallback 食材商品的价格记录
+        if fb_product_ids:
+            fb_records = db.query(ProductRecord).filter(
+                ProductRecord.user_id == user_id,
+                ProductRecord.product_id.in_(list(fb_product_ids))
+            ).order_by(ProductRecord.product_id, ProductRecord.recorded_at.asc()).all()
+            for r in fb_records:
+                records_by_product[r.product_id].append(r)
+
+        # 重新查找之前失败的食材价格源
+        for ing_id in ingredient_ids:
+            if ing_id not in price_source_cache or price_source_cache[ing_id] is None:
+                _find_price_source(ing_id)
+
     # ========== 逐天计算 ==========
 
     import bisect
@@ -1252,14 +1358,22 @@ def calculate_recipe_cost_range_trend(
             return records_list[left:right]
         return None
 
-    def _find_forward_fill_record(records_list, target_date):
-        """前向填充：找截至该日期的最新记录，若没有则用最早记录"""
+    def _find_forward_fill_records(records_list, target_date):
+        """
+        前向填充：找截至该日期的最新记录所在日期的所有记录。
+        同一天可能有多条价格记录（不同商店/品牌），返回所有以支持取平均值，
+        与成本估算函数的 _get_price_records_with_fallback 行为保持一致。
+        """
         as_of_datetime = datetime.combine(target_date, datetime.max.time())
         record_dates = [r.recorded_at for r in records_list]
         idx = bisect.bisect_right(record_dates, as_of_datetime) - 1
         if idx < 0:
-            return records_list[0]
-        return records_list[idx]
+            # 没有该日期之前的记录，使用最早记录所在日期的所有记录
+            fill_date = records_list[0].recorded_at.date()
+        else:
+            fill_date = records_list[idx].recorded_at.date()
+        # 获取 fill_date 当天的所有记录
+        return _find_day_records(records_list, fill_date) or [records_list[idx] if idx >= 0 else records_list[0]]
 
     for date in date_list:
         total_min_cost = Decimal("0.00")
@@ -1339,9 +1453,8 @@ def calculate_recipe_cost_range_trend(
             # 查找该食材当天所有价格记录
             day_records = _find_day_records(records, date)
             if day_records is None:
-                # 当天无记录，使用前向填充（单条记录，min=max=avg）
-                fill_record = _find_forward_fill_record(records, date)
-                day_records = [fill_record]
+                # 当天无记录，使用前向填充（返回同日所有记录，支持多记录取平均）
+                day_records = _find_forward_fill_records(records, date)
 
             # 计算当天每条记录的单价
             unit_prices = [_compute_unit_price(r) for r in day_records]

@@ -813,6 +813,117 @@ async def get_ingredient_latest_price(
         raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")
 
 
+@router.get("/ingredients/{ingredient_id}/latest-price-by-merchant")
+async def get_ingredient_latest_price_by_merchant(
+    ingredient_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取原料按商家分组的最新价格
+
+    返回每个商家的最新一条价格记录（已转换为原料默认单位）。
+    按价格从低到高排序，并标注最低价。
+    """
+    try:
+        from app.models.merchant import Merchant
+        from app.services.unit_conversion_service import UnitConversionService
+        from datetime import datetime, timedelta
+        from decimal import Decimal
+
+        ingredient = db.query(Ingredient).filter(
+            Ingredient.id == ingredient_id
+        ).first()
+
+        if not ingredient:
+            return {"prices": [], "unit": None}
+
+        products = db.query(Product).filter(
+            Product.ingredient_id == ingredient_id
+        ).all()
+
+        if not products:
+            return {"prices": [], "unit": None}
+
+        product_ids = [p.id for p in products]
+
+        # 获取原料的默认单位
+        target_unit_abbr = None
+        if ingredient.default_unit:
+            target_unit_abbr = ingredient.default_unit.abbreviation
+
+        unit_service = UnitConversionService(db)
+
+        # 查询所有价格记录，按商家分组，每组取最新一条
+        records = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit),
+            joinedload(ProductRecord.merchant)
+        ).filter(
+            ProductRecord.product_id.in_(product_ids),
+            ProductRecord.merchant_id.isnot(None)
+        ).order_by(ProductRecord.recorded_at.desc()).all()
+
+        # 按商家分组，每组只保留最新一条
+        merchant_latest: dict = {}
+        for record in records:
+            mid = record.merchant_id
+            if mid not in merchant_latest:
+                merchant_latest[mid] = record
+
+        # 计算每个商家的单价（转换为原料默认单位）
+        results = []
+        for mid, record in merchant_latest.items():
+            if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
+                continue
+
+            total_price = float(record.price)
+            original_quantity = float(record.original_quantity)
+            original_unit_abbr = record.original_unit.abbreviation
+
+            unit_price = None
+            if target_unit_abbr and original_unit_abbr != target_unit_abbr:
+                convert_result = unit_service.convert(
+                    original_quantity,
+                    original_unit_abbr,
+                    target_unit_abbr,
+                    entity_type="ingredient",
+                    entity_id=ingredient_id,
+                )
+                if convert_result is not None:
+                    converted_quantity, _ = convert_result
+                    if converted_quantity and float(converted_quantity) > 0:
+                        unit_price = total_price / float(converted_quantity)
+
+            if unit_price is None:
+                unit_price = total_price / original_quantity
+
+            results.append({
+                "merchant_id": mid,
+                "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
+                "price": round(unit_price, 2),
+                "unit": target_unit_abbr or original_unit_abbr,
+                "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
+                "product_name": record.product_name,
+            })
+
+        # 按价格从低到高排序
+        results.sort(key=lambda x: x["price"])
+
+        # 标注最低价
+        if results:
+            results[0]["is_lowest"] = True
+            for r in results[1:]:
+                r["is_lowest"] = False
+
+        return {"prices": results, "unit": target_unit_abbr}
+
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取商家价格失败: {str(e)}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取商家价格失败: {str(e)}")
+
+
 @router.get("/recipes/{recipe_id}/nutrition", response_model=RecipeNutritionResponse)
 async def get_recipe_nutrition(
     recipe_id: int,
