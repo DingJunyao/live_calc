@@ -646,6 +646,10 @@ def get_product_latest_price_by_merchant(
             for r in results[1:]:
                 r["is_lowest"] = False
 
+            # 为每个商家注入近90天价格趋势迷你图数据
+            from app.api.nutrition import _inject_merchant_sparklines
+            _inject_merchant_sparklines(results, [product_id], db)
+
         return {"prices": results, "unit": target_unit_abbr}
 
     except Exception as e:

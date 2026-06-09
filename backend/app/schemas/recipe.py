@@ -58,6 +58,7 @@ class RecipeResponse(TimeZoneAwareModel):
     estimated_cost: Optional[Decimal] = None
     calories: Optional[int] = None
     protein: Optional[Decimal] = None
+    sparkline_data: Optional[List[float]] = None  # 近90天每日平均成本，用于迷你图
 
     class Config:
         from_attributes = True

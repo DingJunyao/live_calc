@@ -14,6 +14,7 @@ class IngredientResponse(TimeZoneAwareModel):
     default_unit_name: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
+    sparkline_data: Optional[List[float]] = None  # 近90天每日平均价格，用于迷你图
 
     class Config:
         from_attributes = True

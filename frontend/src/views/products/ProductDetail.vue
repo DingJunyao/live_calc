@@ -124,14 +124,20 @@
                 :key="mp.merchant_id"
                 class="merchant-price-item"
                 :class="{ 'merchant-price-lowest': mp.is_lowest }"
+                style="position: relative"
               >
-                <div class="merchant-price-name text-truncate">{{ mp.merchant_name }}</div>
-                <div class="merchant-price-value">
+                <SparklineBackground
+                  v-if="mp.sparkline_data"
+                  :data="mp.sparkline_data"
+                  color="tertiary"
+                />
+                <div class="merchant-price-name text-truncate" style="position: relative; z-index: 1">{{ mp.merchant_name }}</div>
+                <div class="merchant-price-value" style="position: relative; z-index: 1">
                   <span class="font-weight-bold" :class="mp.is_lowest ? 'text-success' : ''">
                     ¥{{ mp.price.toFixed(2) }}
                   </span>
                 </div>
-                <div v-if="mp.recorded_at" class="merchant-price-date">
+                <div v-if="mp.recorded_at" class="merchant-price-date" style="position: relative; z-index: 1">
                   {{ formatDate(mp.recorded_at) }}
                 </div>
                 <div v-if="mp.is_lowest" class="merchant-price-badge">
@@ -850,6 +856,7 @@ import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { usePageTitle } from '@/composables/usePageTitle'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import { NUTRITION_LABEL_MAP } from '@/utils/nutritionLabels'
+import SparklineBackground from '@/components/charts/SparklineBackground.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { setDetailTitle } = usePageTitle()

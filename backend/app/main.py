@@ -9,6 +9,7 @@ from app.api import user_preferences  # 用户偏好 API
 from app.api import units  # 单位管理 API（含实体单位覆盖和密度路由）
 from app.api import ingredient_merge  # 食材合并 API
 from app.api import ingredient_hierarchy  # 食材层级关系 API
+from app.api import sparklines  # 迷你图数据 API
 from app.core.database import Base, engine
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -299,6 +300,9 @@ app.include_router(products_entity.router, prefix="/api/v1", tags=["商品实体
 app.include_router(products.router, prefix="/api/v1/products", tags=["商品"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["用户偏好"])
 app.include_router(units.router, prefix="/api/v1", tags=["单位管理"])
+# 迷你图数据 API（独立于主列表，避免超时）
+app.include_router(sparklines.router, prefix="/api/v1", tags=["迷你图"])
+
 # 注册实体单位覆盖和密度路由
 app.include_router(units.entities_unit_router, prefix="/api/v1", tags=["实体单位覆盖"])
 app.include_router(units.entities_density_router, prefix="/api/v1", tags=["实体密度"])

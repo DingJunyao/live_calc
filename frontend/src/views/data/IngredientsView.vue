@@ -67,6 +67,12 @@
             </v-list-item-subtitle>
 
             <template #append>
+              <div
+                v-if="item.sparkline_data"
+                style="width: 64px; height: 36px; position: relative; flex-shrink: 0; margin-right: 4px"
+              >
+                <SparklineBackground :data="item.sparkline_data" color="secondary" height="36" />
+              </div>
               <v-btn
                 icon="mdi-tag-plus"
                 size="small"
@@ -103,7 +109,12 @@
             :to="`/data/ingredients/${item.id}`"
             hover
           >
-            <v-card-text>
+            <SparklineBackground
+              v-if="item.sparkline_data"
+              :data="item.sparkline_data"
+              color="secondary"
+            />
+            <v-card-text style="position: relative; z-index: 1">
               <div class="d-flex align-center mb-2">
                 <v-avatar color="secondary" size="40" class="mr-3">
                   <span class="text-white font-weight-bold">{{ item.name?.charAt(0) }}</span>
@@ -118,7 +129,7 @@
               </div>
             </v-card-text>
             <v-divider />
-            <v-card-actions>
+            <v-card-actions style="position: relative; z-index: 1">
               <v-spacer />
               <v-btn
                 icon="mdi-tag-plus"
@@ -380,6 +391,7 @@ import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.v
 import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
 import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
+import SparklineBackground from '@/components/charts/SparklineBackground.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -571,6 +583,22 @@ const openPriceDialog = async (ingredient: Ingredient) => {
   }
 }
 
+const loadIngredientSparklines = async () => {
+  const ids = items.value.map((i: Ingredient) => i.id).join(',')
+  if (!ids) return
+  try {
+    const sparklines = await api.get('/sparklines/ingredients', { params: { ids } })
+    if (sparklines) {
+      items.value = items.value.map((item: any) => ({
+        ...item,
+        sparkline_data: sparklines[String(item.id)] || undefined
+      }))
+    }
+  } catch (e) {
+    console.error('加载原料迷你图失败', e)
+  }
+}
+
 const onPriceSaved = () => {
   // 价格记录保存成功后无需刷新原料列表
 }
@@ -624,6 +652,8 @@ const loadIngredients = async () => {
     items.value = response.items || []
     total.value = response.total || 0
     await loadLatestPrices()
+    // 异步加载迷你图
+    if (items.value.length > 0) loadIngredientSparklines()
   } catch (e: any) {
     console.error('加载原料失败', e)
     error.value = e.message || '加载失败'

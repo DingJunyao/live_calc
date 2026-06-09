@@ -23,6 +23,160 @@ from pydantic import BaseModel, Field
 router = APIRouter()
 
 
+def _compute_sparkline_for_entity(
+    db: Session,
+    product_ids: List[int],
+    days: int = 90,
+) -> List[float]:
+    """计算指定商品列表的近N天每日平均价格（聚合所有商品）
+
+    返回按日期升序排列的每日平均价格列表，用于迷你图展示。
+    """
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    if not product_ids:
+        return []
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    records = db.query(ProductRecord).filter(
+        ProductRecord.product_id.in_(product_ids),
+        ProductRecord.recorded_at >= cutoff,
+        ProductRecord.price.isnot(None),
+    ).all()
+
+    # 按日期分组计算日均价
+    daily_totals: dict = defaultdict(lambda: {"sum": 0.0, "count": 0})
+    for r in records:
+        qty = float(r.original_quantity) if r.original_quantity and float(r.original_quantity) > 0 else 1.0
+        unit_price = float(r.price) / qty
+        date_key = r.recorded_at.strftime("%Y-%m-%d")
+        daily_totals[date_key]["sum"] += unit_price
+        daily_totals[date_key]["count"] += 1
+
+    # 按日期排序返回平均值列表
+    sorted_dates = sorted(daily_totals.keys())
+    return [
+        round(daily_totals[d]["sum"] / daily_totals[d]["count"], 2)
+        for d in sorted_dates
+    ]
+
+
+def _inject_ingredient_sparklines(
+    items: list,
+    db: Session,
+    days: int = 90,
+) -> None:
+    """为原料列表批量注入迷你图数据"""
+    from collections import defaultdict
+
+    ingredient_ids = [item.id for item in items]
+
+    # 批量查询所有原料关联的商品
+    products = db.query(Product.id, Product.ingredient_id).filter(
+        Product.ingredient_id.in_(ingredient_ids),
+        Product.is_active == True,
+    ).all()
+
+    if not products:
+        return
+
+    # 构建 ingredient_id -> [product_ids] 映射
+    ing_to_products: dict = defaultdict(list)
+    all_product_ids = []
+    for prod_id, ing_id in products:
+        ing_to_products[ing_id].append(prod_id)
+        all_product_ids.append(prod_id)
+
+    # 批量查询所有价格记录
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    records = db.query(
+        ProductRecord.product_id,
+        ProductRecord.price,
+        ProductRecord.original_quantity,
+        ProductRecord.recorded_at,
+    ).filter(
+        ProductRecord.product_id.in_(all_product_ids),
+        ProductRecord.recorded_at >= cutoff,
+        ProductRecord.price.isnot(None),
+    ).all()
+
+    # 按 (ingredient_id, date) 分组
+    ing_date_prices: dict = defaultdict(lambda: defaultdict(lambda: {"sum": 0.0, "count": 0}))
+    # 反向映射 product_id -> ingredient_id
+    prod_to_ing = {prod_id: ing_id for prod_id, ing_id in products}
+
+    for prod_id, price, qty, recorded_at in records:
+        ing_id = prod_to_ing.get(prod_id)
+        if ing_id is None:
+            continue
+        qty_f = float(qty) if qty and float(qty) > 0 else 1.0
+        unit_price = float(price) / qty_f
+        date_key = recorded_at.strftime("%Y-%m-%d")
+        ing_date_prices[ing_id][date_key]["sum"] += unit_price
+        ing_date_prices[ing_id][date_key]["count"] += 1
+
+    # 注入到每个 response item
+    for item in items:
+        date_data = ing_date_prices.get(item.id, {})
+        if date_data:
+            sorted_dates = sorted(date_data.keys())
+            item.sparkline_data = [
+                round(date_data[d]["sum"] / date_data[d]["count"], 2)
+                for d in sorted_dates
+            ]
+
+
+def _inject_merchant_sparklines(
+    results: list,
+    product_ids: List[int],
+    db: Session,
+    days: int = 90,
+) -> None:
+    """为商家价格列表批量注入迷你图数据（每个商家近N天每日均价）"""
+    from collections import defaultdict
+    from datetime import datetime, timedelta
+
+    if not results or not product_ids:
+        return
+
+    merchant_ids = [r["merchant_id"] for r in results]
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    records = db.query(
+        ProductRecord.merchant_id,
+        ProductRecord.price,
+        ProductRecord.original_quantity,
+        ProductRecord.recorded_at,
+    ).filter(
+        ProductRecord.product_id.in_(product_ids),
+        ProductRecord.merchant_id.in_(merchant_ids),
+        ProductRecord.recorded_at >= cutoff,
+        ProductRecord.price.isnot(None),
+    ).all()
+
+    # 按 (merchant_id, date) 分组
+    merchant_date_prices: dict = defaultdict(lambda: defaultdict(lambda: {"sum": 0.0, "count": 0}))
+    for mid, price, qty, recorded_at in records:
+        qty_f = float(qty) if qty and float(qty) > 0 else 1.0
+        unit_price = float(price) / qty_f
+        date_key = recorded_at.strftime("%Y-%m-%d")
+        merchant_date_prices[mid][date_key]["sum"] += unit_price
+        merchant_date_prices[mid][date_key]["count"] += 1
+
+    for r in results:
+        date_data = merchant_date_prices.get(r["merchant_id"], {})
+        if date_data:
+            sorted_dates = sorted(date_data.keys())
+            r["sparkline_data"] = [
+                round(date_data[d]["sum"] / date_data[d]["count"], 2)
+                for d in sorted_dates
+            ]
+        else:
+            r["sparkline_data"] = None
+
+
 # ==================== 新增数据模型 ====================
 
 class ImportRequest(BaseModel):
@@ -917,6 +1071,9 @@ async def get_ingredient_latest_price_by_merchant(
             results[0]["is_lowest"] = True
             for r in results[1:]:
                 r["is_lowest"] = False
+
+            # 为每个商家注入近90天价格趋势迷你图数据
+            _inject_merchant_sparklines(results, product_ids, db)
 
         return {"prices": results, "unit": target_unit_abbr}
 
