@@ -193,10 +193,36 @@ class NutritionMixin:
 
         # 商品自定义营养素优先覆盖
         if product_custom_data:
-            for key, value in product_custom_data.items():
-                if value is not None:
-                    merged_nutrients[key] = value
-                    sources[key] = {"source": "product_custom", "source_detail": "商品自定义营养值"}
+            # 兼容嵌套格式 {all_nutrients: {...}, core_nutrients: {...}}
+            # 和扁平格式 {energy_kcal: {...}, 能量: {...}}
+            nested_all = product_custom_data.get("all_nutrients", {})
+            nested_core = product_custom_data.get("core_nutrients", {})
+            # 合并嵌套的两层（core_nutrients 优先，因为它是显示层查找来源）
+            overrides = {**nested_all, **nested_core}
+            if overrides:
+                for key, value in overrides.items():
+                    if value is not None and isinstance(value, dict):
+                        # 字段级合并：商品值覆盖原料值（NRV 由上层重算）
+                        if key in merged_nutrients and isinstance(merged_nutrients[key], dict):
+                            merged = dict(merged_nutrients[key])
+                            merged.update(value)
+                            merged_nutrients[key] = merged
+                        else:
+                            merged_nutrients[key] = value
+                        sources[key] = {"source": "product_custom", "source_detail": "商品自定义营养值"}
+            else:
+                # 扁平格式
+                for key, value in product_custom_data.items():
+                    if key in ("all_nutrients", "core_nutrients", "nutrient_details"):
+                        continue
+                    if value is not None and isinstance(value, dict):
+                        if key in merged_nutrients and isinstance(merged_nutrients[key], dict):
+                            merged = dict(merged_nutrients[key])
+                            merged.update(value)
+                            merged_nutrients[key] = merged
+                        else:
+                            merged_nutrients[key] = value
+                        sources[key] = {"source": "product_custom", "source_detail": "商品自定义营养值"}
 
         # 如果没有营养素，返回默认值
         if not merged_nutrients:

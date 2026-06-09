@@ -400,7 +400,14 @@ class NutritionCalculator:
             unit = "g"
 
         # 获取商品的自定义营养数据（如果有）
+        # SQLite JSON 列可能返回字符串，需要反序列化
+        import json as _json
         custom_data = getattr(product, 'custom_nutrition_data', None)
+        if isinstance(custom_data, str):
+            try:
+                custom_data = _json.loads(custom_data)
+            except (TypeError, ValueError):
+                custom_data = None
 
         # 获取关联的食材
         ingredient = None
@@ -424,29 +431,85 @@ class NutritionCalculator:
                               "钙", "铁", "钠", "钾", "维生素A", "维生素C",
                               "维生素B1", "维生素B2", "维生素D", "维生素E", "维生素K", "维生素B12"}
 
+        # NRV 参考值（GB 28050-2011 中国标准）
+        NRV_REF = {
+            "能量": (2000, "kcal"),
+            "蛋白质": (60, "g"),
+            "脂肪": (60, "g"),
+            "碳水化合物": (300, "g"),
+            "膳食纤维": (25, "g"),
+            "钙": (800, "mg"),
+            "铁": (15, "mg"),
+            "钠": (2000, "mg"),
+            "钾": (2000, "mg"),
+            "维生素A": (800, "μg"),
+            "维生素C": (100, "mg"),
+            "维生素B1": (1.2, "mg"),
+            "维生素B2": (1.4, "mg"),
+            "维生素B12": (2.4, "μg"),
+            "维生素D": (5, "μg"),
+            "维生素E": (14, "mg"),
+            "维生素K": (80, "μg"),
+        }
+
+        # 单位换算系数：从给定单位 → NRV 标准单位，乘以该系数
+        # 例：kJ → kcal: kJ × (1/4.184)
+        _TO_NRV_FACTOR = {
+            ("kJ", "kcal"): 1.0 / 4.184,
+            ("mg", "g"): 0.001,
+            ("μg", "g"): 0.000001,
+            ("g", "mg"): 1000,
+            ("μg", "mg"): 0.001,
+            ("g", "μg"): 1000000,
+            ("mg", "μg"): 1000,
+        }
+
+        def _calc_nrp_pct(display_name: str, value: float, unit: str) -> Optional[float]:
+            """根据 NRV 标准计算百分比"""
+            ref = NRV_REF.get(display_name)
+            if not ref or value <= 0:
+                return None
+            nrv_value, nrv_unit = ref
+            if unit != nrv_unit:
+                factor = _TO_NRV_FACTOR.get((unit, nrv_unit))
+                if factor:
+                    value = value * factor
+                else:
+                    return None
+            if nrv_value <= 0:
+                return None
+            return round((value / nrv_value) * 100, 2)
+
         core_nutrients = {}
         all_nutrients = {}
         nrp_totals = {}
 
         for key, value in merged_nutrients.items():
             if isinstance(value, dict) and 'value' in value:
-                # 将英文键转换为中文显示名称（如果是英文的话）
                 display_name = self.NUTRIENT_NAMES.get(key, key)
+                nut_value = float(value.get('value', 0) or 0)
+                nut_unit = value.get('unit', '')
 
-                # 放入 all_nutrients（使用中文名称作为键）
+                # 重新计算 NRV（值可能被商品覆盖过，原料的 NRV 已过时）
+                nrp = _calc_nrp_pct(display_name, nut_value, nut_unit)
+                if nrp is not None:
+                    value = dict(value)
+                    value['nrp_pct'] = nrp
+                    value['standard'] = '中国GB标准'
+
                 all_nutrients[display_name] = value
 
-                # 判断是否是核心营养素
                 if display_name in core_nutrient_names:
                     core_nutrients[display_name] = value
-                    # 如果有 nrp_pct，放入 nrp_totals
-                    if 'nrp_pct' in value and value['nrp_pct'] is not None:
-                        nrp_totals[display_name] = value['nrp_pct']
+                    if nrp is not None:
+                        nrp_totals[display_name] = nrp
 
         # 格式化返回数据
         return {
             "product_id": product_id,
             "product_name": product.name,
+            "ingredient_id": product.ingredient_id,
+            "ingredient_name": ingredient.name if ingredient else None,
             "quantity": quantity,
             "unit": unit,
             "source": "merged",
@@ -455,7 +518,8 @@ class NutritionCalculator:
                 "all_nutrients": all_nutrients,
                 "nrp_totals": nrp_totals
             },
-            "nutrition_sources": sources
+            "nutrition_sources": sources,
+            "custom_nutrition_data": custom_data
         }
 
     def _get_nutrition_template(self) -> dict:

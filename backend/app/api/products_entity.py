@@ -782,12 +782,14 @@ async def get_product_nutrition(
 @router.put("/products/entity/{product_id}/nutrition")
 async def update_product_nutrition(
     product_id: int,
-    nutrition: dict = Body(..., description="营养数据"),
+    nutrition: Optional[dict] = Body(None, description="营养数据，传 null 清空自定义数据"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     更新商品的营养数据
+
+    传 null / 空 dict 可清除自定义营养数据，回退到继承原料数据。
 
     请求体格式：
     {
@@ -810,9 +812,9 @@ async def update_product_nutrition(
         if not product:
             raise HTTPException(status_code=404, detail="商品不存在")
 
-        # 保存自定义营养数据
+        # 保存或清空自定义营养数据
         product.custom_nutrition_data = nutrition
-        product.custom_nutrition_source = "custom"
+        product.custom_nutrition_source = "custom" if nutrition else None
         product.updated_by = current_user.id
         product.updated_at = datetime.utcnow()
 

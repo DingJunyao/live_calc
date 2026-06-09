@@ -11,7 +11,6 @@
     </v-app-bar-title>
     <template #append>
       <v-btn icon="mdi-tag-plus" variant="text" @click="openQuickPriceDialog" />
-      <v-btn icon="mdi-pencil" variant="text" @click="openEditDialog" />
       <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
     </template>
   </v-app-bar>
@@ -38,10 +37,24 @@
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="primary">mdi-information-outline</v-icon>
           基本信息
+          <v-spacer />
+          <v-btn
+            v-if="!editingBasicInfo"
+            icon="mdi-pencil"
+            size="small"
+            variant="text"
+            color="primary"
+            @click="startEditBasicInfo"
+          />
+          <template v-else>
+            <v-btn size="small" variant="text" @click="cancelEditBasicInfo">取消</v-btn>
+            <v-btn size="small" color="primary" variant="text" :loading="saving" @click="saveBasicInfo">保存</v-btn>
+          </template>
         </v-card-title>
         <v-divider />
         <v-card-text>
-          <v-list density="compact">
+          <!-- 展示模式 -->
+          <v-list v-if="!editingBasicInfo" density="compact">
             <v-list-item v-if="product.brand">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-tag-outline</v-icon>
@@ -94,6 +107,69 @@
               <v-list-item-subtitle>{{ formatDateTime(product.created_at) }}</v-list-item-subtitle>
             </v-list-item>
           </v-list>
+
+          <!-- 编辑模式 -->
+          <v-form v-else @submit.prevent="saveBasicInfo">
+            <v-text-field
+              v-model="basicEditForm.name"
+              label="商品名称"
+              variant="outlined"
+              density="compact"
+              required
+              class="mb-3"
+            />
+            <v-autocomplete
+              v-model="selectedIngredient"
+              v-model:search="ingredientSearch"
+              :items="ingredients"
+              item-title="name"
+              item-value="id"
+              label="关联原料 *"
+              variant="outlined"
+              density="compact"
+              required
+              :loading="loadingIngredients"
+              :no-data-text="ingredientSearch ? '未找到匹配的原料' : '请输入搜索关键词'"
+              placeholder="输入关键词搜索原料"
+              clearable
+              return-object
+              auto-select-first
+              hide-selected
+              :custom-filter="() => true"
+              class="mb-3"
+            >
+              <template #item="{ props, item }">
+                <v-list-item v-bind="props">
+                  <v-list-item-subtitle v-if="item.raw.aliases && item.raw.aliases.length > 0">
+                    别名: {{ item.raw.aliases.join(', ') }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+              </template>
+            </v-autocomplete>
+            <v-text-field
+              v-model="basicEditForm.brand"
+              label="品牌"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+            />
+            <v-text-field
+              v-model="basicEditForm.barcode"
+              label="条码"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+            />
+            <v-combobox
+              v-model="basicEditForm.tags"
+              label="标签"
+              variant="outlined"
+              density="compact"
+              multiple
+              chips
+              closable-chips
+            />
+          </v-form>
         </v-card-text>
       </v-card>
 
@@ -415,28 +491,42 @@
         </div>
       </v-card>
 
-      <!-- 营养数据卡片 -->
+      <!-- 营养数据卡片（有数据） -->
       <v-card elevation="0" class="grid-item item-nutrition" v-if="nutritionData">
         <v-card-title class="d-flex align-center pb-2">
           <v-icon start color="success">mdi-food-apple-outline</v-icon>
           营养成分
           <span class="text-caption text-medium-emphasis ml-2">（每100g）</span>
           <v-spacer />
-          <v-btn
-            v-if="otherNutrientsCount > 0"
-            size="small"
-            variant="text"
-            color="primary"
-            class="text-caption"
-            @click="showAllNutrients = !showAllNutrients"
-          >
-            {{ showAllNutrients ? '收起' : `展开 +${otherNutrientsCount} 项` }}
-            <v-icon :icon="showAllNutrients ? 'mdi-chevron-up' : 'mdi-chevron-down'" end />
-          </v-btn>
+          <template v-if="!editingNutrition">
+            <v-btn
+              v-if="otherNutrientsCount > 0"
+              size="small"
+              variant="text"
+              color="primary"
+              class="text-caption"
+              @click="showAllNutrients = !showAllNutrients"
+            >
+              {{ showAllNutrients ? '收起' : `展开 +${otherNutrientsCount} 项` }}
+              <v-icon :icon="showAllNutrients ? 'mdi-chevron-up' : 'mdi-chevron-down'" end />
+            </v-btn>
+            <v-btn
+              icon="mdi-pencil"
+              size="small"
+              variant="text"
+              color="primary"
+              @click="startEditNutrition"
+            />
+          </template>
+          <template v-else>
+            <v-btn size="small" variant="text" @click="cancelEditNutrition">取消</v-btn>
+            <v-btn size="small" color="primary" variant="text" :loading="savingNutrition" @click="saveNutritionEdit">保存</v-btn>
+          </template>
         </v-card-title>
         <v-divider />
 
-        <v-card-text class="pa-0">
+        <!-- 展示模式 -->
+        <v-card-text v-if="!editingNutrition" class="pa-0">
           <div class="nutrition-header d-flex py-2 border-bottom">
             <div class="text-caption text-medium-emphasis ps-4 flex-grow-1">营养素</div>
             <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 80px">数量</div>
@@ -459,6 +549,181 @@
 
           <div class="mt-4 text-caption text-medium-emphasis ps-4">
             NRV = 营养素参考值百分比
+          </div>
+        </v-card-text>
+
+        <!-- 编辑模式 -->
+        <v-card-text v-else class="pa-0">
+          <div class="nutrition-edit-table py-2 px-2 header-row border-bottom">
+            <div class="text-caption text-medium-emphasis ps-2">营养素</div>
+            <div class="text-caption text-medium-emphasis text-end">数量</div>
+            <div class="text-caption text-medium-emphasis text-end">单位</div>
+            <div></div>
+          </div>
+          <div
+            v-for="(entry, index) in nutritionEditItems"
+            :key="index"
+            class="nutrition-edit-table align-center py-1 px-2"
+            :class="{ 'border-bottom': index !== nutritionEditItems.length - 1 }"
+          >
+            <div class="ps-1 pe-1">
+              <v-autocomplete
+                :model-value="entry.key"
+                :items="getNutrientOptionsForRow(entry.key)"
+                item-title="label"
+                item-value="key"
+                variant="outlined"
+                density="compact"
+                hide-details
+                placeholder="选择营养素"
+                class="nutrition-edit-input"
+                @update:model-value="(v: string) => onNutrientKeyChange(index, v)"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props" :subtitle="item.raw.defaultUnit" />
+                </template>
+              </v-autocomplete>
+            </div>
+            <div class="px-1">
+              <v-text-field
+                v-model.number="entry.value"
+                variant="outlined"
+                density="compact"
+                hide-details
+                type="number"
+                placeholder="0"
+                class="nutrition-edit-input text-end"
+              />
+            </div>
+            <div class="px-1">
+              <v-select
+                v-model="entry.unit"
+                :items="entry.units"
+                variant="outlined"
+                density="compact"
+                hide-details
+                class="nutrition-edit-input"
+                @update:model-value="(v: string) => onUnitChange(index, v)"
+              />
+            </div>
+            <div class="text-center">
+              <v-btn
+                icon="mdi-close"
+                size="x-small"
+                variant="text"
+                color="error"
+                density="compact"
+                @click="removeNutrientEditItem(index)"
+              />
+            </div>
+          </div>
+          <!-- 空状态指引 -->
+          <div v-if="nutritionEditItems.length === 0" class="text-center py-4">
+            <span class="text-caption text-medium-emphasis">暂无营养素，点击下方按钮添加</span>
+          </div>
+          <div class="pa-3">
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="primary"
+              prepend-icon="mdi-plus"
+              @click="addEmptyNutrientRow"
+            >
+              添加营养素
+            </v-btn>
+          </div>
+        </v-card-text>
+      </v-card>
+
+      <!-- 营养数据卡片（无数据） -->
+      <v-card v-else elevation="0" class="grid-item item-nutrition">
+        <v-card-title class="d-flex align-center pb-2">
+          <v-icon start color="success">mdi-food-apple-outline</v-icon>
+          营养成分
+          <span class="text-caption text-medium-emphasis ml-2">（每100g）</span>
+          <v-spacer />
+          <v-btn
+            icon="mdi-pencil"
+            size="small"
+            variant="text"
+            color="primary"
+            @click="startEditNutrition"
+          />
+        </v-card-title>
+        <v-divider />
+        <v-card-text v-if="!editingNutrition" class="text-center py-8">
+          <v-icon size="48" color="medium-emphasis">mdi-food-apple-outline</v-icon>
+          <div class="text-body-2 text-medium-emphasis mt-2">暂无营养数据</div>
+          <div class="text-caption text-medium-emphasis mt-1">点击编辑按钮添加</div>
+        </v-card-text>
+        <v-card-text v-else class="pa-0">
+          <div class="nutrition-edit-table py-2 px-2 header-row border-bottom">
+            <div class="text-caption text-medium-emphasis ps-2">营养素</div>
+            <div class="text-caption text-medium-emphasis text-end">数量</div>
+            <div class="text-caption text-medium-emphasis text-end">单位</div>
+            <div></div>
+          </div>
+          <div
+            v-for="(entry, index) in nutritionEditItems"
+            :key="index"
+            class="nutrition-edit-table align-center py-1 px-2"
+            :class="{ 'border-bottom': index !== nutritionEditItems.length - 1 }"
+          >
+            <div class="ps-1 pe-1">
+              <v-autocomplete
+                :model-value="entry.key"
+                :items="getNutrientOptionsForRow(entry.key)"
+                item-title="label"
+                item-value="key"
+                variant="outlined"
+                density="compact"
+                hide-details
+                placeholder="选择营养素"
+                class="nutrition-edit-input"
+                @update:model-value="(v: string) => onNutrientKeyChange(index, v)"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props" :subtitle="item.raw.defaultUnit" />
+                </template>
+              </v-autocomplete>
+            </div>
+            <div class="px-1">
+              <v-text-field
+                v-model.number="entry.value"
+                variant="outlined"
+                density="compact"
+                hide-details
+                type="number"
+                placeholder="0"
+                class="nutrition-edit-input text-end"
+              />
+            </div>
+            <div class="px-1">
+              <v-select
+                v-model="entry.unit"
+                :items="entry.units"
+                variant="outlined"
+                density="compact"
+                hide-details
+                class="nutrition-edit-input"
+                @update:model-value="(v: string) => onUnitChange(index, v)"
+              />
+            </div>
+            <div class="text-center">
+              <v-btn icon="mdi-close" size="x-small" variant="text" color="error" density="compact" @click="removeNutrientEditItem(index)" />
+            </div>
+          </div>
+          <div v-if="nutritionEditItems.length === 0" class="text-center py-4">
+            <span class="text-caption text-medium-emphasis">暂无营养素，点击下方按钮添加</span>
+          </div>
+          <div class="pa-3">
+            <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-plus" @click="addEmptyNutrientRow">
+              添加营养素
+            </v-btn>
+            <div class="d-flex justify-end mt-3">
+              <v-btn size="small" variant="text" @click="cancelEditNutrition">取消</v-btn>
+              <v-btn size="small" color="primary" variant="text" :loading="savingNutrition" @click="saveNutritionEdit">保存</v-btn>
+            </div>
           </div>
         </v-card-text>
       </v-card>
@@ -578,187 +843,6 @@
       </div>
     </template>
 
-    <!-- 编辑对话框 -->
-    <v-dialog v-model="showEditDialog" max-width="500">
-      <v-card>
-        <v-card-title>编辑商品</v-card-title>
-        <v-card-text>
-          <v-form @submit.prevent="saveEdit">
-            <v-text-field
-              v-model="editForm.name"
-              label="商品名称"
-              variant="outlined"
-              required
-              class="mb-4"
-            />
-            <v-autocomplete
-              v-model="selectedIngredient"
-              v-model:search="ingredientSearch"
-              :items="ingredients"
-              item-title="name"
-              item-value="id"
-              label="关联原料 *"
-              variant="outlined"
-              required
-              :loading="loadingIngredients"
-              :no-data-text="ingredientSearch ? '未找到匹配的原料' : '请输入搜索关键词'"
-              placeholder="输入关键词搜索原料"
-              clearable
-              return-object
-              auto-select-first
-              hide-selected
-              :custom-filter="() => true"
-              class="mb-4"
-            >
-              <template #item="{ props, item }">
-                <v-list-item v-bind="props">
-                  <v-list-item-subtitle v-if="item.raw.aliases && item.raw.aliases.length > 0">
-                    别名: {{ item.raw.aliases.join(', ') }}
-                  </v-list-item-subtitle>
-                </v-list-item>
-              </template>
-            </v-autocomplete>
-            <v-text-field
-              v-model="editForm.brand"
-              label="品牌"
-              variant="outlined"
-              class="mb-4"
-            />
-            <v-text-field
-              v-model="editForm.barcode"
-              label="条码"
-              variant="outlined"
-              class="mb-4"
-            />
-            <v-combobox
-              v-model="editForm.tags"
-              label="标签"
-              variant="outlined"
-              multiple
-              chips
-              closable-chips
-              class="mb-4"
-            />
-
-            <!-- 营养成分折叠面板 -->
-            <v-expansion-panels class="mb-4">
-              <v-expansion-panel>
-                <v-expansion-panel-title>
-                  <div class="d-flex align-center ga-2">
-                    <v-icon>mdi-food</v-icon>
-                    <span>营养成分（可选）</span>
-                    <v-chip v-if="hasCustomNutrition" size="x-small" color="primary">已设置</v-chip>
-                  </div>
-                </v-expansion-panel-title>
-                <v-expansion-panel-text>
-                  <v-alert type="info" variant="tonal" density="compact" class="mb-4">
-                    如果填写营养成分，将优先使用此处设置的数据；否则将使用所属原料的营养成分
-                  </v-alert>
-
-                  <v-row>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.energy_kcal"
-                        label="能量 (kcal)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.protein"
-                        label="蛋白质 (g)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.fat"
-                        label="脂肪 (g)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.carbohydrates"
-                        label="碳水化合物 (g)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.dietary_fiber"
-                        label="膳食纤维 (g)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.calcium"
-                        label="钙 (mg)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.iron"
-                        label="铁 (mg)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.sodium"
-                        label="钠 (mg)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                    <v-col cols="6">
-                      <v-text-field
-                        v-model.number="editForm.nutrition.potassium"
-                        label="钾 (mg)"
-                        type="number"
-                        variant="outlined"
-                        hide-details
-                        class="mb-2"
-                      />
-                    </v-col>
-                  </v-row>
-                </v-expansion-panel-text>
-              </v-expansion-panel>
-            </v-expansion-panels>
-          </v-form>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn @click="showEditDialog = false">取消</v-btn>
-          <v-btn color="primary" :loading="saving" @click="saveEdit">保存</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
 
     <!-- 添加价格记录对话框 -->
     <v-dialog v-model="showAddPriceDialog" max-width="500">
@@ -855,7 +939,7 @@ import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { usePageTitle } from '@/composables/usePageTitle'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
-import { NUTRITION_LABEL_MAP } from '@/utils/nutritionLabels'
+import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
@@ -943,37 +1027,181 @@ const ingredientSearch = ref('')
 const selectedIngredient = ref<Ingredient | null>(null)
 
 // 对话框状态
-const showEditDialog = ref(false)
 const showAddPriceDialog = ref(false)
 const showDeleteDialog = ref(false)
 const saving = ref(false)
 const savingPrice = ref(false)
 const deleting = ref(false)
 
-// 表单数据
-const editForm = ref({
+// 基本信息内联编辑
+const editingBasicInfo = ref(false)
+const basicEditForm = ref({
   name: '',
   brand: '',
   barcode: '',
   ingredient_id: null as number | null,
   tags: [] as string[],
-  // 营养成分
-  nutrition: {
-    energy_kcal: null as number | null,
-    protein: null as number | null,
-    fat: null as number | null,
-    carbohydrates: null as number | null,
-    dietary_fiber: null as number | null,
-    calcium: null as number | null,
-    iron: null as number | null,
-    sodium: null as number | null,
-    potassium: null as number | null
-  }
 })
 
-// 营养成分编辑状态
-const showNutritionEditor = ref(false)
-const hasCustomNutrition = ref(false)
+// 营养成分内联编辑
+const editingNutrition = ref(false)
+const savingNutrition = ref(false)
+
+// 营养素定义：key 匹配后端 all_nutrients 的英文键名
+const NUTRIENT_DEFINITIONS = [
+  { key: 'energy_kcal', label: '能量', units: ['kcal', 'kJ'], defaultUnit: 'kcal' },
+  { key: 'protein', label: '蛋白质', units: ['g', 'mg'], defaultUnit: 'g' },
+  { key: 'fat', label: '脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
+  { key: 'carbohydrate', label: '碳水化合物', units: ['g', 'mg'], defaultUnit: 'g' },
+  { key: 'fiber', label: '膳食纤维', units: ['g'], defaultUnit: 'g' },
+  { key: 'calcium', label: '钙', units: ['mg', 'μg', 'g'], defaultUnit: 'mg' },
+  { key: 'iron', label: '铁', units: ['mg', 'μg'], defaultUnit: 'mg' },
+  { key: 'sodium', label: '钠', units: ['mg', 'g'], defaultUnit: 'mg' },
+  { key: 'potassium', label: '钾', units: ['mg', 'g'], defaultUnit: 'mg' },
+  { key: 'vitamin_a_rae', label: '维生素A', units: ['μg', 'IU', 'mg'], defaultUnit: 'μg' },
+  { key: 'vitamin_c', label: '维生素C', units: ['mg', 'g'], defaultUnit: 'mg' },
+  { key: 'vitamin_b1', label: '维生素B1', units: ['mg', 'μg'], defaultUnit: 'mg' },
+  { key: 'vitamin_b2', label: '维生素B2', units: ['mg', 'μg'], defaultUnit: 'mg' },
+  { key: 'vitamin_b12', label: '维生素B12', units: ['μg', 'mg'], defaultUnit: 'μg' },
+  { key: 'vitamin_d', label: '维生素D', units: ['μg', 'IU'], defaultUnit: 'μg' },
+  { key: 'vitamin_e', label: '维生素E', units: ['mg', 'IU'], defaultUnit: 'mg' },
+  { key: 'vitamin_k', label: '维生素K', units: ['μg', 'mg'], defaultUnit: 'μg' },
+  { key: 'magnesium', label: '镁', units: ['mg', 'g'], defaultUnit: 'mg' },
+  { key: 'zinc', label: '锌', units: ['mg', 'μg'], defaultUnit: 'mg' },
+  { key: 'selenium', label: '硒', units: ['μg', 'mg'], defaultUnit: 'μg' },
+  { key: 'cholesterol', label: '胆固醇', units: ['mg', 'g'], defaultUnit: 'mg' },
+  { key: 'saturated_fat', label: '饱和脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
+  { key: 'folate', label: '叶酸', units: ['μg', 'mg'], defaultUnit: 'μg' },
+  { key: 'phosphorus', label: '磷', units: ['mg', 'g'], defaultUnit: 'mg' },
+  { key: 'copper', label: '铜', units: ['mg', 'μg'], defaultUnit: 'mg' },
+  { key: 'manganese', label: '锰', units: ['mg', 'μg'], defaultUnit: 'mg' },
+  { key: 'vitamin_b6', label: '维生素B6', units: ['mg', 'μg'], defaultUnit: 'mg' },
+  { key: 'pantothenic_acid', label: '维生素B5', units: ['mg'], defaultUnit: 'mg' },
+  { key: 'monounsaturated_fat', label: '单不饱和脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
+  { key: 'polyunsaturated_fat', label: '多不饱和脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
+]
+
+// 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
+const NUTRIENT_PARENT_MAP: Record<string, string> = {
+  'energy': 'energy_kcal',
+}
+
+// IU ↔ 质量换算系数
+const IU_TO_MASS: Record<string, { factor: number, unit: string }> = {
+  'vitamin_a_rae': { factor: 0.3, unit: 'μg' },
+  'vitamin_d': { factor: 0.025, unit: 'μg' },
+  'vitamin_e': { factor: 0.67, unit: 'mg' },
+}
+
+const MASS_TO_GRAMS: Record<string, number> = {
+  'g': 1,
+  'mg': 0.001,
+  'μg': 0.000001,
+}
+
+const ENERGY_FACTORS: Record<string, number> = {
+  'kcal': 1,
+  'kJ': 4.184,
+}
+
+// 查找营养素定义
+const findNutrientDef = (key: string) => {
+  const def = NUTRIENT_DEFINITIONS.find(n => n.key === key)
+  if (def) return def
+  return buildDynamicDef(key)
+}
+
+const buildDynamicDef = (key: string) => {
+  const zhName = ENGLISH_TO_CHINESE_MAP[key]
+  if (zhName) {
+    const label = zhName
+    const isEnergy = key.startsWith('energy_') || key === 'energy'
+    const isIUvitamin = /^vitamin_(a|d|e)/.test(key)
+    const units = isEnergy ? ['kcal', 'kJ'] : isIUvitamin ? ['μg', 'mg', 'IU'] : ['g', 'mg', 'μg']
+    const defaultUnit = isEnergy ? 'kcal' : isIUvitamin ? 'μg' : 'g'
+    return { key, label, units, defaultUnit }
+  }
+  const allNutrients = nutritionData.value?.nutrition?.all_nutrients
+  if (!allNutrients) return undefined
+  const data: any = allNutrients[key]
+  if (!data || typeof data !== 'object') return undefined
+  const rawUnit = (data.unit || 'g').toLowerCase()
+  const label = key
+  const isMassUnit = (u: string) => ['g', 'gram', 'grams', 'mg', 'milligram', 'milligrams', 'μg', 'mcg', 'ug', 'microgram', 'micrograms'].includes(u)
+  const isEnergyUnit = (u: string) => ['kcal', 'kj', 'calorie', 'calories', 'kilocalorie', 'kilocalories', '千卡', '千焦'].includes(u)
+  const units = isEnergyUnit(rawUnit) ? ['kcal', 'kJ'] : isMassUnit(rawUnit) ? ['g', 'mg', 'μg'] : [rawUnit]
+  return { key, label, units, defaultUnit: rawUnit }
+}
+
+const getAllNutrientDefs = () => {
+  const defs = [...NUTRIENT_DEFINITIONS]
+  const existingKeys = new Set(NUTRIENT_DEFINITIONS.map(d => d.key))
+  for (const key of Object.keys(ENGLISH_TO_CHINESE_MAP)) {
+    if (existingKeys.has(key)) continue
+    const parentKey = NUTRIENT_PARENT_MAP[key]
+    if (parentKey && existingKeys.has(parentKey)) continue
+    const def = buildDynamicDef(key)
+    if (def) { defs.push(def); existingKeys.add(key) }
+  }
+  const allNutrients = nutritionData.value?.nutrition?.all_nutrients
+  if (allNutrients) {
+    for (const key of Object.keys(allNutrients)) {
+      if (existingKeys.has(key)) continue
+      const data = allNutrients[key]
+      const canonicalKey = data?.original_key || data?.key
+      if (canonicalKey && canonicalKey !== key && existingKeys.has(canonicalKey)) continue
+      const def = buildDynamicDef(key)
+      if (def) { defs.push(def); existingKeys.add(key) }
+    }
+  }
+  return defs
+}
+
+// 单位换算
+const convertUnit = (value: number, fromUnit: string, toUnit: string, nutrientKey: string): number => {
+  if (fromUnit === toUnit || value === 0) return value
+  if (ENERGY_FACTORS[fromUnit] && ENERGY_FACTORS[toUnit]) {
+    const inKcal = value * ENERGY_FACTORS[fromUnit]
+    return inKcal / ENERGY_FACTORS[toUnit]
+  }
+  if (MASS_TO_GRAMS[fromUnit] && MASS_TO_GRAMS[toUnit]) {
+    const inGrams = value * MASS_TO_GRAMS[fromUnit]
+    return inGrams / MASS_TO_GRAMS[toUnit]
+  }
+  const iuInfo = IU_TO_MASS[nutrientKey]
+  if (iuInfo) {
+    if (fromUnit === 'IU' && MASS_TO_GRAMS[toUnit]) {
+      const massInBase = value * iuInfo.factor
+      const inGrams = massInBase * (MASS_TO_GRAMS[iuInfo.unit] || 1)
+      return inGrams / (MASS_TO_GRAMS[toUnit] || 1)
+    }
+    if (toUnit === 'IU' && MASS_TO_GRAMS[fromUnit]) {
+      const inGrams = value * (MASS_TO_GRAMS[fromUnit] || 1)
+      const inBaseUnit = inGrams / (MASS_TO_GRAMS[iuInfo.unit] || 1)
+      return inBaseUnit / iuInfo.factor
+    }
+  }
+  return value
+}
+
+// 营养编辑条目
+interface NutritionEditItem {
+  key: string
+  name: string
+  value: number | null
+  unit: string
+  units: string[]
+}
+const nutritionEditItems = ref<NutritionEditItem[]>([])
+
+const getNutrientOptionsForRow = (currentKey: string) => {
+  const usedKeys = new Set(
+    nutritionEditItems.value
+      .filter(i => i.key !== currentKey)
+      .map(i => i.key)
+  )
+  return getAllNutrientDefs().filter(n => !usedKeys.has(n.key))
+}
 
 const priceForm = ref({
   price: 0,
@@ -1599,34 +1827,21 @@ watch(ingredientSearch, (newVal) => {
 
 // 监听选中的原料对象，同步 ingredient_id 到表单
 watch(selectedIngredient, (newIngredient) => {
-  editForm.value.ingredient_id = newIngredient?.id || null
+  basicEditForm.value.ingredient_id = newIngredient?.id || null
 }, { immediate: true })
 
-// 打开编辑对话框
-const openEditDialog = () => {
+// === 基本信息内联编辑 ===
+const startEditBasicInfo = () => {
   if (!product.value) return
-  editForm.value = {
+  basicEditForm.value = {
     name: product.value.name || '',
     brand: product.value.brand || '',
     barcode: product.value.barcode || '',
     ingredient_id: product.value.ingredient_id || null,
-    tags: product.value.tags || [],
-    nutrition: {
-      energy_kcal: null,
-      protein: null,
-      fat: null,
-      carbohydrates: null,
-      dietary_fiber: null,
-      calcium: null,
-      iron: null,
-      sodium: null,
-      potassium: null
-    }
+    tags: [...(product.value.tags || [])],
   }
-
-  // 加载当前关联的原料
+  // 加载原料列表
   if (product.value.ingredient_id) {
-    // 先加载原料列表，然后设置选中的原料
     loadIngredients().then(() => {
       const currentIngredient = ingredients.value.find(i => i.id === product.value.ingredient_id)
       if (currentIngredient) {
@@ -1637,120 +1852,190 @@ const openEditDialog = () => {
   } else {
     loadIngredients()
   }
-
-  // 加载商品的自定义营养数据
-  loadCustomNutrition()
-
-  showEditDialog.value = true
+  editingBasicInfo.value = true
 }
 
-// 加载商品的自定义营养数据
-const loadCustomNutrition = async () => {
-  try {
-    const response = await api.get(`/products/entity/${productId.value}/nutrition`)
-    const customData = response.custom_nutrition_data
+const cancelEditBasicInfo = () => {
+  editingBasicInfo.value = false
+  selectedIngredient.value = null
+  ingredientSearch.value = ''
+}
 
-    hasCustomNutrition.value = !!(customData && Object.keys(customData).length > 0)
-
-    // 如果有自定义营养数据，填充到表单
-    if (customData?.all_nutrients) {
-      const nutrients = customData.all_nutrients
-      editForm.value.nutrition = {
-        energy_kcal: nutrients.energy_kcal?.value || null,
-        protein: nutrients.protein?.value || null,
-        fat: nutrients.fat?.value || null,
-        carbohydrates: nutrients.carbohydrates?.value || null,
-        dietary_fiber: nutrients.dietary_fiber?.value || null,
-        calcium: nutrients.calcium?.value || null,
-        iron: nutrients.iron?.value || null,
-        sodium: nutrients.sodium?.value || null,
-        potassium: nutrients.potassium?.value || null
-      }
-    }
-  } catch (e) {
-    // 如果获取失败，保持空值
-    console.warn('加载商品营养数据失败:', e)
+const saveBasicInfo = async () => {
+  if (!basicEditForm.value.name.trim()) {
+    showMessage('商品名称不能为空', 'error')
+    return
   }
-}
-
-// 保存编辑
-const saveEdit = async () => {
-  if (!editForm.value.name.trim()) return
-  if (!editForm.value.ingredient_id) {
+  if (!basicEditForm.value.ingredient_id) {
     showMessage('请选择关联的原料', 'error')
     return
   }
 
   saving.value = true
   try {
-    // 先保存基本信息
     const response = await api.put(`/products/entity/${productId.value}`, {
-      name: editForm.value.name,
-      brand: editForm.value.brand,
-      barcode: editForm.value.barcode,
-      ingredient_id: editForm.value.ingredient_id,
-      tags: editForm.value.tags
+      name: basicEditForm.value.name,
+      brand: basicEditForm.value.brand || null,
+      barcode: basicEditForm.value.barcode || null,
+      ingredient_id: basicEditForm.value.ingredient_id,
+      tags: basicEditForm.value.tags,
     })
     product.value = response
-
-    // 检查是否有营养成分需要保存
-    const hasNutritionData = Object.values(editForm.value.nutrition).some(v => v !== null && v !== undefined && v > 0)
-
-    if (hasNutritionData) {
-      // 构建营养数据结构
-      const nutrients: Record<string, any> = {}
-
-      if (editForm.value.nutrition.energy_kcal) {
-        nutrients.energy_kcal = { value: editForm.value.nutrition.energy_kcal, unit: 'kcal' }
-      }
-      if (editForm.value.nutrition.protein) {
-        nutrients.protein = { value: editForm.value.nutrition.protein, unit: 'g' }
-      }
-      if (editForm.value.nutrition.fat) {
-        nutrients.fat = { value: editForm.value.nutrition.fat, unit: 'g' }
-      }
-      if (editForm.value.nutrition.carbohydrates) {
-        nutrients.carbohydrates = { value: editForm.value.nutrition.carbohydrates, unit: 'g' }
-      }
-      if (editForm.value.nutrition.dietary_fiber) {
-        nutrients.dietary_fiber = { value: editForm.value.nutrition.dietary_fiber, unit: 'g' }
-      }
-      if (editForm.value.nutrition.calcium) {
-        nutrients.calcium = { value: editForm.value.nutrition.calcium, unit: 'mg' }
-      }
-      if (editForm.value.nutrition.iron) {
-        nutrients.iron = { value: editForm.value.nutrition.iron, unit: 'mg' }
-      }
-      if (editForm.value.nutrition.sodium) {
-        nutrients.sodium = { value: editForm.value.nutrition.sodium, unit: 'mg' }
-      }
-      if (editForm.value.nutrition.potassium) {
-        nutrients.potassium = { value: editForm.value.nutrition.potassium, unit: 'mg' }
-      }
-
-      // 构建完整的营养数据结构
-      const nutritionData = {
-        all_nutrients: nutrients
-      }
-
-      // 保存自定义营养数据
-      await api.put(`/products/entity/${productId.value}/nutrition`, nutritionData)
-    } else {
-      // 如果没有营养数据，清除已有的自定义营养数据
-      await api.put(`/products/entity/${productId.value}/nutrition`, {})
-    }
-
-    // 重新加载营养数据显示
+    // 重新加载营养数据（原料变更可能影响营养数据）
     await loadNutritionData()
-
-    showEditDialog.value = false
+    editingBasicInfo.value = false
     selectedIngredient.value = null
     ingredientSearch.value = ''
-    showMessage('保存成功', 'success')
+    showMessage('基本信息已保存', 'success')
   } catch (e: any) {
-    showMessage(e.message || '保存失败', 'error')
+    showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
     saving.value = false
+  }
+}
+
+// === 营养成分内联编辑 ===
+const startEditNutrition = () => {
+  const items: NutritionEditItem[] = []
+  // 只加载商品自身的自定义营养数据（mixin 模式：不显示从原料继承的）
+  const customNutrients = nutritionData.value?.custom_nutrition_data?.all_nutrients || {}
+  const addedKeys = new Set<string>()
+
+  for (const [key, data] of Object.entries(customNutrients)) {
+    if (!data || typeof data !== 'object' || !('value' in data)) continue
+
+    let engKey = (data as any)?.original_key || (data as any)?.key || key
+    engKey = NUTRIENT_PARENT_MAP[engKey] || engKey
+    if (addedKeys.has(engKey)) continue
+
+    const def = findNutrientDef(engKey)
+    const zhName = ENGLISH_TO_CHINESE_MAP[engKey] || key
+    const label = NUTRITION_LABEL_MAP[zhName] || zhName
+
+    items.push({
+      key: engKey,
+      name: def ? def.label : label,
+      value: data.value ?? null,
+      unit: data.unit || (def ? def.defaultUnit : 'g'),
+      units: def ? def.units : ['g', 'mg', 'μg'],
+    })
+    addedKeys.add(engKey)
+  }
+
+  // 按核心顺序排序
+  const orderMap = new Map(NUTRIENT_DEFINITIONS.map((n, i) => [n.key, i]))
+  items.sort((a, b) => {
+    const oa = orderMap.get(a.key) ?? 999
+    const ob = orderMap.get(b.key) ?? 999
+    return oa - ob
+  })
+
+  const chKey = (key: string) => ENGLISH_TO_CHINESE_MAP[key] || key
+  items.sort((a, b) => {
+    const ca = chKey(a.key)
+    const cb = chKey(b.key)
+    const ia = nutrientSortOrder.indexOf(ca)
+    const ib = nutrientSortOrder.indexOf(cb)
+    if (ia !== -1 && ib !== -1) return ia - ib
+    if (ia !== -1) return -1
+    if (ib !== -1) return 1
+    return 0
+  })
+
+  nutritionEditItems.value = items
+  editingNutrition.value = true
+}
+
+const cancelEditNutrition = () => {
+  editingNutrition.value = false
+  nutritionEditItems.value = []
+}
+
+const removeNutrientEditItem = (index: number) => {
+  nutritionEditItems.value.splice(index, 1)
+}
+
+const onNutrientKeyChange = (index: number, newKey: string) => {
+  if (!newKey) return
+  const variants = [newKey]
+  if (ENGLISH_TO_CHINESE_MAP[newKey]) variants.push(ENGLISH_TO_CHINESE_MAP[newKey])
+  for (const [eng, zh] of Object.entries(ENGLISH_TO_CHINESE_MAP)) {
+    if (zh === newKey && !variants.includes(eng)) variants.push(eng)
+  }
+  const exists = nutritionEditItems.value.some((item, i) =>
+    i !== index && variants.includes(item.key)
+  )
+  if (exists) {
+    showMessage('该营养素已存在', 'error')
+    return
+  }
+  const def = findNutrientDef(newKey)
+  if (!def) return
+  const item = nutritionEditItems.value[index]
+  const oldUnit = item.unit
+  item.key = newKey
+  item.name = def.label
+  item.units = [...def.units]
+  if (!def.units.includes(oldUnit)) {
+    item.unit = def.defaultUnit
+  }
+}
+
+const onUnitChange = (index: number, newUnit: string) => {
+  const item = nutritionEditItems.value[index]
+  const oldUnit = item.unit
+  if (oldUnit === newUnit) return
+  if (item.value != null && item.value !== 0) {
+    item.value = convertUnit(item.value, oldUnit, newUnit, item.key)
+  }
+  item.unit = newUnit
+}
+
+const addEmptyNutrientRow = () => {
+  nutritionEditItems.value.push({
+    key: '',
+    name: '',
+    value: null,
+    unit: 'g',
+    units: ['g', 'mg', 'μg', 'kcal', 'kJ', 'IU'],
+  })
+}
+
+const saveNutritionEdit = async () => {
+  savingNutrition.value = true
+  try {
+    const nutrients: { name: string; value: number; unit: string; key?: string }[] = []
+
+    for (const entry of nutritionEditItems.value) {
+      if (entry.value != null && entry.value > 0 && entry.name.trim()) {
+        nutrients.push({
+          name: entry.name,
+          value: entry.value,
+          unit: entry.unit || 'g',
+          key: entry.key,
+        })
+      }
+    }
+
+    if (nutrients.length === 0) {
+      // 商品允许删除全部覆盖数据，回退到继承原料的营养成分
+      await api.put(`/products/entity/${productId.value}/nutrition`, null)
+    } else {
+      await api.post(`/nutrition/products/${productId.value}/nutrition`, {
+        base_quantity: 100,
+        base_unit: 'g',
+        nutrients,
+        source: 'custom',
+      })
+    }
+
+    editingNutrition.value = false
+    await loadNutritionData()
+    showMessage('营养数据已保存', 'success')
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
+  } finally {
+    savingNutrition.value = false
   }
 }
 
@@ -1860,7 +2145,6 @@ watch(pricePage, loadPriceRecords)
 onMounted(() => {
   loadData()
   loadMerchants()
-  loadIngredients()
 })
 </script>
 
@@ -1881,6 +2165,40 @@ onMounted(() => {
 
 .nutrition-row:hover {
   background: rgba(var(--v-theme-primary), 0.04);
+}
+
+/* 营养编辑表格 — 四列精确网格 */
+.nutrition-edit-table {
+  display: grid;
+  grid-template-columns: 1fr 144px 144px 36px;
+  gap: 2px;
+}
+.nutrition-edit-table.header-row {
+  background: rgb(var(--v-theme-surface-variant));
+  font-weight: 500;
+}
+.nutrition-edit-table > div {
+  min-width: 0;
+}
+
+/* 营养编辑表格紧凑输入框 */
+.nutrition-edit-input :deep(.v-field) {
+  font-size: 0.8125rem;
+  min-height: 32px;
+  padding: 0 8px;
+}
+.nutrition-edit-input :deep(.v-field__input) {
+  min-height: 30px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.nutrition-edit-input :deep(.v-field.v-field--outlined) {
+  border-radius: 6px;
+}
+
+/* 数量输入框右对齐 */
+.text-end.nutrition-edit-input :deep(input) {
+  text-align: end;
 }
 
 /* === 商家价格横向列表 === */
