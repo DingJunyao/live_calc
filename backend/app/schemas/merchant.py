@@ -9,6 +9,7 @@ class MerchantCreate(BaseModel):
     address: Optional[str] = Field(None, max_length=500)
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
+    is_open: Optional[bool] = Field(True)
 
 
 class MerchantUpdate(BaseModel):
@@ -16,6 +17,7 @@ class MerchantUpdate(BaseModel):
     address: Optional[str] = Field(None, max_length=500)
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
+    is_open: Optional[bool] = Field(None)
 
 
 class MerchantResponse(TimeZoneAwareModel):
@@ -24,6 +26,7 @@ class MerchantResponse(TimeZoneAwareModel):
     address: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
+    is_open: bool
     created_at: datetime  # 修改为 datetime 类型
 
     class Config:

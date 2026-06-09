@@ -584,9 +584,12 @@ def get_product_latest_price_by_merchant(
         records = db.query(ProductRecord).options(
             joinedload(ProductRecord.original_unit),
             joinedload(ProductRecord.merchant)
+        ).join(
+            Merchant, ProductRecord.merchant_id == Merchant.id
         ).filter(
             ProductRecord.product_id == product_id,
-            ProductRecord.merchant_id.isnot(None)
+            ProductRecord.merchant_id.isnot(None),
+            Merchant.is_open == True
         ).order_by(ProductRecord.recorded_at.desc()).all()
 
         # 按商家分组，每组只保留最新一条

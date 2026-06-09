@@ -104,10 +104,10 @@
                 </v-avatar>
                 <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
               </div>
-              <div v-if="item.latest_price != null" class="text-subtitle-1 font-weight-bold text-tertiary mb-1">
+              <div class="text-caption text-medium-emphasis">{{ item.brand || '无品牌' }}</div>
+              <div v-if="item.latest_price != null" class="text-subtitle-1 font-weight-bold text-tertiary">
                 ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
               </div>
-              <div class="text-caption text-medium-emphasis">{{ item.brand || '无品牌' }}</div>
             </v-card-text>
             <v-divider />
             <v-card-actions>

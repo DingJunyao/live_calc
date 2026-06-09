@@ -80,6 +80,24 @@
                 <v-list-item-title>创建时间</v-list-item-title>
                 <v-list-item-subtitle>{{ formatDateTime(merchant.created_at) }}</v-list-item-subtitle>
               </v-list-item>
+
+              <v-list-item>
+                <template #prepend>
+                  <v-icon size="small" :color="merchant.is_open !== false ? 'success' : 'warning'">
+                    {{ merchant.is_open !== false ? 'mdi-check-circle' : 'mdi-close-circle' }}
+                  </v-icon>
+                </template>
+                <v-list-item-title>营业状态</v-list-item-title>
+                <v-list-item-subtitle>
+                  <v-chip
+                    :color="merchant.is_open !== false ? 'success' : 'warning'"
+                    size="small"
+                    variant="tonal"
+                  >
+                    {{ merchant.is_open !== false ? '营业中' : '已关闭' }}
+                  </v-chip>
+                </v-list-item-subtitle>
+              </v-list-item>
             </v-list>
           </v-card-text>
         </v-card>
@@ -246,6 +264,14 @@
                 class="mb-4"
               />
 
+              <v-switch
+                v-model="editingForm.is_open"
+                label="营业中"
+                color="success"
+                class="mb-4"
+                hide-details
+              />
+
               <!-- 地图选点 -->
               <div class="mb-4">
                 <div class="text-subtitle-2 mb-2">商家位置</div>
@@ -287,6 +313,7 @@ interface Merchant {
   address?: string | null
   latitude?: number | null
   longitude?: number | null
+  is_open?: boolean
   created_at?: string
 }
 
@@ -316,7 +343,7 @@ const priceTotalVisible = computed(() => lgAndUp.value ? 7 : md.value ? 5 : 3)
 
 // 编辑
 const addDialog = ref(false)
-const editingForm = ref({ name: '', address: '' })
+const editingForm = ref({ name: '', address: '', is_open: true })
 const pickerCoords = ref<Coordinate | undefined>()
 const saving = ref(false)
 
@@ -366,7 +393,8 @@ const openEditDialog = () => {
   if (!merchant.value) return
   editingForm.value = {
     name: merchant.value.name || '',
-    address: merchant.value.address || ''
+    address: merchant.value.address || '',
+    is_open: merchant.value.is_open ?? true,
   }
   if (merchant.value.latitude != null && merchant.value.longitude != null) {
     pickerCoords.value = {
@@ -386,7 +414,8 @@ const saveItem = async () => {
   try {
     const data: any = {
       name: editingForm.value.name,
-      address: editingForm.value.address || undefined
+      address: editingForm.value.address || undefined,
+      is_open: editingForm.value.is_open,
     }
 
     if (pickerCoords.value) {

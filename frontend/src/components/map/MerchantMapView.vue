@@ -91,6 +91,7 @@ interface Merchant {
   address?: string
   latitude?: number | null
   longitude?: number | null
+  is_open?: boolean
 }
 
 interface Props {
@@ -287,17 +288,23 @@ function updateMerchantsMarkers() {
               if (Math.abs(latLng.lat - displayCoord.lat) < 0.0001 &&
                   Math.abs(latLng.lng - displayCoord.lng) < 0.0001) {
                 const isSelected = props.selectedMerchant?.id === merchant.id
+                const isClosed = merchant.is_open === false
                 const displayName = merchant.name.length > 8 ? merchant.name.substring(0, 8) + '…' : merchant.name
                 const icon = L.divIcon({
                   className: 'merchant-marker',
-                  html: `<div class="marker-icon ${isSelected ? 'selected' : ''}">
+                  html: `<div class="marker-icon ${isSelected ? 'selected' : ''} ${isClosed ? 'closed' : ''}">
                     <span class="marker-label">${displayName}</span>
                   </div>`,
                   iconSize: [80, 30],
                   iconAnchor: [40, 30]
                 })
                 layer.setIcon(icon)
-                layer.bindPopup(`<strong>${merchant.name}</strong><br>${merchant.address || '无地址'}`)
+                const popupLines = [`<strong>${merchant.name}</strong>`]
+                if (merchant.is_open === false) {
+                  popupLines.push('<span style="color:#f57c00;">（已关闭）</span>')
+                }
+                popupLines.push(merchant.address || '无地址')
+                layer.bindPopup(popupLines.join('<br>'))
               }
             }
           })
@@ -566,6 +573,22 @@ onUnmounted(() => {
 }
 
 :deep(.marker-icon.selected::after) {
+  border-color: #d32f2f transparent transparent transparent;
+}
+
+:deep(.marker-icon.closed) {
+  background: #757575;
+}
+
+:deep(.marker-icon.closed::after) {
+  border-color: #757575 transparent transparent transparent;
+}
+
+:deep(.marker-icon.closed.selected) {
+  background: #d32f2f;
+}
+
+:deep(.marker-icon.closed.selected::after) {
   border-color: #d32f2f transparent transparent transparent;
 }
 

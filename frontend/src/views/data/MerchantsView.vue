@@ -29,16 +29,27 @@
       <!-- 左边：搜索框 + 商家列表 -->
       <div class="left-panel">
         <div class="search-wrapper">
-          <v-text-field
-            v-model="search"
-            label="搜索商家..."
-            prepend-inner-icon="mdi-magnify"
-            variant="outlined"
-            density="compact"
-            hide-details
-            clearable
-            @update:model-value="debouncedSearch"
-          />
+          <div class="d-flex align-center ga-2">
+            <v-text-field
+              v-model="search"
+              label="搜索商家..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+              class="flex-grow-1"
+              @update:model-value="debouncedSearch"
+            />
+            <v-btn
+              :icon="showAllMerchants ? 'mdi-eye' : 'mdi-eye-off'"
+              :color="showAllMerchants ? 'primary' : undefined"
+              variant="text"
+              size="small"
+              :title="showAllMerchants ? '显示全部商家' : '仅显示营业中商家'"
+              @click="toggleShowAll"
+            />
+          </div>
         </div>
 
         <div class="list-scroll-area">
@@ -55,7 +66,16 @@
                 </v-avatar>
               </template>
 
-              <v-list-item-title>{{ item.name }}</v-list-item-title>
+              <v-list-item-title>
+                {{ item.name }}
+                <v-chip
+                  v-if="item.is_open === false"
+                  size="x-small"
+                  color="warning"
+                  variant="tonal"
+                  class="ms-2"
+                >已关闭</v-chip>
+              </v-list-item-title>
               <v-list-item-subtitle>
                 {{ item.address || '暂无地址' }}
               </v-list-item-subtitle>
@@ -163,6 +183,14 @@
               class="mb-4"
             />
 
+            <v-switch
+              v-model="form.is_open"
+              label="营业中"
+              color="success"
+              class="mb-4"
+              hide-details
+            />
+
             <!-- 地图选点 -->
             <div class="mb-4">
               <div class="text-subtitle-2 mb-2">商家位置</div>
@@ -204,6 +232,7 @@ interface Merchant {
   phone?: string
   latitude?: number | null
   longitude?: number | null
+  is_open?: boolean
   created_at?: string
 }
 
@@ -218,6 +247,7 @@ const saving = ref(false)
 const form = ref({
   name: '',
   address: '',
+  is_open: true,
 })
 
 // 选点器坐标
@@ -227,6 +257,7 @@ const pickerCoords = ref<Coordinate | undefined>()
 const currentPage = ref(Number(route.query.page) || 1)
 const pageSize = ref(Number(route.query.pageSize) || 20)
 const total = ref(0)
+const showAllMerchants = ref(false)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 const { md, lgAndUp } = useDisplay()
@@ -262,7 +293,8 @@ const loadMerchants = async () => {
     const skip = (currentPage.value - 1) * pageSize.value
     const params: Record<string, any> = {
       skip,
-      limit: pageSize.value
+      limit: pageSize.value,
+      include_closed: showAllMerchants.value
     }
     if (search.value) {
       params.search = search.value
@@ -291,6 +323,12 @@ const onPageChange = (page: number) => {
   loadMerchants()
 }
 
+const toggleShowAll = () => {
+  showAllMerchants.value = !showAllMerchants.value
+  currentPage.value = 1
+  loadMerchants()
+}
+
 /**
  * 选择商家
  */
@@ -308,6 +346,7 @@ const openEditDialog = (item?: Merchant) => {
     form.value = {
       name: item.name,
       address: item.address || '',
+      is_open: item.is_open ?? true,
     }
     // 设置坐标
     if (item.latitude != null && item.longitude != null) {
@@ -319,7 +358,7 @@ const openEditDialog = (item?: Merchant) => {
       pickerCoords.value = undefined
     }
   } else {
-    form.value = { name: '', address: '' }
+    form.value = { name: '', address: '', is_open: true }
     pickerCoords.value = undefined
   }
   addDialog.value = true
@@ -336,6 +375,7 @@ const saveItem = async () => {
     const data: any = {
       name: form.value.name,
       address: form.value.address || undefined,
+      is_open: form.value.is_open,
     }
 
     // 添加坐标
@@ -346,14 +386,25 @@ const saveItem = async () => {
 
     if (editingItem.value) {
       const response = await api.put(`/merchants/${editingItem.value.id}`, data)
-      const index = items.value.findIndex(i => i.id === editingItem.value!.id)
-      if (index !== -1) {
-        items.value[index] = response
+      if (!showAllMerchants.value && response.is_open === false) {
+        // 已关闭且当前视图只显示营业中商家，从列表中移除
+        const index = items.value.findIndex(i => i.id === editingItem.value!.id)
+        if (index !== -1) {
+          items.value.splice(index, 1)
+          total.value--
+        }
+      } else {
+        const index = items.value.findIndex(i => i.id === editingItem.value!.id)
+        if (index !== -1) {
+          items.value[index] = response
+        }
       }
     } else {
       const response = await api.post('/merchants', data)
-      items.value.unshift(response)
-      total.value++
+      if (showAllMerchants.value || response.is_open !== false) {
+        items.value.unshift(response)
+        total.value++
+      }
     }
     addDialog.value = false
 

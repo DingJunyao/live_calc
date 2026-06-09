@@ -77,7 +77,8 @@ async def create_merchant(
             name=merchant.name,
             address=merchant.address,
             latitude=merchant.latitude,
-            longitude=merchant.longitude
+            longitude=merchant.longitude,
+            is_open=merchant.is_open if merchant.is_open is not None else True
         )
         db.add(db_merchant)
         db.commit()
@@ -421,6 +422,7 @@ async def get_merchants(
     skip: int = Query(0, ge=0, description="跳过的记录数"),
     limit: int = Query(10, ge=1, le=100, description="每页记录数"),
     search: Optional[str] = Query(None, description="搜索关键词（商家名称或地址）"),
+    include_closed: bool = Query(False, description="是否包含已关闭的商家"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -430,6 +432,10 @@ async def get_merchants(
         query = db.query(Merchant).filter(
             Merchant.user_id == current_user.id
         )
+
+        # 默认只显示营业中的商家
+        if not include_closed:
+            query = query.filter(Merchant.is_open == True)
 
         # 添加搜索条件
         if search:

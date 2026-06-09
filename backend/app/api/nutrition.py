@@ -854,13 +854,16 @@ async def get_ingredient_latest_price_by_merchant(
 
         unit_service = UnitConversionService(db)
 
-        # 查询所有价格记录，按商家分组，每组取最新一条
+        # 查询所有价格记录，按商家分组，每组取最新一条（仅营业中商家）
         records = db.query(ProductRecord).options(
             joinedload(ProductRecord.original_unit),
             joinedload(ProductRecord.merchant)
+        ).join(
+            Merchant, ProductRecord.merchant_id == Merchant.id
         ).filter(
             ProductRecord.product_id.in_(product_ids),
-            ProductRecord.merchant_id.isnot(None)
+            ProductRecord.merchant_id.isnot(None),
+            Merchant.is_open == True
         ).order_by(ProductRecord.recorded_at.desc()).all()
 
         # 按商家分组，每组只保留最新一条

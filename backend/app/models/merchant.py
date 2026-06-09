@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from sqlalchemy import Column, Integer, String, Date, Numeric, ForeignKey, Boolean, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -13,6 +14,7 @@ class Merchant(Base):
     address = Column(String(500))
     latitude = Column(Numeric(10, 7))
     longitude = Column(Numeric(10, 7))
+    is_open = Column(Boolean, default=True, nullable=False, server_default=sa.text('1'))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

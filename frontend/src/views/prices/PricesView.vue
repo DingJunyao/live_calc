@@ -444,6 +444,13 @@ const getCurrentLocalDateTime = () => {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
+// 将 UTC ISO 时间字符串转换为 datetime-local 输入框所需的本地时间格式
+const toDatetimeLocalValue = (isoStr: string) => {
+  const d = new Date(isoStr)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 // 商家选项
 const merchantOptions = ref<Merchant[]>([])
 
@@ -730,7 +737,7 @@ const openEditDialog = (record: PriceRecord) => {
     original_quantity: record.original_quantity,
     original_unit: record.original_unit,
     merchant_id: record.merchant_id || null,
-    recorded_at: record.recorded_at ? record.recorded_at.slice(0, 16) : '',
+    recorded_at: record.recorded_at ? toDatetimeLocalValue(record.recorded_at) : '',
     notes: record.notes || '',
     is_purchase: (record as any).record_type !== 'price'  // record_type 为 'price' 时不是购买记录
   }
