@@ -160,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
@@ -227,7 +227,7 @@ const debouncedSearch = () => {
 }
 
 // 筛选器配置
-const recipeFilters: FilterConfig[] = [
+const recipeFilters: FilterConfig[] = reactive([
   {
     key: 'categories',
     label: '分类',
@@ -261,7 +261,15 @@ const recipeFilters: FilterConfig[] = [
     minWidth: '120px',
     maxWidth: '160px',
   },
-]
+  {
+    key: 'ingredient_ids',
+    label: '所用食材',
+    type: 'autocomplete',
+    items: [],
+    minWidth: '160px',
+    maxWidth: '280px',
+  },
+])
 
 const requestFilters = ref<Record<string, any>>({})
 
@@ -290,6 +298,9 @@ const loadRecipes = async () => {
     }
     if (requestFilters.value.difficulties?.length) {
       params.difficulties = requestFilters.value.difficulties.join(',')
+    }
+    if (requestFilters.value.ingredient_ids?.length) {
+      params.ingredient_ids = requestFilters.value.ingredient_ids.join(',')
     }
 
     const response = await api.get('/recipes', { params })
@@ -324,6 +335,20 @@ const goToDetail = (id: number) => {
   router.push(`/recipes/${id}`)
 }
 
+// 加载全部食材（用于食材筛选器的 v-select 客户端搜索）
+const loadIngredients = async () => {
+  const ingFilter = recipeFilters.find(f => f.key === 'ingredient_ids')
+  if (!ingFilter) return
+  try {
+    // 加载尽可能多的食材，用户通过 v-select 内置搜索过滤
+    const response = await api.get('/ingredients', { params: { limit: 1000 } })
+    const items = (response.items || []) as { id: number; name: string }[]
+    ingFilter.items = items.map(ing => ({ value: ing.id, title: ing.name }))
+  } catch (e: any) {
+    console.error('加载食材列表失败', e)
+  }
+}
+
 // 处理图片路径
 const getImageUrl = (imagePath: string) => {
   if (imagePath.startsWith('http')) return imagePath
@@ -333,6 +358,7 @@ const getImageUrl = (imagePath: string) => {
 
 onMounted(() => {
   loadRecipes()
+  loadIngredients()
   window.addEventListener('app-refresh', loadRecipes)
 })
 

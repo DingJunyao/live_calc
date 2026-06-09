@@ -48,11 +48,50 @@
                   <v-chip v-if="index < 3" size="small" closable @click:close="onRemoveChip(f.key, item.value)">
                     <span class="text-truncate" style="max-width: 100px">{{ item.title }}</span>
                   </v-chip>
-                  <span v-if="index === 3" class="text-caption text-medium-emphasis ml-1">
-                    +{{ getValue(f.key).length - 3 }}
-                  </span>
+                  <v-tooltip v-if="index === 3" location="top" open-on-click>
+                    <template #activator="{ props: tp }">
+                      <span v-bind="tp" class="text-caption text-medium-emphasis ml-1" style="cursor: pointer">
+                        +{{ getValue(f.key).length - 3 }}
+                      </span>
+                    </template>
+                    <div class="d-flex flex-column ga-1" style="max-width: 260px; max-height: 240px; overflow-y: auto">
+                      <div v-for="(title, i) in getSelectedTitles(f.key)" :key="i" class="text-caption text-no-wrap">{{ title }}</div>
+                    </div>
+                  </v-tooltip>
                 </template>
               </v-select>
+
+              <!-- 搜索型多选下拉 -->
+              <v-autocomplete
+                v-if="f.type === 'autocomplete'"
+                v-model:search="autocompleteSearchTexts[f.key]"
+                :model-value="getValue(f.key)"
+                :items="f.items || []"
+                :label="f.label"
+                :loading="f.loading"
+                multiple
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+                @update:model-value="onAutocompleteSelect(f.key, $event)"
+              >
+                <template #selection="{ item, index }">
+                  <v-chip v-if="index < 3" size="small" closable @click:close="onRemoveChip(f.key, item.value)">
+                    <span class="text-truncate" style="max-width: 100px">{{ item.title }}</span>
+                  </v-chip>
+                  <v-tooltip v-if="index === 3" location="top" open-on-click>
+                    <template #activator="{ props: tp }">
+                      <span v-bind="tp" class="text-caption text-medium-emphasis ml-1" style="cursor: pointer">
+                        +{{ getValue(f.key).length - 3 }}
+                      </span>
+                    </template>
+                    <div class="d-flex flex-column ga-1" style="max-width: 260px; max-height: 240px; overflow-y: auto">
+                      <div v-for="(title, i) in getSelectedTitles(f.key)" :key="i" class="text-caption text-no-wrap">{{ title }}</div>
+                    </div>
+                  </v-tooltip>
+                </template>
+              </v-autocomplete>
 
               <!-- 日期范围 -->
               <div v-if="f.type === 'date-range'">
@@ -121,12 +160,54 @@
             <v-chip size="small" closable @click:close="onRemoveChip(f.key, item.value)">
               <span class="text-truncate" style="max-width: 80px">{{ item.title }}</span>
             </v-chip>
-            <span v-if="getValue(f.key).length > 1" class="text-caption text-medium-emphasis text-no-wrap">
-              等{{ getValue(f.key).length }}项
-            </span>
+            <v-tooltip v-if="getValue(f.key).length > 1" location="bottom" :open-on-click="mobile">
+              <template #activator="{ props: tp }">
+                <span v-bind="tp" class="text-caption text-medium-emphasis text-no-wrap" style="cursor: default">
+                  等{{ getValue(f.key).length }}项
+                </span>
+              </template>
+              <div class="d-flex flex-column ga-1" style="max-width: 260px; max-height: 240px; overflow-y: auto">
+                <div v-for="(title, i) in getSelectedTitles(f.key)" :key="i" class="text-caption text-no-wrap">{{ title }}</div>
+              </div>
+            </v-tooltip>
           </div>
         </template>
       </v-select>
+
+      <!-- 搜索型多选下拉 -->
+      <v-autocomplete
+        v-if="f.type === 'autocomplete'"
+        v-model:search="autocompleteSearchTexts[f.key]"
+        :model-value="getValue(f.key)"
+        :items="f.items || []"
+        :label="f.label"
+        :loading="f.loading"
+        multiple
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        :style="{ minWidth: f.minWidth || '180px', maxWidth: f.maxWidth || '280px' }"
+        @update:model-value="onAutocompleteSelect(f.key, $event)"
+      >
+        <template #selection="{ item, index }">
+          <div v-if="index === 0" class="d-inline-flex align-center ga-1" style="min-width: 0;">
+            <v-chip size="small" closable @click:close="onRemoveChip(f.key, item.value)">
+              <span class="text-truncate" style="max-width: 80px">{{ item.title }}</span>
+            </v-chip>
+            <v-tooltip v-if="getValue(f.key).length > 1" location="bottom" :open-on-click="mobile">
+              <template #activator="{ props: tp }">
+                <span v-bind="tp" class="text-caption text-medium-emphasis text-no-wrap" style="cursor: default">
+                  等{{ getValue(f.key).length }}项
+                </span>
+              </template>
+              <div class="d-flex flex-column ga-1" style="max-width: 260px; max-height: 240px; overflow-y: auto">
+                <div v-for="(title, i) in getSelectedTitles(f.key)" :key="i" class="text-caption text-no-wrap">{{ title }}</div>
+              </div>
+            </v-tooltip>
+          </div>
+        </template>
+      </v-autocomplete>
 
       <!-- 日期范围 -->
       <div v-if="f.type === 'date-range'" class="d-flex align-center ga-1" :style="{ minWidth: f.minWidth || '340px' }">
@@ -183,9 +264,10 @@ import { computed, reactive, ref } from 'vue'
 export interface FilterConfig {
   key: string
   label: string
-  type: 'select' | 'date-range'
+  type: 'select' | 'autocomplete' | 'date-range'
   items?: { value: any; title: string }[]
   multiple?: boolean
+  loading?: boolean
   minWidth?: string
   maxWidth?: string
 }
@@ -213,8 +295,23 @@ const dialogOpen = ref(false)
 // 内部状态
 const state = reactive<Record<string, FilterValue>>({})
 
+// autocomplete 搜索文本（v-model:search 绑定）
+const autocompleteSearchTexts = reactive<Record<string, string>>({})
+
 // 选项缓存（保存 items 映射用于 chip 显示）
 const optionsMap = new Map<string, { value: any; title: string }[]>()
+
+// 获取指定筛选器已选中项的名称列表
+const getSelectedTitles = (key: string): string[] => {
+  const val = getValue(key)
+  if (!Array.isArray(val) || val.length === 0) return []
+  const filter = props.filters.find(f => f.key === key)
+  const items = filter?.items || []
+  return val.map(v => {
+    const item = items.find((i: any) => i.value === v)
+    return item?.title || String(v)
+  })
+}
 
 // 初始化或更新选项缓存
 const initOptionsMap = () => {
@@ -296,6 +393,13 @@ const onRemoveChip = (key: string, value: any) => {
   }
 }
 
+// autocomplete 选中回调：更新状态并清除搜索文本
+const onAutocompleteSelect = (key: string, val: any) => {
+  state[key] = val ?? []
+  autocompleteSearchTexts[key] = ''
+  emitChange()
+}
+
 const onDateChange = (key: string, field: 'start' | 'end', val: string) => {
   const current = getValue(key) as DateRangeValue
   current[field] = val || null
@@ -314,6 +418,9 @@ const triggerDatePicker = (e: MouseEvent) => {
 const clearAll = () => {
   for (const key of Object.keys(state)) {
     delete state[key]
+  }
+  for (const key of Object.keys(autocompleteSearchTexts)) {
+    delete autocompleteSearchTexts[key]
   }
   emitChange()
 }
