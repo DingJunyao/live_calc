@@ -1082,7 +1082,8 @@ def calculate_recipe_cost_range_trend(
     recipe_id: int,
     user_id: int,
     db: Session,
-    days: int = 90
+    days: int = 90,
+    offset_days: int = 0
 ) -> List[Dict]:
     """
     计算菜谱的成本区间趋势（批量优化版）
@@ -1095,6 +1096,8 @@ def calculate_recipe_cost_range_trend(
         user_id: 用户ID
         db: 数据库会话
         days: 查询天数（默认90天）
+        offset_days: 偏移天数。如 days=30, offset_days=0 为近30天；
+                     days=60, offset_days=30 为第31天至第90天。
 
     Returns:
         成本区间趋势数据列表，每条记录包含：
@@ -1116,8 +1119,8 @@ def calculate_recipe_cost_range_trend(
     if not earliest_record:
         return []
 
-    # 确定日期范围
-    end_date = datetime.now().date()
+    # 确定日期范围（带 offset_days 支持分批加载）
+    end_date = datetime.now().date() - timedelta(days=offset_days)
     start_date = max(earliest_record.recorded_at.date(), end_date - timedelta(days=days))
 
     # ========== 批量预加载所有数据 ==========

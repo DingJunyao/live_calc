@@ -109,7 +109,7 @@
 
           <div class="recipe-right-col">
             <!-- 成本估算 -->
-            <div v-if="costData" class="grid-cost">
+            <div v-if="costData || loadingCostData" class="grid-cost">
               <v-card elevation="0" class="ma-4">
                 <v-card-title class="d-flex align-center pb-2">
                   <v-icon start color="tertiary">mdi-currency-cny</v-icon>
@@ -117,8 +117,12 @@
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="text-center py-6">
-                  <div class="text-h3 font-weight-bold text-tertiary">
-                    ¥{{ formatCost((costData.total_cost ?? 0) * servingRatio) }}
+                  <div v-if="loadingCostData" class="text-h6 text-medium-emphasis">
+                    <v-progress-circular indeterminate size="24" class="mr-2" />
+                    计算中...
+                  </div>
+                  <div v-else class="text-h3 font-weight-bold text-tertiary">
+                    ¥{{ formatCost((costData?.total_cost ?? 0) * servingRatio) }}
                   </div>
                 </v-card-text>
               </v-card>
@@ -137,6 +141,7 @@
                 :loading="loadingCostHistory"
                 color="#ff9800"
                 class="ma-4"
+                @filter-change="onCostTrendFilterChange"
               />
             </div>
           </div>
@@ -147,7 +152,7 @@
         <div class="recipe-top-grid no-images">
           <div class="recipe-left-col">
             <!-- 成本估算 -->
-            <div v-if="costData" class="grid-cost">
+            <div v-if="costData || loadingCostData" class="grid-cost">
               <v-card elevation="0" class="ma-4">
                 <v-card-title class="d-flex align-center pb-2">
                   <v-icon start color="tertiary">mdi-currency-cny</v-icon>
@@ -155,8 +160,12 @@
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="text-center py-6">
-                  <div class="text-h3 font-weight-bold text-tertiary">
-                    ¥{{ formatCost((costData.total_cost ?? 0) * servingRatio) }}
+                  <div v-if="loadingCostData" class="text-h6 text-medium-emphasis">
+                    <v-progress-circular indeterminate size="24" class="mr-2" />
+                    计算中...
+                  </div>
+                  <div v-else class="text-h3 font-weight-bold text-tertiary">
+                    ¥{{ formatCost((costData?.total_cost ?? 0) * servingRatio) }}
                   </div>
                 </v-card-text>
               </v-card>
@@ -191,6 +200,7 @@
                 :loading="loadingCostHistory"
                 color="#ff9800"
                 class="ma-4"
+                @filter-change="onCostTrendFilterChange"
               />
             </div>
           </div>
@@ -342,7 +352,7 @@
       <v-row no-gutters>
         <v-col cols="12" md="6">
           <!-- 营养信息卡片 -->
-          <v-card elevation="0" class="ma-4" v-if="nutritionData">
+          <v-card elevation="0" class="ma-4" v-if="nutritionData || loadingNutritionData">
             <v-card-title class="d-flex align-center pb-2">
               <v-icon start color="success">mdi-food-apple-outline</v-icon>
               营养成分（每份）
@@ -362,7 +372,12 @@
             <v-divider />
 
             <v-card-text class="pa-0">
-              <div class="nutrition-header d-flex py-2 border-bottom">
+              <div v-if="loadingNutritionData" class="text-center py-6">
+                <v-progress-circular indeterminate size="28" class="mb-2" />
+                <div class="text-body-2 text-medium-emphasis">计算中...</div>
+              </div>
+              <template v-else>
+                <div class="nutrition-header d-flex py-2 border-bottom">
                 <div class="text-caption text-medium-emphasis ps-4 flex-grow-1">营养素</div>
                 <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 80px">数量</div>
                 <div class="text-caption text-medium-emphasis text-end pe-4" style="min-width: 60px">NRV%</div>
@@ -385,6 +400,7 @@
               <div class="mt-4 text-caption text-medium-emphasis ps-4">
                 NRV = 营养素参考值百分比
               </div>
+              </template>
             </v-card-text>
           </v-card>
         </v-col>
@@ -600,6 +616,8 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const costData = ref<CostData | null>(null)
 const nutritionData = ref<NutritionData | null>(null)
+const loadingCostData = ref(false)
+const loadingNutritionData = ref(false)
 const displayServings = ref(1)
 const servingRatio = computed(() => {
   const orig = recipe.value?.servings || 1
@@ -614,6 +632,9 @@ const lightboxIndex = ref(0)
 // 成本历史数据
 const costHistoryRecords = ref<CostHistoryRecord[]>([])
 const loadingCostHistory = ref(false)
+
+// 已加载的最大天数（从 0 开始，每次加载成功后更新）
+const maxDaysLoaded = ref(0)
 
 // 核心营养素配置（默认显示的营养素）
 const coreNutritionItems = [
@@ -811,64 +832,129 @@ const loadData = async () => {
   error.value = null
 
   try {
-    // 加载菜谱详情
+    // 只加载菜谱基本信息（名称、图片、原料列表、做法步骤等）
     const response = await api.get(`/recipes/${recipeId.value}`)
     recipe.value = response
     setDetailTitle(response.name, '菜谱', '菜谱详情')
     displayServings.value = response.servings || 1
+    // 基本数据到位，立即渲染页面
+    loading.value = false
 
-    // 并行加载成本、营养和历史数据
-    await Promise.all([
-      loadCostData(),
-      loadNutritionData(),
-      loadCostHistory()
-    ])
+    // 后台分别加载成本、营养和成本历史，互不影响
+    loadCostData()
+    loadNutritionData()
+    loadCostHistoryInBatches()
   } catch (e: any) {
     console.error('加载菜谱失败', e)
     error.value = e.message || '加载失败'
-  } finally {
     loading.value = false
   }
 }
 
 const loadCostData = async () => {
+  loadingCostData.value = true
   try {
     const response = await api.get(`/recipes/${recipeId.value}/cost`)
     costData.value = response
   } catch (e) {
     console.error('加载成本失败', e)
     costData.value = null
+  } finally {
+    loadingCostData.value = false
   }
 }
 
 const loadNutritionData = async () => {
+  loadingNutritionData.value = true
   try {
     const response = await api.get(`/recipes/${recipeId.value}/nutrition`)
     nutritionData.value = response
   } catch (e) {
     console.error('加载营养失败', e)
     nutritionData.value = null
+  } finally {
+    loadingNutritionData.value = false
   }
 }
 
-// 加载成本历史数据
-const loadCostHistory = async () => {
-  loadingCostHistory.value = true
-  try {
-    const response = await api.get(`/recipes/${recipeId.value}/cost-history-range?days=90`)
-    // 转换数据格式
-    costHistoryRecords.value = (response || []).map((record: any) => ({
-      date: record.date,
-      min_cost: record.min_cost,
-      max_cost: record.max_cost,
-      avg_cost: record.avg_cost
-    }))
-  } catch (e) {
-    console.error('加载成本历史失败', e)
-    costHistoryRecords.value = []
-  } finally {
-    loadingCostHistory.value = false
+// 已尝试过的加载范围（避免空结果重复请求）
+const attemptedRanges = new Set<string>()
+
+// 串行队列：确保同时只有一个成本历史加载请求在跑
+let costHistoryQueue = Promise.resolve()
+
+// 加载成本历史数据（纯数据加载，不控制 loadingCostHistory）
+const loadCostHistory = async (days = 90, offsetDays = 0) => {
+  const response = await api.get(`/recipes/${recipeId.value}/cost-history-range`, {
+    params: { days, offset_days: offsetDays }
+  })
+  // 转换数据格式
+  const records = (response || []).map((record: any) => ({
+    date: record.date,
+    min_cost: record.min_cost,
+    max_cost: record.max_cost,
+    avg_cost: record.avg_cost
+  }))
+  if (records.length === 0) return  // 无数据时只标记已尝试，不更新 maxDaysLoaded
+  // 合并到已有的历史数据中
+  if (offsetDays > 0) {
+    costHistoryRecords.value = [...records, ...costHistoryRecords.value]
+  } else {
+    costHistoryRecords.value = records
   }
+  // 更新已加载天数范围（仅在获取到数据后更新）
+  maxDaysLoaded.value = Math.max(maxDaysLoaded.value, offsetDays + days)
+}
+
+// 通过串行队列执行加载（参数为目标总天数，运行时会动态算还差多少）
+const enqueueCostHistory = async (targetDays: number, showLoading: boolean) => {
+  const rangeKey = `target_${targetDays}`
+  if (targetDays <= maxDaysLoaded.value) return
+  if (attemptedRanges.has(rangeKey)) {
+    // 已在加载中，但仍需等待结果（让调用方显示转圈）
+    await costHistoryQueue
+    return
+  }
+  attemptedRanges.add(rangeKey)
+
+  const promise = costHistoryQueue.then(async () => {
+    // 动态计算还需要加载多少天
+    const remaining = targetDays - maxDaysLoaded.value
+    if (remaining <= 0) return
+    if (showLoading) loadingCostHistory.value = true
+    try {
+      await loadCostHistory(remaining, maxDaysLoaded.value)
+    } catch (e) {
+      console.error('加载成本历史失败', e)
+    } finally {
+      if (showLoading) loadingCostHistory.value = false
+    }
+  })
+  costHistoryQueue = promise
+  return promise
+}
+
+// 首次加载30天（显示loading），不再预加载后续数据
+// 用户点「季」「年」时按需加载
+const loadCostHistoryInBatches = async () => {
+  await enqueueCostHistory(30, true)
+}
+
+// 成本趋势筛选切换时，按需加载更多数据
+const onCostTrendFilterChange = async (filter: 'week' | 'month' | 'quarter' | 'year') => {
+  const targetDays: Record<string, number> = {
+    week: 7,
+    month: 30,
+    quarter: 90,
+    year: 365,
+  }
+  const days = targetDays[filter] || 90
+  if (days > maxDaysLoaded.value) {
+    loadingCostHistory.value = true  // 立即显示转圈
+    await enqueueCostHistory(days, true)
+  }
+  // 请求完成或已在队列中等候完成，停止转圈
+  loadingCostHistory.value = false
 }
 
 // 转换为图表数据格式

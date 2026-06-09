@@ -247,6 +247,31 @@ async def get_recipes(
         raise HTTPException(status_code=500, detail=f"获取菜谱列表失败: {str(e)}")
 
 
+@router.post("/batch-cost")
+async def get_recipes_batch_cost(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """批量获取菜谱的成本和卡路里（用于列表页懒加载）"""
+    recipe_ids = request.get("ids", [])
+    if not recipe_ids:
+        return {}
+
+    from app.services.recipe_service import batch_calculate_recipes_cost_nutrition
+    batch_results = await batch_calculate_recipes_cost_nutrition(recipe_ids, current_user.id, db)
+
+    result = {}
+    for recipe_id, data in batch_results.items():
+        cost = data.get("cost")
+        nutrition = data.get("nutrition")
+        result[str(recipe_id)] = {
+            "estimated_cost": float(cost["total_cost"]) if cost and cost.get("total_cost") is not None else None,
+            "calories": int(nutrition["total_calories"]) if nutrition and nutrition.get("total_calories") else None,
+        }
+    return result
+
+
 @router.get("/{recipe_id}", response_model=RecipeDetailResponse)
 async def get_recipe_detail(
     recipe_id: int,
@@ -520,6 +545,7 @@ async def get_recipe_cost_history(
 async def get_recipe_cost_history_range(
     recipe_id: int,
     days: int = Query(90, ge=7, le=365, description="查询天数"),
+    offset_days: int = Query(0, ge=0, description="偏移天数（从 offset_days 天前开始算）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -532,6 +558,9 @@ async def get_recipe_cost_history_range(
     - 区间最大值：每道食材在当天的最高价格之和
     - 区间最小值：每道食材在当天的最低价格之和
     - 平均值：每道食材在当天的平均价格之和
+
+    offset_days 用于分批加载。例如 days=30, offset_days=0 为近30天；
+    days=60, offset_days=30 为第31天至第90天。
 
     使用前向填充机制处理缺失的价格记录。
     """
@@ -546,7 +575,7 @@ async def get_recipe_cost_history_range(
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
         # 计算成本区间趋势
-        cost_range_trend = calculate_recipe_cost_range_trend(recipe_id, current_user.id, db, days)
+        cost_range_trend = calculate_recipe_cost_range_trend(recipe_id, current_user.id, db, days, offset_days)
 
         # 转换为响应模型（按时间顺序）
         return [

@@ -84,11 +84,11 @@
           <v-card-text class="text-center pa-2">
             <div class="d-flex justify-center align-center ga-2 text-body-2">
               <span class="font-weight-bold text-tertiary">
-                ¥{{ formatCost(recipe.estimated_cost) }}
+                {{ getDisplayCost(recipe) }}
               </span>
               <span class="text-caption text-medium-emphasis">·</span>
               <span class="text-caption text-medium-emphasis">
-                {{ recipe.calories || '-' }} kcal
+                {{ getDisplayCalories(recipe) }}
               </span>
             </div>
           </v-card-text>
@@ -195,6 +195,10 @@ const error = ref<string | null>(null)
 const searchQuery = ref((route.query.search as string) || '')
 const showAddDialog = ref(false)
 
+// 懒加载的成本和卡路里数据
+const costMap = ref<Record<number, { estimated_cost?: number; calories?: number }>>({})
+const loadingCosts = ref(false)
+
 // 分页相关（从 URL 查询参数初始化）
 const currentPage = ref(Number(route.query.page) || 1)
 const pageSize = ref(Number(route.query.pageSize) || 20)
@@ -287,7 +291,6 @@ const loadRecipes = async () => {
     const params: Record<string, any> = {
       skip,
       limit: pageSize.value,
-      include_cost: true
     }
     if (searchQuery.value) {
       params.search = searchQuery.value
@@ -306,6 +309,8 @@ const loadRecipes = async () => {
     const response = await api.get('/recipes', { params })
     recipes.value = response.items || []
     total.value = response.total || 0
+    // 基础数据渲染后，后台加载成本
+    loadCostsForVisibleRecipes()
   } catch (e: any) {
     console.error('加载菜谱失败', e)
     error.value = e.message || '加载失败'
@@ -329,6 +334,36 @@ const onPageChange = (page: number) => {
 const formatCost = (cost: any) => {
   const num = parseFloat(cost) || 0
   return num.toFixed(2)
+}
+
+// 从懒加载成本数据或列表原始数据中获取显示值
+const getDisplayCost = (recipe: Recipe) => {
+  const cost = costMap.value[recipe.id]?.estimated_cost ?? recipe.estimated_cost
+  if (cost === null || cost === undefined) return '--'
+  return `¥${formatCost(cost)}`
+}
+
+const getDisplayCalories = (recipe: Recipe) => {
+  const cal = costMap.value[recipe.id]?.calories ?? recipe.calories
+  if (cal === null || cal === undefined) return '-'
+  return `${cal} kcal`
+}
+
+// 页面渲染完后台加载当前页菜谱的成本和卡路里
+const loadCostsForVisibleRecipes = async () => {
+  const ids = recipes.value.map(r => r.id)
+  if (!ids.length) return
+
+  loadingCosts.value = true
+  try {
+    const result = await api.post('/recipes/batch-cost', { ids })
+    costMap.value = result || {}
+  } catch (e) {
+    console.error('加载成本失败', e)
+    // 超时或失败：不显示错误，卡片保持 --
+  } finally {
+    loadingCosts.value = false
+  }
 }
 
 const goToDetail = (id: number) => {

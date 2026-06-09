@@ -24,52 +24,59 @@
     </v-card-title>
     <v-divider />
 
-    <!-- 加载中 -->
-    <div v-if="loading" class="text-center py-12">
-      <v-progress-circular indeterminate color="primary" size="48" />
-    </div>
-
-    <!-- 无数据 -->
-    <div v-else-if="!chartData || chartData.length === 0" class="text-center py-12">
-      <v-icon size="64" color="medium-emphasis">mdi-chart-line</v-icon>
-      <div class="text-body-1 text-medium-emphasis mt-4">{{ emptyText }}</div>
-    </div>
-
-    <!-- 有数据时显示 -->
-    <template v-else>
-      <!-- 当天价格信息卡片 -->
-      <div v-if="latestData" class="px-4 py-3">
-        <v-card variant="outlined" class="pa-3">
-          <div class="d-flex align-center justify-space-between flex-wrap ga-2">
-            <div class="text-body-2 text-medium-emphasis">
-              {{ latestData.dateFormatted }}
-            </div>
-            <div class="d-flex align-center ga-4 flex-wrap">
-              <div class="text-center">
-                <div class="text-caption text-medium-emphasis">平均</div>
-                <div class="text-subtitle-1 font-weight-bold" :style="{ color: color }">
-                  ¥{{ latestData.avg.toFixed(2) }}{{ unitSuffix }}
-                </div>
-              </div>
-              <v-divider vertical class="d-none d-sm-flex" />
-              <div class="text-center">
-                <div class="text-caption text-medium-emphasis">区间</div>
-                <div class="text-subtitle-1 font-weight-bold">
-                  ¥{{ latestData.min.toFixed(2) }} - ¥{{ latestData.max.toFixed(2) }}{{ unitSuffix }}
-                </div>
-              </div>
-              <div v-if="latestData.count" class="text-center">
-                <div class="text-caption text-medium-emphasis">记录</div>
-                <div class="text-subtitle-1 font-weight-bold">{{ latestData.count }}</div>
-              </div>
-            </div>
-          </div>
-        </v-card>
+    <div class="chart-area" style="position: relative; min-height: 300px">
+      <!-- 加载中覆盖层（不销毁图表 DOM） -->
+      <div
+        v-if="loading"
+        class="d-flex align-center justify-center"
+        style="position: absolute; inset: 0; z-index: 1; background: rgba(var(--v-theme-surface), 0.8);"
+      >
+        <v-progress-circular indeterminate color="primary" size="48" />
       </div>
 
-      <!-- 图表容器 -->
-      <div ref="chartRef" class="chart-container"></div>
-    </template>
+      <!-- 无数据（仅在非加载且无数据时显示） -->
+      <div
+        v-if="!loading && (!chartData || chartData.length === 0)"
+        class="text-center py-12"
+      >
+        <v-icon size="64" color="medium-emphasis">mdi-chart-line</v-icon>
+        <div class="text-body-1 text-medium-emphasis mt-4">{{ emptyText }}</div>
+      </div>
+
+      <!-- 图表（一旦有数据就始终渲染，DOM 不被销毁） -->
+      <template v-if="hasEverHadData || (chartData && chartData.length > 0)">
+        <div v-if="latestData" class="px-4 py-3">
+          <v-card variant="outlined" class="pa-3">
+            <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+              <div class="text-body-2 text-medium-emphasis">
+                {{ latestData.dateFormatted }}
+              </div>
+              <div class="d-flex align-center ga-4 flex-wrap">
+                <div class="text-center">
+                  <div class="text-caption text-medium-emphasis">平均</div>
+                  <div class="text-subtitle-1 font-weight-bold" :style="{ color: color }">
+                    ¥{{ latestData.avg.toFixed(2) }}{{ unitSuffix }}
+                  </div>
+                </div>
+                <v-divider vertical class="d-none d-sm-flex" />
+                <div class="text-center">
+                  <div class="text-caption text-medium-emphasis">区间</div>
+                  <div class="text-subtitle-1 font-weight-bold">
+                    ¥{{ latestData.min.toFixed(2) }} - ¥{{ latestData.max.toFixed(2) }}{{ unitSuffix }}
+                  </div>
+                </div>
+                <div v-if="latestData.count" class="text-center">
+                  <div class="text-caption text-medium-emphasis">记录</div>
+                  <div class="text-subtitle-1 font-weight-bold">{{ latestData.count }}</div>
+                </div>
+              </div>
+            </div>
+          </v-card>
+        </div>
+
+        <div ref="chartRef" class="chart-container"></div>
+      </template>
+    </div>
   </v-card>
 </template>
 
@@ -125,6 +132,9 @@ const emit = defineEmits<{
 
 const chartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
+
+// 是否曾经有过数据（一旦为 true，图表 DOM 不再销毁）
+const hasEverHadData = ref(false)
 
 const selectedFilter = ref<'week' | 'month' | 'quarter' | 'year'>('month')
 
@@ -182,7 +192,13 @@ const latestData = computed(() => {
 // 监听筛选变化
 watch(selectedFilter, (newFilter) => {
   emit('filter-change', newFilter)
-  nextTick(updateChart)
+  nextTick(() => {
+    if (chartData.value.length > 0 && !chart) {
+      initChart()
+    } else {
+      updateChart()
+    }
+  })
 })
 
 // 初始化图表
@@ -358,32 +374,40 @@ function handleResize() {
   chart?.resize()
 }
 
-// 监听数据变化
-watch(() => props.data, () => {
-  nextTick(updateChart)
+// 监听数据变化（图表 DOM 不再被销毁，只需更新或首次初始化）
+watch(() => props.data, (newData) => {
+  if (newData?.length) {
+    if (!hasEverHadData.value) hasEverHadData.value = true
+    nextTick(() => {
+      if (!chart) {
+        initChart()
+      } else {
+        updateChart()
+      }
+    })
+  }
 }, { deep: true })
 
+// loading 结束后只需调整尺寸，无需重建图表（DOM 未被销毁）
 watch(() => props.loading, () => {
-  if (!props.loading) {
-    nextTick(updateChart)
+  if (!props.loading && chart) {
+    nextTick(() => {
+      chart.resize()
+      updateChart()
+    })
   }
 })
 
-// 监听 chartData 变化，当从空变为有数据时重新初始化图表
-watch(chartData, (newData, oldData) => {
-  const wasEmpty = !oldData || oldData.length === 0
-  const hasData = newData && newData.length > 0
-
-  if (hasData && wasEmpty) {
-    // 从空变为有数据，需要重新初始化图表
-    nextTick(() => {
-      if (chart) {
-        chart.dispose()
-        chart = null
-      }
+// 筛选变化时更新图表
+watch(selectedFilter, (newFilter) => {
+  emit('filter-change', newFilter)
+  nextTick(() => {
+    if (chartData.value.length > 0 && !chart) {
       initChart()
-    })
-  }
+    } else {
+      updateChart()
+    }
+  })
 })
 
 // 生命周期
