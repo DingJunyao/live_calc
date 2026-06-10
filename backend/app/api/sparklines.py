@@ -35,7 +35,7 @@ def _daily_avg_for_product_ids(
     records = db.query(
         ProductRecord.product_id,
         ProductRecord.price,
-        ProductRecord.original_quantity,
+        ProductRecord.standard_quantity,
         ProductRecord.recorded_at,
     ).filter(
         ProductRecord.product_id.in_(product_ids),
@@ -44,9 +44,10 @@ def _daily_avg_for_product_ids(
     ).order_by(ProductRecord.recorded_at).all()
 
     daily_totals: dict = defaultdict(lambda: {"sum": 0.0, "count": 0})
-    for prod_id, price, qty, recorded_at in records:
-        qty_f = float(qty) if qty and float(qty) > 0 else 1.0
-        unit_price = float(price) / qty_f
+    for prod_id, price, std_qty, recorded_at in records:
+        std_qty_f = float(std_qty) if std_qty and float(std_qty) > 0 else 500.0
+        # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
+        unit_price = float(price) * 500.0 / std_qty_f
         date_key = recorded_at.strftime("%Y-%m-%d")
         daily_totals[date_key]["sum"] += unit_price
         daily_totals[date_key]["count"] += 1

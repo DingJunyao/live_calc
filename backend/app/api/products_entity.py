@@ -528,9 +528,10 @@ def get_product_latest_price(
         # 计算平均价格 - 使用单价而非总价
         unit_prices = []
         for record in recent_records:
-            if record.price is not None and record.original_quantity is not None and record.original_quantity > 0:
-                # 计算单价：总价 / 数量
-                unit_price = record.price / record.original_quantity
+            # 使用 standard_quantity（克）归一化到 ¥/斤，确保跨单位可比较
+            std_qty = record.standard_quantity
+            if record.price is not None and std_qty is not None and float(std_qty) > 0:
+                unit_price = float(record.price) * 500.0 / float(std_qty)
                 unit_prices.append(unit_price)
 
         if not unit_prices:

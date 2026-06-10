@@ -1664,10 +1664,13 @@ const chartData = computed(() => {
 
     const dateKey = date.toISOString().split('T')[0]
 
-    // 计算单价（价格/数量）
-    const quantity = parseFloat(String(record.original_quantity)) || 1
+    // 计算单价，使用 standard_quantity（克）统一单位
+    // 归一化到 ¥/斤（1斤=500g），确保不同单位的记录可比较
+    const standardQty = parseFloat(String(record.standard_quantity))
     const price = parseFloat(String(record.price)) || 0
-    const unitPrice = price / quantity
+    const unitPrice = standardQty && standardQty > 0
+      ? price * 500 / standardQty
+      : price / (parseFloat(String(record.original_quantity)) || 1)
 
     if (!dailyMap.has(dateKey)) {
       dailyMap.set(dateKey, [])
@@ -1690,13 +1693,8 @@ const chartData = computed(() => {
     .sort((a, b) => a.date.localeCompare(b.date))
 })
 
-// 获取实际使用的单位
-const chartUnit = computed(() => {
-  if (priceRecords.value && priceRecords.value.length > 0 && priceRecords.value[0].original_unit) {
-    return priceRecords.value[0].original_unit
-  }
-  return ''
-})
+// 图表使用归一化后的统一单位（斤），确保跨单位数据可比较
+const chartUnit = computed(() => '斤')
 
 // 获取当前商品关联的原料的默认单位
 const currentIngredientDefaultUnit = computed(() => {

@@ -48,8 +48,9 @@ def _compute_sparkline_for_entity(
     # 按日期分组计算日均价
     daily_totals: dict = defaultdict(lambda: {"sum": 0.0, "count": 0})
     for r in records:
-        qty = float(r.original_quantity) if r.original_quantity and float(r.original_quantity) > 0 else 1.0
-        unit_price = float(r.price) / qty
+        std_qty = float(r.standard_quantity) if r.standard_quantity and float(r.standard_quantity) > 0 else 500.0
+        # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
+        unit_price = float(r.price) * 500.0 / std_qty
         date_key = r.recorded_at.strftime("%Y-%m-%d")
         daily_totals[date_key]["sum"] += unit_price
         daily_totals[date_key]["count"] += 1
@@ -94,7 +95,7 @@ def _inject_ingredient_sparklines(
     records = db.query(
         ProductRecord.product_id,
         ProductRecord.price,
-        ProductRecord.original_quantity,
+        ProductRecord.standard_quantity,
         ProductRecord.recorded_at,
     ).filter(
         ProductRecord.product_id.in_(all_product_ids),
@@ -107,12 +108,13 @@ def _inject_ingredient_sparklines(
     # 反向映射 product_id -> ingredient_id
     prod_to_ing = {prod_id: ing_id for prod_id, ing_id in products}
 
-    for prod_id, price, qty, recorded_at in records:
+    for prod_id, price, std_qty, recorded_at in records:
         ing_id = prod_to_ing.get(prod_id)
         if ing_id is None:
             continue
-        qty_f = float(qty) if qty and float(qty) > 0 else 1.0
-        unit_price = float(price) / qty_f
+        std_qty_f = float(std_qty) if std_qty and float(std_qty) > 0 else 500.0
+        # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
+        unit_price = float(price) * 500.0 / std_qty_f
         date_key = recorded_at.strftime("%Y-%m-%d")
         ing_date_prices[ing_id][date_key]["sum"] += unit_price
         ing_date_prices[ing_id][date_key]["count"] += 1
@@ -147,7 +149,7 @@ def _inject_merchant_sparklines(
     records = db.query(
         ProductRecord.merchant_id,
         ProductRecord.price,
-        ProductRecord.original_quantity,
+        ProductRecord.standard_quantity,
         ProductRecord.recorded_at,
     ).filter(
         ProductRecord.product_id.in_(product_ids),
@@ -158,9 +160,10 @@ def _inject_merchant_sparklines(
 
     # 按 (merchant_id, date) 分组
     merchant_date_prices: dict = defaultdict(lambda: defaultdict(lambda: {"sum": 0.0, "count": 0}))
-    for mid, price, qty, recorded_at in records:
-        qty_f = float(qty) if qty and float(qty) > 0 else 1.0
-        unit_price = float(price) / qty_f
+    for mid, price, std_qty, recorded_at in records:
+        std_qty_f = float(std_qty) if std_qty and float(std_qty) > 0 else 500.0
+        # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
+        unit_price = float(price) * 500.0 / std_qty_f
         date_key = recorded_at.strftime("%Y-%m-%d")
         merchant_date_prices[mid][date_key]["sum"] += unit_price
         merchant_date_prices[mid][date_key]["count"] += 1
