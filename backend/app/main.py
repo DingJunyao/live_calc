@@ -37,12 +37,12 @@ def init_default_data(db: Session):
 
     # 添加国际单位制基本单位
     si_units = [
-        {"name": "米", "abbreviation": "m", "unit_type": "length", "is_si_base": True},
-        {"name": "千克", "abbreviation": "kg", "unit_type": "mass", "is_si_base": True},
-        {"name": "克", "abbreviation": "g", "unit_type": "mass", "si_factor": 0.001},
-        {"name": "升", "abbreviation": "L", "unit_type": "volume", "is_si_base": True},
-        {"name": "毫升", "abbreviation": "mL", "unit_type": "volume", "si_factor": 0.001},
-        {"name": "秒", "abbreviation": "s", "unit_type": "time", "is_si_base": True},
+        {"name": "米", "abbreviation": "m", "unit_type": "length", "unit_system": "metric", "is_si_base": True},
+        {"name": "千克", "abbreviation": "kg", "unit_type": "mass", "unit_system": "metric", "is_si_base": True},
+        {"name": "克", "abbreviation": "g", "unit_type": "mass", "unit_system": "metric", "si_factor": 0.001},
+        {"name": "升", "abbreviation": "L", "unit_type": "volume", "unit_system": "metric", "is_si_base": True},
+        {"name": "毫升", "abbreviation": "mL", "unit_type": "volume", "unit_system": "metric", "si_factor": 0.001},
+        {"name": "秒", "abbreviation": "s", "unit_type": "time", "unit_system": "metric", "is_si_base": True},
     ]
 
     for unit_data in si_units:
@@ -52,27 +52,27 @@ def init_default_data(db: Session):
     # 添加常用单位（含中文单位）
     common_units = [
         # 质量单位
-        {"name": "斤", "abbreviation": "斤", "unit_type": "mass", "si_factor": 0.5, "is_common": True},
-        {"name": "两", "abbreviation": "两", "unit_type": "mass", "si_factor": 0.05, "is_common": True},
-        {"name": "英磅", "abbreviation": "lb", "unit_type": "mass", "si_factor": 0.453592, "is_common": True},
-        {"name": "盎司", "abbreviation": "oz", "unit_type": "mass", "si_factor": 0.0283495, "is_common": True},
+        {"name": "斤", "abbreviation": "斤", "unit_type": "mass", "unit_system": "market", "si_factor": 0.5, "is_common": True},
+        {"name": "两", "abbreviation": "两", "unit_type": "mass", "unit_system": "market", "si_factor": 0.05, "is_common": True},
+        {"name": "英磅", "abbreviation": "lb", "unit_type": "mass", "unit_system": "imperial", "si_factor": 0.453592, "is_common": True},
+        {"name": "盎司", "abbreviation": "oz", "unit_type": "mass", "unit_system": "imperial", "si_factor": 0.0283495, "is_common": True},
 
         # 体积单位
-        {"name": "杯", "abbreviation": "cup", "unit_type": "volume", "si_factor": 0.24, "is_common": True},
-        {"name": "汤匙", "abbreviation": "tbsp", "unit_type": "volume", "si_factor": 0.015, "is_common": True},
-        {"name": "茶匙", "abbreviation": "tsp", "unit_type": "volume", "si_factor": 0.005, "is_common": True},
-        {"name": "液盎司", "abbreviation": "fl oz", "unit_type": "volume", "si_factor": 0.03, "is_common": True},
+        {"name": "杯", "abbreviation": "cup", "unit_type": "volume", "unit_system": "imperial", "si_factor": 0.24, "is_common": True},
+        {"name": "汤匙", "abbreviation": "tbsp", "unit_type": "volume", "unit_system": "imperial", "si_factor": 0.015, "is_common": True},
+        {"name": "茶匙", "abbreviation": "tsp", "unit_type": "volume", "unit_system": "imperial", "si_factor": 0.005, "is_common": True},
+        {"name": "液盎司", "abbreviation": "fl oz", "unit_type": "volume", "unit_system": "imperial", "si_factor": 0.03, "is_common": True},
 
         # 长度单位
-        {"name": "厘米", "abbreviation": "cm", "unit_type": "length", "si_factor": 0.01, "is_common": True},
-        {"name": "毫米", "abbreviation": "mm", "unit_type": "length", "si_factor": 0.001, "is_common": True},
-        {"name": "英寸", "abbreviation": "in", "unit_type": "length", "si_factor": 0.0254, "is_common": True},
+        {"name": "厘米", "abbreviation": "cm", "unit_type": "length", "unit_system": "metric", "si_factor": 0.01, "is_common": True},
+        {"name": "毫米", "abbreviation": "mm", "unit_type": "length", "unit_system": "metric", "si_factor": 0.001, "is_common": True},
+        {"name": "英寸", "abbreviation": "in", "unit_type": "length", "unit_system": "imperial", "si_factor": 0.0254, "is_common": True},
 
         # 计数单位
-        {"name": "个", "abbreviation": "个", "unit_type": "count", "si_factor": 1.0, "is_common": True},
-        {"name": "只", "abbreviation": "只", "unit_type": "count", "si_factor": 1.0, "is_common": True},
-        {"name": "条", "abbreviation": "条", "unit_type": "count", "si_factor": 1.0, "is_common": True},
-        {"name": "片", "abbreviation": "片", "unit_type": "count", "si_factor": 1.0, "is_common": True},
+        {"name": "个", "abbreviation": "个", "unit_type": "count", "unit_system": "count", "si_factor": 1.0, "is_common": True},
+        {"name": "只", "abbreviation": "只", "unit_type": "count", "unit_system": "count", "si_factor": 1.0, "is_common": True},
+        {"name": "条", "abbreviation": "条", "unit_type": "count", "unit_system": "count", "si_factor": 1.0, "is_common": True},
+        {"name": "片", "abbreviation": "片", "unit_type": "count", "unit_system": "count", "si_factor": 1.0, "is_common": True},
     ]
 
     for unit_data in common_units:

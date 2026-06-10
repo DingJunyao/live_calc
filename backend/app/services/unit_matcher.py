@@ -82,6 +82,7 @@ class UnitMatcher:
             name=unit_str,
             abbreviation=unit_str,
             unit_type="count",
+            unit_system="count",
             si_factor=1.0,
             is_si_base=False,
             is_common=False,
