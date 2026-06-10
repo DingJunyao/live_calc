@@ -190,7 +190,15 @@
         </v-card-text>
 
         <!-- 各商家最新价格 -->
-        <template v-if="merchantPrices.length > 0">
+        <!-- 加载中 -->
+        <template v-if="loadingMerchantPrices">
+          <v-divider />
+          <v-card-text class="text-center py-4">
+            <v-progress-circular indeterminate size="18" class="mr-2" />
+            <span class="text-caption text-medium-emphasis">加载商家价格...</span>
+          </v-card-text>
+        </template>
+        <template v-else-if="merchantPrices.length > 0">
           <v-divider />
           <v-card-text class="pa-3">
             <div class="text-caption text-medium-emphasis mb-2">各商家价格</div>
@@ -643,6 +651,7 @@
           <span class="text-caption text-medium-emphasis ml-2">（每100g）</span>
           <v-spacer />
           <v-btn
+            v-if="!loadingNutrition"
             icon="mdi-pencil"
             size="small"
             variant="text"
@@ -651,7 +660,12 @@
           />
         </v-card-title>
         <v-divider />
-        <v-card-text v-if="!editingNutrition" class="text-center py-8">
+        <!-- 懒加载中状态 -->
+        <v-card-text v-if="loadingNutrition && !editingNutrition" class="text-center py-6">
+          <v-progress-circular indeterminate size="28" />
+          <div class="text-body-2 text-medium-emphasis mt-2">加载中...</div>
+        </v-card-text>
+        <v-card-text v-else-if="!editingNutrition" class="text-center py-8">
           <v-icon size="48" color="medium-emphasis">mdi-food-apple-outline</v-icon>
           <div class="text-body-2 text-medium-emphasis mt-2">暂无营养数据</div>
           <div class="text-caption text-medium-emphasis mt-1">点击编辑按钮添加</div>
@@ -1005,6 +1019,7 @@ interface MerchantPrice {
 }
 const merchantPrices = ref<MerchantPrice[]>([])
 const merchantPriceUnit = ref<string | null>(null)
+const loadingMerchantPrices = ref(false)
 
 // 价格记录相关
 const priceRecords = ref<PriceRecord[]>([])
@@ -1016,6 +1031,7 @@ const priceTotalPages = computed(() => Math.ceil(priceTotal.value / pricePageSiz
 
 // 营养数据
 const nutritionData = ref<any>(null)
+const loadingNutrition = ref(false)
 
 // 商家列表
 const merchants = ref<Merchant[]>([])
@@ -1712,6 +1728,7 @@ const unitOptions = [
 
 // 加载按商家分组的最新价格
 const loadMerchantPrices = async () => {
+  loadingMerchantPrices.value = true
   try {
     const response = await api.get(`/products/entity/${productId.value}/latest-price-by-merchant`)
     merchantPrices.value = response.prices || []
@@ -1719,6 +1736,8 @@ const loadMerchantPrices = async () => {
   } catch (e) {
     merchantPrices.value = []
     merchantPriceUnit.value = null
+  } finally {
+    loadingMerchantPrices.value = false
   }
 }
 
@@ -1728,24 +1747,23 @@ const loadData = async () => {
   error.value = null
 
   try {
-    // 加载商品详情
+    // 只加载商品基本信息（名称、品牌、条码、标签、最新价格等）
     const response = await api.get(`/products/entity/${productId.value}`)
     product.value = response
     setDetailTitle(response.name, '商品', '商品详情')
+    // 基本数据到位，立即渲染页面
+    loading.value = false
 
-    // 并行加载其他数据
-    await Promise.all([
-      loadMerchantPrices(),
-      loadPriceRecords(),
-      loadNutritionData(),
-      loadEntityUnits(),
-      loadDensity(),
-      loadUnmappedUnits()
-    ])
+    // 后台分别加载其他数据，互不影响
+    loadMerchantPrices()
+    loadPriceRecords()
+    loadNutritionData()
+    loadEntityUnits()
+    loadDensity()
+    loadUnmappedUnits()
   } catch (e: any) {
     console.error('加载商品失败', e)
     error.value = e.message || '加载失败'
-  } finally {
     loading.value = false
   }
 }
@@ -1779,11 +1797,14 @@ const loadNutritionData = async () => {
     return
   }
 
+  loadingNutrition.value = true
   try {
     const response = await api.get(`/nutrition/products/${productId.value}/nutrition`)
     nutritionData.value = response
   } catch (e) {
     nutritionData.value = null
+  } finally {
+    loadingNutrition.value = false
   }
 }
 

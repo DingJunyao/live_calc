@@ -651,13 +651,14 @@ const loadIngredients = async () => {
     const response = await api.get('/ingredients', { params })
     items.value = response.items || []
     total.value = response.total || 0
-    await loadLatestPrices()
-    // 异步加载迷你图
+    // 基本数据到位，立即渲染页面
+    loading.value = false
+    // 后台加载价格和迷你图，互不影响
+    loadLatestPrices()
     if (items.value.length > 0) loadIngredientSparklines()
   } catch (e: any) {
     console.error('加载原料失败', e)
     error.value = e.message || '加载失败'
-  } finally {
     loading.value = false
   }
 }

@@ -100,7 +100,7 @@ async def get_recipes(
     categories: Optional[str] = Query(None, description="菜谱分类列表，逗号分隔"),
     difficulties: Optional[str] = Query(None, description="难度列表，逗号分隔"),
     ingredient_ids: Optional[str] = Query(None, description="食材ID列表，逗号分隔（筛选包含任意该食材的菜谱，包括可选食材）"),
-    include_cost: bool = Query(True, description="是否包含成本和营养信息"),
+    include_cost: bool = Query(False, description="是否包含成本和营养信息（列表页默认不计算，通过 batch-cost 懒加载）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):

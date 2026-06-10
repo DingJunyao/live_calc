@@ -291,6 +291,7 @@ const loadRecipes = async () => {
     const params: Record<string, any> = {
       skip,
       limit: pageSize.value,
+      include_cost: false,  // 不计算成本，通过 batch-cost 懒加载
     }
     if (searchQuery.value) {
       params.search = searchQuery.value
