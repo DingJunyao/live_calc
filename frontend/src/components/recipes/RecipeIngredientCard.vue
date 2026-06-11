@@ -119,11 +119,11 @@
         <div
           v-for="(row, index) in editRows"
           :key="row.tempId"
-          class="edit-table-row pa-3"
+          class="edit-table-row pa-3 pb-2"
           :class="{ 'border-bottom': index < editRows.length - 1 }"
         >
-          <!-- 第一行：核心字段 -->
-          <div class="d-flex flex-wrap align-start ga-2 mb-2">
+          <!-- 第1行：原料 + 类型 + 删除 -->
+          <div class="d-flex flex-wrap align-start ga-2 mb-1">
             <v-icon size="small" class="drag-handle mt-2" color="medium-emphasis">mdi-drag</v-icon>
 
             <v-autocomplete
@@ -136,7 +136,7 @@
               density="compact"
               hide-details
               class="flex-grow-1"
-              style="min-width: 130px"
+              style="min-width: 140px"
               :loading="searchingIngredient"
               @update:search="onSearchIngredient"
               @update:model-value="(val: string) => onSelectIngredient(row, val)"
@@ -152,64 +152,7 @@
               variant="outlined"
               density="compact"
               hide-details
-              style="width: 65px"
-            />
-
-            <!-- 推荐值 -->
-            <v-text-field
-              v-if="!row.quantity_type"
-              v-model="row.quantity_recommended"
-              type="number"
-              label="推荐"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="width: 70px"
-              min="0"
-              step="any"
-            />
-
-            <!-- min -->
-            <v-text-field
-              v-if="!row.quantity_type"
-              v-model="row.quantity_min"
-              type="number"
-              label="min"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="width: 70px"
-              min="0"
-              step="any"
-            />
-
-            <!-- max -->
-            <v-text-field
-              v-if="!row.quantity_type"
-              v-model="row.quantity_max"
-              type="number"
-              label="max"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="width: 70px"
-              min="0"
-              step="any"
-            />
-
-            <!-- 单位 -->
-            <v-autocomplete
-              v-if="!row.quantity_type"
-              v-model="row.unit_name"
-              :items="unitOptions"
-              item-title="label"
-              item-value="value"
-              label="单位"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="width: 70px"
-              clearable
+              style="width: 75px"
             />
 
             <v-btn
@@ -222,7 +165,56 @@
             />
           </div>
 
-          <!-- 第二行：备注 + 可选标记 -->
+          <!-- 第2行：推荐值 min max 单位（仅数值类型时显示） -->
+          <div v-if="!row.quantity_type" class="d-flex flex-wrap align-start ga-2 mb-1 pl-7">
+            <v-text-field
+              v-model="row.quantity_recommended"
+              type="number"
+              label="推荐"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="width: 80px"
+              min="0"
+              step="any"
+            />
+            <v-text-field
+              v-model="row.quantity_min"
+              type="number"
+              label="min"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="width: 70px"
+              min="0"
+              step="any"
+            />
+            <v-text-field
+              v-model="row.quantity_max"
+              type="number"
+              label="max"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="width: 70px"
+              min="0"
+              step="any"
+            />
+            <v-autocomplete
+              v-model="row.unit_name"
+              :items="unitOptions"
+              item-title="label"
+              item-value="value"
+              label="单位"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="width: 80px"
+              clearable
+            />
+          </div>
+
+          <!-- 第3行：备注 + 可选（仅数值类型时显示） -->
           <div v-if="!row.quantity_type" class="d-flex flex-wrap align-center ga-2 pl-7">
             <v-text-field
               v-model="row.note"
