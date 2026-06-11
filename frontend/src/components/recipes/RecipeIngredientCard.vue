@@ -117,7 +117,8 @@
           class="edit-table-row pa-3"
           :class="{ 'border-bottom': index < editRows.length - 1 }"
         >
-          <div class="d-flex flex-wrap align-start ga-2">
+          <!-- 第一行：核心字段 -->
+          <div class="d-flex flex-wrap align-start ga-2 mb-2">
             <!-- 拖拽手柄 -->
             <v-icon size="small" class="drag-handle mt-2" color="medium-emphasis">mdi-drag</v-icon>
 
@@ -149,15 +150,15 @@
               variant="outlined"
               density="compact"
               hide-details
-              style="width: 80px"
+              style="width: 70px"
             />
 
-            <!-- 精确值（非文本用量时显示） -->
+            <!-- 数值 min（非文本用量时显示） -->
             <v-text-field
               v-if="!row.quantity"
               v-model="row.quantity_min"
               type="number"
-              label="精确"
+              label="min"
               variant="outlined"
               density="compact"
               hide-details
@@ -166,19 +167,8 @@
               step="any"
             />
 
-            <!-- 区间 -->
+            <!-- 区间 max -->
             <template v-if="!row.quantity">
-              <v-text-field
-                v-model="row.quantity_min"
-                type="number"
-                label="min"
-                variant="outlined"
-                density="compact"
-                hide-details
-                style="width: 70px"
-                min="0"
-                step="any"
-              />
               <span class="align-self-center text-caption">-</span>
               <v-text-field
                 v-model="row.quantity_max"
@@ -208,34 +198,35 @@
               clearable
             />
 
-            <!-- 备注 -->
-            <v-text-field
-              v-model="row.note"
-              label="备注"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="min-width: 80px"
-              maxlength="200"
-              clearable
-            />
-
-            <!-- 可选标记 -->
-            <v-checkbox
-              v-model="row.is_optional"
-              label="可选"
-              density="compact"
-              hide-details
-              class="mt-0 pt-0"
-            />
-
             <!-- 删除按钮 -->
             <v-btn
               icon="mdi-delete"
               size="x-small"
               color="error"
               variant="text"
+              class="mt-1"
               @click="removeRow(index)"
+            />
+          </div>
+
+          <!-- 第二行：备注 + 可选标记 -->
+          <div v-if="!row.quantity" class="d-flex flex-wrap align-center ga-2 pl-7">
+            <v-text-field
+              v-model="row.note"
+              label="备注"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="min-width: 160px; max-width: 360px"
+              maxlength="200"
+              clearable
+            />
+            <v-checkbox
+              v-model="row.is_optional"
+              label="可选"
+              density="compact"
+              hide-details
+              class="mt-0 pt-0"
             />
           </div>
         </div>
@@ -354,11 +345,19 @@ const onSelectIngredient = (row: IngredientEditRow, name: string) => {
 // 加载单位列表
 const loadUnits = async () => {
   try {
-    const res = await api.get('/ingredient-extended/units', { params: { limit: 200 } })
-    unitOptions.value = (res.items || []).map((u: any) => ({
-      label: u.abbreviation || u.name,
-      value: u.abbreviation || u.name,
-    }))
+    const res = await api.get('/units/', { params: { is_common: true } })
+    // /units/ 端点返回 UnitResponse[] 数组（无分页）
+    if (Array.isArray(res)) {
+      unitOptions.value = res.map((u: any) => ({
+        label: u.abbreviation || u.name,
+        value: u.abbreviation || u.name,
+      }))
+    } else if (res?.items) {
+      unitOptions.value = (res.items || []).map((u: any) => ({
+        label: u.abbreviation || u.name,
+        value: u.abbreviation || u.name,
+      }))
+    }
   } catch (e) {
     console.error('加载单位列表失败', e)
   }
@@ -371,13 +370,27 @@ const startEdit = () => {
     if (ing.original_quantity === '适量' || ing.original_quantity === '少许') {
       quantityType = ing.original_quantity
     }
+
+    // 从 quantity 和 quantity_range 推断 min/max
+    let qMin = ''
+    let qMax = ''
+    if (!quantityType) {
+      if (ing.quantity_range && typeof ing.quantity_range === 'object') {
+        const r = ing.quantity_range as { min?: number; max?: number }
+        qMin = r.min ? String(r.min) : ''
+        qMax = r.max ? String(r.max) : ''
+      } else if (ing.quantity) {
+        qMin = String(ing.quantity)
+      }
+    }
+
     return {
       tempId: Date.now() + Math.random(),
       ingredient_name: ing.name || '',
       ingredient_id: ing.ingredient_id,
       quantity: quantityType,
-      quantity_min: quantityType ? '' : String(ing.quantity || ''),
-      quantity_max: quantityType ? '' : (ing.quantity_range ? String(ing.quantity_range.max) : ''),
+      quantity_min: qMin,
+      quantity_max: qMax,
       unit_id: null,
       unit_name: ing.unit || '',
       is_optional: ing.is_optional || false,
@@ -425,17 +438,24 @@ const handleSave = async () => {
         }
 
         if (row.quantity) {
+          // 适量/少许
           data.original_quantity = row.quantity
         } else {
-          if (row.quantity_min) {
-            data.quantity = row.quantity_min
+          const minVal = row.quantity_min ? parseFloat(row.quantity_min) : NaN
+          const maxVal = row.quantity_max ? parseFloat(row.quantity_max) : NaN
+
+          if (!isNaN(minVal)) {
+            if (!isNaN(maxVal)) {
+              // 两个都有值 → 区间
+              data.quantity = String(minVal)
+              data.quantity_range = { min: minVal, max: Math.max(minVal, maxVal) }
+            } else {
+              // 只有min有值 → 精确值
+              data.quantity = String(minVal)
+            }
           }
-          if (row.quantity_max) {
-            data.original_quantity = { min: parseFloat(row.quantity_min) || 0, max: parseFloat(row.quantity_max) || 0 }
-          }
+
           if (row.unit_name) {
-            // 尝试匹配单位ID
-            // 简化：传单位名称或ID
             data.unit = row.unit_name
           }
         }
