@@ -125,17 +125,20 @@
             </div>
 
             <!-- 时长 -->
-            <v-text-field
-              v-model="row.duration_minutes"
-              type="number"
-              label="时长（分钟）"
-              variant="outlined"
-              density="compact"
-              hide-details
-              style="width: 140px"
-              min="0"
-              clearable
-            />
+            <div class="d-flex ga-2">
+              <div style="width: 16px"></div>
+              <v-text-field
+                v-model="row.duration_minutes"
+                type="number"
+                label="时长（分钟）"
+                variant="outlined"
+                density="compact"
+                hide-details
+                style="width: 160px"
+                min="0"
+                clearable
+              />
+            </div>
           </div>
         </div>
       </div>
