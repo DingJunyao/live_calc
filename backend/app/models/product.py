@@ -27,6 +27,7 @@ class ProductRecord(Base):
     exchange_rate = Column(Numeric(10, 6), default=1.0)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
     notes = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
 
     # 关系
     user = relationship("User", back_populates="product_records")

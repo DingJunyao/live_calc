@@ -309,10 +309,15 @@ def update_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """更新商品"""
+    """更新商品
+
+    管理员可修改任意商品，普通用户只能修改自己创建的商品。
+    """
     db_product = db.query(Product).filter(Product.id == product_id).first()
     if not db_product:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="商品不存在")
+    if db_product.created_by != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权修改此商品")
 
     update_data = product_update.model_dump(exclude_unset=True)
 
@@ -355,15 +360,26 @@ def delete_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """软删除商品"""
+    """软删除商品及其所有价格记录
+
+    管理员可删除任意商品，普通用户只能删除自己创建的商品（created_by）。
+    """
     db_product = db.query(Product).filter(Product.id == product_id).first()
     if not db_product:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="商品不存在")
+    if db_product.created_by != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权删除此商品")
 
     db_product.is_active = False
     db_product.updated_by = current_user.id
+
+    # 级联软删除所有关联的价格记录
+    db.query(ProductRecord).filter(
+        ProductRecord.product_id == product_id
+    ).update({"is_active": False}, synchronize_session=False)
+
     db.commit()
-    return {"message": "Product deleted successfully"}
+    return {"message": "商品已删除"}
 
 
 # ==================== 条码管理端点 ====================

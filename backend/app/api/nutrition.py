@@ -478,6 +478,10 @@ async def update_ingredient(
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
 
+        # 权限检查：管理员可修改任意原料，普通用户只能修改自己创建的
+        if ingredient.created_by != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权修改此原料")
+
         if name and name != ingredient.name:
             existing = db.query(Ingredient).filter(Ingredient.name == name).first()
             if existing:
@@ -515,20 +519,48 @@ async def soft_delete_ingredient(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """软删除原料 - 将is_active设置为False"""
+    """软删除原料
+
+    仅当原料未关联任何菜谱时可删除。删除时级联软删除其下的商品和关联关系。
+    管理员可删除任意原料，普通用户只能删除自己创建的原料。
+    """
     try:
+        from app.models.recipe import RecipeIngredient
+
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
+
+        # 检查是否有关联菜谱
+        recipe_count = db.query(RecipeIngredient).filter(
+            RecipeIngredient.ingredient_id == ingredient_id
+        ).count()
+        if recipe_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"该原料已被 {recipe_count} 个菜谱引用，无法删除。请先移除菜谱中的该原料。"
+            )
+
+        # 权限检查
+        if ingredient.created_by != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权删除此原料")
+
+        # 级联软删除关联的商品
+        db.query(Product).filter(
+            Product.ingredient_id == ingredient_id,
+            Product.is_active == True
+        ).update({"is_active": False}, synchronization_session=False)
 
         ingredient.is_active = False
         ingredient.updated_by = current_user.id
         db.commit()
 
-        return {"message": "原料已软删除"}
+        return {"message": "原料已删除，关联商品也已软删除"}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"软删除原料失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除原料失败: {str(e)}")
 
 
 @router.get("/search", response_model=List[NutritionDataResponse])

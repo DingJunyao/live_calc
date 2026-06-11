@@ -486,6 +486,10 @@ async def update_ingredient(
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
 
+        # 权限检查：管理员可修改任意食材，普通用户只能修改自己创建的
+        if ingredient.created_by != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权修改此食材")
+
         # 检查是否为导入原料且用户不是管理员
         if ingredient.is_imported and not current_user.is_admin:
             raise HTTPException(status_code=403, detail="导入的原料名称只能由管理员修改")
@@ -827,20 +831,58 @@ async def soft_delete_ingredient(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """软删除食材 - 将is_active设置为False"""
+    """软删除食材
+
+    仅当原料未关联任何菜谱时可删除。删除时级联软删除其下的商品和关联关系。
+    管理员可删除任意食材，普通用户只能删除自己创建的食材。
+    """
     try:
+        from app.models.recipe import RecipeIngredient
+        from app.models.product_entity import Product
+        from app.models.ingredient_hierarchy import IngredientHierarchy
+
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
+
+        # 检查是否有关联菜谱
+        recipe_count = db.query(RecipeIngredient).filter(
+            RecipeIngredient.ingredient_id == ingredient_id
+        ).count()
+        if recipe_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"该食材已被 {recipe_count} 个菜谱引用，无法删除。请先移除菜谱中的该食材。"
+            )
+
+        # 权限检查
+        if ingredient.created_by != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权删除此食材")
+
+        # 级联软删除关联的商品
+        db.query(Product).filter(
+            Product.ingredient_id == ingredient_id,
+            Product.is_active == True
+        ).update({"is_active": False}, synchronization_session=False)
+
+        # 软删除关联关系
+        db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.parent_id == ingredient_id
+        ).update({"is_active": False}, synchronization_session=False)
+        db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.child_id == ingredient_id
+        ).update({"is_active": False}, synchronization_session=False)
 
         ingredient.is_active = False
         ingredient.updated_by = current_user.id
         db.commit()
 
-        return {"message": "食材已软删除"}
+        return {"message": "食材已删除，关联商品和层次关系已软删除"}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"软删除食材失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除食材失败: {str(e)}")
 
 
 def _flatten_nutrients(nutrients_dict: dict) -> dict:

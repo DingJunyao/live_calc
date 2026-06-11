@@ -263,7 +263,8 @@ async def get_product_records(
             ProductRecord.product_id,
             func.count(ProductRecord.id).label('record_count')
         ).filter(
-            ProductRecord.user_id == current_user.id
+            ProductRecord.user_id == current_user.id,
+            ProductRecord.is_active == True
         )
 
         # 应用过滤条件
@@ -399,7 +400,10 @@ async def get_product_records(
             joinedload(ProductRecord.original_unit),
             joinedload(ProductRecord.standard_unit),
             joinedload(ProductRecord.merchant)
-        ).filter(ProductRecord.user_id == current_user.id)
+        ).filter(
+            ProductRecord.user_id == current_user.id,
+            ProductRecord.is_active == True
+        )
 
         # 优先使用 ingredient_id 过滤（通过关联商品）
         if ingredient_id:
@@ -587,11 +591,13 @@ async def update_product_record(
             joinedload(ProductRecord.merchant)
         ).filter(
             ProductRecord.id == record_id,
-            ProductRecord.user_id == current_user.id
+            ProductRecord.is_active == True
         ).first()
 
         if not db_record:
             raise HTTPException(status_code=404, detail="价格记录不存在")
+        if db_record.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权修改此价格记录")
 
         # 更新单位（如果需要）
         if record.original_unit:
@@ -679,19 +685,24 @@ async def delete_product_record(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """删除价格记录"""
+    """软删除价格记录
+
+    管理员可删除任意记录，普通用户只能删除自己的记录。
+    """
     try:
         db_record = db.query(ProductRecord).filter(
             ProductRecord.id == record_id,
-            ProductRecord.user_id == current_user.id
+            ProductRecord.is_active == True
         ).first()
 
         if not db_record:
             raise HTTPException(status_code=404, detail="价格记录不存在")
+        if db_record.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权删除此价格记录")
 
-        db.delete(db_record)
+        db_record.is_active = False
         db.commit()
-        return {"message": "价格记录删除成功"}
+        return {"message": "价格记录已删除"}
     except HTTPException:
         raise
     except Exception as e:
