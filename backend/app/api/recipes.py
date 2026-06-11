@@ -8,8 +8,10 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.recipe import Recipe, RecipeIngredient, RecipeCostHistory
 from app.models.nutrition import Ingredient
+from app.models.unit import Unit
 from app.schemas.recipe import (
     RecipeCreate,
+    RecipeUpdate,
     RecipeResponse,
     RecipeDetailResponse,
     RecipeCostResponse,
@@ -350,7 +352,220 @@ async def get_recipe_detail(
         raise HTTPException(status_code=500, detail=f"获取菜谱详情失败: {str(e)}")
 
 
-@router.get("/{recipe_id}/cost", response_model=RecipeCostResponse)
+@router.put("/{recipe_id}", response_model=RecipeDetailResponse)
+async def update_recipe(
+    recipe_id: int,
+    update_data: RecipeUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """更新菜谱（部分更新，仅修改传入的字段）"""
+    try:
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
+
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在或无权修改")
+
+        exclude_unset = update_data.model_dump(exclude_unset=True)
+
+        # 处理 ingredients 全量替换
+        if "ingredients" in exclude_unset:
+            # 删除旧的原料关联
+            db.query(RecipeIngredient).filter(
+                RecipeIngredient.recipe_id == recipe_id
+            ).delete()
+
+            # 创建新的原料关联
+            for ing_data in update_data.ingredients:
+                ingredient = db.query(Ingredient).options(
+                    load_only(Ingredient.id, Ingredient.name, Ingredient.is_active)
+                ).filter(Ingredient.name == ing_data.ingredient_name).first()
+                if not ingredient:
+                    continue
+
+                db_ri = RecipeIngredient(
+                    recipe_id=recipe_id,
+                    ingredient_id=ingredient.id,
+                    quantity=ing_data.quantity,
+                    quantity_range=ing_data.quantity_range,
+                    unit_id=ing_data.unit_id,
+                    is_optional=ing_data.is_optional,
+                    note=ing_data.note,
+                    original_quantity=ing_data.original_quantity
+                )
+                db.add(db_ri)
+
+            # 从 update dict 中移除 ingredients，避免直接设置到 Recipe 模型
+            exclude_unset.pop("ingredients")
+
+        # 更新标量字段（只更新传入的字段）
+        for field, value in exclude_unset.items():
+            if hasattr(recipe, field):
+                setattr(recipe, field, value)
+
+        # 显式标记 updated_at
+        from datetime import datetime, timezone
+        recipe.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(recipe)
+
+        # 返回完整的详情数据（复用 detail 响应构建逻辑）
+        return _build_recipe_detail_response(recipe, db)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"更新菜谱失败: {str(e)}")
+
+
+def _build_recipe_detail_response(recipe: Recipe, db: Session) -> RecipeDetailResponse:
+    """构建菜谱详情响应（辅助函数，避免重复代码）"""
+    recipe_ingredients = db.query(RecipeIngredient).filter(
+        RecipeIngredient.recipe_id == recipe.id
+    ).all()
+
+    ingredients_detail = []
+    for ri in recipe_ingredients:
+        ingredient = db.query(Ingredient).options(
+            load_only(Ingredient.id, Ingredient.name, Ingredient.is_active)
+        ).filter(Ingredient.id == ri.ingredient_id).first()
+        if ingredient is None:
+            continue
+        ingredients_detail.append(RecipeIngredientDetail(
+            id=ri.id,
+            ingredient_id=ingredient.id,
+            name=ingredient.name,
+            quantity=ri.quantity or "",
+            quantity_range=ri.quantity_range,
+            unit=ri.unit.abbreviation if ri.unit else None,
+            is_optional=ri.is_optional or False,
+            note=ri.note,
+            original_quantity=ri.original_quantity,
+            nutrition_info=None
+        ))
+
+    return RecipeDetailResponse(
+        id=recipe.id,
+        name=recipe.name,
+        source=recipe.source,
+        category=recipe.category,
+        tags=recipe.tags or [],
+        cooking_steps=recipe.cooking_steps or [],
+        total_time_minutes=recipe.total_time_minutes,
+        difficulty=recipe.difficulty,
+        servings=recipe.servings,
+        tips=recipe.tips,
+        description=recipe.description,
+        images=recipe.images or [],
+        created_at=recipe.created_at,
+        updated_at=recipe.updated_at,
+        ingredients=ingredients_detail
+    )
+
+
+@router.post("/{recipe_id}/images")
+async def upload_recipe_image(
+    recipe_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """上传菜谱配图"""
+    try:
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
+
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在或无权修改")
+
+        # 验证文件类型
+        allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+        if file.content_type and file.content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail="仅支持 JPEG、PNG、GIF、WebP 格式的图片")
+
+        # 确保存储目录存在
+        from pathlib import Path
+        static_images_dir = Path(__file__).parent.parent.parent / "static" / "images" / "recipes"
+        static_images_dir.mkdir(parents=True, exist_ok=True)
+
+        # 生成唯一文件名
+        import uuid
+        ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
+        filename = f"{uuid.uuid4().hex}{ext}"
+        file_path = static_images_dir / filename
+
+        # 保存文件
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        # 更新菜谱的 images 列表
+        image_rel_path = f"/static/images/recipes/{filename}"
+        current_images = recipe.images or []
+        current_images.append(image_rel_path)
+        recipe.images = current_images
+
+        from datetime import datetime, timezone
+        recipe.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+        return {"image_path": image_rel_path, "image_url": f"/api/v1{image_rel_path}"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"上传图片失败: {str(e)}")
+
+
+@router.delete("/{recipe_id}/images/{filename}")
+async def delete_recipe_image(
+    recipe_id: int,
+    filename: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """删除菜谱配图"""
+    try:
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id
+        ).first()
+
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在或无权修改")
+
+        # 从 images 列表中移除
+        current_images = recipe.images or []
+        target_path = f"/static/images/recipes/{filename}"
+        if target_path not in current_images:
+            raise HTTPException(status_code=404, detail="图片不存在")
+
+        current_images.remove(target_path)
+        recipe.images = current_images
+
+        from datetime import datetime, timezone
+        recipe.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+        # 删除物理文件（不阻止成功响应）
+        from pathlib import Path
+        file_path = Path(__file__).parent.parent.parent / "static" / "images" / "recipes" / filename
+        if file_path.exists():
+            file_path.unlink()
+
+        return {"detail": "图片已删除"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除图片失败: {str(e)}")
 async def get_recipe_cost(
     recipe_id: int,
     db: Session = Depends(get_db),

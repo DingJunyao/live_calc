@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
   <v-app-bar elevation="0" color="background" fixed>
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
@@ -93,17 +93,11 @@
             </div>
 
             <!-- 菜谱介绍 -->
-            <div v-if="recipe.description" class="grid-description">
-              <v-card elevation="0" class="ma-4">
-                <v-card-title class="d-flex align-center pb-2">
-                  <v-icon start color="primary">mdi-information-outline</v-icon>
-                  菜谱介绍
-                </v-card-title>
-                <v-divider />
-                <v-card-text>
-                  <div class="text-body-2" style="white-space: pre-wrap">{{ recipe.description }}</div>
-                </v-card-text>
-              </v-card>
+            <div class="grid-description">
+              <RecipeBasicCard
+                :recipe="recipe"
+                @saved="onBasicInfoSaved"
+              />
             </div>
           </div>
 
@@ -172,17 +166,11 @@
             </div>
 
             <!-- 菜谱介绍 -->
-            <div v-if="recipe.description" class="grid-description">
-              <v-card elevation="0" class="ma-4">
-                <v-card-title class="d-flex align-center pb-2">
-                  <v-icon start color="primary">mdi-information-outline</v-icon>
-                  菜谱介绍
-                </v-card-title>
-                <v-divider />
-                <v-card-text>
-                  <div class="text-body-2" style="white-space: pre-wrap">{{ recipe.description }}</div>
-                </v-card-text>
-              </v-card>
+            <div class="grid-description">
+              <RecipeBasicCard
+                :recipe="recipe"
+                @saved="onBasicInfoSaved"
+              />
             </div>
           </div>
 
@@ -207,144 +195,21 @@
         </div>
       </template>
 
-      <!-- Row 3: 原料列表 | 做法步骤 -->
       <v-row no-gutters>
         <v-col cols="12" md="6">
-          <!-- 原料列表卡片 -->
-          <v-card elevation="0" class="ma-4">
-            <v-card-title class="d-flex align-center pb-2">
-              <v-icon start color="primary">mdi-food-apple-outline</v-icon>
-              原料列表
-              <v-chip size="small" class="ml-2" v-if="recipe.ingredients?.length">
-                {{ recipe.ingredients.length }}
-              </v-chip>
-              <v-spacer />
-              <span class="text-caption text-medium-emphasis mr-2">份数</span>
-              <v-btn-toggle
-                v-model="displayServings"
-                density="compact"
-                variant="outlined"
-                divided
-                mandatory
-              >
-                <v-btn :value="recipe.servings" size="x-small">{{ recipe.servings }}</v-btn>
-                <v-btn :value="1" size="x-small" v-if="recipe.servings !== 1">1</v-btn>
-                <v-btn :value="2" size="x-small" v-if="recipe.servings !== 2 && recipe.servings > 1">2</v-btn>
-                <v-btn :value="4" size="x-small">4</v-btn>
-              </v-btn-toggle>
-            </v-card-title>
-            <v-divider />
-
-            <v-card-text v-if="recipe.ingredients?.length" class="pa-0">
-              <div
-                v-for="(ingredient, index) in recipe.ingredients"
-                :key="ingredient.id"
-                class="ingredient-item"
-                :class="{ 'mb-2': index < recipe.ingredients.length - 1 }"
-              >
-                <div class="d-flex align-center py-2">
-                  <!-- 名称：左对齐（可点击） -->
-                  <div
-                    class="ingredient-name flex-grow-1 text-body-2 ingredient-clickable"
-                    @click="goToIngredient(ingredient.ingredient_id)"
-                  >
-                    {{ ingredient.name }}
-                    <v-chip v-if="ingredient.is_optional" size="x-small" color="info" variant="flat" class="ml-1">可选</v-chip>
-                    <v-icon size="x-small" class="ml-1">mdi-chevron-right</v-icon>
-                  </div>
-                  <!-- 用量：右对齐 -->
-                  <div class="ingredient-quantity text-body-2 text-right mr-4" style="min-width: 80px">
-                    <span v-if="scaleQuantity(ingredient.quantity, recipe?.servings || 1)">
-                      {{ scaleQuantity(ingredient.quantity, recipe?.servings || 1) }} {{ ingredient.unit }}
-                    </span>
-                    <span v-else-if="ingredient.quantity_range">
-                      {{ ingredient.quantity_range.min }}-{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
-                    </span>
-                    <span v-else-if="ingredient.original_quantity">{{ ingredient.original_quantity }}</span>
-                    <span v-else>-</span>
-                  </div>
-                  <!-- 成本：右对齐 -->
-                  <div class="ingredient-cost text-body-2 text-right d-flex align-center justify-end" style="min-width: 60px">
-                    <template v-if="getIngredientFallbackChain(ingredient)">
-                      <v-tooltip location="top">
-                        <template #activator="{ props }">
-                          <v-icon
-                            v-bind="props"
-                            size="small"
-                            color="info"
-                            class="mr-1"
-                          >
-                            mdi-information
-                          </v-icon>
-                        </template>
-                        <div>
-                          <div class="text-caption">根据以下食材计算成本：</div>
-                          <div class="text-body-2 font-weight-bold">{{ getIngredientFallbackChain(ingredient) }}</div>
-                        </div>
-                      </v-tooltip>
-                    </template>
-                    <span>¥{{ formatIngredientCost(ingredient) }}</span>
-                  </div>
-                </div>
-                <!-- 备注另起一行 -->
-                <div v-if="ingredient.note" class="text-caption text-medium-emphasis pl-2 pb-1">
-                  {{ ingredient.note }}
-                </div>
-              </div>
-            </v-card-text>
-
-            <v-card-text v-else class="text-center py-4 text-medium-emphasis">
-              暂无原料数据
-            </v-card-text>
-          </v-card>
+          <RecipeIngredientCard
+            :recipe="recipe"
+            :cost-breakdown="costData?.cost_breakdown as any[]"
+            :display-servings="displayServings"
+            :servings="recipe.servings"
+            @saved="onRecipeSaved"
+          />
         </v-col>
         <v-col cols="12" md="6">
-          <!-- 做法步骤卡片 -->
-          <v-card elevation="0" class="ma-4" v-if="recipe.cooking_steps?.length">
-            <v-card-title class="d-flex align-center pb-2">
-              <v-icon start color="primary">mdi-chef-hat</v-icon>
-              做法步骤
-            </v-card-title>
-            <v-divider />
-
-            <v-card-text>
-              <v-timeline align="start" density="compact">
-                <v-timeline-item
-                  v-for="(step, index) in recipe.cooking_steps"
-                  :key="index"
-                  size="small"
-                >
-                  <template #icon>
-                    <v-avatar :color="getColorByIndex(index)" size="32">
-                      {{ index + 1 }}
-                    </v-avatar>
-                  </template>
-
-                  <div class="step-content">
-                    {{ typeof step === 'object' ? step.content : step }}
-                  </div>
-                  <div
-                    v-if="typeof step === 'object' && step.tips"
-                    class="text-caption text-medium-emphasis mt-1 pl-2"
-                    style="border-left: 2px solid var(--v-warning-base)"
-                  >
-                    {{ step.tips }}
-                  </div>
-                </v-timeline-item>
-              </v-timeline>
-            </v-card-text>
-          </v-card>
-          <!-- 做法步骤空状态 -->
-          <v-card elevation="0" class="ma-4" v-if="!recipe.cooking_steps?.length">
-            <v-card-title class="d-flex align-center pb-2">
-              <v-icon start color="primary">mdi-chef-hat</v-icon>
-              做法步骤
-            </v-card-title>
-            <v-divider />
-            <v-card-text class="text-center py-4 text-medium-emphasis">
-              暂无做法数据
-            </v-card-text>
-          </v-card>
+          <RecipeStepCard
+            :recipe="recipe"
+            @saved="onRecipeSaved"
+          />
         </v-col>
       </v-row>
 
@@ -405,19 +270,10 @@
           </v-card>
         </v-col>
         <v-col cols="12" md="6">
-          <!-- 小贴士 -->
-          <v-card elevation="0" class="ma-4" v-if="recipe.tips?.length">
-            <v-card-title class="d-flex align-center pb-2">
-              <v-icon start color="warning">mdi-lightbulb-outline</v-icon>
-              小贴士
-            </v-card-title>
-            <v-divider />
-            <v-card-text>
-              <ul class="text-body-2 pl-4 mb-0">
-                <li v-for="(tip, i) in recipe.tips" :key="i" class="mb-1">{{ tip }}</li>
-              </ul>
-            </v-card-text>
-          </v-card>
+          <RecipeTipCard
+            :recipe="recipe"
+            @saved="onRecipeSaved"
+          />
         </v-col>
       </v-row>
 
@@ -523,6 +379,10 @@ import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { usePageTitle } from '@/composables/usePageTitle'
 import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
+import RecipeBasicCard from '@/components/recipes/RecipeBasicCard.vue'
+import RecipeIngredientCard from '@/components/recipes/RecipeIngredientCard.vue'
+import RecipeStepCard from '@/components/recipes/RecipeStepCard.vue'
+import RecipeTipCard from '@/components/recipes/RecipeTipCard.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { setDetailTitle } = usePageTitle()
@@ -832,7 +692,6 @@ const loadData = async () => {
   error.value = null
 
   try {
-    // 只加载菜谱基本信息（名称、图片、原料列表、做法步骤等）
     const response = await api.get(`/recipes/${recipeId.value}`)
     recipe.value = response
     setDetailTitle(response.name, '菜谱', '菜谱详情')
@@ -1002,49 +861,6 @@ const formatNutritionValue = (value: number | undefined, unit: string) => {
   return `${num.toFixed(1)} ${unit}`
 }
 
-// 缩放原料数量（根据显示份数）
-const scaleQuantity = (quantity: string | number | undefined, origServings: number): string => {
-  if (quantity === undefined || quantity === null || quantity === '') return ''
-  const num = typeof quantity === 'string' ? parseFloat(quantity) : quantity
-  if (isNaN(num) || num === 0) return ''
-  const ratio = displayServings.value / (origServings || 1)
-  const scaled = num * ratio
-  // 保留一位小数，去掉不必要的小数点
-  if (Number.isInteger(scaled)) return scaled.toString()
-  return scaled.toFixed(1).replace(/\.0$/, '')
-}
-
-// 格式化原料成本（根据当前份数缩放）
-const formatIngredientCost = (ingredient: RecipeIngredient) => {
-  if (!costData.value?.cost_breakdown) return '-'
-  const breakdown = costData.value.cost_breakdown as CostBreakdownItem[]
-  // 使用 recipe_ingredient_id 来匹配，而不是 ingredient_id
-  // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
-  const item = breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id)
-  if (!item) return '-'
-  return formatCost((item.cost || 0) * servingRatio.value)
-}
-
-// 获取原料的回退链信息
-const getIngredientFallbackChain = (ingredient: RecipeIngredient): string | null => {
-  if (!costData.value?.cost_breakdown) return null
-  const breakdown = costData.value.cost_breakdown as CostBreakdownItem[]
-  // 使用 recipe_ingredient_id 来匹配，而不是 ingredient_id
-  // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
-  const item = breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id)
-  if (item?.aggregation_chain) return item.aggregation_chain
-  return item?.fallback_chain || null
-}
-
-// 获取原料的成本明细项
-const getIngredientCostItem = (ingredient: RecipeIngredient): CostBreakdownItem | null => {
-  if (!costData.value?.cost_breakdown) return null
-  const breakdown = costData.value.cost_breakdown as CostBreakdownItem[]
-  // 使用 recipe_ingredient_id 来匹配，而不是 ingredient_id
-  // 因为回退后的 ingredient_id 可能会变化，但 recipe_ingredient_id 保持不变
-  return breakdown.find((b: CostBreakdownItem) => b.recipe_ingredient_id === ingredient.id) || null
-}
-
 // 获取营养素NRV百分比
 const getNutritionNRV = (item: any) => {
   if (!nutritionData.value?.per_serving_nutrition) return '-'
@@ -1077,13 +893,27 @@ const getColorByIndex = (index: number) => {
   return colors[index % colors.length] || 'primary'
 }
 
-const goBack = () => {
-  router.back()
+// 保存事件处理：更新本地 recipe 数据并重设标题
+const onRecipeSaved = (updatedRecipe: any) => {
+  if (recipe.value) {
+    recipe.value = { ...recipe.value, ...updatedRecipe }
+  }
+  // 重新加载成本数据（原料变更影响成本）
+  loadCostData()
 }
 
-// 跳转到原料详情
-const goToIngredient = (ingredientId: number) => {
-  router.push(`/data/ingredients/${ingredientId}`)
+// 基本信息保存事件
+const onBasicInfoSaved = (updatedRecipe: any) => {
+  if (recipe.value) {
+    recipe.value = { ...recipe.value, ...updatedRecipe }
+    if (updatedRecipe.name) {
+      setDetailTitle(updatedRecipe.name, '菜谱', '菜谱详情')
+    }
+  }
+}
+
+const goBack = () => {
+  router.back()
 }
 
 // 监听路由参数变化，当菜谱 ID 变化时重新加载数据
@@ -1102,32 +932,6 @@ onMounted(loadData)
   text-align: center;
 }
 
-.step-content {
-  line-height: 1.5;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-/* 原料列表样式 */
-.ingredient-item {
-  border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
-}
-
-.ingredient-item:last-child {
-  border-bottom: none;
-}
-
-/* 可点击的原料名称样式 */
-.ingredient-clickable {
-  cursor: pointer;
-  transition: background-color 0.2s;
-  padding: 4px 8px;
-  margin: -4px -8px;
-  border-radius: 4px;
-}
-
-.ingredient-clickable:hover {
-  background: rgba(var(--v-theme-primary), 0.04);
-}
 
 /* 营养成分表格样式 */
 .nutrition-header {

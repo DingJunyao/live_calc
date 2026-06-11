@@ -141,18 +141,78 @@
       @click="showAddDialog = true"
     />
 
-    <!-- 添加菜谱对话框（简化版） -->
-    <v-dialog v-model="showAddDialog" max-width="500">
+    <!-- 添加菜谱对话框 -->
+    <v-dialog v-model="showAddDialog" max-width="500" @click:outside="resetCreateForm">
       <v-card>
-        <v-card-title>添加菜谱</v-card-title>
-        <v-card-text>
-          <v-alert type="info" class="mb-4">
-            菜谱创建功能即将推出，敬请期待！
-          </v-alert>
+        <v-card-title class="d-flex align-center">
+          <v-icon start color="primary">mdi-plus-circle-outline</v-icon>
+          创建菜谱
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pt-4">
+          <v-text-field
+            v-model="createForm.name"
+            label="菜谱名称 *"
+            variant="outlined"
+            density="compact"
+            maxlength="200"
+            :error-messages="createErrors.name"
+            hide-details="auto"
+            class="mb-3"
+          />
+          <v-row>
+            <v-col cols="6">
+              <v-select
+                v-model="createForm.category"
+                label="分类 *"
+                variant="outlined"
+                density="compact"
+                :items="categoryOptions"
+                item-title="title"
+                item-value="value"
+                hide-details
+              />
+            </v-col>
+            <v-col cols="6">
+              <v-select
+                v-model="createForm.difficulty"
+                label="难度 *"
+                variant="outlined"
+                density="compact"
+                :items="difficultyOptions"
+                item-title="label"
+                item-value="value"
+                hide-details
+              />
+            </v-col>
+          </v-row>
+
+          <!-- 错误提示 -->
+          <v-alert
+            v-if="createError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mt-3"
+            closable
+            @click:close="createError = ''"
+          >{{ createError }}</v-alert>
         </v-card-text>
-        <v-card-actions>
+
+        <v-card-actions class="pa-4">
           <v-spacer />
-          <v-btn @click="showAddDialog = false">关闭</v-btn>
+          <v-btn
+            variant="text"
+            @click="closeCreateDialog"
+            :disabled="creating"
+          >取消</v-btn>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            :loading="creating"
+            :disabled="!createForm.name || !createForm.category"
+            @click="handleCreate"
+          >创建</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -281,6 +341,76 @@ const onFilterChange = (filterState: Record<string, any>) => {
   currentPage.value = 1
   requestFilters.value = filterState
   loadRecipes()
+}
+
+// 菜谱创建相关
+const createForm = ref({
+  name: '',
+  category: '荤菜',
+  difficulty: 'easy',
+})
+const creating = ref(false)
+const createError = ref('')
+const createErrors = ref<Record<string, string>>({})
+
+const categoryOptions = [
+  { title: '荤菜', value: '荤菜' },
+  { title: '素菜', value: '素菜' },
+  { title: '水产', value: '水产' },
+  { title: '主食', value: '主食' },
+  { title: '汤与粥', value: '汤与粥' },
+  { title: '早餐', value: '早餐' },
+  { title: '甜品', value: '甜品' },
+  { title: '调料', value: '调料' },
+  { title: '半成品', value: '半成品' },
+  { title: '小食', value: '小食' },
+]
+
+const difficultyOptions = [
+  { label: '简易', value: 'simple' },
+  { label: '简单', value: 'easy' },
+  { label: '中等', value: 'medium' },
+  { label: '困难', value: 'hard' },
+  { label: '专家', value: 'expert' },
+]
+
+const resetCreateForm = () => {
+  createForm.value = { name: '', category: '荤菜', difficulty: 'easy' }
+  createError.value = ''
+  createErrors.value = {}
+}
+
+const closeCreateDialog = () => {
+  showAddDialog.value = false
+  resetCreateForm()
+}
+
+const handleCreate = async () => {
+  // 验证
+  if (!createForm.value.name.trim()) {
+    createErrors.value = { name: '请输入菜谱名称' }
+    return
+  }
+  createErrors.value = {}
+  creating.value = true
+  createError.value = ''
+
+  try {
+    const result = await api.post('/recipes', {
+      name: createForm.value.name.trim(),
+      category: createForm.value.category,
+      difficulty: createForm.value.difficulty,
+      cooking_steps: [],
+      ingredients: [],
+    })
+    closeCreateDialog()
+    router.push(`/recipes/${result.id}`)
+  } catch (e: any) {
+    console.error('创建菜谱失败', e)
+    createError.value = e.response?.data?.detail || e.message || '创建失败，请重试'
+  } finally {
+    creating.value = false
+  }
 }
 
 const loadRecipes = async () => {
