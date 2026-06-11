@@ -450,20 +450,24 @@ const handleSave = async () => {
           const minVal = row.quantity_min ? parseFloat(row.quantity_min) : NaN
           const maxVal = row.quantity_max ? parseFloat(row.quantity_max) : NaN
 
-          // quantity（推荐值/精确值）
-          if (!isNaN(recVal)) {
+          const hasRec = !isNaN(recVal)
+          const hasMin = !isNaN(minVal)
+          const hasMax = !isNaN(maxVal)
+
+          if (hasRec && hasMin && hasMax) {
+            // ✅ 推荐值 + min + max → quantity + quantity_range
             data.quantity = String(recVal)
+            data.quantity_range = { min: minVal, max: Math.max(minVal, maxVal) }
+          } else if (hasRec && !hasMin && !hasMax) {
+            // ✅ 仅推荐值 → quantity
+            data.quantity = String(recVal)
+          } else if (!hasRec && hasMin && hasMax) {
+            // ✅ 仅 min + max → quantity_range
+            data.quantity_range = { min: minVal, max: Math.max(minVal, maxVal) }
           }
+          // ❌ 其他组合（推荐+min、推荐+max、仅min等）→ 不保存用量字段
 
-          // quantity_range（区间）：min 或 max 任一个有值就构造
-          if (!isNaN(minVal) || !isNaN(maxVal)) {
-            data.quantity_range = {
-              min: !isNaN(minVal) ? minVal : (!isNaN(recVal) ? recVal : 0),
-              max: !isNaN(maxVal) ? maxVal : (!isNaN(recVal) ? recVal : minVal),
-            }
-          }
-
-          if (row.unit_name) {
+          if (row.unit_name && (hasRec || hasMin || hasMax)) {
             data.unit = row.unit_name
           }
         }
