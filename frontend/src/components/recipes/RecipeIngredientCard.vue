@@ -66,7 +66,11 @@
               <v-icon size="x-small" class="ml-1">mdi-chevron-right</v-icon>
             </div>
             <div class="ingredient-quantity text-body-2 text-right mr-4" style="min-width: 80px">
-              <span v-if="scaleQuantity(ingredient.quantity, servings)">
+              <template v-if="ingredient.quantity && ingredient.quantity_range">
+                {{ ingredient.quantity_range.min }}~{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
+                <span class="text-medium-emphasis">（推荐 {{ ingredient.quantity }} {{ ingredient.unit }}）</span>
+              </template>
+              <span v-else-if="scaleQuantity(ingredient.quantity, servings)">
                 {{ scaleQuantity(ingredient.quantity, servings) }} {{ ingredient.unit }}
               </span>
               <span v-else-if="ingredient.quantity_range">
