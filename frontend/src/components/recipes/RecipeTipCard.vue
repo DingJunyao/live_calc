@@ -58,7 +58,7 @@
           'border-bottom': index < editRows.length - 1,
           'drag-over': dragIndex !== null && index === dragIndex
         }"
-        @dragstart="onDragStart(index)"
+        @dragstart="(e) => onDragStart(e, index)"
         @dragover.prevent="onDragOver(index)"
         @dragleave="dragIndex = null"
         @drop="onDrop(index)"
@@ -118,7 +118,9 @@ const saving = ref(false)
 const editRows = ref<string[]>([])
 const dragIndex = ref<number | null>(null)
 
-const onDragStart = (index: number) => {
+const onDragStart = (e: DragEvent, index: number) => {
+  e.dataTransfer?.setData('text/plain', String(index))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
   dragIndex.value = index
 }
 

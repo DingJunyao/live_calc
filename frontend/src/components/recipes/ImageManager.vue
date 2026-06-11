@@ -8,7 +8,7 @@
         draggable="true"
         class="image-thumb-wrapper"
         :class="{ 'drag-over': dragIndex !== null && index === dragIndex }"
-        @dragstart="onDragStart(index)"
+        @dragstart="(e) => onDragStart(e, index)"
         @dragover.prevent="onDragOver(index)"
         @dragleave="dragIndex = null"
         @drop="onDrop(index)"
@@ -101,7 +101,9 @@ const emit = defineEmits<{
 const fileInputRef = ref<any>(null)
 const dragIndex = ref<number | null>(null)
 
-const onDragStart = (index: number) => {
+const onDragStart = (e: DragEvent, index: number) => {
+  e.dataTransfer?.setData('text/plain', String(index))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
   dragIndex.value = index
 }
 
