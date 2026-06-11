@@ -549,7 +549,7 @@ async def soft_delete_ingredient(
         db.query(Product).filter(
             Product.ingredient_id == ingredient_id,
             Product.is_active == True
-        ).update({"is_active": False}, synchronization_session=False)
+        ).update({"is_active": False}, synchronize_session=False)
 
         ingredient.is_active = False
         ingredient.updated_by = current_user.id

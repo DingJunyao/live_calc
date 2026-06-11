@@ -863,15 +863,15 @@ async def soft_delete_ingredient(
         db.query(Product).filter(
             Product.ingredient_id == ingredient_id,
             Product.is_active == True
-        ).update({"is_active": False}, synchronization_session=False)
+        ).update({"is_active": False}, synchronize_session=False)
 
         # 软删除关联关系
         db.query(IngredientHierarchy).filter(
             IngredientHierarchy.parent_id == ingredient_id
-        ).update({"is_active": False}, synchronization_session=False)
+        ).update({"is_active": False}, synchronize_session=False)
         db.query(IngredientHierarchy).filter(
             IngredientHierarchy.child_id == ingredient_id
-        ).update({"is_active": False}, synchronization_session=False)
+        ).update({"is_active": False}, synchronize_session=False)
 
         ingredient.is_active = False
         ingredient.updated_by = current_user.id
