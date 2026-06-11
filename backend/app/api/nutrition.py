@@ -1244,6 +1244,52 @@ async def edit_ingredient_nutrition(
         from app.services.nutrition_import_service import NutritionImportService
         core_display_map = NutritionImportService.CORE_DISPLAY_MAP
 
+        # NRV 参考值（中国GB标准，成人每日推荐摄入量）
+        NRV_REF = {
+            "能量": (2000, "kcal"),
+            "蛋白质": (60, "g"),
+            "脂肪": (60, "g"),
+            "碳水化合物": (300, "g"),
+            "膳食纤维": (25, "g"),
+            "钙": (800, "mg"),
+            "铁": (15, "mg"),
+            "钠": (2000, "mg"),
+            "钾": (2000, "mg"),
+            "维生素A": (800, "μg"),
+            "维生素C": (100, "mg"),
+            "维生素B1": (1.2, "mg"),
+            "维生素B2": (1.4, "mg"),
+            "维生素B12": (2.4, "μg"),
+            "维生素D": (5, "μg"),
+            "维生素E": (14, "mg"),
+            "维生素K": (80, "μg"),
+        }
+        NRV_UNIT_FACTOR = {
+            ("kJ", "kcal"): 1.0 / 4.184,
+            ("mg", "g"): 0.001,
+            ("μg", "g"): 0.000001,
+            ("g", "mg"): 1000,
+            ("μg", "mg"): 0.001,
+            ("g", "μg"): 1000000,
+            ("mg", "μg"): 1000,
+        }
+
+        def _calc_nrp(display_name: str, value: float, unit: str) -> float:
+            """根据 NRV 标准计算百分比"""
+            ref = NRV_REF.get(display_name)
+            if not ref or value <= 0:
+                return 0
+            nrv_value, nrv_unit = ref
+            if unit != nrv_unit:
+                factor = NRV_UNIT_FACTOR.get((unit, nrv_unit))
+                if factor:
+                    value = value * factor
+                else:
+                    return 0
+            if nrv_value <= 0:
+                return 0
+            return round((value / nrv_value) * 100, 2)
+
         structured_nutrients = {
             "core_nutrients": {},
             "all_nutrients": {},
@@ -1258,11 +1304,17 @@ async def edit_ingredient_nutrition(
                 "key": key
             }
 
+            # 计算 NRV 百分比
+            display_name = core_display_map.get(nutrient.name)
+            if display_name:
+                nrp = _calc_nrp(display_name, float(nutrient.value), nutrient.unit)
+                if nrp > 0:
+                    info["nrp_pct"] = nrp
+                    info["standard"] = "中国GB标准"
+
             structured_nutrients["all_nutrients"][key] = info
             structured_nutrients["nutrient_details"][key] = info
 
-            # 检查是否为核心营养素（通过中文名查找 CORE_DISPLAY_MAP）
-            display_name = core_display_map.get(nutrient.name)
             if display_name:
                 structured_nutrients["core_nutrients"][display_name] = {
                     **info, "key": key
@@ -1331,6 +1383,51 @@ async def edit_product_nutrition(
         from app.services.nutrition_import_service import NutritionImportService
         core_display_map = NutritionImportService.CORE_DISPLAY_MAP
 
+        # NRV 参考值
+        NRV_REF = {
+            "能量": (2000, "kcal"),
+            "蛋白质": (60, "g"),
+            "脂肪": (60, "g"),
+            "碳水化合物": (300, "g"),
+            "膳食纤维": (25, "g"),
+            "钙": (800, "mg"),
+            "铁": (15, "mg"),
+            "钠": (2000, "mg"),
+            "钾": (2000, "mg"),
+            "维生素A": (800, "μg"),
+            "维生素C": (100, "mg"),
+            "维生素B1": (1.2, "mg"),
+            "维生素B2": (1.4, "mg"),
+            "维生素B12": (2.4, "μg"),
+            "维生素D": (5, "μg"),
+            "维生素E": (14, "mg"),
+            "维生素K": (80, "μg"),
+        }
+        NRV_UNIT_FACTOR = {
+            ("kJ", "kcal"): 1.0 / 4.184,
+            ("mg", "g"): 0.001,
+            ("μg", "g"): 0.000001,
+            ("g", "mg"): 1000,
+            ("μg", "mg"): 0.001,
+            ("g", "μg"): 1000000,
+            ("mg", "μg"): 1000,
+        }
+
+        def _calc_nrp(display_name: str, value: float, unit: str) -> float:
+            ref = NRV_REF.get(display_name)
+            if not ref or value <= 0:
+                return 0
+            nrv_value, nrv_unit = ref
+            if unit != nrv_unit:
+                factor = NRV_UNIT_FACTOR.get((unit, nrv_unit))
+                if factor:
+                    value = value * factor
+                else:
+                    return 0
+            if nrv_value <= 0:
+                return 0
+            return round((value / nrv_value) * 100, 2)
+
         structured_nutrients = {
             "core_nutrients": {},
             "all_nutrients": {},
@@ -1344,13 +1441,17 @@ async def edit_product_nutrition(
                 "unit": nutrient.unit,
                 "key": key
             }
-            structured_nutrients["all_nutrients"][key] = info
-            structured_nutrients["nutrient_details"][key] = info
             display_name = core_display_map.get(nutrient.name)
             if display_name:
+                nrp = _calc_nrp(display_name, float(nutrient.value), nutrient.unit)
+                if nrp > 0:
+                    info["nrp_pct"] = nrp
+                    info["standard"] = "中国GB标准"
                 structured_nutrients["core_nutrients"][display_name] = {
                     **info, "key": key
                 }
+            structured_nutrients["all_nutrients"][key] = info
+            structured_nutrients["nutrient_details"][key] = info
 
         # 更新商品的自定义营养数据
         product.custom_nutrition_data = structured_nutrients
