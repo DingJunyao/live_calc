@@ -123,8 +123,16 @@
         <div
           v-for="(row, index) in editRows"
           :key="row.tempId"
+          draggable="true"
           class="edit-table-row pa-3 pb-2"
-          :class="{ 'border-bottom': index < editRows.length - 1 }"
+          :class="{
+            'border-bottom': index < editRows.length - 1,
+            'drag-over': dragIndex !== null && index === dragIndex
+          }"
+          @dragstart="onDragStart(index)"
+          @dragover.prevent="onDragOver(index)"
+          @dragleave="dragIndex = null"
+          @drop="onDrop(index)"
         >
           <!-- 第1行：原料 + 类型 + 删除 -->
           <div class="d-flex flex-wrap align-start ga-2 mb-1">
@@ -277,6 +285,23 @@ const router = useRouter()
 const editing = ref(false)
 const saving = ref(false)
 const editRows = ref<IngredientEditRow[]>([])
+const dragIndex = ref<number | null>(null)
+
+const onDragStart = (index: number) => {
+  dragIndex.value = index
+}
+
+const onDragOver = (index: number) => {
+  if (dragIndex.value === null || dragIndex.value === index) return
+  const from = dragIndex.value
+  const item = editRows.value.splice(from, 1)[0]
+  editRows.value.splice(index, 0, item)
+  dragIndex.value = index
+}
+
+const onDrop = () => {
+  dragIndex.value = null
+}
 const ingredientSearchResults = ref<IngredientOption[]>([])
 const unitOptions = ref<{ label: string; value: string }[]>([])
 const unitMap = ref<Record<string, number>>({})
@@ -545,6 +570,10 @@ loadUnits()
 
 .drag-handle {
   cursor: grab;
+}
+
+.drag-over {
+  border-top: 2px solid rgb(var(--v-theme-primary)) !important;
 }
 
 .edit-table-header {

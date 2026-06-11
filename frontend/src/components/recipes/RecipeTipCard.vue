@@ -52,8 +52,16 @@
       <div
         v-for="(row, index) in editRows"
         :key="index"
+        draggable="true"
         class="d-flex align-center pa-3 border-bottom"
-        :class="{ 'border-bottom': index < editRows.length - 1 }"
+        :class="{
+          'border-bottom': index < editRows.length - 1,
+          'drag-over': dragIndex !== null && index === dragIndex
+        }"
+        @dragstart="onDragStart(index)"
+        @dragover.prevent="onDragOver(index)"
+        @dragleave="dragIndex = null"
+        @drop="onDrop(index)"
       >
         <v-icon size="small" class="mr-2 drag-handle" color="medium-emphasis">mdi-drag</v-icon>
 
@@ -108,6 +116,24 @@ const emit = defineEmits<{
 const editing = ref(false)
 const saving = ref(false)
 const editRows = ref<string[]>([])
+const dragIndex = ref<number | null>(null)
+
+const onDragStart = (index: number) => {
+  dragIndex.value = index
+}
+
+const onDragOver = (index: number) => {
+  if (dragIndex.value === null || dragIndex.value === index) return
+  const from = dragIndex.value
+  const to = index
+  const item = editRows.value.splice(from, 1)[0]
+  editRows.value.splice(to, 0, item)
+  dragIndex.value = to
+}
+
+const onDrop = (index: number) => {
+  dragIndex.value = null
+}
 
 const tipsList = computed(() => props.recipe.tips || [])
 
@@ -159,5 +185,9 @@ const handleSave = async () => {
 
 .drag-handle {
   cursor: grab;
+}
+
+.drag-over {
+  border-top: 2px solid rgb(var(--v-theme-primary)) !important;
 }
 </style>

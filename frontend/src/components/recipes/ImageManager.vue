@@ -5,7 +5,13 @@
       <div
         v-for="(img, index) in modelValue"
         :key="index"
+        draggable="true"
         class="image-thumb-wrapper"
+        :class="{ 'drag-over': dragIndex !== null && index === dragIndex }"
+        @dragstart="onDragStart(index)"
+        @dragover.prevent="onDragOver(index)"
+        @dragleave="dragIndex = null"
+        @drop="onDrop(index)"
       >
         <v-img
           :src="getImageUrl(img)"
@@ -89,9 +95,30 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string[]): void
   (e: 'remove', index: number): void
   (e: 'upload', file: File): void
+  (e: 'reorder', images: string[]): void
 }>()
 
 const fileInputRef = ref<any>(null)
+const dragIndex = ref<number | null>(null)
+
+const onDragStart = (index: number) => {
+  dragIndex.value = index
+}
+
+const onDragOver = (index: number) => {
+  if (dragIndex.value === null || dragIndex.value === index) return
+  const from = dragIndex.value
+  const items = [...props.modelValue]
+  const item = items.splice(from, 1)[0]
+  items.splice(index, 0, item)
+  dragIndex.value = index
+  emit('update:modelValue', items)
+  emit('reorder', items)
+}
+
+const onDrop = () => {
+  dragIndex.value = null
+}
 
 const triggerUpload = () => {
   fileInputRef.value?.click()
@@ -148,6 +175,10 @@ const getImageUrl = (path: string) => {
   color: white;
   text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
   cursor: grab;
+}
+
+.image-thumb-wrapper.drag-over {
+  border-top: 2px solid rgb(var(--v-theme-primary)) !important;
 }
 
 .image-add-btn {

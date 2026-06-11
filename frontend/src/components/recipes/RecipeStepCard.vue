@@ -75,8 +75,16 @@
       <div
         v-for="(row, index) in editRows"
         :key="row.tempId"
+        draggable="true"
         class="step-edit-item pa-3"
-        :class="{ 'border-bottom': index < editRows.length - 1 }"
+        :class="{
+          'border-bottom': index < editRows.length - 1,
+          'drag-over': dragIndex !== null && index === dragIndex
+        }"
+        @dragstart="onDragStart(index)"
+        @dragover.prevent="onDragOver(index)"
+        @dragleave="dragIndex = null"
+        @drop="onDrop(index)"
       >
         <div class="d-flex align-start ga-2">
           <!-- 序号 -->
@@ -173,6 +181,23 @@ const emit = defineEmits<{
 const editing = ref(false)
 const saving = ref(false)
 const editRows = ref<StepEditRow[]>([])
+const dragIndex = ref<number | null>(null)
+
+const onDragStart = (index: number) => {
+  dragIndex.value = index
+}
+
+const onDragOver = (index: number) => {
+  if (dragIndex.value === null || dragIndex.value === index) return
+  const from = dragIndex.value
+  const item = editRows.value.splice(from, 1)[0]
+  editRows.value.splice(index, 0, item)
+  dragIndex.value = index
+}
+
+const onDrop = () => {
+  dragIndex.value = null
+}
 
 const getColorByIndex = (index: number) => {
   const colors = ['primary', 'secondary', 'tertiary', 'success', 'warning']
@@ -265,6 +290,10 @@ const handleSave = async () => {
 
 .drag-handle {
   cursor: grab;
+}
+
+.drag-over {
+  border-top: 2px solid rgb(var(--v-theme-primary)) !important;
 }
 
 .step-number {
