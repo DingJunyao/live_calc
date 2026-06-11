@@ -48,12 +48,24 @@
           style="max-width: 120px"
         />
 
+        <!-- 当前位置按钮 -->
+        <v-btn
+          :icon="isLocating ? 'mdi-crosshairs-gps' : 'mdi-crosshairs-gps'"
+          size="small"
+          :color="hasCurrentLocation ? 'primary' : 'surface'"
+          variant="elevated"
+          :title="'显示当前位置（1km 范围）'"
+          @click="showCurrentLocation"
+          class="control-btn"
+        />
+
         <!-- 居中按钮 -->
         <v-btn
-          icon="mdi-crosshairs-gps"
+          icon="mdi-fit-to-page-outline"
           size="small"
           color="surface"
           variant="elevated"
+          title="缩放到所有商家"
           @click="fitAllMerchants"
           class="control-btn"
         />
@@ -122,6 +134,12 @@ const isLoading = ref(true)
 // 地图引擎和标记
 let currentEngine: any = null
 let markersMap: Map<number, any> = new Map()
+
+// 当前位置相关
+const isLocating = ref(false)
+const hasCurrentLocation = ref(false)
+let currentLocationMarker: any = null
+let currentLocationCircle: any = null
 
 // 所有地图选项
 const allMapsOptions: { value: MapEngineType; label: string }[] = [
@@ -249,9 +267,28 @@ function updateMerchantsMarkers() {
   if (!currentEngine) return
 
   // 清除所有现有标记
-  markersMap.forEach(markerId => {
-    currentEngine.removeMarker(markerId)
-  })
+  if (isLeafletMap.value) {
+    markersMap.forEach(markerId => {
+      currentEngine.removeMarker(markerId)
+    })
+  } else {
+    // SDK 引擎：直接操作原生地图对象移除
+    const nativeMap = currentEngine.getMap()
+    const engineName = currentEngine.name
+    markersMap.forEach((nativeMarker) => {
+      try {
+        if (engineName === 'amap-sdk' && nativeMap?.remove) {
+          nativeMap.remove(nativeMarker)
+        } else if (engineName === 'baidu-sdk' && nativeMap?.removeOverlay) {
+          nativeMap.removeOverlay(nativeMarker)
+        } else if (engineName === 'tencent-sdk') {
+          // 腾讯：标记是 { dot, label } 对象
+          if (nativeMarker?.dot?.setMap) nativeMarker.dot.setMap(null)
+          if (nativeMarker?.label?.setMap) nativeMarker.label.setMap(null)
+        }
+      } catch (e) { /* ignore */ }
+    })
+  }
   markersMap.clear()
 
   // 添加商家标记
@@ -268,47 +305,125 @@ function updateMerchantsMarkers() {
       displayCoord = convertCoordinate(merchant.latitude!, merchant.longitude!, 'wgs84', 'bd09')
     }
 
-    // 添加标记
-    const markerId = currentEngine.addMarker(displayCoord.lat, displayCoord.lng, {
-      draggable: false
-    })
+    const isSelected = props.selectedMerchant?.id === merchant.id
+    const isClosed = merchant.is_open === false
+    const displayName = merchant.name.length > 8 ? merchant.name.substring(0, 8) + '…' : merchant.name
 
-    markersMap.set(merchant.id, markerId)
-
-    // 只对 Leaflet 地图设置自定义图标
     if (isLeafletMap.value) {
+      // Leaflet：通过引擎添加标记，再设置自定义图标
+      const markerId = currentEngine.addMarker(displayCoord.lat, displayCoord.lng, {
+        draggable: false
+      })
+      markersMap.set(merchant.id, markerId)
+
       const leafletMap = currentEngine.getMap()
       if (leafletMap) {
-        const marker = markersMap.get(merchant.id)
-        if (marker) {
-          // 查找对应的 Leaflet Marker 并更新图标
-          leafletMap.eachLayer((layer: any) => {
-            if (layer instanceof L.Marker) {
-              const latLng = layer.getLatLng()
-              if (Math.abs(latLng.lat - displayCoord.lat) < 0.0001 &&
-                  Math.abs(latLng.lng - displayCoord.lng) < 0.0001) {
-                const isSelected = props.selectedMerchant?.id === merchant.id
-                const isClosed = merchant.is_open === false
-                const displayName = merchant.name.length > 8 ? merchant.name.substring(0, 8) + '…' : merchant.name
-                const icon = L.divIcon({
-                  className: 'merchant-marker',
-                  html: `<div class="marker-icon ${isSelected ? 'selected' : ''} ${isClosed ? 'closed' : ''}">
-                    <span class="marker-label">${displayName}</span>
-                  </div>`,
-                  iconSize: [80, 30],
-                  iconAnchor: [40, 30]
-                })
-                layer.setIcon(icon)
-                const popupLines = [`<strong>${merchant.name}</strong>`]
-                if (merchant.is_open === false) {
-                  popupLines.push('<span style="color:#f57c00;">（已关闭）</span>')
-                }
-                popupLines.push(merchant.address || '无地址')
-                layer.bindPopup(popupLines.join('<br>'))
+        leafletMap.eachLayer((layer: any) => {
+          if (layer instanceof L.Marker) {
+            const latLng = layer.getLatLng()
+            if (Math.abs(latLng.lat - displayCoord.lat) < 0.0001 &&
+                Math.abs(latLng.lng - displayCoord.lng) < 0.0001) {
+              const icon = L.divIcon({
+                className: 'merchant-marker',
+                html: `<div class="marker-icon ${isSelected ? 'selected' : ''} ${isClosed ? 'closed' : ''}">
+                  <span class="marker-label">${displayName}</span>
+                </div>`,
+                iconSize: [80, 30],
+                iconAnchor: [40, 30]
+              })
+              layer.setIcon(icon)
+              const popupLines = [`<strong>${merchant.name}</strong>`]
+              if (isClosed) {
+                popupLines.push('<span style="color:#f57c00;">（已关闭）</span>')
               }
+              popupLines.push(merchant.address || '无地址')
+              layer.bindPopup(popupLines.join('<br>'))
             }
+          }
+        })
+      }
+    } else {
+      // SDK 引擎：直接创建带名称标签的自定义商家标记
+      const engineName = currentEngine.name
+      const nativeMap = currentEngine.getMap()
+      const bgColor = isClosed ? '#757575' : (isSelected ? '#d32f2f' : '#1976d2')
+
+      if (engineName === 'amap-sdk' && window.AMap) {
+        const marker = new window.AMap.Marker({
+          position: [displayCoord.lng, displayCoord.lat],
+          content: `<div style="background:${bgColor};color:#fff;padding:3px 7px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.2);position:relative;">
+            ${displayName}
+            <div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid ${bgColor};"></div>
+          </div>`,
+          offset: new window.AMap.Pixel(-40, -28)
+        })
+        nativeMap.add(marker)
+        markersMap.set(merchant.id, marker)
+      } else if (engineName === 'baidu-sdk') {
+        const BMap = window.BMapGL || window.BMap
+        if (BMap) {
+          const point = new BMap.Point(displayCoord.lng, displayCoord.lat)
+          const marker = new BMap.Marker(point)
+          const label = new BMap.Label(displayName, {
+            offset: new BMap.Size(20, -20),
+            position: point
           })
+          label.setStyle({
+            color: '#fff',
+            backgroundColor: bgColor,
+            border: 'none',
+            borderRadius: '3px',
+            padding: '2px 6px',
+            fontSize: '11px',
+            fontWeight: '500',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          })
+          marker.setLabel(label)
+          nativeMap.addOverlay(marker)
+          markersMap.set(merchant.id, marker)
         }
+      } else if (engineName === 'tencent-sdk' && window.TMap) {
+        // 腾讯：MultiMarker（小圆点）+ MultiLabel（名称标签）
+        const TMap = window.TMap
+        const pos = new TMap.LatLng(displayCoord.lat, displayCoord.lng)
+        const dotSVG = 'data:image/svg+xml,' + encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">` +
+          `<circle cx="6" cy="6" r="5" fill="${bgColor.replace('#', '%23')}" stroke="white" stroke-width="2"/></svg>`
+        )
+        const dot = new TMap.MultiMarker({
+          map: nativeMap,
+          styles: {
+            'm': new TMap.MarkerStyle({
+              width: 12, height: 12, anchor: { x: 6, y: 12 },
+              src: dotSVG
+            })
+          },
+          geometries: [{ id: `m-${merchant.id}`, styleId: 'm', position: pos }]
+        })
+        const label = new TMap.MultiLabel({
+          map: nativeMap,
+          styles: {
+            'l': new TMap.LabelStyle({
+              color: '#fff',
+              size: 12,
+              offset: { x: 0, y: -18 },
+              alignment: 'center',
+              backgroundColor: bgColor,
+              borderColor: bgColor,
+              borderWidth: 0,
+              borderRadius: 3,
+              padding: '3px 7px'
+            })
+          },
+          geometries: [{
+            id: `l-${merchant.id}`,
+            styleId: 'l',
+            position: pos,
+            content: displayName
+          }]
+        })
+        markersMap.set(merchant.id, { dot, label })
       }
     }
   })
@@ -363,6 +478,11 @@ async function switchMapLayer(layer: MapEngineType) {
 
   currentMapLayer.value = layer
 
+  // 清除当前位置
+  currentLocationMarker = null
+  currentLocationCircle = null
+  hasCurrentLocation.value = false
+
   // 销毁当前引擎实例
   if (currentEngine) {
     currentEngine.destroy()
@@ -394,6 +514,297 @@ function handleMapLayerChange() {
 function handleMobileMapChange(newValue: MapEngineType) {
   // 先切换地图，switchMapLayer 会更新 currentMapLayer
   switchMapLayer(newValue)
+}
+
+// 清除当前位置标记和圆
+function clearCurrentLocation() {
+  if (currentLocationMarker) {
+    if (isLeafletMap.value) {
+      // Leaflet：通过引擎移除
+      if (currentEngine) {
+        currentEngine.removeMarker(currentLocationMarker)
+      }
+    } else {
+      // SDK 引擎：直接操作原生地图对象移除标记
+      try {
+        const nativeMap = currentEngine?.getMap()
+        const engineName = currentEngine?.name
+        if (engineName === 'amap-sdk' && nativeMap?.remove) {
+          nativeMap.remove(currentLocationMarker)
+        } else if (engineName === 'baidu-sdk' && nativeMap?.removeOverlay) {
+          nativeMap.removeOverlay(currentLocationMarker)
+        } else if (engineName === 'tencent-sdk' && currentLocationMarker?.setMap) {
+          currentLocationMarker.setMap(null)
+        }
+      } catch (e) {
+        console.warn('移除 SDK 当前位置标记失败:', e)
+      }
+    }
+    currentLocationMarker = null
+  }
+  if (currentLocationCircle) {
+    if (isLeafletMap.value) {
+      const leafletMap = currentEngine?.getMap()
+      if (leafletMap && leafletMap.removeLayer) {
+        leafletMap.removeLayer(currentLocationCircle)
+      }
+    } else {
+      // SDK 引擎：移除圆形
+      try {
+        const nativeMap = currentEngine?.getMap()
+        if (nativeMap) {
+          const engineName = currentEngine?.name
+          if (engineName === 'amap-sdk' && nativeMap.remove) {
+            nativeMap.remove(currentLocationCircle)
+          } else if (engineName === 'baidu-sdk' && nativeMap.removeOverlay) {
+            nativeMap.removeOverlay(currentLocationCircle)
+          } else if (engineName === 'tencent-sdk' && currentLocationCircle.setMap) {
+            currentLocationCircle.setMap(null)
+          }
+        }
+      } catch (e) {
+        console.warn('移除 SDK 圆形失败:', e)
+      }
+    }
+    currentLocationCircle = null
+  }
+  hasCurrentLocation.value = false
+}
+
+// 显示当前位置
+async function showCurrentLocation() {
+  // 如果已经有当前位置显示，清除它
+  if (hasCurrentLocation.value) {
+    clearCurrentLocation()
+    fitAllMerchants()
+    return
+  }
+
+  if (!currentEngine) return
+
+  // 检查浏览器是否支持地理位置
+  if (!navigator.geolocation) {
+    console.warn('浏览器不支持地理位置定位')
+    return
+  }
+
+  isLocating.value = true
+
+  try {
+    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      })
+    })
+
+    const { latitude, longitude } = position.coords
+
+    // 转换坐标系：浏览器返回的是 WGS84
+    const coordSystem = getCoordinateSystem(currentMapLayer.value)
+    let displayCoord: Coordinate
+
+    if (coordSystem === 'wgs84') {
+      displayCoord = { lat: latitude, lng: longitude }
+    } else if (coordSystem === 'gcj02') {
+      displayCoord = convertCoordinate(latitude, longitude, 'wgs84', 'gcj02')
+    } else {
+      displayCoord = convertCoordinate(latitude, longitude, 'wgs84', 'bd09')
+    }
+
+    // 居中到当前位置
+    currentEngine.setCenter(displayCoord.lat, displayCoord.lng)
+    currentEngine.setZoom(15)
+
+    // 清除旧的位置标记和圆
+    if (currentLocationMarker) {
+      if (isLeafletMap.value) {
+        currentEngine.removeMarker(currentLocationMarker)
+      } else {
+        // SDK 引擎：直接移除
+        try {
+          const nm = currentEngine.getMap()
+          const en = currentEngine.name
+          if (en === 'amap-sdk' && nm?.remove) nm.remove(currentLocationMarker)
+          else if (en === 'baidu-sdk' && nm?.removeOverlay) nm.removeOverlay(currentLocationMarker)
+          else if (en === 'tencent-sdk' && currentLocationMarker?.setMap) currentLocationMarker.setMap(null)
+        } catch (e) { /* ignore */ }
+      }
+      currentLocationMarker = null
+    }
+    if (currentLocationCircle) {
+      if (isLeafletMap.value) {
+        const leafletMap = currentEngine.getMap()
+        if (leafletMap?.removeLayer) leafletMap.removeLayer(currentLocationCircle)
+      }
+      currentLocationCircle = null
+    }
+
+    // 添加当前位置标记
+    if (isLeafletMap.value) {
+      // Leaflet：通过引擎添加标记，再设置自定义图标
+      currentLocationMarker = currentEngine.addMarker(displayCoord.lat, displayCoord.lng, {
+        draggable: false
+      })
+      const leafletMap = currentEngine.getMap()
+      if (leafletMap) {
+        leafletMap.eachLayer((layer: any) => {
+          if (layer instanceof L.Marker) {
+            const latLng = layer.getLatLng()
+            if (Math.abs(latLng.lat - displayCoord.lat) < 0.0001 &&
+                Math.abs(latLng.lng - displayCoord.lng) < 0.0001) {
+              const icon = L.divIcon({
+                className: 'current-location-marker',
+                html: `<div style="width:18px;height:18px;border-radius:50%;background:#1976d2;border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>`,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9]
+              })
+              layer.setIcon(icon)
+              layer.bindPopup('<strong>当前位置</strong><br>半径 1 km')
+            }
+          }
+        })
+      }
+    } else {
+      // SDK 引擎：直接创建自定义样式的当前位置标记
+      const engineName = currentEngine.name
+      const nativeMap = currentEngine.getMap()
+      const dotHTML = `<div style="width:18px;height:18px;border-radius:50%;background:#1976d2;border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>`
+
+      if (engineName === 'amap-sdk' && window.AMap) {
+        currentLocationMarker = new window.AMap.Marker({
+          position: [displayCoord.lng, displayCoord.lat],
+          content: dotHTML,
+          offset: new window.AMap.Pixel(-9, -9),
+          zIndex: 100
+        })
+        nativeMap.add(currentLocationMarker)
+      } else if (engineName === 'baidu-sdk') {
+        const BMap = window.BMapGL || window.BMap
+        if (BMap) {
+          // 使用 SVG data URL 创建蓝点图标
+          const svgDot = 'data:image/svg+xml,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">' +
+            '<circle cx="12" cy="12" r="9" fill="#1976d2" stroke="white" stroke-width="3"/>' +
+            '</svg>'
+          )
+          const icon = new BMap.Icon(svgDot, new BMap.Size(24, 24), {
+            anchor: new BMap.Size(12, 12)
+          })
+          const point = new BMap.Point(displayCoord.lng, displayCoord.lat)
+          currentLocationMarker = new BMap.Marker(point, { icon })
+          nativeMap.addOverlay(currentLocationMarker)
+        }
+      } else if (engineName === 'tencent-sdk' && window.TMap) {
+        currentLocationMarker = new window.TMap.MultiMarker({
+          map: nativeMap,
+          styles: {
+            'loc-dot': new window.TMap.MarkerStyle({
+              width: 18,
+              height: 18,
+              anchor: { x: 9, y: 9 },
+              src: 'data:image/svg+xml,' + encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18">' +
+                '<circle cx="9" cy="9" r="7.5" fill="#1976d2" stroke="white" stroke-width="3"/>' +
+                '</svg>'
+              )
+            })
+          },
+          geometries: [{
+            id: 'current-location',
+            styleId: 'loc-dot',
+            position: new window.TMap.LatLng(displayCoord.lat, displayCoord.lng)
+          }]
+        })
+      }
+    }
+
+    // 添加圆形（Leaflet）
+    if (isLeafletMap.value) {
+      const leafletMap = currentEngine.getMap()
+      if (leafletMap) {
+        currentLocationCircle = L.circle([displayCoord.lat, displayCoord.lng], {
+          radius: 1000,
+          color: '#1976d2',
+          fillColor: '#1976d2',
+          fillOpacity: 0.1,
+          weight: 2,
+          dashArray: '5, 5'
+        }).addTo(leafletMap)
+      }
+    } else {
+      // SDK 引擎：添加圆形
+      const engineName = currentEngine.name
+      const nativeMap = currentEngine.getMap()
+
+      if (engineName === 'amap-sdk' && window.AMap) {
+        currentLocationCircle = new window.AMap.Circle({
+          center: [displayCoord.lng, displayCoord.lat],
+          radius: 1000,
+          strokeColor: '#1976d2',
+          strokeStyle: 'dashed',
+          strokeDasharray: [5, 5],
+          strokeWeight: 2,
+          fillColor: '#1976d2',
+          fillOpacity: 0.1,
+          zIndex: 10
+        })
+        nativeMap.add(currentLocationCircle)
+      } else if (engineName === 'baidu-sdk') {
+        const BMap = window.BMapGL || window.BMap
+        if (BMap) {
+          const centerPoint = new BMap.Point(displayCoord.lng, displayCoord.lat)
+          currentLocationCircle = new BMap.Circle(centerPoint, 1000, {
+            strokeColor: '#1976d2',
+            strokeWeight: 2,
+            strokeOpacity: 0.8,
+            fillColor: '#1976d2',
+            fillOpacity: 0.1,
+            strokeStyle: 'dashed'
+          })
+          nativeMap.addOverlay(currentLocationCircle)
+        }
+      } else if (engineName === 'tencent-sdk' && window.TMap) {
+        currentLocationCircle = new window.TMap.MultiCircle({
+          map: nativeMap,
+          styles: {
+            'current-location': new window.TMap.CircleStyle({
+              color: 'rgba(25, 118, 210, 0.1)',
+              showBorder: true,
+              borderColor: 'rgba(25, 118, 210, 0.8)',
+              borderWidth: 2
+            })
+          },
+          geometries: [{
+            styleId: 'current-location',
+            center: new window.TMap.LatLng(displayCoord.lat, displayCoord.lng),
+            radius: 1000
+          }]
+        })
+      }
+    }
+
+    hasCurrentLocation.value = true
+  } catch (error: any) {
+    console.error('获取当前位置失败:', error)
+    let errorMsg = '获取当前位置失败'
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        errorMsg = '位置权限被拒绝，请在浏览器设置中允许访问位置信息'
+        break
+      case error.POSITION_UNAVAILABLE:
+        errorMsg = '位置信息不可用'
+        break
+      case error.TIMEOUT:
+        errorMsg = '获取位置超时，请重试'
+        break
+    }
+    // 可以在这里添加一个 snackbar 通知
+    console.warn(errorMsg)
+  } finally {
+    isLocating.value = false
+  }
 }
 
 // 全屏切换
@@ -464,6 +875,13 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // 清除当前位置标记和圆
+  if (currentLocationCircle) {
+    // Leaflet 圆没有特别的清理需要（随地图销毁）
+    // SDK 圆形随地图销毁自动移除
+    currentLocationCircle = null
+  }
+  currentLocationMarker = null
   if (currentEngine) {
     currentEngine.destroy()
     currentEngine = null
@@ -599,6 +1017,14 @@ onUnmounted(() => {
 /* 隐藏 Leaflet 默认缩放控件 */
 :deep(.leaflet-control-zoom) {
   display: none;
+}
+
+/* 当前位置标记样式 */
+:deep(.current-location-marker) {
+  background: transparent !important;
+  border: none !important;
+  width: 18px !important;
+  height: 18px !important;
 }
 
 /* 移动端适配 */
