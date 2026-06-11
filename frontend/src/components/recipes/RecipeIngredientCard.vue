@@ -74,7 +74,7 @@
                 {{ scaleQuantity(ingredient.quantity, servings) }} {{ ingredient.unit }}
               </span>
               <span v-else-if="ingredient.quantity_range">
-                {{ ingredient.quantity_range.min }}-{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
+                {{ ingredient.quantity_range.min }}~{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
               </span>
               <span v-else-if="ingredient.original_quantity">{{ ingredient.original_quantity }}</span>
               <span v-else>-</span>
