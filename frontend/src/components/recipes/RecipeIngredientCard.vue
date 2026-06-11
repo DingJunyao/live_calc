@@ -218,8 +218,8 @@
             />
           </div>
 
-          <!-- 第3行：备注 + 可选（仅数值类型时显示） -->
-          <div v-if="!row.quantity_type" class="d-flex flex-wrap align-center ga-2 pl-7">
+          <!-- 第3行：备注 + 可选 -->
+          <div class="d-flex flex-wrap align-center ga-2 pl-7">
             <v-text-field
               v-model="row.note"
               label="备注"
