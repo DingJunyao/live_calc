@@ -275,6 +275,7 @@ const saving = ref(false)
 const editRows = ref<IngredientEditRow[]>([])
 const ingredientSearchResults = ref<IngredientOption[]>([])
 const unitOptions = ref<{ label: string; value: string }[]>([])
+const unitMap = ref<Record<string, number>>({})
 const searchingIngredient = ref(false)
 
 const quantityTypeOptions = [
@@ -350,18 +351,14 @@ const onSelectIngredient = (row: IngredientEditRow, name: string) => {
 const loadUnits = async () => {
   try {
     const res = await api.get('/units/', { params: { is_common: true } })
-    // /units/ 端点返回 UnitResponse[] 数组（无分页）
-    if (Array.isArray(res)) {
-      unitOptions.value = res.map((u: any) => ({
-        label: u.abbreviation || u.name,
-        value: u.abbreviation || u.name,
-      }))
-    } else if (res?.items) {
-      unitOptions.value = (res.items || []).map((u: any) => ({
-        label: u.abbreviation || u.name,
-        value: u.abbreviation || u.name,
-      }))
-    }
+    const items: any[] = Array.isArray(res) ? res : (res?.items || [])
+    const map: Record<string, number> = {}
+    unitOptions.value = items.map((u: any) => {
+      const key = u.abbreviation || u.name
+      if (key && u.id) map[key] = u.id
+      return { label: key, value: key }
+    })
+    unitMap.value = map
   } catch (e) {
     console.error('加载单位列表失败', e)
   }
@@ -497,7 +494,8 @@ const handleSave = async () => {
           }
 
           if (row.unit_name && (hasRec || hasMin || hasMax)) {
-            data.unit = row.unit_name
+            const uid = unitMap.value[row.unit_name]
+            if (uid) data.unit_id = uid
           }
         }
 
