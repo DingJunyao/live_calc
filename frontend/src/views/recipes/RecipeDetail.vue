@@ -97,6 +97,7 @@
               <RecipeBasicCard
                 :recipe="recipe"
                 @saved="onBasicInfoSaved"
+                @images-changed="onImagesChanged"
               />
             </div>
           </div>
@@ -170,6 +171,7 @@
               <RecipeBasicCard
                 :recipe="recipe"
                 @saved="onBasicInfoSaved"
+                @images-changed="onImagesChanged"
               />
             </div>
           </div>
@@ -910,6 +912,11 @@ const onBasicInfoSaved = (updatedRecipe: any) => {
       setDetailTitle(updatedRecipe.name, '菜谱', '菜谱详情')
     }
   }
+}
+
+// 图片列表变更时刷新 recipe 数据（保持图片区域同步）
+const onImagesChanged = () => {
+  loadData()
 }
 
 const goBack = () => {

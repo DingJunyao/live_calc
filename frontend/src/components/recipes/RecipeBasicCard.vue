@@ -108,6 +108,18 @@
         rows="3"
         maxlength="2000"
         hide-details
+        class="mb-4"
+      />
+
+      <!-- 配图管理 -->
+      <v-divider class="mb-3" />
+      <div class="text-subtitle-2 mb-2">配图管理</div>
+      <ImageManager
+        v-model="editImages"
+        :recipe-id="recipe.id"
+        :uploading="uploadingImage"
+        @upload="handleImageUpload"
+        @remove="handleImageRemove"
       />
     </v-card-text>
   </v-card>
@@ -116,6 +128,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { api } from '@/api/client'
+import ImageManager from './ImageManager.vue'
 import type { RecipeDetail } from './types'
 
 const props = defineProps<{
@@ -124,16 +137,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'saved', recipe: RecipeDetail): void
+  (e: 'images-changed'): void
 }>()
 
 const editing = ref(false)
 const saving = ref(false)
+const uploadingImage = ref(false)
 const editForm = ref({
   name: '',
   category: '',
   difficulty: '',
   description: '',
 })
+const editImages = ref<string[]>([])
 
 const categoryOptions = [
   { title: '荤菜', value: '荤菜' },
@@ -168,6 +184,7 @@ const startEdit = () => {
     difficulty: props.recipe.difficulty || '',
     description: props.recipe.description || '',
   }
+  editImages.value = [...(props.recipe.images || [])]
   editing.value = true
 }
 
@@ -175,14 +192,53 @@ const cancelEdit = () => {
   editing.value = false
 }
 
+// 上传配图 — 立即上传到后端
+const handleImageUpload = async (file: File) => {
+  uploadingImage.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const result = await api.post(`/recipes/${props.recipe.id}/images`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    if (result?.image_path) {
+      editImages.value.push(result.image_path)
+    }
+  } catch (e: any) {
+    console.error('上传图片失败', e)
+  } finally {
+    uploadingImage.value = false
+  }
+}
+
+// 删除配图 — 立即从后端删除
+const handleImageRemove = async (index: number) => {
+  const targetPath = editImages.value[index]
+  if (!targetPath) return
+
+  const filename = targetPath.split('/').pop()
+  if (!filename) return
+
+  try {
+    await api.delete(`/recipes/${props.recipe.id}/images/${filename}`)
+    editImages.value.splice(index, 1)
+  } catch (e: any) {
+    console.error('删除图片失败', e)
+  }
+}
+
 const handleSave = async () => {
   saving.value = true
   try {
+    // 收集有变化的字段
     const payload: Record<string, any> = {}
     if (editForm.value.name !== props.recipe.name) payload.name = editForm.value.name
     if (editForm.value.category !== props.recipe.category) payload.category = editForm.value.category
     if (editForm.value.difficulty !== props.recipe.difficulty) payload.difficulty = editForm.value.difficulty
     if (editForm.value.description !== (props.recipe.description || '')) payload.description = editForm.value.description
+    if (JSON.stringify(editImages.value) !== JSON.stringify(props.recipe.images || [])) {
+      payload.images = editImages.value
+    }
 
     if (Object.keys(payload).length === 0) {
       editing.value = false
@@ -191,6 +247,7 @@ const handleSave = async () => {
 
     const result = await api.put(`/recipes/${props.recipe.id}`, payload)
     emit('saved', result)
+    emit('images-changed')
     editing.value = false
   } catch (e: any) {
     console.error('保存基本信息失败', e)
