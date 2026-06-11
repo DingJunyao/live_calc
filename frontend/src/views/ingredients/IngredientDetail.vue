@@ -3098,7 +3098,7 @@ const doMerge = async () => {
     // 跳转到目标原料
     router.push(`/data/ingredients/${mergeTargetId.value}`)
   } catch (e: any) {
-    showMessage(e.message || '合并失败', 'error')
+    showMessage(e.response?.data?.detail || e.message || '合并失败', 'error')
   } finally {
     merging.value = false
   }
@@ -3117,7 +3117,7 @@ const deleteIngredient = async () => {
     showMessage('删除成功', 'success')
     router.push('/data/ingredients')
   } catch (e: any) {
-    showMessage(e.message || '删除失败', 'error')
+    showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   } finally {
     deleting.value = false
   }

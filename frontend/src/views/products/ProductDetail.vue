@@ -2079,7 +2079,7 @@ const savePriceRecord = async () => {
     await loadData()
     showMessage('添加成功', 'success')
   } catch (e: any) {
-    showMessage(e.message || '添加失败', 'error')
+    showMessage(e.response?.data?.detail || e.message || '添加失败', 'error')
   } finally {
     savingPrice.value = false
   }
@@ -2094,7 +2094,7 @@ const deletePriceRecord = async (id: number) => {
     await loadPriceRecords()
     showMessage('删除成功', 'success')
   } catch (e: any) {
-    showMessage(e.message || '删除失败', 'error')
+    showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
 }
 
@@ -2111,7 +2111,7 @@ const deleteProduct = async () => {
     showMessage('删除成功', 'success')
     router.push('/data/products')
   } catch (e: any) {
-    showMessage(e.message || '删除失败', 'error')
+    showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   } finally {
     deleting.value = false
   }

@@ -363,12 +363,25 @@ def delete_product(
     """软删除商品及其所有价格记录
 
     管理员可删除任意商品，普通用户只能删除自己创建的商品（created_by）。
+    如果商品是其所属原料的唯一活跃商品，则不允许删除。
     """
     db_product = db.query(Product).filter(Product.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="商品不存在")
     if db_product.created_by != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="无权删除此商品")
+
+    # 检查是否为原料的唯一商品
+    sibling_count = db.query(Product).filter(
+        Product.ingredient_id == db_product.ingredient_id,
+        Product.is_active == True,
+        Product.id != product_id
+    ).count()
+    if sibling_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"「{db_product.name}」是其所属原料的唯一商品，无法删除。请先为该原料添加其他商品后再删除。"
+        )
 
     db_product.is_active = False
     db_product.updated_by = current_user.id

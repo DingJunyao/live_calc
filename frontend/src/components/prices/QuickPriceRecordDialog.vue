@@ -317,7 +317,7 @@ const save = async () => {
     emit('saved')
   } catch (e: any) {
     console.error('保存记录失败', e)
-    alert(e.message || '保存失败')
+    alert(e.response?.data?.detail || e.message || '保存失败')
   } finally {
     saving.value = false
   }
