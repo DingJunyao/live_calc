@@ -38,7 +38,7 @@
     </v-card-title>
     <v-divider />
 
-    <!-- 查看模式（完全保持现有布局） -->
+    <!-- 查看模式 -->
     <template v-if="!editing">
       <v-card-text v-if="recipe.ingredients?.length" class="pa-0">
         <div
@@ -48,7 +48,6 @@
           :class="{ 'mb-2': index < recipe.ingredients.length - 1 }"
         >
           <div class="d-flex align-center py-2">
-            <!-- 名称：左对齐 -->
             <div
               class="ingredient-name flex-grow-1 text-body-2 ingredient-clickable"
               @click="goToIngredient(ingredient.ingredient_id)"
@@ -57,7 +56,6 @@
               <v-chip v-if="ingredient.is_optional" size="x-small" color="info" variant="flat" class="ml-1">可选</v-chip>
               <v-icon size="x-small" class="ml-1">mdi-chevron-right</v-icon>
             </div>
-            <!-- 用量：右对齐 -->
             <div class="ingredient-quantity text-body-2 text-right mr-4" style="min-width: 80px">
               <span v-if="scaleQuantity(ingredient.quantity, servings)">
                 {{ scaleQuantity(ingredient.quantity, servings) }} {{ ingredient.unit }}
@@ -68,7 +66,6 @@
               <span v-else-if="ingredient.original_quantity">{{ ingredient.original_quantity }}</span>
               <span v-else>-</span>
             </div>
-            <!-- 成本：右对齐 -->
             <div class="ingredient-cost text-body-2 text-right d-flex align-center justify-end" style="min-width: 60px">
               <template v-if="getIngredientFallbackChain(ingredient)">
                 <v-tooltip location="top">
@@ -84,7 +81,6 @@
               <span>¥{{ formatIngredientCost(ingredient) }}</span>
             </div>
           </div>
-          <!-- 备注另起一行 -->
           <div v-if="ingredient.note" class="text-caption text-medium-emphasis pl-2 pb-1">
             {{ ingredient.note }}
           </div>
@@ -95,18 +91,18 @@
       </v-card-text>
     </template>
 
-    <!-- 编辑模式：表格编辑 -->
+    <!-- 编辑模式 -->
     <v-card-text v-else class="pa-0">
       <div class="ingredient-edit-table">
         <!-- 表头 -->
         <div class="edit-table-header d-none d-md-flex text-caption text-medium-emphasis px-3 py-2">
           <div style="width: 30px"></div>
-          <div class="flex-grow-1" style="min-width: 140px">原料</div>
-          <div style="width: 60px" class="text-center">用量类型</div>
-          <div style="width: 70px" class="text-center">精确值</div>
-          <div style="width: 100px" class="text-center">区间 (min-max)</div>
-          <div style="width: 80px" class="text-center">单位</div>
-          <div style="width: 100px">备注</div>
+          <div class="flex-grow-1" style="min-width: 130px">原料</div>
+          <div style="width: 65px" class="text-center">类型</div>
+          <div style="width: 70px" class="text-center">推荐值</div>
+          <div style="width: 70px" class="text-center">min</div>
+          <div style="width: 70px" class="text-center">max</div>
+          <div style="width: 70px" class="text-center">单位</div>
           <div style="width: 30px"></div>
         </div>
 
@@ -119,10 +115,8 @@
         >
           <!-- 第一行：核心字段 -->
           <div class="d-flex flex-wrap align-start ga-2 mb-2">
-            <!-- 拖拽手柄 -->
             <v-icon size="small" class="drag-handle mt-2" color="medium-emphasis">mdi-drag</v-icon>
 
-            <!-- 原料名称（自动补全） -->
             <v-autocomplete
               v-model="row.ingredient_name"
               :items="ingredientSearchResults"
@@ -133,29 +127,42 @@
               density="compact"
               hide-details
               class="flex-grow-1"
-              style="min-width: 140px"
+              style="min-width: 130px"
               :loading="searchingIngredient"
               @update:search="onSearchIngredient"
               @update:model-value="(val: string) => onSelectIngredient(row, val)"
               clearable
             />
 
-            <!-- 用量类型 -->
             <v-select
-              v-model="row.quantity"
+              v-model="row.quantity_type"
               :items="quantityTypeOptions"
               item-title="label"
               item-value="value"
-              label="用量"
+              label="类型"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="width: 65px"
+            />
+
+            <!-- 推荐值 -->
+            <v-text-field
+              v-if="!row.quantity_type"
+              v-model="row.quantity_recommended"
+              type="number"
+              label="推荐"
               variant="outlined"
               density="compact"
               hide-details
               style="width: 70px"
+              min="0"
+              step="any"
             />
 
-            <!-- 数值 min（非文本用量时显示） -->
+            <!-- min -->
             <v-text-field
-              v-if="!row.quantity"
+              v-if="!row.quantity_type"
               v-model="row.quantity_min"
               type="number"
               label="min"
@@ -167,25 +174,23 @@
               step="any"
             />
 
-            <!-- 区间 max -->
-            <template v-if="!row.quantity">
-              <span class="align-self-center text-caption">-</span>
-              <v-text-field
-                v-model="row.quantity_max"
-                type="number"
-                label="max"
-                variant="outlined"
-                density="compact"
-                hide-details
-                style="width: 70px"
-                min="0"
-                step="any"
-              />
-            </template>
+            <!-- max -->
+            <v-text-field
+              v-if="!row.quantity_type"
+              v-model="row.quantity_max"
+              type="number"
+              label="max"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="width: 70px"
+              min="0"
+              step="any"
+            />
 
             <!-- 单位 -->
             <v-autocomplete
-              v-if="!row.quantity"
+              v-if="!row.quantity_type"
               v-model="row.unit_name"
               :items="unitOptions"
               item-title="label"
@@ -194,11 +199,10 @@
               variant="outlined"
               density="compact"
               hide-details
-              style="width: 80px"
+              style="width: 70px"
               clearable
             />
 
-            <!-- 删除按钮 -->
             <v-btn
               icon="mdi-delete"
               size="x-small"
@@ -210,7 +214,7 @@
           </div>
 
           <!-- 第二行：备注 + 可选标记 -->
-          <div v-if="!row.quantity" class="d-flex flex-wrap align-center ga-2 pl-7">
+          <div v-if="!row.quantity_type" class="d-flex flex-wrap align-center ga-2 pl-7">
             <v-text-field
               v-model="row.note"
               label="备注"
@@ -231,7 +235,6 @@
           </div>
         </div>
 
-        <!-- 添加行按钮 -->
         <div class="pa-3">
           <v-btn
             variant="text"
@@ -366,21 +369,21 @@ const loadUnits = async () => {
 // 从现有数据初始化编辑行
 const startEdit = () => {
   editRows.value = (props.recipe.ingredients || []).map(ing => {
-    let quantityType = ''
+    let qType = ''
     if (ing.original_quantity === '适量' || ing.original_quantity === '少许') {
-      quantityType = ing.original_quantity
+      qType = ing.original_quantity
     }
 
-    // 从 quantity 和 quantity_range 推断 min/max
+    // quantity、quantity_range.min、quantity_range.max 三者可独立存在
+    let qRec = ''
     let qMin = ''
     let qMax = ''
-    if (!quantityType) {
+    if (!qType) {
+      qRec = ing.quantity ? String(ing.quantity) : ''
       if (ing.quantity_range && typeof ing.quantity_range === 'object') {
         const r = ing.quantity_range as { min?: number; max?: number }
         qMin = r.min ? String(r.min) : ''
         qMax = r.max ? String(r.max) : ''
-      } else if (ing.quantity) {
-        qMin = String(ing.quantity)
       }
     }
 
@@ -388,7 +391,8 @@ const startEdit = () => {
       tempId: Date.now() + Math.random(),
       ingredient_name: ing.name || '',
       ingredient_id: ing.ingredient_id,
-      quantity: quantityType,
+      quantity_type: qType,
+      quantity_recommended: qRec,
       quantity_min: qMin,
       quantity_max: qMax,
       unit_id: null,
@@ -412,7 +416,8 @@ const addRow = () => {
     tempId: Date.now() + Math.random(),
     ingredient_name: '',
     ingredient_id: null,
-    quantity: '',
+    quantity_type: '',
+    quantity_recommended: '',
     quantity_min: '',
     quantity_max: '',
     unit_id: null,
@@ -437,21 +442,24 @@ const handleSave = async () => {
           is_optional: row.is_optional,
         }
 
-        if (row.quantity) {
+        if (row.quantity_type) {
           // 适量/少许
-          data.original_quantity = row.quantity
+          data.original_quantity = row.quantity_type
         } else {
+          const recVal = row.quantity_recommended ? parseFloat(row.quantity_recommended) : NaN
           const minVal = row.quantity_min ? parseFloat(row.quantity_min) : NaN
           const maxVal = row.quantity_max ? parseFloat(row.quantity_max) : NaN
 
-          if (!isNaN(minVal)) {
-            if (!isNaN(maxVal)) {
-              // 两个都有值 → 区间
-              data.quantity = String(minVal)
-              data.quantity_range = { min: minVal, max: Math.max(minVal, maxVal) }
-            } else {
-              // 只有min有值 → 精确值
-              data.quantity = String(minVal)
+          // quantity（推荐值/精确值）
+          if (!isNaN(recVal)) {
+            data.quantity = String(recVal)
+          }
+
+          // quantity_range（区间）：min 或 max 任一个有值就构造
+          if (!isNaN(minVal) || !isNaN(maxVal)) {
+            data.quantity_range = {
+              min: !isNaN(minVal) ? minVal : (!isNaN(recVal) ? recVal : 0),
+              max: !isNaN(maxVal) ? maxVal : (!isNaN(recVal) ? recVal : minVal),
             }
           }
 

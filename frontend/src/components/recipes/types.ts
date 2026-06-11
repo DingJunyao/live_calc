@@ -52,8 +52,13 @@ export interface IngredientEditRow {
   tempId: number
   ingredient_name: string
   ingredient_id: number | null
-  quantity: string
+  /** 用量类型：''=数值，'适量'，'少许' */
+  quantity_type: string
+  /** 推荐值/精确值（quantity） */
+  quantity_recommended: string
+  /** 区间最小值（quantity_range.min） */
   quantity_min: string
+  /** 区间最大值（quantity_range.max） */
   quantity_max: string
   unit_id: number | null
   unit_name: string
