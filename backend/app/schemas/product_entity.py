@@ -13,6 +13,14 @@ class ProductBase(BaseModel):
     ingredient_id: int
     tags: List[str] = Field(default_factory=list)
 
+    @field_validator('barcode', 'brand', 'image_url')
+    @classmethod
+    def empty_str_to_none(cls, v: Optional[str]) -> Optional[str]:
+        """将空字符串转为 None，避免 UNIQUE 约束冲突"""
+        if v is not None and v.strip() == '':
+            return None
+        return v
+
     @field_validator('tags')
     @classmethod
     def validate_tags_list(cls, v):

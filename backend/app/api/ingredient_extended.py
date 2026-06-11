@@ -843,10 +843,89 @@ async def soft_delete_ingredient(
         raise HTTPException(status_code=500, detail=f"软删除食材失败: {str(e)}")
 
 
+def _flatten_nutrients(nutrients_dict: dict) -> dict:
+    """将嵌套格式的营养数据（core_nutrients + all_nutrients）扁平化为单一字典
+
+    返回扁平化的 {nutrient_key: {value, unit, ...}} 字典，
+    其中 core_nutrients 使用中文键名，all_nutrients 使用英文键名。
+    """
+    if not nutrients_dict or not isinstance(nutrients_dict, dict):
+        return {}
+
+    flat = {}
+
+    # 提取 core_nutrients（中文键名优先）
+    core = nutrients_dict.get("core_nutrients", {})
+    if isinstance(core, dict):
+        for k, v in core.items():
+            if isinstance(v, dict) and "value" in v:
+                flat[k] = dict(v)
+
+    # 提取 all_nutrients（英文键名，补充不在 core 中的）
+    all_nut = nutrients_dict.get("all_nutrients", {})
+    if isinstance(all_nut, dict):
+        # 收集 core 中的英文 key 以避免重复
+        core_english_keys = {
+            v.get("key") for v in core.values()
+            if isinstance(v, dict) and "key" in v
+        }
+        for k, v in all_nut.items():
+            if isinstance(v, dict) and "value" in v and k not in core_english_keys:
+                flat[k] = dict(v)
+
+    # 兼容扁平格式：直接包含 nutrient key
+    for k, v in nutrients_dict.items():
+        if k in ("core_nutrients", "all_nutrients", "nutrient_details"):
+            continue
+        if isinstance(v, dict) and "value" in v:
+            if k not in flat:
+                flat[k] = dict(v)
+
+    return flat
+
+
+def _mix_custom_nutrition(base: dict, overlay: dict) -> dict:
+    """合并两个扁平化的营养数据字典，overlay 的值覆盖 base
+
+    返回嵌套格式 {core_nutrients: {...}, all_nutrients: {...}}，
+    兼容 NutritionMixin.merge_nutrition_data 的处理方式（扁平格式）。
+    由于 merge_nutrition_data 支持扁平格式，直接返回扁平字典即可。
+    """
+    if not overlay:
+        return base
+    if not base:
+        return overlay
+
+    result = dict(base)
+    for k, v in overlay.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            merged = dict(result[k])
+            merged.update(v)
+            result[k] = merged
+        else:
+            result[k] = v
+    return result
+
+
+def _get_ingredient_nutrition_flat(db: Session, ingredient_id: int) -> dict:
+    """获取原料的营养数据并返回扁平化格式"""
+    from app.models.nutrition_data import NutritionData
+
+    nutrition_data = db.query(NutritionData).filter(
+        NutritionData.ingredient_id == ingredient_id,
+        NutritionData.is_verified == True
+    ).first()
+
+    if nutrition_data and nutrition_data.nutrients:
+        return _flatten_nutrients(nutrition_data.nutrients)
+    return {}
+
+
 @router.post("/merge", response_model=dict)
 async def merge_ingredients(
     source_id: int = Body(..., embed=False),
     target_id: int = Body(..., embed=False),
+    merge_same_name_products: bool = Body(True, embed=False),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -858,15 +937,16 @@ async def merge_ingredients(
 
     合并操作：
     1. 菜谱中的原料引用更新为目标原料
-    2. 商品处理：
-       - 如果源原料的同名商品存在，且目标原料也有同名商品，则将价格记录迁移到目标商品
-       - 否则将商品移到目标原料下
+    2. 商品处理（受 merge_same_name_products 参数控制）：
+       - merge_same_name_products=True: 同名商品合并（价格记录迁移、营养数据 mixin、源商品软删除）
+       - merge_same_name_products=False: 同名商品保留为独立商品（移到目标原料下，原料营养→商品自定义营养 mixin）
     3. 别名合并：源原料的名称和别名添加到目标原料的别名中（去重）
     4. 软删除源原料并标记为已合并
     """
     from app.models.recipe import RecipeIngredient
     from app.models.product_entity import Product
     from app.models.product import ProductRecord
+    from app.models.nutrition_data import NutritionData
 
     try:
         # 获取源原料和目标原料
@@ -896,6 +976,7 @@ async def merge_ingredients(
         # 2. 处理商品
         product_migrated_count = 0
         price_migrated_count = 0
+        product_merged_count = 0  # 同名商品合并数量
 
         # 获取源原料下的所有商品
         source_products = db.query(Product).filter(
@@ -903,16 +984,23 @@ async def merge_ingredients(
             Product.is_active == True
         ).all()
 
-        # 获取目标原料下的所有商品
+        # 获取目标原料下的所有商品（构建名称索引）
         target_products = db.query(Product).filter(
             Product.ingredient_id == target_id,
             Product.is_active == True
         ).all()
         target_product_names = {p.name: p for p in target_products}
 
+        # 如果不合并同名商品，预先获取源原料的扁平化营养数据
+        source_ingredient_nutrition_flat = None
+        if not merge_same_name_products:
+            source_ingredient_nutrition_flat = _get_ingredient_nutrition_flat(db, source_id)
+
         for source_product in source_products:
-            if source_product.name in target_product_names:
-                # 目标原料下有同名商品，将价格记录迁移到目标商品
+            is_same_name = source_product.name in target_product_names
+
+            if merge_same_name_products and is_same_name:
+                # 【合并同名商品】将源商品合并到目标同名商品
                 target_product = target_product_names[source_product.name]
 
                 # 迁移价格记录
@@ -923,12 +1011,28 @@ async def merge_ingredients(
                     pr.product_id = target_product.id
                     price_migrated_count += 1
 
+                # Mixin 源商品的自定义营养到目标商品
+                if source_product.custom_nutrition_data:
+                    source_custom_flat = _flatten_nutrients(source_product.custom_nutrition_data)
+                    if source_custom_flat:
+                        target_custom_flat = _flatten_nutrients(target_product.custom_nutrition_data or {})
+                        mixed = _mix_custom_nutrition(target_custom_flat, source_custom_flat)
+                        target_product.custom_nutrition_data = mixed
+
                 # 软删除源商品
                 source_product.is_active = False
+                product_merged_count += 1
             else:
-                # 目标原料下没有同名商品，将商品移到目标原料下
+                # 【保留独立商品】将商品移到目标原料下
                 source_product.ingredient_id = target_id
                 product_migrated_count += 1
+
+                if not merge_same_name_products and source_ingredient_nutrition_flat:
+                    # 将原料营养数据 mixin 到商品自定义营养数据
+                    product_custom_flat = _flatten_nutrients(source_product.custom_nutrition_data or {})
+                    # 原料营养为基础，商品自定义优先覆盖
+                    mixed = _mix_custom_nutrition(source_ingredient_nutrition_flat, product_custom_flat)
+                    source_product.custom_nutrition_data = mixed
 
         # 3. 合并别名
         target_aliases = set(target_ingredient.aliases or [])
@@ -963,6 +1067,38 @@ async def merge_ingredients(
             else:
                 # 已存在相同映射，删除重复的
                 db.delete(mapping)
+
+        # 4.5 迁移 NutritionData 记录（原料级营养数据）
+        nutrition_data_migrated_count = 0
+        source_nutrition_records = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == source_id
+        ).all()
+        for nd in source_nutrition_records:
+            # 检查目标原料是否已有营养数据
+            existing = db.query(NutritionData).filter(
+                NutritionData.ingredient_id == target_id
+            ).first()
+            if not existing:
+                nd.ingredient_id = target_id
+                nutrition_data_migrated_count += 1
+            # 如果目标已有营养数据，源营养数据保留（随原料软删除而不再活跃）
+
+        # 4.6 更新 ProductIngredientLink 引用
+        from app.models.product_ingredient_link import ProductIngredientLink
+        product_links_updated = 0
+        source_product_links = db.query(ProductIngredientLink).filter(
+            ProductIngredientLink.ingredient_id == source_id
+        ).all()
+        for link in source_product_links:
+            existing = db.query(ProductIngredientLink).filter(
+                ProductIngredientLink.product_id == link.product_id,
+                ProductIngredientLink.ingredient_id == target_id
+            ).first()
+            if not existing:
+                link.ingredient_id = target_id
+                product_links_updated += 1
+            else:
+                db.delete(link)
 
         # 5. 处理层级关系
         from app.models.ingredient_hierarchy import IngredientHierarchy
@@ -1026,7 +1162,10 @@ async def merge_ingredients(
             "recipe_count": recipe_count,
             "product_migrated_count": product_migrated_count,
             "price_migrated_count": price_migrated_count,
-            "hierarchy_updated_count": hierarchy_updated_count
+            "product_merged_count": product_merged_count,
+            "hierarchy_updated_count": hierarchy_updated_count,
+            "nutrition_data_migrated_count": nutrition_data_migrated_count,
+            "merge_same_name_products": merge_same_name_products
         }
     except HTTPException:
         raise

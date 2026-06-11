@@ -1120,6 +1120,13 @@
             :custom-filter="() => true"
             return-object
           />
+          <v-checkbox
+            v-model="mergeSameNameProducts"
+            label="合并同名商品（同名商品的价格记录合并、营养数据 mixin）"
+            color="warning"
+            class="mt-2"
+            density="compact"
+          />
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -1796,6 +1803,7 @@ const relationTypeOptions = [
 const mergeTargetId = ref<number | null>(null)
 const mergeTargets = ref<Ingredient[]>([])
 const loadingMergeTargets = ref(false)
+const mergeSameNameProducts = ref(true)  // 是否合并同名商品
 
 // 选中的合并目标对象（用于显示名称）
 const selectedMergeTarget = ref<Ingredient | null>(null)
@@ -3080,7 +3088,8 @@ const doMerge = async () => {
   try {
     const response = await api.post('/ingredients/merge', {
       source_id: ingredientId.value,
-      target_id: mergeTargetId.value
+      target_id: mergeTargetId.value,
+      merge_same_name_products: mergeSameNameProducts.value
     })
     showMessage(response.message || '合并成功', 'success')
     // 关闭所有对话框

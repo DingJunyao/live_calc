@@ -232,143 +232,9 @@
               label="分类"
               variant="outlined"
               class="mb-4"
-              :loading="loadingOptions"
               clearable
               placeholder="请选择分类"
             />
-            <v-select
-              v-model="form.default_unit_id"
-              :items="units"
-              item-title="name"
-              item-value="id"
-              label="默认单位"
-              variant="outlined"
-              :loading="loadingOptions"
-              clearable
-              placeholder="请选择单位"
-            >
-              <template #item="{ item, props }">
-                <v-list-item v-bind="props">
-                  <template #title>
-                    <span>{{ item.raw.name }}</span>
-                    <span class="text-caption text-medium-emphasis ml-2">({{ item.raw.abbreviation }})</span>
-                  </template>
-                </v-list-item>
-              </template>
-            </v-select>
-
-            <!-- 营养素数据（可折叠） -->
-            <v-expansion-panels class="mb-4">
-              <v-expansion-panel>
-                <v-expansion-panel-title>
-                  <template #default="{ expanded }">
-                    <div class="d-flex align-center">
-                      <v-icon class="mr-2">mdi-nutrition</v-icon>
-                      <span>营养素数据</span>
-                      <span class="text-caption text-medium-emphasis ml-2">
-                        （每100g，可选）
-                      </span>
-                      <v-spacer />
-                      <v-icon :icon="expanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
-                    </div>
-                  </template>
-                </v-expansion-panel-title>
-                <v-expansion-panel-text>
-                  <v-row dense>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.energy_kcal"
-                        label="能量 (kcal)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.protein"
-                        label="蛋白质 (g)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.fat"
-                        label="脂肪 (g)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.carbohydrates"
-                        label="碳水化合物 (g)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.dietary_fiber"
-                        label="膳食纤维 (g)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.calcium"
-                        label="钙 (mg)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.iron"
-                        label="铁 (mg)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.sodium"
-                        label="钠 (mg)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                    <v-col cols="6" sm="4">
-                      <v-text-field
-                        v-model.number="form.nutrition.potassium"
-                        label="钾 (mg)"
-                        variant="outlined"
-                        type="number"
-                        hide-details
-                        density="compact"
-                      />
-                    </v-col>
-                  </v-row>
-                </v-expansion-panel-text>
-              </v-expansion-panel>
-            </v-expansion-panels>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -413,25 +279,6 @@ interface Category {
   description?: string
 }
 
-interface Unit {
-  id: number
-  name: string
-  abbreviation: string
-}
-
-// 核心营养素接口
-interface CoreNutrients {
-  energy_kcal?: number
-  protein?: number
-  fat?: number
-  carbohydrates?: number
-  dietary_fiber?: number
-  calcium?: number
-  iron?: number
-  sodium?: number
-  potassium?: number
-}
-
 const items = ref<Ingredient[]>([])
 
 // 当天平均单价
@@ -456,32 +303,13 @@ const showSnackbar = ref(false)
 const snackbarText = ref('')
 const snackbarColor = ref('info')
 
-// 分类和单位列表
+// 分类列表
 const categories = ref<Category[]>([])
-const units = ref<Unit[]>([])
-const jinUnitId = ref<number | null>(null)  // 默认质量单位（斤）的 ID
-const loadingOptions = ref(false)
-
-// 营养素展开状态
-const showNutritionSection = ref(false)
 
 const form = ref({
   name: '',
   category_id: null as number | null,
-  default_unit_id: null as number | null,
   aliases: [] as string[],
-  // 核心营养素（每100g）
-  nutrition: {
-    energy_kcal: null as number | null,
-    protein: null as number | null,
-    fat: null as number | null,
-    carbohydrates: null as number | null,
-    dietary_fiber: null as number | null,
-    calcium: null as number | null,
-    iron: null as number | null,
-    sodium: null as number | null,
-    potassium: null as number | null,
-  } as CoreNutrients
 })
 
 // 分页相关（从 URL 查询参数初始化）
@@ -605,28 +433,11 @@ const onPriceSaved = () => {
 
 // 加载选项数据（分类和单位）
 const loadOptions = async () => {
-  loadingOptions.value = true
   try {
-    // 并行获取分类和单位列表
-    const [categoriesRes, unitsRes] = await Promise.all([
-      api.get('/ingredients/categories'),
-      api.get('/ingredients/units?is_common=true&limit=1000')
-    ])
+    const categoriesRes = await api.get('/ingredients/categories')
     categories.value = categoriesRes || []
-    // 处理分页响应
-    units.value = unitsRes.items || unitsRes || []
-    // 找到默认质量单位（斤）并设置为默认选中
-    const jinUnit = (unitsRes.items || unitsRes || []).find(
-      (u: Unit) => u.abbreviation === '斤'
-    )
-    if (jinUnit) {
-      jinUnitId.value = jinUnit.id
-      form.value.default_unit_id = jinUnit.id
-    }
   } catch (e: any) {
-    console.error('加载选项失败', e)
-  } finally {
-    loadingOptions.value = false
+    console.error('加载分类失败', e)
   }
 }
 
@@ -680,13 +491,6 @@ const saveItem = async () => {
 
   saving.value = true
   try {
-    // 查找选中的单位缩写
-    let unitAbbreviation = null
-    if (form.value.default_unit_id) {
-      const selectedUnit = units.value.find(u => u.id === form.value.default_unit_id)
-      unitAbbreviation = selectedUnit?.abbreviation || null
-    }
-
     const payload: any = {
       name: form.value.name,
     }
@@ -695,56 +499,8 @@ const saveItem = async () => {
     if (form.value.category_id) {
       payload.category_id = form.value.category_id
     }
-    if (unitAbbreviation) {
-      payload.default_unit = unitAbbreviation
-    }
     if (form.value.aliases && form.value.aliases.length > 0) {
       payload.aliases = form.value.aliases
-    }
-
-    // 处理营养素数据：如果填了任何营养素，则添加到 payload
-    const nutrients: Record<string, any> = {}
-    let hasNutrition = false
-
-    if (form.value.nutrition.energy_kcal != null && form.value.nutrition.energy_kcal > 0) {
-      nutrients.energy_kcal = form.value.nutrition.energy_kcal
-      hasNutrition = true
-    }
-    if (form.value.nutrition.protein != null && form.value.nutrition.protein > 0) {
-      nutrients.protein = form.value.nutrition.protein
-      hasNutrition = true
-    }
-    if (form.value.nutrition.fat != null && form.value.nutrition.fat > 0) {
-      nutrients.fat = form.value.nutrition.fat
-      hasNutrition = true
-    }
-    if (form.value.nutrition.carbohydrates != null && form.value.nutrition.carbohydrates > 0) {
-      nutrients.carbohydrates = form.value.nutrition.carbohydrates
-      hasNutrition = true
-    }
-    if (form.value.nutrition.dietary_fiber != null && form.value.nutrition.dietary_fiber > 0) {
-      nutrients.dietary_fiber = form.value.nutrition.dietary_fiber
-      hasNutrition = true
-    }
-    if (form.value.nutrition.calcium != null && form.value.nutrition.calcium > 0) {
-      nutrients.calcium = form.value.nutrition.calcium
-      hasNutrition = true
-    }
-    if (form.value.nutrition.iron != null && form.value.nutrition.iron > 0) {
-      nutrients.iron = form.value.nutrition.iron
-      hasNutrition = true
-    }
-    if (form.value.nutrition.sodium != null && form.value.nutrition.sodium > 0) {
-      nutrients.sodium = form.value.nutrition.sodium
-      hasNutrition = true
-    }
-    if (form.value.nutrition.potassium != null && form.value.nutrition.potassium > 0) {
-      nutrients.potassium = form.value.nutrition.potassium
-      hasNutrition = true
-    }
-
-    if (hasNutrition) {
-      payload.nutrition = nutrients
     }
 
     const response = await api.post('/ingredients', payload)
@@ -754,19 +510,7 @@ const saveItem = async () => {
     form.value = {
       name: '',
       category_id: null,
-      default_unit_id: jinUnitId.value,
       aliases: [],
-      nutrition: {
-        energy_kcal: null,
-        protein: null,
-        fat: null,
-        carbohydrates: null,
-        dietary_fiber: null,
-        calcium: null,
-        iron: null,
-        sodium: null,
-        potassium: null,
-      }
     }
   } catch (e: any) {
     console.error('保存原料失败', e)
