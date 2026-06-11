@@ -101,16 +101,16 @@
                 class="flex-grow-1"
               />
 
-              <!-- 时长 -->
+              <!-- 小贴士 -->
               <v-text-field
-                v-model="row.duration_minutes"
-                type="number"
-                label="时长(分)"
+                v-model="row.tips"
+                label="小贴士"
                 variant="outlined"
                 density="compact"
                 hide-details
-                style="width: 90px"
-                min="0"
+                class="flex-shrink-0"
+                style="width: 160px"
+                clearable
               />
 
               <!-- 删除 -->
@@ -124,13 +124,16 @@
               />
             </div>
 
-            <!-- 小贴士 -->
+            <!-- 时长 -->
             <v-text-field
-              v-model="row.tips"
-              label="小贴士（可选）"
+              v-model="row.duration_minutes"
+              type="number"
+              label="时长（分钟）"
               variant="outlined"
               density="compact"
               hide-details
+              style="width: 140px"
+              min="0"
               clearable
             />
           </div>
