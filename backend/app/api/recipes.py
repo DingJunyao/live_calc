@@ -566,6 +566,9 @@ async def delete_recipe_image(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"删除图片失败: {str(e)}")
+
+
+@router.get("/{recipe_id}/cost", response_model=RecipeCostResponse)
 async def get_recipe_cost(
     recipe_id: int,
     db: Session = Depends(get_db),
