@@ -108,12 +108,16 @@ async def get_recipes(
 ):
     """获取菜谱列表（分页）"""
     try:
-        # 获取当前用户的菜谱（允许编辑）
-        user_recipes = db.query(Recipe).filter(Recipe.user_id == current_user.id)
+        # 获取当前用户的菜谱（允许编辑，排除软删除）
+        user_recipes = db.query(Recipe).filter(
+            Recipe.user_id == current_user.id,
+            Recipe.is_active == True
+        )
 
-        # 获取公共导入的菜谱（非当前用户所有，但有来源标识，通常是"howtocook"或其他标识）
+        # 获取公共导入的菜谱（非当前用户所有，但有来源标识，排除软删除）
         public_imported_recipes = db.query(Recipe).filter(
-            Recipe.source != None
+            Recipe.source != None,
+            Recipe.is_active == True
         )
 
         # 合并查询结果，去重
@@ -359,15 +363,17 @@ async def update_recipe(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """更新菜谱（部分更新，仅修改传入的字段）"""
+    """更新菜谱（部分更新，仅修改传入的字段）
+
+    管理员可修改任意菜谱，普通用户只能修改自己创建的菜谱。
+    """
     try:
-        recipe = db.query(Recipe).filter(
-            Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id
-        ).first()
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
 
         if not recipe:
-            raise HTTPException(status_code=404, detail="菜谱不存在或无权修改")
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+        if recipe.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         exclude_unset = update_data.model_dump(exclude_unset=True)
 
@@ -466,6 +472,33 @@ def _build_recipe_detail_response(recipe: Recipe, db: Session) -> RecipeDetailRe
     )
 
 
+@router.delete("/{recipe_id}")
+async def delete_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """软删除菜谱
+
+    管理员可删除任意菜谱，普通用户只能删除自己创建的菜谱。
+    """
+    try:
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+        if recipe.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权删除此菜谱")
+
+        recipe.is_active = False
+        db.commit()
+        return {"detail": "菜谱已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除菜谱失败: {str(e)}")
+
+
 @router.post("/{recipe_id}/images")
 async def upload_recipe_image(
     recipe_id: int,
@@ -475,13 +508,11 @@ async def upload_recipe_image(
 ):
     """上传菜谱配图"""
     try:
-        recipe = db.query(Recipe).filter(
-            Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id
-        ).first()
-
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
         if not recipe:
-            raise HTTPException(status_code=404, detail="菜谱不存在或无权修改")
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+        if recipe.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         # 验证文件类型
         allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -532,13 +563,11 @@ async def delete_recipe_image(
 ):
     """删除菜谱配图"""
     try:
-        recipe = db.query(Recipe).filter(
-            Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id
-        ).first()
-
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
         if not recipe:
-            raise HTTPException(status_code=404, detail="菜谱不存在或无权修改")
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+        if recipe.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         # 从 images 列表中移除
         current_images = recipe.images or []

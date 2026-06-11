@@ -10,6 +10,13 @@
       </div>
     </v-app-bar-title>
     <template #append>
+      <v-btn
+        icon="mdi-delete-outline"
+        variant="text"
+        color="error"
+        :disabled="!recipe || deleting"
+        @click="showDeleteDialog = true"
+      />
       <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
     </template>
   </v-app-bar>
@@ -370,7 +377,31 @@
         </div>
       </v-card>
     </v-dialog>
-  </v-container>
+      <!-- 删除确认对话框 -->
+    <v-dialog v-model="showDeleteDialog" max-width="400">
+      <v-card>
+        <v-card-title class="d-flex align-center text-error">
+          <v-icon start color="error">mdi-alert-circle-outline</v-icon>
+          删除菜谱
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pt-4">
+          <p>确定要删除「{{ recipe?.name }}」吗？</p>
+          <p class="text-caption text-medium-emphasis mt-1">此操作将软删除菜谱，可在后台恢复。</p>
+        </v-card-text>
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn variant="text" @click="showDeleteDialog = false" :disabled="deleting">取消</v-btn>
+          <v-btn
+            color="error"
+            variant="tonal"
+            :loading="deleting"
+            @click="handleDelete"
+          >删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+</v-container>
 </template>
 
 <script setup lang="ts">
@@ -917,6 +948,23 @@ const onBasicInfoSaved = (updatedRecipe: any) => {
 // 图片列表变更时刷新 recipe 数据（保持图片区域同步）
 const onImagesChanged = () => {
   loadData()
+}
+
+// 删除菜谱
+const showDeleteDialog = ref(false)
+const deleting = ref(false)
+
+const handleDelete = async () => {
+  deleting.value = true
+  try {
+    await api.delete(`/recipes/${recipeId.value}`)
+    showDeleteDialog.value = false
+    router.push('/recipes')
+  } catch (e: any) {
+    console.error('删除菜谱失败', e)
+  } finally {
+    deleting.value = false
+  }
 }
 
 const goBack = () => {
