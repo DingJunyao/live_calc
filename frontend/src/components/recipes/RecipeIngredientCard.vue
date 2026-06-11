@@ -37,6 +37,15 @@
       </template>
     </v-card-title>
     <v-divider />
+    <v-alert
+      v-if="saveError"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="ma-3"
+      closable
+      @click:close="saveError = ''"
+    >{{ saveError }}</v-alert>
 
     <!-- 查看模式 -->
     <template v-if="!editing">
@@ -431,7 +440,40 @@ const removeRow = (index: number) => {
   editRows.value.splice(index, 1)
 }
 
+const saveError = ref('')
+
 const handleSave = async () => {
+  saveError.value = ''
+
+  // 先验证所有行的用量组合
+  const invalidRows: number[] = []
+  editRows.value.forEach((row, idx) => {
+    if (!row.ingredient_name) return  // 空行跳过
+    if (row.quantity_type) return     // 适量/少许跳过
+
+    const recVal = row.quantity_recommended ? parseFloat(row.quantity_recommended) : NaN
+    const minVal = row.quantity_min ? parseFloat(row.quantity_min) : NaN
+    const maxVal = row.quantity_max ? parseFloat(row.quantity_max) : NaN
+
+    const hasRec = !isNaN(recVal)
+    const hasMin = !isNaN(minVal)
+    const hasMax = !isNaN(maxVal)
+
+    const valid = (hasRec && hasMin && hasMax)   // 推荐+min+max
+      || (hasRec && !hasMin && !hasMax)          // 仅推荐值
+      || (!hasRec && hasMin && hasMax)           // 仅min+max
+      || (!hasRec && !hasMin && !hasMax)          // 全空
+    if (!valid) {
+      invalidRows.push(idx + 1)
+    }
+  })
+
+  if (invalidRows.length > 0) {
+    saveError.value = `第 ${invalidRows.join('、')} 行的用量组合不完整。用量字段仅支持：①仅推荐值 ②推荐值+min+max ③仅min+max`
+    saving.value = false
+    return
+  }
+
   saving.value = true
   try {
     const ingredients = editRows.value
@@ -443,7 +485,6 @@ const handleSave = async () => {
         }
 
         if (row.quantity_type) {
-          // 适量/少许
           data.original_quantity = row.quantity_type
         } else {
           const recVal = row.quantity_recommended ? parseFloat(row.quantity_recommended) : NaN
@@ -455,17 +496,13 @@ const handleSave = async () => {
           const hasMax = !isNaN(maxVal)
 
           if (hasRec && hasMin && hasMax) {
-            // ✅ 推荐值 + min + max → quantity + quantity_range
             data.quantity = String(recVal)
             data.quantity_range = { min: minVal, max: Math.max(minVal, maxVal) }
           } else if (hasRec && !hasMin && !hasMax) {
-            // ✅ 仅推荐值 → quantity
             data.quantity = String(recVal)
           } else if (!hasRec && hasMin && hasMax) {
-            // ✅ 仅 min + max → quantity_range
             data.quantity_range = { min: minVal, max: Math.max(minVal, maxVal) }
           }
-          // ❌ 其他组合（推荐+min、推荐+max、仅min等）→ 不保存用量字段
 
           if (row.unit_name && (hasRec || hasMin || hasMax)) {
             data.unit = row.unit_name
@@ -473,7 +510,6 @@ const handleSave = async () => {
         }
 
         if (row.note) data.note = row.note
-
         return data
       })
 
@@ -482,6 +518,7 @@ const handleSave = async () => {
     editing.value = false
   } catch (e: any) {
     console.error('保存原料失败', e)
+    saveError.value = e.response?.data?.detail || '保存失败，请重试'
   } finally {
     saving.value = false
   }
