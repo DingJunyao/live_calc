@@ -137,7 +137,7 @@
                 title="成本趋势"
                 icon="mdi-chart-timeline-variant"
                 icon-color="tertiary"
-                unit="份"
+                :unit="costTrendUnit"
                 empty-text="暂无成本历史数据"
                 :data="chartData"
                 :loading="loadingCostHistory"
@@ -191,7 +191,7 @@
                 title="成本趋势"
                 icon="mdi-chart-timeline-variant"
                 icon-color="tertiary"
-                unit="份"
+                :unit="costTrendUnit"
                 empty-text="暂无成本历史数据"
                 :data="chartData"
                 :loading="loadingCostHistory"
@@ -518,6 +518,9 @@ const servingRatio = computed(() => {
   const orig = recipe.value?.servings || 1
   return displayServings.value / orig
 })
+
+// 成本趋势图的单位，跟随当前显示的份数
+const costTrendUnit = computed(() => `${displayServings.value}人份`)
 
 // 图片灯箱相关
 const selectedImageIndex = ref(0)
@@ -851,13 +854,14 @@ const onCostTrendFilterChange = async (filter: 'week' | 'month' | 'quarter' | 'y
   loadingCostHistory.value = false
 }
 
-// 转换为图表数据格式
+// 转换为图表数据格式（按当前显示份数折算，与成本估算保持一致）
 const chartData = computed(() => {
+  const ratio = servingRatio.value
   return costHistoryRecords.value.map(record => ({
     date: record.date,
-    min: record.min_cost,
-    max: record.max_cost,
-    avg: record.avg_cost
+    min: record.min_cost * ratio,
+    max: record.max_cost * ratio,
+    avg: record.avg_cost * ratio
   }))
 })
 

@@ -472,13 +472,16 @@ const formatCost = (cost: any) => {
 const getDisplayCost = (recipe: Recipe) => {
   const cost = costMap.value[recipe.id]?.estimated_cost ?? recipe.estimated_cost
   if (cost === null || cost === undefined) return '--'
-  return `¥${formatCost(cost)}`
+  const servings = recipe.servings || 1
+  return `¥${formatCost(cost)}/${servings}人份`
 }
 
 const getDisplayCalories = (recipe: Recipe) => {
   const cal = costMap.value[recipe.id]?.calories ?? recipe.calories
   if (cal === null || cal === undefined) return '-'
-  return `${cal} kcal`
+  const servings = recipe.servings || 1
+  const perServing = Math.round(cal / servings)
+  return `${perServing} kcal/份`
 }
 
 // 页面渲染完后台加载当前页菜谱的成本和卡路里

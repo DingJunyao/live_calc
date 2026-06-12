@@ -687,9 +687,23 @@ async def calculate_recipe_cost(
                     product = p
                     break
 
-            # 如果所有商品都没有当天记录，使用前向填充（遍历所有商品查找最近的记录）
+            # 如果所有商品都没有当天记录，尝试前向填充和回退机制
             if not day_records:
-                # 先尝试使用食材回退机制
+                # 先尝试直接商品的前向填充（与趋势函数 calculate_recipe_cost_range_trend
+                # 中的 _find_forward_fill_records 保持一致的优先级）
+                for p in products:
+                    day_records = _get_price_records_with_fallback(
+                        db=db,
+                        user_id=user_id,
+                        product_id=p.id,
+                        as_of_date=now
+                    )
+                    if day_records:
+                        product = p
+                        break
+
+            # 如果直接商品的前向填充也没找到，再尝试食材回退机制
+            if not day_records:
                 fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
                 if fallback_result:
                     fallback_ingredient, fallback_price_record, fallback_chain = fallback_result
@@ -723,19 +737,6 @@ async def calculate_recipe_cost(
                                 ingredient = fallback_ingredient
                         else:
                             ingredient = fallback_ingredient
-
-                # 如果食材回退也没有，使用原食材前向填充（获取同日所有记录取平均）
-                if not day_records and products:
-                    for p in products:
-                        day_records = _get_price_records_with_fallback(
-                            db=db,
-                            user_id=user_id,
-                            product_id=p.id,
-                            as_of_date=now
-                        )
-                        if day_records:
-                            product = p
-                            break
         else:
             # 如果找不到商品，尝试使用回退食材
             fallback_result = _get_ingredient_fallback(db, ingredient, user_id)
