@@ -37,6 +37,38 @@
       </template>
     </v-card-title>
     <v-divider />
+
+    <!-- 几人份切换栏 -->
+    <div v-if="!editing" class="servings-bar d-flex align-center px-4 py-2">
+      <v-btn
+        variant="outlined"
+        size="small"
+        density="compact"
+        class="servings-btn"
+        :disabled="displayServings <= 1"
+        @click="onDecrementServings"
+      >−</v-btn>
+      <span class="text-body-1 mx-3">{{ displayServings }} 人份</span>
+      <v-btn
+        variant="outlined"
+        size="small"
+        density="compact"
+        class="servings-btn"
+        @click="onIncrementServings"
+      >+</v-btn>
+      <v-chip
+        v-if="displayServings !== servings"
+        size="x-small"
+        variant="text"
+        color="medium-emphasis"
+        class="ml-2"
+        @click="onResetServings"
+      >
+        配方默认 {{ servings }} 人份
+      </v-chip>
+    </div>
+    <v-divider v-if="!editing" />
+
     <v-alert
       v-if="saveError"
       type="warning"
@@ -70,8 +102,8 @@
                 {{ ingredient.quantity_range.min }}~{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
                 <span class="text-medium-emphasis">（推荐 {{ ingredient.quantity }} {{ ingredient.unit }}）</span>
               </template>
-              <span v-else-if="scaleQuantity(ingredient.quantity, servings)">
-                {{ scaleQuantity(ingredient.quantity, servings) }} {{ ingredient.unit }}
+              <span v-else-if="scaleQuantity(ingredient.quantity, originalServings)">
+                {{ scaleQuantity(ingredient.quantity, originalServings) }} {{ ingredient.unit }}
               </span>
               <span v-else-if="ingredient.quantity_range">
                 {{ ingredient.quantity_range.min }}~{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
@@ -279,7 +311,25 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'saved', ingredients: any[]): void
+  (e: 'update:display-servings', servings: number): void
 }>()
+
+// 几人份切换
+const displayServings = computed(() => props.displayServings ?? props.servings ?? 1)
+
+const onIncrementServings = () => {
+  emit('update:display-servings', displayServings.value + 1)
+}
+
+const onDecrementServings = () => {
+  if (displayServings.value > 1) {
+    emit('update:display-servings', displayServings.value - 1)
+  }
+}
+
+const onResetServings = () => {
+  emit('update:display-servings', props.servings ?? 1)
+}
 
 const router = useRouter()
 const editing = ref(false)
@@ -315,15 +365,15 @@ const quantityTypeOptions = [
   { label: '少许', value: '少许' },
 ]
 
-// 份数计算
-const servings = computed(() => props.recipe.servings || 1)
+// 原始配方份数
+const originalServings = computed(() => props.servings ?? props.recipe.servings ?? 1)
 
 // 缩放原料数量
 const scaleQuantity = (quantity: string | number | undefined, origServings: number): string => {
   if (quantity === undefined || quantity === null || quantity === '') return ''
   const num = typeof quantity === 'string' ? parseFloat(quantity) : quantity
   if (isNaN(num) || num === 0) return ''
-  const ratio = (props.displayServings || 1) / (origServings || 1)
+  const ratio = displayServings.value / (origServings || 1)
   const scaled = num * ratio
   if (Number.isInteger(scaled)) return scaled.toString()
   return scaled.toFixed(1).replace(/\.0$/, '')
@@ -334,7 +384,7 @@ const formatIngredientCost = (ingredient: RecipeIngredient) => {
   if (!props.costBreakdown) return '-'
   const item = props.costBreakdown.find((b: any) => b.recipe_ingredient_id === ingredient.id)
   if (!item) return '-'
-  const ratio = (props.displayServings || 1) / (props.recipe.servings || 1)
+  const ratio = displayServings.value / originalServings.value
   const cost = (item.cost || 0) * ratio
   return cost.toFixed(2)
 }
@@ -593,5 +643,15 @@ loadUnits()
 
 .border-bottom {
   border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
+}
+
+/* 几人份切换栏 */
+.servings-btn {
+  border-radius: 8px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  font-size: 16px;
+  font-weight: 500;
 }
 </style>

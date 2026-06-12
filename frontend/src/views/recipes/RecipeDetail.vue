@@ -11,7 +11,7 @@
     </v-app-bar-title>
     <template #append>
       <v-btn
-        icon="mdi-delete-outline"
+        icon="mdi-delete"
         variant="text"
         color="error"
         :disabled="!recipe || deleting"
@@ -212,6 +212,7 @@
             :display-servings="displayServings"
             :servings="recipe.servings"
             @saved="onRecipeSaved"
+            @update:display-servings="displayServings = $event"
           />
         </v-col>
         <v-col cols="12" md="6">

@@ -33,7 +33,7 @@
         </v-img>
         <!-- 删除按钮 -->
         <v-btn
-          icon="mdi-close-circle"
+          icon="mdi-delete"
           size="x-small"
           color="error"
           variant="flat"

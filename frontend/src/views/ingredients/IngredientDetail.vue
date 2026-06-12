@@ -484,7 +484,7 @@
             </div>
             <div class="text-center">
               <v-btn
-                icon="mdi-close"
+                icon="mdi-delete"
                 size="x-small"
                 variant="text"
                 color="error"
@@ -592,7 +592,7 @@
               />
             </div>
             <div class="text-center">
-              <v-btn icon="mdi-close" size="x-small" variant="text" color="error" density="compact" @click="removeNutrientEditItem(index)" />
+              <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" density="compact" @click="removeNutrientEditItem(index)" />
             </div>
           </div>
           <div v-if="nutritionEditItems.length === 0" class="text-center py-4">
