@@ -1,7 +1,21 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+import asyncio
+import json
+import logging
+import threading
+import time
+import traceback
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.api import auth, products, merchants, nutrition, recipes, reports, admin, invite_codes
 from app.api import ingredient_extended  # 新增的食材扩展API
 from app.api import products_entity  # 商品实体 API
@@ -10,14 +24,12 @@ from app.api import units  # 单位管理 API（含实体单位覆盖和密度�
 from app.api import ingredient_merge  # 食材合并 API
 from app.api import ingredient_hierarchy  # 食材层级关系 API
 from app.api import sparklines  # 迷你图数据 API
-from app.core.database import Base, engine
-from contextlib import asynccontextmanager
-from sqlalchemy.orm import Session
-from app.core.database import get_db
+from app.core.database import Base, engine, get_db
+from app.core.exceptions import AppException
+from app.core.logging_config import setup_logging
 from app.services.enhanced_recipe_import_service import check_and_import_initial_recipes
-import asyncio
-import threading
-import os
+
+logger = logging.getLogger("app.main")
 
 
 def init_default_data(db: Session):
@@ -30,10 +42,10 @@ def init_default_data(db: Session):
 
     # 检查是否已初始化
     if db.query(Unit).first() is not None:
-        print("单位数据已存在，跳过初始化")
+        logger.info("单位数据已存在，跳过初始化")
         return
 
-    print("正在初始化默认数据...")
+    logger.info("正在初始化默认数据...")
 
     # 添加国际单位制基本单位
     si_units = [
@@ -168,13 +180,14 @@ def init_default_data(db: Session):
         db.add(category)
 
     db.commit()
-    print("默认数据初始化完成！")
+    logger.info("默认数据初始化完成！")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 应用启动时的事件处理
-    print("应用正在启动...")
+    setup_logging()
+    logger.info("应用正在启动...")
 
     # 检查并创建缺失的数据库表
     from app.core.database import Base, engine
@@ -192,18 +205,18 @@ async def lifespan(app: FastAPI):
         from app.config import settings
         if settings.data_local_path:
             local_path = settings.data_local_path
-            print(f"检测到本地数据路径配置: {local_path}")
+            logger.info(f"检测到本地数据路径配置: {local_path}")
             if os.path.isdir(local_path):
                 from app.services.enhanced_recipe_import_service import EnhancedRecipeImportService
                 service = EnhancedRecipeImportService(db, user_id=1)
                 local_result = service.import_from_local_dir(local_path)
-                print(f"本地数据导入结果: {local_result.get('message', local_result)}")
+                logger.info(f"本地数据导入结果: {local_result.get('message', local_result)}")
             else:
-                print(f"警告: 本地数据路径不存在或不是目录: {local_path}")
+                logger.warning(f"本地数据路径不存在或不是目录: {local_path}")
         else:
             # 未配置本地路径时，从远程仓库导入初始数据
             result = check_and_import_initial_recipes(db, user_id=1)
-            print(f"远程数据导入结果: {result}")
+            logger.info(f"远程数据导入结果: {result}")
 
         # 检查是否需要为现有原料批量创建商品
         from app.models.nutrition import Ingredient
@@ -213,7 +226,7 @@ async def lifespan(app: FastAPI):
         product_count = db.query(Product).filter(Product.is_active == True).count()
 
         if ingredient_count > 0 and product_count == 0:
-            print(f"检测到 {ingredient_count} 个原料但没有商品，开始批量创建...")
+            logger.info(f"检测到 {ingredient_count} 个原料但没有商品，开始批量创建...")
             created_count = 0
             ingredients = db.query(Ingredient).filter(Ingredient.is_active == True).all()
 
@@ -237,16 +250,16 @@ async def lifespan(app: FastAPI):
                         created_count += 1
                         if created_count % 100 == 0:
                             db.flush()
-                            print(f"已创建 {created_count} 个商品...")
+                            logger.info(f"已创建 {created_count} 个商品...")
                 except Exception as e:
-                    print(f"创建商品失败 {ingredient.name}: {str(e)}")
+                    logger.error(f"创建商品失败 {ingredient.name}: {str(e)}")
 
             db.commit()
-            print(f"批量创建商品完成：共创建 {created_count} 个商品")
+            logger.info(f"批量创建商品完成：共创建 {created_count} 个商品")
         elif product_count > 0:
-            print(f"商品已存在，跳过批量创建（原料: {ingredient_count}, 商品: {product_count}）")
+            logger.info(f"商品已存在，跳过批量创建（原料: {ingredient_count}, 商品: {product_count}）")
     except Exception as e:
-        print(f"初始化过程中发生错误: {str(e)}")
+        logger.error(f"初始化过程中发生错误: {str(e)}")
     finally:
         # 关闭数据库会话
         db.close()
@@ -254,7 +267,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # 应用关闭时的事件处理
-    print("应用正在关闭...")
+    logger.info("应用正在关闭...")
 
 
 # 创建 FastAPI 应用
@@ -265,6 +278,216 @@ app = FastAPI(
     lifespan=lifespan,
     redirect_slashes=False  # 禁用自动斜杠重定向，避免 307 重定向丢失 Authorization header
 )
+
+
+# === 请求/响应日志中间件 ===
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    记录所有 HTTP 请求和响应的详细信息。
+
+    请求记录：方法、URL、查询参数、路径参数、客户端 IP
+    响应记录：状态码、耗时
+    错误记录：请求详情 + 响应详情 + 错误堆栈
+    """
+    start_time = time.time()
+
+    # 读取请求体用于日志记录
+    # Starlette 的 Request.body() 缓存结果到 _body，下游可重复读取
+    request_body = None
+    if request.method in ("POST", "PUT", "PATCH"):
+        try:
+            body_bytes = await request.body()
+            if body_bytes:
+                try:
+                    request_body = json.loads(body_bytes.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    request_body = f"<binary/non-JSON body: {len(body_bytes)} bytes>"
+            # Starlette 的 Request.body() 已内置缓存机制（_body），下游代码
+            # 再次调用 request.body() 会直接返回缓存内容，无需手动重建 _receive。
+            # 替换 _receive 反而会导致 BaseHTTPMiddleware 的 wrapped_receive 在
+            # StreamingResponse.listen_for_disconnect 中收到意外的 http.request 消息
+        except Exception:
+            request_body = "<无法读取请求体>"
+
+    # 构造请求日志
+    req_log = {
+        "method": request.method,
+        "path": request.url.path,
+        "query_params": dict(request.query_params) if request.query_params else None,
+        "client": f"{request.client.host}:{request.client.port}" if request.client else None,
+    }
+    if request_body is not None:
+        req_log["body"] = request_body
+
+    logger.debug(f"请求: {json.dumps(req_log, ensure_ascii=False, default=str)}")
+
+    try:
+        response = await call_next(request)
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        # 正常响应
+        log_data = {
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "elapsed_ms": f"{elapsed_ms:.1f}",
+        }
+
+        if response.status_code >= 400:
+            # 错误响应：记录详细信息
+            log_data["query_params"] = req_log["query_params"]
+            log_data["client"] = req_log["client"]
+            if request_body is not None:
+                log_data["request_body"] = request_body
+            logger.warning(f"响应(错误): {json.dumps(log_data, ensure_ascii=False, default=str)}")
+        else:
+            logger.debug(f"响应: {json.dumps(log_data, ensure_ascii=False, default=str)}")
+
+        return response
+    except Exception:
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        # 未捕获的异常：打印完整请求详情和堆栈
+        logger.error("=" * 80)
+        logger.error(f"未捕获异常: {request.method} {request.url.path}")
+        logger.error(f"客户端: {req_log['client']}")
+        if req_log["query_params"]:
+            logger.error(f"查询参数: {json.dumps(req_log['query_params'], ensure_ascii=False, default=str)}")
+        if request_body is not None:
+            logger.error(f"请求体: {json.dumps(request_body, ensure_ascii=False, default=str)}")
+        logger.error(f"耗时: {elapsed_ms:.1f} ms")
+        logger.error(f"错误堆栈:\n{traceback.format_exc()}")
+        logger.error("=" * 80)
+        raise
+
+
+# === 全局异常处理器 ===
+@app.exception_handler(AppException)
+async def app_exception_handler(request: Request, exc: AppException):
+    """处理应用自定义异常。"""
+    logger.error(
+        f"AppException: {request.method} {request.url.path} -> "
+        f"{exc.status_code} {exc.detail}"
+    )
+    logger.debug(f"异常堆栈:\n{traceback.format_exc()}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """处理 HTTP 异常（包括 FastAPI 的 HTTPException）。"""
+    # 读取请求体用于错误日志
+    request_body = None
+    if request.method in ("POST", "PUT", "PATCH"):
+        try:
+            body_bytes = await request.body()
+            if body_bytes:
+                try:
+                    request_body = json.loads(body_bytes.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    request_body = f"<binary: {len(body_bytes)} bytes>"
+        except Exception:
+            pass
+
+    log_data = {
+        "method": request.method,
+        "path": request.url.path,
+        "status_code": exc.status_code,
+        "detail": str(exc.detail),
+        "query_params": dict(request.query_params) if request.query_params else None,
+        "client": f"{request.client.host}:{request.client.port}" if request.client else None,
+    }
+    if request_body is not None:
+        log_data["request_body"] = request_body
+
+    logger.error(f"HTTP异常: {json.dumps(log_data, ensure_ascii=False, default=str)}")
+    logger.debug(f"异常堆栈:\n{traceback.format_exc()}")
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """处理请求参数验证错误 (422)。"""
+    errors = []
+    for error in exc.errors():
+        errors.append({
+            "field": ".".join(str(loc) for loc in error.get("loc", [])),
+            "message": error.get("msg", ""),
+            "type": error.get("type", ""),
+        })
+
+    # 读取请求体
+    request_body = None
+    try:
+        body_bytes = await request.body()
+        if body_bytes:
+            try:
+                request_body = json.loads(body_bytes.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                request_body = f"<binary: {len(body_bytes)} bytes>"
+    except Exception:
+        pass
+
+    logger.error("=" * 60)
+    logger.error(f"请求验证失败: {request.method} {request.url.path}")
+    logger.error(f"客户端: {request.client.host}:{request.client.port}" if request.client else "客户端: unknown")
+    logger.error(f"查询参数: {dict(request.query_params)}" if request.query_params else "查询参数: 无")
+    if request_body is not None:
+        logger.error(f"请求体: {json.dumps(request_body, ensure_ascii=False, default=str)}")
+    logger.error(f"验证错误:\n{json.dumps(errors, ensure_ascii=False, indent=2)}")
+    logger.error("=" * 60)
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "请求参数验证失败",
+            "errors": errors,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """处理所有未捕获的通用异常 (500)。"""
+    # 读取请求体
+    request_body = None
+    if request.method in ("POST", "PUT", "PATCH"):
+        try:
+            body_bytes = await request.body()
+            if body_bytes:
+                try:
+                    request_body = json.loads(body_bytes.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    request_body = f"<binary: {len(body_bytes)} bytes>"
+        except Exception:
+            pass
+
+    logger.error("=" * 80)
+    logger.error(f"未处理异常: {request.method} {request.url.path}")
+    logger.error(f"客户端: {request.client.host}:{request.client.port}" if request.client else "客户端: unknown")
+    if request.query_params:
+        logger.error(f"查询参数: {dict(request.query_params)}")
+    if hasattr(request, "path_params") and request.path_params:
+        logger.error(f"路径参数: {request.path_params}")
+    if request_body is not None:
+        logger.error(f"请求体: {json.dumps(request_body, ensure_ascii=False, default=str)}")
+    logger.error(f"异常类型: {type(exc).__name__}")
+    logger.error(f"异常详情: {str(exc)}")
+    logger.error(f"错误堆栈:\n{traceback.format_exc()}")
+    logger.error("=" * 80)
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"服务器内部错误: {str(exc)}" if str(exc) else "服务器内部错误"},
+    )
 
 # 配置静态文件目录
 static_dir = Path(__file__).parent.parent / "static"

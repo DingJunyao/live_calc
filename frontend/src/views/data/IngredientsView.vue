@@ -252,6 +252,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import FilterBar from '@/components/common/FilterBar.vue'
@@ -469,7 +470,7 @@ const loadIngredients = async () => {
     if (items.value.length > 0) loadIngredientSparklines()
   } catch (e: any) {
     console.error('加载原料失败', e)
-    error.value = e.message || '加载失败'
+    error.value = getErrorMessage(e, '加载失败')
     loading.value = false
   }
 }

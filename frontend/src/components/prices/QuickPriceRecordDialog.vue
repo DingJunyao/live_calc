@@ -91,6 +91,9 @@
           />
         </v-form>
       </v-card-text>
+      <v-alert v-if="saveError" type="error" variant="tonal" class="mx-4 mb-2" closable @click:close="saveError = ''">
+        {{ saveError }}
+      </v-alert>
       <v-card-actions>
         <v-spacer />
         <v-btn @click="close">取消</v-btn>
@@ -103,6 +106,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { api } from '@/api/client'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 interface Merchant {
   id: number
@@ -129,6 +133,7 @@ const emit = defineEmits<{
 
 const show = ref(false)
 const saving = ref(false)
+const saveError = ref('')
 const formRef = ref()
 const formValid = ref(false)
 const merchantOptions = ref<Merchant[]>([])
@@ -287,6 +292,7 @@ watch(selectedProductId, (newId) => {
 
 const close = () => {
   show.value = false
+  saveError.value = ''
 }
 
 const save = async () => {
@@ -317,7 +323,7 @@ const save = async () => {
     emit('saved')
   } catch (e: any) {
     console.error('保存记录失败', e)
-    alert(e.response?.data?.detail || e.message || '保存失败')
+    saveError.value = getErrorMessage(e, '保存失败')
   } finally {
     saving.value = false
   }

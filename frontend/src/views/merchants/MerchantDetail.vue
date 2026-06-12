@@ -294,6 +294,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { usePageTitle } from '@/composables/usePageTitle'
 import { useDisplay } from 'vuetify'
@@ -356,7 +357,7 @@ const loadData = async () => {
     await loadProductPrices()
   } catch (e: any) {
     console.error('加载商家详情失败', e)
-    error.value = e.message || '加载失败'
+    error.value = getErrorMessage(e, '加载失败')
   } finally {
     loading.value = false
   }

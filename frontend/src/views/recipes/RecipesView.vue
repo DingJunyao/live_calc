@@ -224,6 +224,7 @@ import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
@@ -444,7 +445,7 @@ const loadRecipes = async () => {
     loadCostsForVisibleRecipes()
   } catch (e: any) {
     console.error('加载菜谱失败', e)
-    error.value = e.message || '加载失败'
+    error.value = getErrorMessage(e, '加载失败')
   } finally {
     loading.value = false
   }

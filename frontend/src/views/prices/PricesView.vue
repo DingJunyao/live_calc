@@ -295,6 +295,9 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000" location="top">
+      {{ snackbar.message }}
+    </v-snackbar>
   </v-container>
 </template>
 
@@ -303,6 +306,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
@@ -343,6 +347,10 @@ interface Merchant {
 const records = ref<PriceRecord[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const snackbar = ref({ show: false, message: '', color: 'error' })
+function showSnackbar(message: string, color: string = 'error') {
+  snackbar.value = { show: true, message, color }
+}
 const searchQuery = ref((route.query.search as string) || '')
 const pageSize = ref(Number(route.query.pageSize) || 20)
 const currentPage = ref(Number(route.query.page) || 1)
@@ -591,7 +599,7 @@ const loadRecords = async () => {
     records.value = response.items || []
     total.value = response.total || 0
   } catch (e: any) {
-    error.value = e.message || '加载失败'
+    error.value = getErrorMessage(e, '加载失败')
   } finally {
     loading.value = false
   }
@@ -794,7 +802,7 @@ const saveRecord = async () => {
     loadRecords()
   } catch (e: any) {
     console.error('保存记录失败', e)
-    alert(e.message || '保存失败')
+    showSnackbar(getErrorMessage(e, '保存失败'), 'error')
   } finally {
     saving.value = false
   }
@@ -807,7 +815,7 @@ const deleteRecord = async (id: number) => {
     loadRecords()
   } catch (e: any) {
     console.error('删除失败', e)
-    alert(e.message || '删除失败')
+    showSnackbar(getErrorMessage(e, '删除失败'), 'error')
   }
 }
 

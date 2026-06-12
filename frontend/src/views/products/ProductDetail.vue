@@ -949,6 +949,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
+import { getErrorMessage } from '@/utils/errorHandler'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { usePageTitle } from '@/composables/usePageTitle'
@@ -1763,7 +1764,7 @@ const loadData = async () => {
     loadUnmappedUnits()
   } catch (e: any) {
     console.error('加载商品失败', e)
-    error.value = e.message || '加载失败'
+    error.value = getErrorMessage(e, '加载失败')
     loading.value = false
   }
 }

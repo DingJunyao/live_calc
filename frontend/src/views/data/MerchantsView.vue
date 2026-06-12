@@ -216,6 +216,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
@@ -305,7 +306,7 @@ const loadMerchants = async () => {
     total.value = response.total || 0
   } catch (e: any) {
     console.error('加载商家失败', e)
-    error.value = e.message || '加载失败'
+    error.value = getErrorMessage(e, '加载失败')
   } finally {
     loading.value = false
   }
