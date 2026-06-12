@@ -56,7 +56,7 @@
               {{ record.merchant_name || '未知商家' }}
             </v-list-item-subtitle>
             <v-list-item-subtitle>
-              {{ formatDateTime(record.recorded_at) }}
+              {{ formatToLocalDateTimeShort(record.recorded_at) }}
             </v-list-item-subtitle>
 
             <template #append>
@@ -100,7 +100,7 @@
                   {{ record.merchant_name || '未知商家' }}
                 </v-chip>
                 <span class="text-caption text-medium-emphasis">
-                  {{ formatDateTime(record.recorded_at) }}
+                  {{ formatToLocalDateTimeShort(record.recorded_at) }}
                 </span>
               </div>
             </v-card-text>
@@ -310,6 +310,7 @@ import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
+import { formatToLocalDateTimeShort } from '@/utils/timezone'
 
 const route = useRoute()
 const router = useRouter()
@@ -666,11 +667,6 @@ watch(selectedProduct, (newProduct) => {
 
 const formatPrice = (price: any) => (parseFloat(price) || 0).toFixed(2)
 
-const formatDateTime = (dateTimeStr: string) => {
-  if (!dateTimeStr) return ''
-  const d = new Date(dateTimeStr)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 
 // 从会话存储加载记忆的值
 const loadSessionMemory = () => {

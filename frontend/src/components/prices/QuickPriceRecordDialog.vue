@@ -107,6 +107,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { api } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
+import { getLocalDateTimeString, formatToLocalDateTimeShort } from '@/utils/timezone'
 
 interface Merchant {
   id: number
@@ -215,16 +216,6 @@ const SESSION_KEYS = {
   IS_PURCHASE: 'price_form_is_purchase',
 } as const
 
-const getCurrentLocalDateTime = () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  const hours = String(now.getHours()).padStart(2, '0')
-  const minutes = String(now.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
 const loadSessionMemory = () => {
   const savedMerchantId = sessionStorage.getItem(SESSION_KEYS.MERCHANT_ID)
   const savedIsPurchase = sessionStorage.getItem(SESSION_KEYS.IS_PURCHASE)
@@ -258,7 +249,7 @@ const resetForm = () => {
     original_quantity: 1,
     original_unit: props.defaultUnit || '斤',
     merchant_id: sessionMemory.merchantId,
-    recorded_at: getCurrentLocalDateTime(),
+    recorded_at: getLocalDateTimeString(),
     notes: '',
     is_purchase: sessionMemory.isPurchase,
   }

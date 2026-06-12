@@ -19,6 +19,7 @@ from app.schemas.nutrition import (
     NutritionEditResponse
 )
 from pydantic import BaseModel, Field
+from app.utils.datetime_utils import serialize_datetime
 
 router = APIRouter()
 
@@ -992,7 +993,7 @@ async def get_ingredient_latest_price(
         result = {
             "average_price": round(average_price, 2),
             "unit": target_unit_abbr,
-            "latest_date": latest_date.isoformat() if latest_date else None,
+            "latest_date": serialize_datetime(latest_date) if latest_date else None,
         }
         return result
     except Exception as e:
@@ -1094,7 +1095,7 @@ async def get_ingredient_latest_price_by_merchant(
                 "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
                 "price": round(unit_price, 2),
                 "unit": target_unit_abbr or original_unit_abbr,
-                "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
+                "recorded_at": serialize_datetime(record.recorded_at) if record.recorded_at else None,
                 "product_name": record.product_name,
             })
 

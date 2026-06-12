@@ -104,7 +104,7 @@
                 <v-icon size="small" color="medium-emphasis">mdi-calendar</v-icon>
               </template>
               <v-list-item-title>创建时间</v-list-item-title>
-              <v-list-item-subtitle>{{ formatDateTime(product.created_at) }}</v-list-item-subtitle>
+              <v-list-item-subtitle>{{ formatToLocalDateTimeShort(product.created_at) }}</v-list-item-subtitle>
             </v-list-item>
           </v-list>
 
@@ -185,7 +185,7 @@
             ¥{{ formatPrice(product.latest_price) }}<span v-if="product.latest_price_unit" class="text-h6 font-weight-regular">/{{ product.latest_price_unit }}</span>
           </div>
           <div class="text-caption text-medium-emphasis mt-2">
-            {{ formatDate(product.latest_price_date) }}
+            {{ formatToLocalDate(product.latest_price_date) }}
           </div>
         </v-card-text>
 
@@ -222,7 +222,7 @@
                   </span>
                 </div>
                 <div v-if="mp.recorded_at" class="merchant-price-date" style="position: relative; z-index: 1">
-                  {{ formatDate(mp.recorded_at) }}
+                  {{ formatToLocalDate(mp.recorded_at) }}
                 </div>
                 <div v-if="mp.is_lowest" class="merchant-price-badge">
                   <v-chip size="x-small" color="success" variant="flat" label>最低</v-chip>
@@ -456,7 +456,7 @@
               <template v-if="record.merchant_name">
                 {{ record.merchant_name }} ·
               </template>
-              {{ formatDateTime(record.recorded_at) }}
+              {{ formatToLocalDateTimeShort(record.recorded_at) }}
             </v-list-item-subtitle>
 
             <template #append>
@@ -956,6 +956,7 @@ import { usePageTitle } from '@/composables/usePageTitle'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
+import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { setDetailTitle } = usePageTitle()
@@ -2134,18 +2135,6 @@ const goBack = () => {
 const formatPrice = (price: any) => {
   const num = parseFloat(price) || 0
   return num.toFixed(2)
-}
-
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-const formatDateTime = (dateStr: string) => {
-  if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const formatNutritionValue = (value: any, unit: string) => {

@@ -3,8 +3,10 @@ from typing import Any, Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
 import json
+from datetime import datetime as _dt, date as _date
 
 from app.models.operation_log import OperationLog
+from app.utils.datetime_utils import serialize_datetime
 
 
 class OperationLogService:
@@ -84,8 +86,14 @@ class OperationLogService:
             value = getattr(model, key)
 
             # 处理特殊类型
-            if hasattr(value, 'isoformat'):
-                # datetime 类型
+            if isinstance(value, _dt):
+                # datetime 类型：使用 serialize_datetime 确保带时区信息
+                result[key] = serialize_datetime(value) if value else None
+            elif isinstance(value, _date):
+                # date 类型（无时区问题）
+                result[key] = value.isoformat() if value else None
+            elif hasattr(value, 'isoformat'):
+                # 其他有 isoformat 方法的类型
                 result[key] = value.isoformat() if value else None
             elif isinstance(value, (list, dict)):
                 # JSON 类型

@@ -23,10 +23,37 @@ from app.models.product_entity import Product
 from app.models.unit import Unit
 from app.schemas.product import ProductRecordResponse
 
+from datetime import datetime as _dt
+from app.utils.datetime_utils import serialize_datetime
+
+# SQLite 时间字符串格式（UTC naive）：'2026-06-11 03:38:00.000000'
+_SQLITE_TS_FMTS = [
+    '%Y-%m-%d %H:%M:%S.%f',
+    '%Y-%m-%d %H:%M:%S',
+]
+
+
 def _to_iso(value) -> str | None:
-    """安全转 ISO 字符串：兼容 datetime 对象与 SQLite 返回的字符串。"""
+    """安全转带时区的 ISO 字符串。
+
+    兼容：
+    - datetime 对象 → 直接用 serialize_datetime 加 +00:00
+    - SQLite TEXT 时间字符串（naive UTC） → 解析后加 +00:00
+    - 其他字符串 → 透传
+    """
     if not value:
         return None
+    if isinstance(value, _dt):
+        return serialize_datetime(value)
+    if isinstance(value, str):
+        for fmt in _SQLITE_TS_FMTS:
+            try:
+                dt = _dt.strptime(value, fmt)
+                return serialize_datetime(dt)
+            except ValueError:
+                continue
+        # 已经是 ISO 格式或无法识别的字符串，原样返回
+        return value
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)

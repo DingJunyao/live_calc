@@ -119,6 +119,7 @@
 import { ref, reactive, watch, computed, onMounted } from 'vue'
 import { api } from '@/api/client'
 import type { PriceRecord } from '@/types'
+import { getLocalDateString } from '@/utils/timezone'
 
 interface Props {
   modelValue: boolean
@@ -142,7 +143,7 @@ const form = reactive({
   unit: '斤',
   merchant_name: '',
   is_purchase: true,
-  record_date: new Date().toISOString().split('T')[0],
+  record_date: getLocalDateString(),
 })
 
 // 单位选项（从 API 动态加载）
@@ -194,13 +195,7 @@ const resetForm = () => {
   form.unit = '斤'
   form.merchant_name = ''
   form.is_purchase = true
-  form.record_date = new Date().toISOString().split('T')[0]
-}
-
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  form.record_date = getLocalDateString()
 }
 
 const close = () => {

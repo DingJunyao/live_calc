@@ -19,6 +19,7 @@ from app.schemas.product_entity import (
 )
 from app.schemas.common import PaginatedResponse
 from app.utils.database_helpers import serialize_tags, deserialize_tags
+from app.utils.datetime_utils import serialize_datetime
 
 router = APIRouter(tags=["products_entity"])
 
@@ -210,8 +211,8 @@ def list_products(
             "ingredient_id": product.ingredient_id,
             "ingredient_name": product.ingredient_name,
             "tags": product.tags,
-            "created_at": product.created_at.isoformat() if product.created_at else None,
-            "updated_at": product.updated_at.isoformat() if product.updated_at else None,
+            "created_at": serialize_datetime(product.created_at) if product.created_at else None,
+            "updated_at": serialize_datetime(product.updated_at) if product.updated_at else None,
             "is_active": product.is_active
         })
 
@@ -665,7 +666,7 @@ def get_product_latest_price_by_merchant(
                 "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
                 "price": round(unit_price, 2),
                 "unit": target_unit_abbr or original_unit_abbr,
-                "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
+                "recorded_at": serialize_datetime(record.recorded_at) if record.recorded_at else None,
                 "product_name": record.product_name,
             })
 

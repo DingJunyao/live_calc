@@ -78,7 +78,7 @@
                   <v-icon size="small" color="medium-emphasis">mdi-calendar</v-icon>
                 </template>
                 <v-list-item-title>创建时间</v-list-item-title>
-                <v-list-item-subtitle>{{ formatDateTime(merchant.created_at) }}</v-list-item-subtitle>
+                <v-list-item-subtitle>{{ formatToLocalDateTimeShort(merchant.created_at) }}</v-list-item-subtitle>
               </v-list-item>
 
               <v-list-item>
@@ -155,7 +155,7 @@
                 <v-icon size="small" color="primary" class="ml-1">mdi-arrow-right</v-icon>
               </v-list-item-title>
               <v-list-item-subtitle>
-                {{ formatDateTime(record.recorded_at) }}
+                {{ formatToLocalDateTimeShort(record.recorded_at) }}
               </v-list-item-subtitle>
 
               <template #append>
@@ -196,7 +196,7 @@
                   </div>
                   <div class="d-flex flex-wrap align-center ga-2">
                     <span class="text-caption text-medium-emphasis">
-                      {{ formatDateTime(record.recorded_at) }}
+                      {{ formatToLocalDateTimeShort(record.recorded_at) }}
                     </span>
                   </div>
                 </v-card-text>
@@ -301,6 +301,7 @@ import { useDisplay } from 'vuetify'
 import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
 import type { Coordinate } from '@/utils/map/mapTypes'
+import { formatToLocalDateTimeShort } from '@/utils/timezone'
 
 const route = useRoute()
 const router = useRouter()
@@ -459,13 +460,6 @@ const formatUnitPrice = (price: any) => {
 const formatUnitSuffix = (label: string | null) => {
   if (!label) return ''
   return label.replace(/^元/, '')
-}
-
-const formatDateTime = (dateStr?: string | null) => {
-  if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return '-'
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 onMounted(() => {

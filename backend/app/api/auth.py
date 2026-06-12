@@ -26,6 +26,7 @@ from app.config import settings
 from typing import List
 from pydantic import BaseModel
 import datetime
+from app.utils.datetime_utils import serialize_datetime
 
 
 def validate_invite_code(code: str, db: Session) -> bool:
@@ -246,7 +247,7 @@ async def get_current_user(
         phone=user.phone,
         is_admin=user.is_admin,
         email_verified=user.email_verified,
-        created_at=user.created_at.isoformat() if user.created_at else None
+        created_at=serialize_datetime(user.created_at) if user.created_at else None
     )
 
 
@@ -299,7 +300,7 @@ async def get_all_users(
                 phone=user.phone,
                 is_admin=user.is_admin,
                 email_verified=user.email_verified,
-                created_at=user.created_at.isoformat() if user.created_at else None
+                created_at=serialize_datetime(user.created_at) if user.created_at else None
             ) for user in users
         ],
         total=total,
@@ -362,7 +363,7 @@ async def update_user(
         phone=user.phone,
         is_admin=user.is_admin,
         email_verified=user.email_verified,
-        created_at=user.created_at.isoformat() if user.created_at else None
+        created_at=serialize_datetime(user.created_at) if user.created_at else None
     )
 
 
@@ -400,7 +401,7 @@ async def update_user_admin_status(
         phone=user.phone,
         is_admin=user.is_admin,
         email_verified=user.email_verified,
-        created_at=user.created_at.isoformat() if user.created_at else None
+        created_at=serialize_datetime(user.created_at) if user.created_at else None
     )
 
 

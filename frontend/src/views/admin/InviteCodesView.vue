@@ -62,12 +62,12 @@
 
         <!-- 创建时间列 -->
         <template #item.createdAt="{ item }">
-          {{ formatDate(item.createdAt) }}
+          {{ formatToLocalDateTimeShort(item.createdAt) }}
         </template>
 
         <!-- 过期时间列 -->
         <template #item.expiresAt="{ item }">
-          <span v-if="item.expiresAt">{{ formatDate(item.expiresAt) }}</span>
+          <span v-if="item.expiresAt">{{ formatToLocalDateTimeShort(item.expiresAt) }}</span>
           <span v-else class="text-medium-emphasis">永不过期</span>
         </template>
 
@@ -155,6 +155,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import api from '@/api/client'
+import { formatToLocalDateTimeShort } from '@/utils/timezone'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
@@ -263,12 +264,6 @@ const copyToClipboard = async (code: string) => {
   } catch (error) {
     console.error('复制失败:', error)
   }
-}
-
-const formatDate = (dateString: string) => {
-  if (!dateString) return '-'
-  const d = new Date(dateString)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const isExpired = (dateString: string | null) => {
