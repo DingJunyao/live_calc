@@ -107,9 +107,9 @@ class NutritionImportService:
 
     # 中文名到 key 的映射（用于生成一致的英文 key）
     CN_TO_KEY = {
-        # 能量
-        "热量（Atwater 通用系数）": "energy_kcal",
-        "热量（Atwater 特定系数）": "energy_kcal_alt",
+        # 能量（统一为 energy，涵盖 USDA 的"能量/Energy"主字段及 Atwater 通用/特定系数）
+        "热量（Atwater 通用系数）": "energy",
+        "热量（Atwater 特定系数）": "energy",
         "热量": "energy",
         "能量": "energy",
         # 宏量营养素
@@ -191,8 +191,8 @@ class NutritionImportService:
 
     # 英文名到 key 的映射（作为 CN_TO_KEY 的补充）
     EN_NAME_TO_KEY = {
-        "Energy (Atwater General Factors)": "energy_kcal",
-        "Energy (Atwater Specific Factors)": "energy_kcal_alt",
+        "Energy (Atwater General Factors)": "energy",
+        "Energy (Atwater Specific Factors)": "energy",
         "Protein": "protein",
         "Total lipid (fat)": "fat",
         "Carbohydrate, by difference": "carbohydrate",

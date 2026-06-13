@@ -1744,7 +1744,7 @@ const savingNutrition = ref(false)
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名
 const NUTRIENT_DEFINITIONS = [
-  { key: 'energy_kcal', label: '能量', units: ['kcal', 'kJ'], defaultUnit: 'kcal' },
+  { key: 'energy', label: '能量', units: ['kcal', 'kJ'], defaultUnit: 'kcal' },
   { key: 'protein', label: '蛋白质', units: ['g', 'mg'], defaultUnit: 'g' },
   { key: 'fat', label: '脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
   { key: 'carbohydrate', label: '碳水化合物', units: ['g', 'mg'], defaultUnit: 'g' },
@@ -1778,7 +1778,7 @@ const NUTRIENT_DEFINITIONS = [
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
 const NUTRIENT_PARENT_MAP: Record<string, string> = {
-  'energy': 'energy_kcal',     // USDA energy 是 energy_kcal 的另一种计算
+  // energy 已是标准键名，无需同义映射
 }
 
 // IU ↔ 质量换算系数（1 IU = ? 质量单位）
@@ -1843,7 +1843,7 @@ const getAllNutrientDefs = () => {
   // 从 ENGLISH_TO_CHINESE_MAP 添加
   for (const key of Object.keys(ENGLISH_TO_CHINESE_MAP)) {
     if (existingKeys.has(key)) continue
-    // 跳过同义别名（如 energy → energy_kcal，energy_kcal 已在列表中）
+    // 跳过同义别名（NUTRIENT_PARENT_MAP 将别名映射到标准 key）
     const parentKey = NUTRIENT_PARENT_MAP[key]
     if (parentKey && existingKeys.has(parentKey)) continue
     const def = buildDynamicDef(key)
@@ -3113,7 +3113,7 @@ const startEditNutrition = () => {
 
     // 提取英文键：优先用 original_key（计算器转换时保留），其次是 data.key，最后才是遍历键
     let engKey = (data as any)?.original_key || (data as any)?.key || key
-    // 将同义别名映射到标准 key（如 energy → energy_kcal），避免显示为重复
+    // 将同义别名映射到标准 key（NUTRIENT_PARENT_MAP），避免显示为重复
     engKey = NUTRIENT_PARENT_MAP[engKey] || engKey
     if (addedKeys.has(engKey)) continue
 

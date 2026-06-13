@@ -1543,7 +1543,7 @@ async def calculate_recipe_nutrition(
 
     # 初始化所有核心营养素的总量
     total_core_nutrients = {
-        "能量": {"value": 0, "unit": "kcal", "key": "energy_kcal"},
+        "能量": {"value": 0, "unit": "kcal", "key": "energy"},
         "蛋白质": {"value": 0, "unit": "g", "key": "protein"},
         "脂肪": {"value": 0, "unit": "g", "key": "fat"},
         "碳水化合物": {"value": 0, "unit": "g", "key": "carbohydrate"},

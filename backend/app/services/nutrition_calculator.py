@@ -23,7 +23,7 @@ class NutritionCalculator:
 
     # 核心营养素列表
     CORE_NUTRIENTS = [
-        "energy_kcal", "protein", "fat", "carbohydrate", "fiber",
+        "energy", "protein", "fat", "carbohydrate", "fiber",
         "calcium", "iron", "sodium", "potassium",
         "vitamin_a_rae", "vitamin_c", "vitamin_b1", "vitamin_b2",
         "vitamin_b12", "vitamin_d", "vitamin_e", "vitamin_k"
@@ -32,8 +32,7 @@ class NutritionCalculator:
     # 营养素显示名称（英文键名到中文显示名称的映射）
     NUTRIENT_NAMES = {
         # 核心营养素
-        "energy_kcal": "能量",
-        "energy": "能量",  # USDA 导入使用 energy 键，与 energy_kcal 同义统一为"能量"
+        "energy": "能量",
         "protein": "蛋白质",
         "fat": "脂肪",
         "carbohydrate": "碳水化合物",

@@ -81,3 +81,42 @@
 ## 实现日期
 
 2026-06-13
+
+## 阶段四：能量键名系统统一（energy_kcal / energy_kcal_alt → energy）
+
+### 背景
+
+调查发现 energy_kcal 和 energy_kcal_alt 均为 USDA 导入产物（分别来自"热量（Atwater 通用系数）"和"热量（Atwater 特定系数）"字段），而主数据使用 energy（来自"能量/Energy"字段）。三者同义分裂是阶段一~三 bug 的根源。
+
+源数据分析（HowToCook_json/out/nutritions.json，552 食材）：
+- `energy`：952 次（97.6%），来自"能量/Energy"
+- `energy_kcal`：8 次，来自 Atwater 通用系数
+- `energy_kcal_alt`：7 次，来自 Atwater 特定系数
+
+### 修改范围
+
+共修改 11 个文件，统一 energy_kcal → energy，energy_kcal_alt → energy：
+
+**后端：**
+- `nutrition_import_service.py` — CN_TO_KEY / EN_NAME_TO_KEY 能量映射统一为 energy
+- `nutrition_calculator.py` — CORE_NUTRIENTS、NUTRIENT_NAMES
+- `ingredient_extended.py` — 创建原料营养映射（2 处）
+- `recipe_service.py` — 营养模板
+- `nutrition_data.py` / `mixins/__init__.py` / `products_entity.py` — 注释/示例更新
+
+**前端：**
+- `ProductDetail.vue` — NUTRIENT_DEFINITIONS key、NUTRIENT_PARENT_MAP 删除能量同义映射
+- `IngredientDetail.vue` — NUTRIENT_DEFINITIONS key、NUTRIENT_PARENT_MAP 删除能量同义映射
+- `nutritionLabels.ts` — ENGLISH_TO_CHINESE_MAP 删除重复 energy_kcal，删除 energy_kcal_alt 标签
+
+**数据迁移：**
+- `backend/scripts/migrate_energy_keys.py` — 处理 nutrition_data.nutrients 和 products.custom_nutrition_data 中 energy_kcal/energy_kcal_alt 的键名与条目内 key 字段值统一
+- dry-run 确认：9 条 nutrition_data 需迁移
+
+### 执行迁移
+
+```bash
+cd backend
+../.venv/Scripts/python scripts/migrate_energy_keys.py --dry-run   # 预览
+../.venv/Scripts/python scripts/migrate_energy_keys.py             # 执行
+```

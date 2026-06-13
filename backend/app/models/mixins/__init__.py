@@ -194,7 +194,7 @@ class NutritionMixin:
         # 商品自定义营养素优先覆盖
         if product_custom_data:
             # 兼容嵌套格式 {all_nutrients: {...}, core_nutrients: {...}}
-            # 和扁平格式 {energy_kcal: {...}, 能量: {...}}
+            # 和扁平格式 {energy: {...}, 能量: {...}}
             nested_all = product_custom_data.get("all_nutrients", {})
             nested_core = product_custom_data.get("core_nutrients", {})
             # 合并嵌套的两层（core_nutrients 优先，因为它是显示层查找来源）

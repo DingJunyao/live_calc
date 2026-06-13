@@ -829,7 +829,7 @@ async def update_product_nutrition(
             "蛋白质": {"value": 10, "unit": "g"}
         },
         "all_nutrients": {
-            "energy_kcal": {"value": 100, "unit": "kcal"},
+            "energy": {"value": 100, "unit": "kcal"},
             "protein": {"value": 10, "unit": "g"}
         }
     }

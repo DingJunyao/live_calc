@@ -163,7 +163,6 @@ export const NUTRITION_LABEL_MAP: Record<string, string> = {
  * 用于后端数据到前端显示的转换
  */
 export const ENGLISH_TO_CHINESE_MAP: Record<string, string> = {
-  'energy_kcal': '能量',
   'energy': '能量',
   'protein': '蛋白质',
   'fat': '脂肪',
@@ -344,7 +343,6 @@ export const ENGLISH_TO_CHINESE_MAP: Record<string, string> = {
   'pufa_18:2_n_6_c,c': '亚油酸',
   'pufa_20:4_n_6': '花生四烯酸',
   'tfa_18:2_t,t': '反式-亚油酸',
-  'energy_kcal_alt': '能量（特定系数）',
   // 罕见植物固醇/甾醇
   'delta_7_stigmastenol': 'δ7-豆甾烷醇',
   'beta_sitostanol': 'β-谷烷醇',

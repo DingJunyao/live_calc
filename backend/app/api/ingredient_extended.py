@@ -367,7 +367,7 @@ async def create_ingredient(
 
                 # 营养素映射（中文 -> 英文键名）
                 nutrient_map = {
-                    'energy_kcal': ('能量', 'kcal'),
+                    'energy': ('能量', 'kcal'),
                     'protein': ('蛋白质', 'g'),
                     'fat': ('脂肪', 'g'),
                     'carbohydrates': ('碳水化合物', 'g'),
@@ -533,7 +533,7 @@ async def update_ingredient(
 
                 # 营养素映射（中文 -> 英文键名）
                 nutrient_map = {
-                    'energy_kcal': ('能量', 'kcal'),
+                    'energy': ('能量', 'kcal'),
                     'protein': ('蛋白质', 'g'),
                     'fat': ('脂肪', 'g'),
                     'carbohydrates': ('碳水化合物', 'g'),

@@ -1105,7 +1105,7 @@ const savingNutrition = ref(false)
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名
 const NUTRIENT_DEFINITIONS = [
-  { key: 'energy_kcal', label: '能量', units: ['kcal', 'kJ'], defaultUnit: 'kcal' },
+  { key: 'energy', label: '能量', units: ['kcal', 'kJ'], defaultUnit: 'kcal' },
   { key: 'protein', label: '蛋白质', units: ['g', 'mg'], defaultUnit: 'g' },
   { key: 'fat', label: '脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
   { key: 'carbohydrate', label: '碳水化合物', units: ['g', 'mg'], defaultUnit: 'g' },
@@ -1139,7 +1139,7 @@ const NUTRIENT_DEFINITIONS = [
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
 const NUTRIENT_PARENT_MAP: Record<string, string> = {
-  'energy': 'energy_kcal',
+  // energy 已是标准键名，无需同义映射
 }
 
 // IU ↔ 质量换算系数

@@ -40,17 +40,17 @@ class NutritionData(Base, AuditMixin):
     # 营养数据（JSON 格式）
     # {
     #   "core_nutrients": {
-    #     "能量": {"value": 70.0, "unit": "kcal", "nrp_pct": 0.84, "standard": "中国GB标准", "key": "energy_kcal"},
+    #     "能量": {"value": 70.0, "unit": "kcal", "nrp_pct": 0.84, "standard": "中国GB标准", "key": "energy"},
     #     "蛋白质": {"value": 1.21, "unit": "g", "nrp_pct": 2.02, "standard": "中国GB标准", "key": "protein"},
     #     ...
     #   },
     #   "all_nutrients": {
-    #     "energy_kcal": {"value": 70.0, "unit": "kcal", "nrp_pct": 0.84, "standard": "中国GB标准"},
+    #     "energy": {"value": 70.0, "unit": "kcal", "nrp_pct": 0.84, "standard": "中国GB标准"},
     #     "protein": {"value": 1.21, "unit": "g", "nrp_pct": 2.02, "standard": "中国GB标准"},
     #     ...
     #   },
     #   "nutrient_details": {
-    #     "energy_kcal": {"value": 70.0, "unit": "kcal", "nrp_pct": 0.84, "standard": "中国GB标准", "note": "..."},
+    #     "energy": {"value": 70.0, "unit": "kcal", "nrp_pct": 0.84, "standard": "中国GB标准", "note": "..."},
     #     ...
     #   }
     # }
@@ -159,7 +159,7 @@ class NRVStandard(Base, AuditMixin):
     id = Column(Integer, primary_key=True, index=True)
 
     # 营养素标识
-    nutrient_key = Column(String(100), nullable=False, index=True)  # energy_kcal, protein, fat, etc.
+    nutrient_key = Column(String(100), nullable=False, index=True)  # energy, protein, fat, etc.
     nutrient_name = Column(String(100), nullable=False)  # 显示名称：能量、蛋白质、脂肪
 
     # 标准值
