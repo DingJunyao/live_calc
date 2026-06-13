@@ -844,7 +844,17 @@
       </v-dialog>
 
       <!-- 操作按钮 -->
-      <div class="pa-4">
+      <div class="pa-4 d-flex flex-column ga-2">
+        <v-btn
+          color="primary"
+          variant="tonal"
+          block
+          prepend-icon="mdi-call-split"
+          :loading="splitting"
+          @click="handleSplitToIngredient"
+        >
+          拆分为原料
+        </v-btn>
         <v-btn
           color="error"
           variant="tonal"
@@ -926,6 +936,28 @@
           <v-spacer />
           <v-btn @click="showDeleteDialog = false">取消</v-btn>
           <v-btn color="error" :loading="deleting" @click="deleteProduct">删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 拆分为原料 - 重命名对话框 -->
+    <v-dialog v-model="showSplitRenameDialog" max-width="400" persistent>
+      <v-card>
+        <v-card-title>指定新原料名称</v-card-title>
+        <v-card-text>
+          <p class="text-body-2 mb-3">{{ splitRenameMessage }}</p>
+          <v-text-field
+            v-model="splitNewName"
+            label="新原料名称"
+            variant="outlined"
+            :rules="[v => !!v?.trim() || '请输入原料名称']"
+            @keyup.enter="confirmSplitWithNewName"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showSplitRenameDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="splitting" @click="confirmSplitWithNewName">确认</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -1050,6 +1082,12 @@ const showDeleteDialog = ref(false)
 const saving = ref(false)
 const savingPrice = ref(false)
 const deleting = ref(false)
+
+// 拆分为原料
+const splitting = ref(false)
+const showSplitRenameDialog = ref(false)
+const splitNewName = ref('')
+const splitRenameMessage = ref('')
 
 // 基本信息内联编辑
 const editingBasicInfo = ref(false)
@@ -2103,6 +2141,47 @@ const deletePriceRecord = async (id: number) => {
 // 确认删除商品
 const confirmDelete = () => {
   showDeleteDialog.value = true
+}
+
+// 拆分为原料
+const handleSplitToIngredient = async () => {
+  splitting.value = true
+  try {
+    const response = await api.post(`/products/entity/${productId.value}/split-to-ingredient`)
+    showMessage(response.message || '拆分成功', 'success')
+    router.push(`/data/ingredients/${response.ingredient_id}`)
+  } catch (e: any) {
+    const detail = e.response?.data?.detail || ''
+    // 同名冲突（409）时，打开重命名对话框
+    if (e.response?.status === 409) {
+      splitRenameMessage.value = detail
+      splitNewName.value = product.value?.name ? `${product.value.name}(新)` : ''
+      showSplitRenameDialog.value = true
+    } else {
+      showMessage(getErrorMessage(e, '拆分失败'), 'error')
+    }
+  } finally {
+    splitting.value = false
+  }
+}
+
+// 用新名称确认拆分
+const confirmSplitWithNewName = async () => {
+  if (!splitNewName.value?.trim()) return
+  splitting.value = true
+  try {
+    const response = await api.post(
+      `/products/entity/${productId.value}/split-to-ingredient`,
+      { new_name: splitNewName.value.trim() }
+    )
+    showSplitRenameDialog.value = false
+    showMessage(response.message || '拆分成功', 'success')
+    router.push(`/data/ingredients/${response.ingredient_id}`)
+  } catch (e: any) {
+    showMessage(getErrorMessage(e, '拆分失败'), 'error')
+  } finally {
+    splitting.value = false
+  }
 }
 
 // 删除商品

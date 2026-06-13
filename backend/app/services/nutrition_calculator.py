@@ -33,6 +33,7 @@ class NutritionCalculator:
     NUTRIENT_NAMES = {
         # 核心营养素
         "energy_kcal": "能量",
+        "energy": "能量",  # USDA 导入使用 energy 键，与 energy_kcal 同义统一为"能量"
         "protein": "蛋白质",
         "fat": "脂肪",
         "carbohydrate": "碳水化合物",

@@ -63,6 +63,14 @@
               <v-list-item-subtitle>{{ ingredient.default_unit_name }}</v-list-item-subtitle>
             </v-list-item>
 
+            <v-list-item v-if="ingredient.category">
+              <template #prepend>
+                <v-icon size="small" color="medium-emphasis">mdi-folder-outline</v-icon>
+              </template>
+              <v-list-item-title>分类</v-list-item-title>
+              <v-list-item-subtitle>{{ ingredient.category }}</v-list-item-subtitle>
+            </v-list-item>
+
             <v-list-item v-if="ingredient.aliases?.length" class="aliases-list-item">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-tag-outline</v-icon>
@@ -106,6 +114,17 @@
               item-title="name"
               item-value="id"
               label="默认单位"
+              variant="outlined"
+              density="compact"
+              clearable
+              class="mb-3"
+            />
+            <v-autocomplete
+              v-model="basicEditForm.category_id"
+              :items="categories"
+              item-title="display_name"
+              item-value="id"
+              label="分类"
               variant="outlined"
               density="compact"
               clearable
@@ -221,6 +240,11 @@
           <v-chip size="small" class="ml-2" v-if="products.length > 0">
             {{ products.length }}
           </v-chip>
+          <v-spacer />
+          <v-btn size="small" variant="text" color="primary" @click="openAddProductDialog">
+            <v-icon start>mdi-plus</v-icon>
+            添加
+          </v-btn>
         </v-card-title>
         <v-divider />
 
@@ -238,6 +262,22 @@
             <v-list-item-title>{{ product.name }}</v-list-item-title>
             <v-list-item-subtitle v-if="product.brand">{{ product.brand }}</v-list-item-subtitle>
             <template #append>
+              <v-btn
+                icon="mdi-pencil"
+                size="small"
+                variant="text"
+                density="compact"
+                @click.stop="openEditProductDialog(product)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="small"
+                variant="text"
+                density="compact"
+                color="error"
+                :disabled="products.length <= 1"
+                @click.stop="openDeleteProductDialog(product)"
+              />
               <v-icon>mdi-chevron-right</v-icon>
             </template>
           </v-list-item>
@@ -1360,6 +1400,56 @@
     </v-dialog>
 
 
+    <!-- 添加/编辑商品对话框 -->
+    <v-dialog v-model="showProductDialog" max-width="500">
+      <v-card>
+        <v-card-title>{{ isEditingProduct ? '编辑商品' : '添加商品' }}</v-card-title>
+        <v-card-text>
+          <v-form>
+            <v-text-field
+              v-model="productForm.name"
+              label="商品名称"
+              variant="outlined"
+              required
+              class="mb-4"
+            />
+            <v-text-field
+              v-model="productForm.brand"
+              label="品牌"
+              variant="outlined"
+              class="mb-4"
+            />
+            <v-text-field
+              v-model="productForm.barcode"
+              label="条码"
+              variant="outlined"
+              class="mb-4"
+            />
+          </v-form>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showProductDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingProduct" @click="saveProduct">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 删除商品确认对话框 -->
+    <v-dialog v-model="showDeleteProductDialog" max-width="400">
+      <v-card>
+        <v-card-title class="text-error">确认删除商品</v-card-title>
+        <v-card-text>
+          确定要删除商品「{{ deletingProduct?.name }}」吗？此操作不可恢复。
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showDeleteProductDialog = false">取消</v-btn>
+          <v-btn color="error" :loading="deletingProductLoading" @click="deleteProduct">删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- 提示消息 -->
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000">
       {{ snackbar.message }}
@@ -1399,6 +1489,8 @@ interface Ingredient {
   aliases?: string[]
   default_unit_id?: number
   default_unit_name?: string
+  category_id?: number
+  category?: string
   created_at: string
   updated_at?: string
 }
@@ -1407,6 +1499,7 @@ interface Product {
   id: number
   name: string
   brand?: string
+  barcode?: string
   ingredient_id?: number
 }
 
@@ -1480,6 +1573,109 @@ const loadingMerchantPrices = ref(false)
 // 关联商品
 const products = ref<Product[]>([])
 
+// 商品管理对话框
+const showProductDialog = ref(false)
+const isEditingProduct = ref(false)
+const editingProductId = ref<number | null>(null)
+const savingProduct = ref(false)
+const productForm = ref({
+  name: '',
+  brand: '',
+  barcode: '',
+})
+// 删除商品
+const showDeleteProductDialog = ref(false)
+const deletingProduct = ref<Product | null>(null)
+const deletingProductLoading = ref(false)
+
+// 打开添加商品对话框
+const openAddProductDialog = () => {
+  isEditingProduct.value = false
+  editingProductId.value = null
+  productForm.value = { name: '', brand: '', barcode: '' }
+  showProductDialog.value = true
+}
+
+// 打开编辑商品对话框
+const openEditProductDialog = (product: Product) => {
+  isEditingProduct.value = true
+  editingProductId.value = product.id
+  productForm.value = {
+    name: product.name || '',
+    brand: product.brand || '',
+    barcode: (product as any).barcode || '',
+  }
+  showProductDialog.value = true
+}
+
+// 保存商品（新增或编辑）
+const saveProduct = async () => {
+  if (!productForm.value.name.trim()) {
+    showMessage('商品名称不能为空', 'error')
+    return
+  }
+  savingProduct.value = true
+  try {
+    if (isEditingProduct.value && editingProductId.value) {
+      // 编辑
+      const response = await api.put(`/products/entity/${editingProductId.value}`, {
+        name: productForm.value.name,
+        brand: productForm.value.brand || null,
+        barcode: productForm.value.barcode || null,
+        ingredient_id: ingredientId.value,
+      })
+      // 更新本地列表
+      const idx = products.value.findIndex(p => p.id === editingProductId.value)
+      if (idx !== -1) {
+        products.value[idx] = { ...products.value[idx], ...response }
+      }
+      showMessage('商品已更新', 'success')
+    } else {
+      // 新增
+      const response = await api.post('/products/entity', {
+        name: productForm.value.name,
+        brand: productForm.value.brand || null,
+        barcode: productForm.value.barcode || null,
+        ingredient_id: ingredientId.value,
+      })
+      products.value.push(response)
+      showMessage('商品已添加', 'success')
+    }
+    showProductDialog.value = false
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
+  } finally {
+    savingProduct.value = false
+  }
+}
+
+// 打开删除商品对话框
+const openDeleteProductDialog = (product: Product) => {
+  if (products.value.length <= 1) {
+    showMessage('该原料只有一个关联商品，无法删除', 'warning')
+    return
+  }
+  deletingProduct.value = product
+  showDeleteProductDialog.value = true
+}
+
+// 删除商品
+const deleteProduct = async () => {
+  if (!deletingProduct.value) return
+  deletingProductLoading.value = true
+  try {
+    await api.delete(`/products/entity/${deletingProduct.value.id}`)
+    products.value = products.value.filter(p => p.id !== deletingProduct.value!.id)
+    showMessage('商品已删除', 'success')
+    showDeleteProductDialog.value = false
+    deletingProduct.value = null
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
+  } finally {
+    deletingProductLoading.value = false
+  }
+}
+
 // 价格记录相关
 const priceRecords = ref<PriceRecord[]>([])
 const loadingPrices = ref(false)
@@ -1502,6 +1698,7 @@ const recipeTotalPages = computed(() => Math.ceil(recipeTotal.value / recipePage
 // 单位列表
 const units = ref<Unit[]>([])
 const jinUnitId = ref<number | null>(null)  // 默认质量单位（斤）的 ID
+const categories = ref<{ id: number; name: string; display_name: string }[]>([])
 
 // 层级关系数据
 const hierarchyData = ref<HierarchyData | null>(null)
@@ -1537,6 +1734,7 @@ const editingBasicInfo = ref(false)
 const basicEditForm = ref({
   name: '',
   default_unit_id: null as number | null,
+  category_id: null as number | null,
   aliases: [] as string[],
 })
 
@@ -2851,12 +3049,22 @@ const loadUnits = async () => {
   }
 }
 
+const loadCategories = async () => {
+  try {
+    const response = await api.get('/ingredients/categories')
+    categories.value = response || []
+  } catch (e) {
+    categories.value = []
+  }
+}
+
 // === 基本信息内联编辑 ===
 const startEditBasicInfo = () => {
   if (!ingredient.value) return
   basicEditForm.value = {
     name: ingredient.value.name || '',
     default_unit_id: ingredient.value.default_unit_id || jinUnitId.value,
+    category_id: ingredient.value.category_id ?? null,
     aliases: [...(ingredient.value.aliases || [])],
   }
   editingBasicInfo.value = true
@@ -2876,6 +3084,7 @@ const saveBasicInfo = async () => {
     const payload = {
       name: basicEditForm.value.name,
       default_unit_id: basicEditForm.value.default_unit_id,
+      category_id: basicEditForm.value.category_id,
       aliases: basicEditForm.value.aliases,
     }
     const response = await api.put(`/ingredients/${ingredientId.value}`, payload)
@@ -3209,6 +3418,7 @@ watch(() => route.params.id, () => {
 onMounted(() => {
   loadData()
   loadUnits()
+  loadCategories()
 })
 </script>
 

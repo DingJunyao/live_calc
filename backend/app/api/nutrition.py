@@ -371,12 +371,14 @@ async def get_ingredient(
     try:
         # 明确只加载需要的字段，避免加载 relationship
         from app.models.unit import Unit
+        from app.models.ingredient_category import IngredientCategory
         ingredient = db.query(Ingredient).options(
             load_only(
                 Ingredient.id,
                 Ingredient.name,
                 Ingredient.aliases,
                 Ingredient.default_unit_id,
+                Ingredient.category_id,
                 Ingredient.created_at,
                 Ingredient.updated_at,
                 Ingredient.is_active
@@ -392,12 +394,21 @@ async def get_ingredient(
             if unit:
                 default_unit_name = unit.name
 
+        # 获取分类显示名
+        category_name = None
+        if ingredient.category_id:
+            category = db.query(IngredientCategory).filter(IngredientCategory.id == ingredient.category_id).first()
+            if category:
+                category_name = category.display_name
+
         return IngredientResponse(
             id=ingredient.id,
             name=ingredient.name,
             aliases=ingredient.aliases or [],
             default_unit_id=ingredient.default_unit_id,
             default_unit_name=default_unit_name,
+            category_id=ingredient.category_id,
+            category=category_name,
             created_at=ingredient.created_at,
             updated_at=ingredient.updated_at
         )
@@ -415,7 +426,7 @@ async def create_ingredient(
 ):
     """创建原料"""
     try:
-        existing = db.query(Ingredient).filter(Ingredient.name == name).first()
+        existing = db.query(Ingredient).filter(Ingredient.name == name, Ingredient.is_active == True).first()
         if existing:
             raise HTTPException(status_code=400, detail="原料已存在")
 
@@ -484,7 +495,7 @@ async def update_ingredient(
             raise HTTPException(status_code=403, detail="无权修改此原料")
 
         if name and name != ingredient.name:
-            existing = db.query(Ingredient).filter(Ingredient.name == name).first()
+            existing = db.query(Ingredient).filter(Ingredient.name == name, Ingredient.is_active == True).first()
             if existing:
                 raise HTTPException(status_code=400, detail="原料已存在")
             ingredient.name = name

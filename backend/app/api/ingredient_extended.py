@@ -330,7 +330,7 @@ async def create_ingredient(
 ):
     """创建食材"""
     try:
-        existing = db.query(Ingredient).filter(Ingredient.name == name).first()
+        existing = db.query(Ingredient).filter(Ingredient.name == name, Ingredient.is_active == True).first()
         if existing:
             raise HTTPException(status_code=400, detail="食材已存在")
 
@@ -495,7 +495,7 @@ async def update_ingredient(
             raise HTTPException(status_code=403, detail="导入的原料名称只能由管理员修改")
 
         if name and name != ingredient.name:
-            existing = db.query(Ingredient).filter(Ingredient.name == name).first()
+            existing = db.query(Ingredient).filter(Ingredient.name == name, Ingredient.is_active == True).first()
             if existing:
                 raise HTTPException(status_code=400, detail="食材已存在")
             ingredient.name = name

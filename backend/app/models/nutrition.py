@@ -20,7 +20,7 @@ class Ingredient(Base, AuditMixin):
     __tablename__ = "ingredients"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(200), unique=True, nullable=False, index=True)
+    name = Column(String(200), nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("ingredient_categories.id"))
     density = Column(Numeric(10, 6))  # 密度值（g/mL 或 kg/L），用于体积重量换算
     default_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True, index=True)

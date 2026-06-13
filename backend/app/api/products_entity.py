@@ -869,13 +869,14 @@ def _get_ingredient_nutrition_with_fallback(db: Session, ingredient) -> dict:
     """
     获取原料的营养数据（包含层级关系回退）
 
-    回退逻辑：
-    1. 检查原料自身是否有营养数据
-    2. 如果没有，检查层级关系（父级原料）
+    回退逻辑（与 NutritionCalculator.calculate_ingredient_nutrition 对齐）：
+    1. 优先取自定义营养数据（source='custom'）
+    2. 其次取已验证的营养数据（is_verified=True，覆盖 USDA 导入数据）
+    3. 最后通过 nutrition_id 外键查找（保留作为额外回退）
     """
     from app.models.nutrition_data import NutritionData
 
-    # 检查原料的自定义营养数据
+    # 1. 检查原料的自定义营养数据
     custom_nutrition = db.query(NutritionData).filter(
         NutritionData.ingredient_id == ingredient.id,
         NutritionData.source == 'custom'
@@ -884,16 +885,25 @@ def _get_ingredient_nutrition_with_fallback(db: Session, ingredient) -> dict:
     if custom_nutrition:
         return custom_nutrition.nutrients
 
-    # 检查导入的营养数据
-    imported_nutrition = db.query(NutritionData).filter(
-        NutritionData.id == ingredient.nutrition_id
+    # 2. 检查已验证的营养数据（含 USDA 导入数据）
+    verified_nutrition = db.query(NutritionData).filter(
+        NutritionData.ingredient_id == ingredient.id,
+        NutritionData.is_verified == True
     ).first()
 
-    if imported_nutrition:
-        return imported_nutrition.nutrients
+    if verified_nutrition:
+        return verified_nutrition.nutrients
 
-    # TODO: 实现层级关系回退
-    # 目前先返回空结构
+    # 3. 通过 nutrition_id 外键查找（额外回退）
+    if ingredient.nutrition_id:
+        linked_nutrition = db.query(NutritionData).filter(
+            NutritionData.id == ingredient.nutrition_id
+        ).first()
+
+        if linked_nutrition:
+            return linked_nutrition.nutrients
+
+    # 无任何营养数据
     return {"core_nutrients": {}, "all_nutrients": {}}
 
 
@@ -905,20 +915,161 @@ def _merge_nutrition_data(product_nutrition: dict, ingredient_nutrition: dict) -
     """
     core_nutrients = {}
     all_nutrients = {}
+    nutrient_details = {}
 
     # 先从原料获取基础数据
     if ingredient_nutrition.get("core_nutrients"):
         core_nutrients.update(ingredient_nutrition["core_nutrients"])
     if ingredient_nutrition.get("all_nutrients"):
         all_nutrients.update(ingredient_nutrition["all_nutrients"])
+    if ingredient_nutrition.get("nutrient_details"):
+        nutrient_details.update(ingredient_nutrition["nutrient_details"])
 
     # 商品数据覆盖原料数据
     if product_nutrition.get("core_nutrients"):
         core_nutrients.update(product_nutrition["core_nutrients"])
     if product_nutrition.get("all_nutrients"):
         all_nutrients.update(product_nutrition["all_nutrients"])
+    if product_nutrition.get("nutrient_details"):
+        nutrient_details.update(product_nutrition["nutrient_details"])
 
     return {
         "core_nutrients": core_nutrients,
-        "all_nutrients": all_nutrients
+        "all_nutrients": all_nutrients,
+        "nutrient_details": nutrient_details
     }
+
+
+@router.post("/products/entity/{product_id}/split-to-ingredient")
+async def split_product_to_ingredient(
+    product_id: int,
+    new_name: Optional[str] = Body(None, embed=True, description="新原料名称，同名冲突时指定"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    将商品拆分为新的原料
+
+    逻辑：
+    1. 如果商品是当前原料的唯一活跃商品，不允许拆分
+    2. 创建同名原料（冲突时需要指定 new_name）
+    3. 将商品的营养数据 mixin 写入新原料
+    4. 商品关联到新原料，清空商品的自定义营养数据
+    """
+    from app.models.nutrition_data import NutritionData
+
+    try:
+        product = db.query(Product).options(
+            joinedload(Product.ingredient)
+        ).filter(
+            Product.id == product_id,
+            Product.is_active == True
+        ).first()
+
+        if not product:
+            raise HTTPException(status_code=404, detail="商品不存在")
+
+        # 权限校验
+        if product.created_by != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权拆分此商品")
+
+        if not product.ingredient_id:
+            raise HTTPException(status_code=400, detail="商品未关联原料")
+
+        current_ingredient = product.ingredient
+
+        # 检查是否为当前原料的唯一活跃商品
+        active_product_count = db.query(Product).filter(
+            Product.ingredient_id == current_ingredient.id,
+            Product.is_active == True
+        ).count()
+
+        if active_product_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="该商品是当前原料的唯一商品，无法拆分。请先为该原料添加其他商品。"
+            )
+
+        # 确定新原料名称
+        ingredient_name = (new_name or product.name).strip()
+        if not ingredient_name:
+            raise HTTPException(status_code=400, detail="原料名称不能为空")
+
+        # 检查同名原料冲突
+        existing_ingredient = db.query(Ingredient).filter(
+            Ingredient.name == ingredient_name,
+            Ingredient.is_active == True
+        ).first()
+
+        if existing_ingredient:
+            if existing_ingredient.id == current_ingredient.id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"原料「{ingredient_name}」与当前关联原料同名，请指定不同的新原料名称。"
+                )
+            raise HTTPException(
+                status_code=409,
+                detail=f"原料「{ingredient_name}」已存在（ID: {existing_ingredient.id}），请指定不同的名称。"
+            )
+
+        # 获取当前营养数据 mixin（商品自定义 + 原料营养）
+        product_nutrition = product.custom_nutrition_data or {}
+        ingredient_nutrition = _get_ingredient_nutrition_with_fallback(db, current_ingredient)
+        merged_nutrition = _merge_nutrition_data(product_nutrition, ingredient_nutrition)
+
+        # 获取默认单位（斤）
+        unit_id = None
+        from app.models.unit import Unit
+        jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
+        if jin_unit:
+            unit_id = jin_unit.id
+
+        # 创建新原料
+        new_ingredient = Ingredient(
+            name=ingredient_name,
+            aliases=[],
+            default_unit_id=unit_id,
+            created_by=current_user.id,
+            updated_by=current_user.id
+        )
+        db.add(new_ingredient)
+        db.flush()  # 获取 new_ingredient.id
+
+        # 将 mixin 营养数据写入新原料
+        has_nutrition_data = bool(merged_nutrition.get("core_nutrients") or merged_nutrition.get("all_nutrients"))
+        if has_nutrition_data:
+            nutrition_record = NutritionData(
+                ingredient_id=new_ingredient.id,
+                source='custom',
+                nutrients=merged_nutrition,
+                reference_amount=100.0,
+                reference_unit='g',
+                match_confidence=1.0,
+                is_verified=True,
+                created_by=current_user.id,
+                updated_by=current_user.id
+            )
+            db.add(nutrition_record)
+
+        # 更新商品：关联到新原料，清空自定义营养数据
+        product.ingredient_id = new_ingredient.id
+        product.custom_nutrition_data = None
+        product.custom_nutrition_source = None
+        product.updated_by = current_user.id
+
+        db.commit()
+
+        return {
+            "message": f"商品已拆分为原料「{ingredient_name}」",
+            "ingredient_id": new_ingredient.id,
+            "ingredient_name": ingredient_name
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        import traceback
+        print(f"[ERROR] 拆分商品为原料失败: {str(e)}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"拆分商品为原料失败: {str(e)}")
