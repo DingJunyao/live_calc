@@ -168,10 +168,11 @@ def init_default_data(db: Session):
         {"name": "seafood", "display_name": "海鲜", "description": "鱼类、虾类、贝类等", "sort_order": 5},
         {"name": "eggs", "display_name": "蛋类", "description": "鸡蛋、鸭蛋等", "sort_order": 6},
         {"name": "dairy", "display_name": "乳制品", "description": "牛奶、奶酪、黄油等", "sort_order": 7},
-        {"name": "seasoning", "display_name": "调味品", "description": "盐、糖、酱油、醋、香料等", "sort_order": 8},
-        {"name": "oil", "display_name": "油脂", "description": "食用油、动物油等", "sort_order": 9},
-        {"name": "nuts", "display_name": "坚果", "description": "核桃、花生、杏仁等", "sort_order": 10},
-        {"name": "beverages", "display_name": "饮品", "description": "茶、咖啡、果汁等", "sort_order": 11},
+        {"name": "soy", "display_name": "豆制品", "description": "豆腐、豆浆、豆皮、腐竹等", "sort_order": 8},
+        {"name": "seasoning", "display_name": "调味品", "description": "盐、糖、酱油、醋、香料等", "sort_order": 9},
+        {"name": "oil", "display_name": "油脂", "description": "食用油、动物油等", "sort_order": 10},
+        {"name": "nuts", "display_name": "坚果", "description": "核桃、花生、杏仁等", "sort_order": 11},
+        {"name": "beverages", "display_name": "饮品", "description": "茶、咖啡、果汁等", "sort_order": 12},
         {"name": "others", "display_name": "其他", "description": "其他食材", "sort_order": 99},
     ]
 

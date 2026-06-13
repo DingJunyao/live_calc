@@ -1073,3 +1073,85 @@ async def split_product_to_ingredient(
         print(f"[ERROR] 拆分商品为原料失败: {str(e)}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"拆分商品为原料失败: {str(e)}")
+
+
+@router.post("/products/entity/{product_id}/merge-into/{target_product_id}")
+def merge_product_into(
+    product_id: int,
+    target_product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    将商品合并到同一原料下的另一个商品
+
+    逻辑：
+    1. 源商品和目标商品必须在同一原料下
+    2. 源商品的价格记录迁移到目标商品
+    3. 源商品的营养数据丢弃
+    4. 源商品软删除
+    """
+    try:
+        # 获取源商品
+        source_product = db.query(Product).filter(
+            Product.id == product_id,
+            Product.is_active == True
+        ).first()
+
+        if not source_product:
+            raise HTTPException(status_code=404, detail="源商品不存在")
+
+        # 获取目标商品
+        target_product = db.query(Product).filter(
+            Product.id == target_product_id,
+            Product.is_active == True
+        ).first()
+
+        if not target_product:
+            raise HTTPException(status_code=404, detail="目标商品不存在")
+
+        # 权限校验
+        if source_product.created_by != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权操作此商品")
+
+        # 校验同一原料
+        if source_product.ingredient_id != target_product.ingredient_id:
+            raise HTTPException(
+                status_code=400,
+                detail="只能合并同一原料下的商品"
+            )
+
+        # 不能合并到自身
+        if source_product.id == target_product.id:
+            raise HTTPException(status_code=400, detail="不能将商品合并到自身")
+
+        # 迁移价格记录
+        price_record_count = db.query(ProductRecord).filter(
+            ProductRecord.product_id == source_product.id,
+            ProductRecord.is_active == True
+        ).update(
+            {"product_id": target_product.id},
+            synchronize_session=False
+        )
+
+        # 软删除源商品
+        source_product.is_active = False
+        source_product.updated_by = current_user.id
+
+        db.commit()
+
+        return {
+            "message": f"已合并到「{target_product.name}」",
+            "target_id": target_product.id,
+            "target_name": target_product.name,
+            "price_record_count": price_record_count
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        import traceback
+        print(f"[ERROR] 合并商品失败: {str(e)}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"合并商品失败: {str(e)}")

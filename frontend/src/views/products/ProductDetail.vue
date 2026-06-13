@@ -856,6 +856,16 @@
           拆分为原料
         </v-btn>
         <v-btn
+          color="warning"
+          variant="tonal"
+          block
+          prepend-icon="mdi-merge"
+          :disabled="siblingProducts.length === 0"
+          @click="showMergeDialog = true"
+        >
+          合并到关联商品
+        </v-btn>
+        <v-btn
           color="error"
           variant="tonal"
           block
@@ -958,6 +968,74 @@
           <v-spacer />
           <v-btn @click="showSplitRenameDialog = false">取消</v-btn>
           <v-btn color="primary" :loading="splitting" @click="confirmSplitWithNewName">确认</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 合并到关联商品 - 对话框 -->
+    <v-dialog v-model="showMergeDialog" max-width="500" @update:model-value="onMergeDialogToggle">
+      <v-card>
+        <v-card-title class="text-warning">
+          <v-icon start color="warning">mdi-merge</v-icon>
+          合并到关联商品
+        </v-card-title>
+        <v-card-text>
+          <p class="text-body-2 mb-3">
+            选择要把 <strong>{{ product?.name }}</strong> 合并到哪个商品：
+          </p>
+
+          <!-- 加载中 -->
+          <div v-if="loadingSiblings" class="text-center py-4">
+            <v-progress-circular indeterminate size="24" />
+            <span class="ml-2 text-body-2">加载关联商品...</span>
+          </div>
+
+          <!-- 无关联商品 -->
+          <div v-else-if="siblingProducts.length === 0" class="text-center py-4 text-body-2 text-medium-emphasis">
+            当前原料下没有其他商品可以合并
+          </div>
+
+          <!-- 商品列表 -->
+          <v-radio-group v-else v-model="selectedMergeTarget" class="mt-0">
+            <v-radio
+              v-for="sibling in siblingProducts"
+              :key="sibling.id"
+              :value="sibling"
+              class="mb-1"
+            >
+              <template #label>
+                <div class="d-flex align-center ga-2 py-1">
+                  <v-icon size="small">mdi-package-variant-closed</v-icon>
+                  <span>{{ sibling.name }}</span>
+                  <span v-if="sibling.brand" class="text-caption text-medium-emphasis">({{ sibling.brand }})</span>
+                  <span v-if="sibling.latest_price" class="text-caption text-medium-emphasis">
+                    — ¥{{ Number(sibling.latest_price).toFixed(2) }}{{ sibling.latest_price_unit ? '/' + sibling.latest_price_unit : '' }}
+                  </span>
+                </div>
+              </template>
+            </v-radio>
+          </v-radio-group>
+
+          <v-divider class="my-2" />
+
+          <ul class="text-body-2 text-medium-emphasis mb-0">
+            <li>价格记录将迁移到目标商品</li>
+            <li>营养信息将丢弃</li>
+            <li>当前商品将被删除</li>
+          </ul>
+          <p class="text-body-2 mt-2 text-error">此操作不可撤销。</p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showMergeDialog = false">取消</v-btn>
+          <v-btn
+            color="warning"
+            :disabled="!selectedMergeTarget"
+            :loading="merging"
+            @click="doMerge"
+          >
+            确认合并
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -1088,6 +1166,20 @@ const splitting = ref(false)
 const showSplitRenameDialog = ref(false)
 const splitNewName = ref('')
 const splitRenameMessage = ref('')
+
+// 合并到关联商品
+interface SiblingProduct {
+  id: number
+  name: string
+  brand?: string
+  latest_price?: number | string
+  latest_price_unit?: string
+}
+const siblingProducts = ref<SiblingProduct[]>([])
+const loadingSiblings = ref(false)
+const showMergeDialog = ref(false)
+const selectedMergeTarget = ref<SiblingProduct | null>(null)
+const merging = ref(false)
 
 // 基本信息内联编辑
 const editingBasicInfo = ref(false)
@@ -1781,6 +1873,71 @@ const loadMerchantPrices = async () => {
   }
 }
 
+// 加载同一原料下的关联商品
+const loadSiblingProducts = async () => {
+  if (!product.value?.ingredient_id) {
+    siblingProducts.value = []
+    return
+  }
+
+  loadingSiblings.value = true
+  try {
+    const response = await api.get('/products/entity', {
+      params: {
+        ingredient_ids: String(product.value.ingredient_id),
+        limit: 50
+      }
+    })
+    // 过滤掉当前商品
+    const items = (response.items || []) as SiblingProduct[]
+    siblingProducts.value = items.filter((item: SiblingProduct) => item.id !== productId.value)
+
+    // 加载每个关联商品的最新价格
+    for (const sibling of siblingProducts.value) {
+      try {
+        const detail = await api.get(`/products/entity/${sibling.id}`)
+        sibling.latest_price = detail.latest_price
+        sibling.latest_price_unit = detail.latest_price_unit
+      } catch {
+        // 忽略单个商品的加载失败
+      }
+    }
+  } catch (e) {
+    siblingProducts.value = []
+  } finally {
+    loadingSiblings.value = false
+  }
+}
+
+// 合并对话框打开时重置选择
+const onMergeDialogToggle = (open: boolean) => {
+  if (open) {
+    selectedMergeTarget.value = null
+  }
+}
+
+// 执行合并
+const doMerge = async () => {
+  if (!selectedMergeTarget.value) return
+
+  merging.value = true
+  try {
+    const result = await api.post(`/products/entity/${productId.value}/merge-into/${selectedMergeTarget.value.id}`)
+    showMergeDialog.value = false
+    const targetName = selectedMergeTarget.value.name
+    selectedMergeTarget.value = null
+    snackbar.value = { show: true, message: `已合并到「${targetName}」`, color: 'success' }
+    // 跳转到目标商品详情页并重新加载数据
+    await router.push(`/data/products/${result.target_id}`)
+    loadData()
+  } catch (e: any) {
+    const msg = getErrorMessage(e, '合并失败')
+    snackbar.value = { show: true, message: msg, color: 'error' }
+  } finally {
+    merging.value = false
+  }
+}
+
 // 加载数据
 const loadData = async () => {
   loading.value = true
@@ -1801,6 +1958,7 @@ const loadData = async () => {
     loadEntityUnits()
     loadDensity()
     loadUnmappedUnits()
+    loadSiblingProducts()
   } catch (e: any) {
     console.error('加载商品失败', e)
     error.value = getErrorMessage(e, '加载失败')
@@ -1906,6 +2064,17 @@ const startEditBasicInfo = () => {
       if (currentIngredient) {
         selectedIngredient.value = currentIngredient
         ingredientSearch.value = currentIngredient.name
+      } else {
+        // 如果当前原料不在前 100 条结果中，单独获取并加入列表
+        api.get(`/ingredients/${product.value!.ingredient_id}`).then((ingredient: Ingredient) => {
+          if (ingredient) {
+            ingredients.value.unshift(ingredient)
+            selectedIngredient.value = ingredient
+            ingredientSearch.value = ingredient.name
+          }
+        }).catch(err => {
+          console.error('获取当前关联原料失败', err)
+        })
       }
     })
   } else {
