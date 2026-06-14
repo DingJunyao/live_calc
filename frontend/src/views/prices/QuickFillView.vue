@@ -41,7 +41,8 @@
                 <v-text-field
                   v-model="row.price"
                   type="number"
-                  placeholder="价格"
+                  step="0.01"
+                  placeholder="¥0.00"
                   variant="outlined"
                   density="compact"
                   hide-details
@@ -129,7 +130,8 @@
                 <v-text-field
                   v-model="row.price"
                   type="number"
-                  placeholder="价格"
+                  step="0.01"
+                  placeholder="¥0.00"
                   variant="outlined"
                   density="compact"
                   hide-details
@@ -186,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '@/api/client'
 
 interface Merchant {
@@ -264,15 +266,15 @@ function showSnackbar(message: string, color: string = 'success') {
 
 // 获取行的商品 ID（兼容历史行的 number 和新增行的对象）
 const getRowProductId = (row: FillRow): number | null => {
-  if (!row.productId) return null
-  if (typeof row.productId === 'object') return (row.productId as any).id
+  if (row.productId == null) return null
+  if (typeof row.productId === 'object') return (row.productId as any).id ?? null
   return row.productId
 }
 
-// 已有商品 ID 集合（用于过滤新行建议）
+// 已有商品 ID 集合（用于过滤新行建议）— 包含历史行和已选的新增行
 const existingProductIds = computed(() => {
   const ids = new Set<number>()
-  for (const row of historyRows.value) {
+  for (const row of [...historyRows.value, ...newRows.value]) {
     const pid = getRowProductId(row)
     if (pid) ids.add(pid)
   }
@@ -350,6 +352,7 @@ const onMerchantChange = async (val: number | null) => {
     }))
   } catch {
     historyRows.value = []
+    showSnackbar('加载历史商品失败，请重试', 'error')
   }
 }
 
@@ -377,16 +380,30 @@ function removeNewRow(index: number) {
   }
   newRows.value.splice(index, 1)
   // 移位 suggestions
-  const shifted: Record<number, any[]> = {}
+  const shiftedSuggestions: Record<number, any[]> = {}
   const keys = Object.keys(newRowSuggestions.value).map(Number).sort((a, b) => a - b)
   for (const k of keys) {
     if (k > index) {
-      shifted[k - 1] = newRowSuggestions.value[k]
+      shiftedSuggestions[k - 1] = newRowSuggestions.value[k]
     } else if (k < index) {
-      shifted[k] = newRowSuggestions.value[k]
+      shiftedSuggestions[k] = newRowSuggestions.value[k]
     }
   }
-  newRowSuggestions.value = shifted
+  newRowSuggestions.value = shiftedSuggestions
+  // 同样移位 timers
+  const shiftedTimers: Record<number, ReturnType<typeof setTimeout>> = {}
+  for (const k of Object.keys(searchDebounceTimers).map(Number).sort((a, b) => a - b)) {
+    if (k > index) {
+      shiftedTimers[k - 1] = searchDebounceTimers[k]
+    } else if (k < index) {
+      shiftedTimers[k] = searchDebounceTimers[k]
+    }
+  }
+  // 清空原 map 再回填（保留引用）
+  for (const k of Object.keys(searchDebounceTimers)) {
+    delete searchDebounceTimers[Number(k)]
+  }
+  Object.assign(searchDebounceTimers, shiftedTimers)
 }
 
 const onNewRowSearch = (index: number, query: string) => {
@@ -394,12 +411,14 @@ const onNewRowSearch = (index: number, query: string) => {
     clearTimeout(searchDebounceTimers[index])
   }
   searchDebounceTimers[index] = setTimeout(async () => {
+    // 防御：行可能已被删除或移位
+    const row = newRows.value[index]
+    if (!row) return
     if (!query || query.length < 1) {
       newRowSuggestions.value[index] = []
       return
     }
-    const row = newRows.value[index]
-    if (row) row.loading = true
+    row.loading = true
     try {
       const response: any[] = await api.get('/products/autocomplete', {
         params: { q: query, limit: 20 },
@@ -411,11 +430,18 @@ const onNewRowSearch = (index: number, query: string) => {
     } catch {
       newRowSuggestions.value[index] = []
     } finally {
-      const row = newRows.value[index]
-      if (row) row.loading = false
+      const curRow = newRows.value[index]
+      if (curRow) curRow.loading = false
     }
   }, 300)
 }
+
+// 组件卸载时清理所有 pending 的 debounce timer，避免内存泄漏和回调误执行
+onUnmounted(() => {
+  for (const k of Object.keys(searchDebounceTimers)) {
+    clearTimeout(searchDebounceTimers[Number(k)])
+  }
+})
 
 // --- 保存 ---
 const saveAll = async () => {
@@ -444,6 +470,7 @@ const saveAll = async () => {
   saving.value = true
   let successCount = 0
   let failCount = 0
+  let newSavedCount = 0
   const savedProductIds: number[] = []
 
   for (const row of rowsToSave) {
@@ -464,6 +491,8 @@ const saveAll = async () => {
       await api.post('/products', payload)
       if (!row.isNew && pid) {
         savedProductIds.push(pid)
+      } else if (row.isNew) {
+        newSavedCount++
       }
       successCount++
     } catch {
@@ -484,7 +513,8 @@ const saveAll = async () => {
   newRows.value = []
 
   if (failCount === 0) {
-    showSnackbar(`成功保存 ${successCount} 条价格记录`, 'success')
+    const newHint = newSavedCount > 0 ? `，新增 ${newSavedCount} 个商品已加入历史列表` : ''
+    showSnackbar(`成功保存 ${successCount} 条价格记录${newHint}`, 'success')
   } else {
     showSnackbar(`保存完成：${successCount} 成功，${failCount} 失败`, 'warning')
   }
@@ -526,7 +556,10 @@ onMounted(() => {
 .fill-row__price :deep(input) { font-size: 16px; }
 .fill-row__sep { color: rgba(0,0,0,0.38); font-size: 14px; flex-shrink: 0; }
 .fill-row__qty-input { max-width: 60px; min-width: 50px; }
+.fill-row__qty-input :deep(input) { font-size: 16px; text-align: center; }
 .fill-row__unit-select { max-width: 80px; min-width: 60px; }
+.fill-row__unit-select :deep(input) { font-size: 16px; }
+.fill-row__product-search :deep(input) { font-size: 16px; }
 .fill-row__edit-text {
   cursor: pointer; font-size: 14px; padding: 6px 10px;
   border-radius: 4px; min-width: 24px; text-align: center;
