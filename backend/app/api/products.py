@@ -280,13 +280,14 @@ async def get_product_records(
         else:
             search_term = search or product_name
             if search_term:
-                # 搜索商品名称或关联食材的别名
+                # 搜索商品名称、商品别名或关联食材的别名
                 alias_search = _make_alias_search_term(search_term)
                 record_counts = record_counts.join(ProductRecord.product).join(
                     Product.ingredient
                 ).filter(
                     or_(
                         ProductRecord.product_name.contains(search_term),
+                        Product.aliases.contains(alias_search),
                         Ingredient.name.contains(search_term),
                         Ingredient.aliases.contains(alias_search)
                     )
@@ -348,13 +349,14 @@ async def get_product_records(
         else:
             search_term = search or product_name
             if search_term:
-                # 搜索商品名称或关联食材的别名
+                # 搜索商品名称、商品别名或关联食材的别名
                 alias_search = _make_alias_search_term(search_term)
                 query = query.join(ProductRecord.product).join(
                     Product.ingredient
                 ).filter(
                     or_(
                         ProductRecord.product_name.contains(search_term),
+                        Product.aliases.contains(alias_search),
                         Ingredient.name.contains(search_term),
                         Ingredient.aliases.contains(alias_search)
                     )
@@ -421,13 +423,14 @@ async def get_product_records(
         else:
             search_term = search or product_name
             if search_term:
-                # 搜索商品名称或关联食材的别名
+                # 搜索商品名称、商品别名或关联食材的别名
                 alias_search = _make_alias_search_term(search_term)
                 query = query.join(ProductRecord.product).join(
                     Product.ingredient
                 ).filter(
                     or_(
                         ProductRecord.product_name.contains(search_term),
+                        Product.aliases.contains(alias_search),
                         Ingredient.name.contains(search_term),
                         Ingredient.aliases.contains(alias_search)
                     )

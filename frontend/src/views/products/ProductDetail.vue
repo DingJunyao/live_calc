@@ -82,6 +82,23 @@
               </v-list-item-subtitle>
             </v-list-item>
 
+            <v-list-item v-if="product.aliases?.length">
+              <template #prepend>
+                <v-icon size="small" color="medium-emphasis">mdi-file-document-multiple-outline</v-icon>
+              </template>
+              <v-list-item-title>别名</v-list-item-title>
+              <v-list-item-subtitle>
+                <v-chip
+                  v-for="alias in product.aliases"
+                  :key="alias"
+                  size="x-small"
+                  class="mr-1"
+                >
+                  {{ alias }}
+                </v-chip>
+              </v-list-item-subtitle>
+            </v-list-item>
+
             <v-list-item v-if="product.tags?.length">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-tag-multiple-outline</v-icon>
@@ -168,6 +185,17 @@
               multiple
               chips
               closable-chips
+            />
+            <v-combobox
+              v-model="basicEditForm.aliases"
+              label="别名"
+              variant="outlined"
+              density="compact"
+              multiple
+              chips
+              closable-chips
+              hint="输入后回车添加多个别名"
+              persistent-hint
             />
           </v-form>
         </v-card-text>
@@ -1080,6 +1108,7 @@ interface Product {
   ingredient_id?: number
   ingredient_name?: string
   tags?: string[]
+  aliases?: string[]
   latest_price?: number | string
   latest_price_unit?: string
   latest_price_date?: string
@@ -1189,6 +1218,7 @@ const basicEditForm = ref({
   barcode: '',
   ingredient_id: null as number | null,
   tags: [] as string[],
+  aliases: [] as string[],
 })
 
 // 营养成分内联编辑
@@ -2056,6 +2086,7 @@ const startEditBasicInfo = () => {
     barcode: product.value.barcode || '',
     ingredient_id: product.value.ingredient_id || null,
     tags: [...(product.value.tags || [])],
+    aliases: [...(product.value.aliases || [])],
   }
   // 加载原料列表
   if (product.value.ingredient_id) {
@@ -2107,6 +2138,7 @@ const saveBasicInfo = async () => {
       barcode: basicEditForm.value.barcode || null,
       ingredient_id: basicEditForm.value.ingredient_id,
       tags: basicEditForm.value.tags,
+      aliases: basicEditForm.value.aliases,
     })
     product.value = response
     // 重新加载营养数据（原料变更可能影响营养数据）

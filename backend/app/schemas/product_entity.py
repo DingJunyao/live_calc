@@ -12,6 +12,7 @@ class ProductBase(BaseModel):
     image_url: Optional[str] = Field(None, max_length=500)
     ingredient_id: int
     tags: List[str] = Field(default_factory=list)
+    aliases: List[str] = Field(default_factory=list, description="别名列表")
 
     @field_validator('barcode', 'brand', 'image_url')
     @classmethod
@@ -26,6 +27,14 @@ class ProductBase(BaseModel):
     def validate_tags_list(cls, v):
         return validate_tags(v) if v else []
 
+    @field_validator('aliases', mode='before')
+    @classmethod
+    def none_aliases_to_empty(cls, v):
+        """将 None 转为空列表，处理数据库中 NULL 值"""
+        if v is None:
+            return []
+        return v
+
 
 class ProductCreate(ProductBase):
     pass
@@ -38,6 +47,7 @@ class ProductUpdate(BaseModel):
     image_url: Optional[str] = Field(None, max_length=500)
     ingredient_id: Optional[int] = None
     tags: Optional[List[str]] = None
+    aliases: Optional[List[str]] = None
 
 
 class ProductResponse(TimeZoneAwareModel, ProductBase):

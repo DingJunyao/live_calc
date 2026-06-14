@@ -58,8 +58,20 @@
               </v-avatar>
             </template>
 
-            <v-list-item-title>{{ item.name }}</v-list-item-title>
+            <v-list-item-title>
+              {{ item.name }}
+            </v-list-item-title>
             <v-list-item-subtitle>
+              <template v-if="item.aliases?.length">
+                <v-chip
+                  v-for="alias in item.aliases"
+                  :key="alias"
+                  size="x-small"
+                  variant="tonal"
+                  class="mr-1"
+                >{{ alias }}</v-chip>
+                <br>
+              </template>
               <span>{{ item.brand || '无品牌' }}</span>
               <span v-if="item.latest_price != null" class="text-tertiary font-weight-bold ms-2">
                 ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
@@ -114,6 +126,15 @@
                   <span class="text-white">{{ item.name?.charAt(0) }}</span>
                 </v-avatar>
                 <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
+              </div>
+              <div v-if="item.aliases?.length" class="text-caption mb-1">
+                <v-chip
+                  v-for="alias in item.aliases"
+                  :key="alias"
+                  size="x-small"
+                  variant="tonal"
+                  class="mr-1"
+                >{{ alias }}</v-chip>
               </div>
               <div class="text-caption text-medium-emphasis">{{ item.brand || '无品牌' }}</div>
               <div v-if="item.latest_price != null" class="text-subtitle-1 font-weight-bold text-tertiary">
@@ -230,6 +251,16 @@
               variant="outlined"
               class="mb-4"
             />
+            <v-combobox
+              v-model="form.aliases"
+              label="别名"
+              variant="outlined"
+              multiple
+              chips
+              closable-chips
+              hint="输入后回车添加多个别名"
+              persistent-hint
+            />
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -265,6 +296,7 @@ interface Product {
   name: string
   brand?: string
   barcode?: string
+  aliases?: string[]
   description?: string
   created_at?: string
 }
@@ -303,6 +335,7 @@ const form = ref({
   name: '',
   brand: '',
   barcode: '',
+  aliases: [] as string[],
   ingredient_id: null as number | null
 })
 
@@ -518,7 +551,7 @@ const saveItem = async () => {
     items.value.unshift(response)
     total.value++
     showAddDialog.value = false
-    form.value = { name: '', brand: '', barcode: '', ingredient_id: null }
+    form.value = { name: '', brand: '', barcode: '', aliases: [], ingredient_id: null }
     selectedIngredient.value = null
     ingredientSearch.value = ''
   } catch (e: any) {

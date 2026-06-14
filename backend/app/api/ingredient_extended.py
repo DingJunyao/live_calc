@@ -694,10 +694,12 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                # 搜索名称或别名
+                # 搜索名称、原料别名或商品别名
                 subquery = subquery.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search))
+                    (Ingredient.aliases.contains(alias_search)) |
+                    (Ingredient.products.any(Product.name.contains(search))) |
+                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
                 )
 
             if category_id:
@@ -714,10 +716,12 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                # 搜索名称或别名
+                # 搜索名称、原料别名或商品别名
                 query = query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search))
+                    (Ingredient.aliases.contains(alias_search)) |
+                    (Ingredient.products.any(Product.name.contains(search))) |
+                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
                 )
 
             if category_id:
@@ -735,10 +739,12 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                # 搜索名称或别名
+                # 搜索名称、原料别名或商品别名
                 total_query = total_query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search))
+                    (Ingredient.aliases.contains(alias_search)) |
+                    (Ingredient.products.any(Product.name.contains(search))) |
+                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
                 )
 
             if category_id:
@@ -753,10 +759,12 @@ async def get_ingredients(
             ).filter(Ingredient.is_active == True)
 
             if search is not None:
-                # 搜索名称或别名
+                # 搜索名称、原料别名或商品别名
                 query = query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search))
+                    (Ingredient.aliases.contains(alias_search)) |
+                    (Ingredient.products.any(Product.name.contains(search))) |
+                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
                 )
 
             if category_id:

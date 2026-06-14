@@ -1425,6 +1425,16 @@
               variant="outlined"
               class="mb-4"
             />
+            <v-combobox
+              v-model="productForm.aliases"
+              label="别名"
+              variant="outlined"
+              multiple
+              chips
+              closable-chips
+              hint="输入后回车添加多个别名"
+              persistent-hint
+            />
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -1500,6 +1510,7 @@ interface Product {
   name: string
   brand?: string
   barcode?: string
+  aliases?: string[]
   ingredient_id?: number
 }
 
@@ -1582,6 +1593,7 @@ const productForm = ref({
   name: '',
   brand: '',
   barcode: '',
+  aliases: [] as string[],
 })
 // 删除商品
 const showDeleteProductDialog = ref(false)
@@ -1592,7 +1604,7 @@ const deletingProductLoading = ref(false)
 const openAddProductDialog = () => {
   isEditingProduct.value = false
   editingProductId.value = null
-  productForm.value = { name: '', brand: '', barcode: '' }
+  productForm.value = { name: '', brand: '', barcode: '', aliases: [] }
   showProductDialog.value = true
 }
 
@@ -1604,6 +1616,7 @@ const openEditProductDialog = (product: Product) => {
     name: product.name || '',
     brand: product.brand || '',
     barcode: (product as any).barcode || '',
+    aliases: [...((product as any).aliases || [])],
   }
   showProductDialog.value = true
 }
@@ -1623,6 +1636,7 @@ const saveProduct = async () => {
         brand: productForm.value.brand || null,
         barcode: productForm.value.barcode || null,
         ingredient_id: ingredientId.value,
+        aliases: productForm.value.aliases,
       })
       // 更新本地列表
       const idx = products.value.findIndex(p => p.id === editingProductId.value)
@@ -1637,6 +1651,7 @@ const saveProduct = async () => {
         brand: productForm.value.brand || null,
         barcode: productForm.value.barcode || null,
         ingredient_id: ingredientId.value,
+        aliases: productForm.value.aliases,
       })
       products.value.push(response)
       showMessage('商品已添加', 'success')

@@ -15,6 +15,7 @@ class Product(Base, AuditMixin):
     image_url = Column(String(500))
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
     tags = Column(String(500))  # JSON 字符串存储标签列表
+    aliases = Column(JSON)  # 别名列表，如 ["番茄", "西红柿"]
 
     # 自定义营养数据（可选，优先级高于食材的营养数据）
     # 格式同 NutritionData.nutrition_data

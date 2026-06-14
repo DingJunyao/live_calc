@@ -112,10 +112,11 @@ def list_products(
             query = query.filter(Product.ingredient_id == ingredient_id)
 
         if search:
-            # 搜索商品名称或食材别名
+            # 搜索商品名称、商品别名或食材别名
             alias_search = _make_alias_search_term(search)
             search_filter = or_(
                 Product.name.contains(search),
+                Product.aliases.contains(alias_search),
                 Product.ingredient.has(
                     or_(
                         Ingredient.name.contains(search),
@@ -154,10 +155,11 @@ def list_products(
             query = query.filter(Product.ingredient_id == ingredient_id)
 
         if search:
-            # 搜索商品名称或食材别名
+            # 搜索商品名称、商品别名或食材别名
             alias_search = _make_alias_search_term(search)
             search_filter = or_(
                 Product.name.contains(search),
+                Product.aliases.contains(alias_search),
                 Product.ingredient.has(
                     or_(
                         Ingredient.name.contains(search),
@@ -211,6 +213,7 @@ def list_products(
             "ingredient_id": product.ingredient_id,
             "ingredient_name": product.ingredient_name,
             "tags": product.tags,
+            "aliases": product.aliases or [],
             "created_at": serialize_datetime(product.created_at) if product.created_at else None,
             "updated_at": serialize_datetime(product.updated_at) if product.updated_at else None,
             "is_active": product.is_active
@@ -699,7 +702,7 @@ def product_autocomplete(
 ):
     """商品自动完成搜索
 
-    支持通过商品名称或关联食材的别名搜索。
+    支持通过商品名称、商品别名或关联食材的别名搜索。
     返回结果包含匹配的别名信息，用于前端显示。
 
     例如：搜索"西"可以找到：
@@ -722,8 +725,15 @@ def product_autocomplete(
             # 检查商品名称是否匹配
             if search_lower in product.name.lower():
                 match_type = "name"
+            # 检查商品别名是否匹配
+            elif product.aliases:
+                for alias in product.aliases:
+                    if search_lower in alias.lower():
+                        matched_alias = alias
+                        match_type = "alias"
+                        break
             # 检查关联食材的名称是否匹配
-            elif product.ingredient:
+            if not match_type and product.ingredient:
                 if search_lower in product.ingredient.name.lower():
                     match_type = "ingredient_name"
                 # 检查食材别名是否匹配
@@ -731,7 +741,7 @@ def product_autocomplete(
                     for alias in product.ingredient.aliases:
                         if search_lower in alias.lower():
                             matched_alias = alias
-                            match_type = "alias"
+                            match_type = "ingredient_alias"
                             break
 
             if match_type:
@@ -741,13 +751,14 @@ def product_autocomplete(
                     "brand": product.brand,
                     "ingredient_id": product.ingredient_id,
                     "ingredient_name": product.ingredient.name if product.ingredient else None,
+                    "aliases": product.aliases or [],
                     "match_type": match_type,
                     "matched_alias": matched_alias
                 })
 
-        # 按匹配类型排序：名称匹配 > 食材名称匹配 > 别名匹配
-        match_order = {"name": 0, "ingredient_name": 1, "alias": 2}
-        results.sort(key=lambda x: (match_order.get(x["match_type"], 3), x["name"]))
+        # 按匹配类型排序：名称匹配 > 商品别名匹配 > 食材名称匹配 > 食材别名匹配
+        match_order = {"name": 0, "alias": 1, "ingredient_name": 2, "ingredient_alias": 3}
+        results.sort(key=lambda x: (match_order.get(x["match_type"], 9), x["name"]))
 
         return results[:limit]
     except Exception as e:
