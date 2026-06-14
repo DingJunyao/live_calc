@@ -5,6 +5,7 @@
     <v-app-bar-title class="text-h6">价格记录</v-app-bar-title>
     <template #append>
       <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadRecords" />
+      <v-btn icon="mdi-lightning-bolt" variant="text" @click="$router.push('/prices/quick-fill')" />
     </template>
   </v-app-bar>
 

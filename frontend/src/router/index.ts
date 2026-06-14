@@ -35,6 +35,12 @@ const router = createRouter({
           meta: { title: '价格记录' },
         },
         {
+          path: 'prices/quick-fill',
+          name: 'quick-fill',
+          component: () => import('@/views/prices/QuickFillView.vue'),
+          meta: { title: '快速填写' },
+        },
+        {
           path: 'recipes',
           name: 'recipes',
           component: () => import('@/views/recipes/RecipesView.vue'),
