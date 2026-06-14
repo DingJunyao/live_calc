@@ -116,6 +116,7 @@
                 hide-details
                 auto-select-first
                 hide-selected
+                return-object
                 :custom-filter="() => true"
                 class="fill-row__product-search"
                 @update:search="onNewRowSearch(i, $event)"
@@ -194,7 +195,7 @@ interface Merchant {
 }
 
 interface FillRow {
-  productId: number | null
+  productId: number | any | null
   productName: string
   price: string
   quantity: number
@@ -261,11 +262,19 @@ function showSnackbar(message: string, color: string = 'success') {
   snackbar.value = { show: true, message, color }
 }
 
+// 获取行的商品 ID（兼容历史行的 number 和新增行的对象）
+const getRowProductId = (row: FillRow): number | null => {
+  if (!row.productId) return null
+  if (typeof row.productId === 'object') return (row.productId as any).id
+  return row.productId
+}
+
 // 已有商品 ID 集合（用于过滤新行建议）
 const existingProductIds = computed(() => {
   const ids = new Set<number>()
   for (const row of historyRows.value) {
-    if (row.productId) ids.add(row.productId)
+    const pid = getRowProductId(row)
+    if (pid) ids.add(pid)
   }
   return ids
 })
@@ -275,7 +284,10 @@ const visibleHistoryRows = computed(() => {
   const hiddenIds = selectedMerchantId.value
     ? getHiddenProductIds(selectedMerchantId.value)
     : new Set<number>()
-  return historyRows.value.filter(r => !r.productId || !hiddenIds.has(r.productId))
+  return historyRows.value.filter(r => {
+    const pid = getRowProductId(r)
+    return !pid || !hiddenIds.has(pid)
+  })
 })
 
 const allHistoryRows = computed(() => historyRows.value)
@@ -284,7 +296,10 @@ const hiddenCount = computed(() => {
   const hiddenIds = selectedMerchantId.value
     ? getHiddenProductIds(selectedMerchantId.value)
     : new Set<number>()
-  return historyRows.value.filter(r => r.productId && hiddenIds.has(r.productId)).length
+  return historyRows.value.filter(r => {
+    const pid = getRowProductId(r)
+    return pid && hiddenIds.has(pid)
+  }).length
 })
 
 // --- 单位加载 ---
@@ -326,9 +341,9 @@ const onMerchantChange = async (val: number | null) => {
     historyRows.value = items.map((item: any) => ({
       productId: item.product_id,
       productName: item.product_name,
-      price: item.price ? String(item.price) : '',
-      quantity: item.original_quantity ?? 1,
-      unit: item.original_unit || '斤',
+      price: '',
+      quantity: 1,
+      unit: '斤',
       isEditingQuantity: false,
       isEditingUnit: false,
       isNew: false,
@@ -415,7 +430,7 @@ const saveAll = async () => {
   ]
 
   for (const row of rowsToSave) {
-    if (row.isNew && !row.productId) {
+    if (row.isNew && !getRowProductId(row)) {
       showSnackbar(`请先为商品选择或输入名称`, 'warning')
       return
     }
@@ -433,20 +448,22 @@ const saveAll = async () => {
 
   for (const row of rowsToSave) {
     try {
+      const pid = getRowProductId(row)
       const payload: Record<string, any> = {
         price: parseFloat(row.price),
         original_quantity: row.quantity,
         original_unit: row.unit,
         merchant_id: selectedMerchantId.value,
+        record_type: 'purchase',
       }
-      if (row.productId) {
-        payload.product_id = row.productId
+      if (pid) {
+        payload.product_id = pid
       } else if (row.searchText) {
         payload.product_name = row.searchText
       }
       await api.post('/products', payload)
-      if (!row.isNew && row.productId) {
-        savedProductIds.push(row.productId)
+      if (!row.isNew && pid) {
+        savedProductIds.push(pid)
       }
       successCount++
     } catch {
