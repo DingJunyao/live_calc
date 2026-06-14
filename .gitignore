@@ -7,3 +7,4 @@ debug_*.py
 debug_*.js
 verify_*.py
 tmp/
+.superpowers
