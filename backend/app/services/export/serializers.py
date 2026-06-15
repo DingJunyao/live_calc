@@ -174,3 +174,69 @@ def serialize_nutrition(nutrition_data: Any, ingredient_name: str) -> dict:
         "match_confidence": to_float(nutrition_data.match_confidence),
         "raw_nutrients": nutrition_data.nutrients,  # 原始嵌套，恢复导入用
     }
+
+
+def _serialize_recipe_ingredient(
+    ri: Any,
+    ingredient_map: dict,
+    unit_map: dict,
+) -> dict:
+    """RecipeIngredient → 菜谱 ingredients[] 元素（HowToCook + id）。"""
+    ing_name = ingredient_map.get(ri.ingredient_id)
+    unit_name = unit_map.get(ri.unit_id) if ri.unit_id is not None else None
+    quantity = to_float(ri.quantity)
+    # quantity 无法解析为数字时，退化为 quantity_description
+    qty_desc = ""
+    if quantity is None and ri.quantity:
+        qty_desc = str(ri.quantity)
+    return {
+        # HowToCook 兼容
+        "ingredient_name": ing_name,
+        "quantity": quantity,
+        "unit": unit_name,
+        "original_quantity": ri.original_quantity,
+        "quantity_range": ri.quantity_range,
+        "is_optional": bool(ri.is_optional),
+        "is_approximate": False,   # 数据库无，默认
+        "is_estimated": False,     # 数据库无，默认
+        "note": ri.note or "",
+        "quantity_description": qty_desc,
+        # 扩展
+        "ingredient_id": ri.ingredient_id,
+        "unit_id": ri.unit_id,
+    }
+
+
+def serialize_recipe(
+    recipe: Any,
+    recipe_ingredients: list,
+    ingredient_map: dict,
+    unit_map: dict,
+) -> dict:
+    """Recipe → recipes/{name}.json。
+
+    HowToCook 字段保持兼容；扩展 id / result_ingredient_id 等。
+    ingredient_map: {ingredient_id: name}；unit_map: {unit_id: name}。
+    """
+    return {
+        # HowToCook 兼容
+        "name": recipe.name,
+        "source_file": recipe.source,            # ← Recipe.source
+        "category": recipe.category,
+        "difficulty": recipe.difficulty,
+        "total_time_minutes": recipe.total_time_minutes,
+        "servings": recipe.servings,
+        "original_servings": None,               # 数据库无此字段
+        "images": [convert_image_path(p) for p in (recipe.images or [])],
+        "ingredients": [
+            _serialize_recipe_ingredient(ri, ingredient_map, unit_map)
+            for ri in recipe_ingredients
+        ],
+        "steps": recipe.cooking_steps or [],
+        "tips": recipe.tips or [],
+        "description": recipe.description or "",
+        # 扩展
+        "id": recipe.id,
+        "tags": recipe.tags,
+        "result_ingredient_id": recipe.result_ingredient_id,
+    }

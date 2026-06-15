@@ -9,6 +9,7 @@ from app.services.export.serializers import (
     serialize_unit,
     serialize_ingredient,
     serialize_nutrition,
+    serialize_recipe,
 )
 
 
@@ -159,3 +160,62 @@ def test_serialize_nutrition_extended_fields():
     assert out["ingredient_id"] == 5
     assert out["source"] == "usda_import"
     assert out["reference_unit"] == "g"
+
+
+def _make_recipe_ingredient(**kw):
+    base = dict(
+        id=1, recipe_id=1, ingredient_id=5, quantity="2",
+        quantity_range=None, unit_id=10, is_optional=False,
+        note="切块", original_quantity=None,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def _make_recipe(**kw):
+    base = dict(
+        id=1, name="番茄炒蛋", source="custom", category="荤菜",
+        tags=None, cooking_steps=[{"step": 1, "content": "打蛋"}],
+        total_time_minutes=10, difficulty="easy", servings=2,
+        tips=["别炒老"], description="家常菜",
+        images=["/static/images/recipes/a.jpg"],
+        result_ingredient_id=None,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_serialize_recipe_howto_cook_fields():
+    r = _make_recipe()
+    ri = _make_recipe_ingredient()
+    out = serialize_recipe(
+        r, [ri],
+        ingredient_map={5: "鸡蛋"},
+        unit_map={10: "个"},
+    )
+    assert out["name"] == "番茄炒蛋"
+    assert out["source_file"] == "custom"  # ← Recipe.source
+    assert out["original_servings"] is None  # 数据库无此字段
+    assert out["images"] == ["images/recipes/a.jpg"]  # 路径转换
+    assert out["ingredients"][0]["ingredient_name"] == "鸡蛋"
+    assert out["ingredients"][0]["unit"] == "个"
+    assert out["ingredients"][0]["quantity"] == 2.0
+
+
+def test_serialize_recipe_extended_fields():
+    r = _make_recipe(result_ingredient_id=7)
+    ri = _make_recipe_ingredient()
+    out = serialize_recipe(r, [ri], ingredient_map={5: "鸡蛋"}, unit_map={10: "个"})
+    assert out["id"] == 1
+    assert out["result_ingredient_id"] == 7
+    assert out["ingredients"][0]["ingredient_id"] == 5
+    assert out["ingredients"][0]["unit_id"] == 10
+
+
+def test_serialize_recipe_quantity_unparseable():
+    r = _make_recipe()
+    ri = _make_recipe_ingredient(quantity="适量")
+    out = serialize_recipe(r, [ri], ingredient_map={5: "鸡蛋"}, unit_map={10: "g"})
+    item = out["ingredients"][0]
+    assert item["quantity"] is None
+    assert item["quantity_description"] == "适量"
