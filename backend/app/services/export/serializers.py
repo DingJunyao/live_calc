@@ -62,3 +62,37 @@ def serialize_unit(unit: Any) -> dict:
         "display_order": unit.display_order,
         "default_estimate": to_float(unit.default_estimate),
     }
+
+
+def serialize_ingredient(
+    ingredient: Any,
+    category_display_name: Optional[str],
+    usda_id: Any,
+) -> dict:
+    """Ingredient → ingredients.json 的 value 部分。
+
+    HowToCook: {name, aliases, category, usda_id, usda_match_status}；扩展: id 等。
+    usda_id 由调用方从关联 NutritionData 取。
+    """
+    has_usda = usda_id is not None and usda_id != ""
+    return {
+        # HowToCook 兼容
+        "name": ingredient.name,
+        "aliases": ingredient.aliases or [],
+        "category": category_display_name,
+        "usda_id": usda_id,
+        "usda_match_status": "matched" if has_usda else "unmatched",
+        # 扩展
+        "id": ingredient.id,
+        "category_id": ingredient.category_id,
+        "density": to_float(ingredient.density),
+        "default_unit_id": ingredient.default_unit_id,
+        "piece_weight": to_float(ingredient.piece_weight),
+        "piece_weight_unit_id": ingredient.piece_weight_unit_id,
+        "serving_weight": to_float(ingredient.serving_weight),
+        "serving_weight_unit_id": ingredient.serving_weight_unit_id,
+        "nutrition_id": ingredient.nutrition_id,
+        "is_imported": bool(ingredient.is_imported),
+        "is_merged": bool(ingredient.is_merged),
+        "merged_into_id": ingredient.merged_into_id,
+    }

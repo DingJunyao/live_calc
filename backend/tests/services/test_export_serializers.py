@@ -7,6 +7,7 @@ from app.services.export.serializers import (
     to_iso,
     convert_image_path,
     serialize_unit,
+    serialize_ingredient,
 )
 
 
@@ -74,3 +75,42 @@ def test_serialize_unit_extended_fields():
     assert out["unit_type"] == "mass"
     assert out["si_factor"] == 0.001
     assert out["unit_system"] == "market"
+
+
+def _make_ingredient(**kw):
+    base = dict(
+        id=5, name="鸡蛋", category_id=6,
+        density=Decimal("1.03"), default_unit_id=1, aliases=["土鸡蛋"],
+        nutrition_id=20, piece_weight=Decimal("50"), piece_weight_unit_id=1,
+        serving_weight=None, serving_weight_unit_id=None,
+        is_imported=False, is_merged=False, merged_into_id=None,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_serialize_ingredient_howto_cook_matched():
+    ing = _make_ingredient()
+    out = serialize_ingredient(ing, category_display_name="禽蛋", usda_id=171287)
+    assert out["name"] == "鸡蛋"
+    assert out["aliases"] == ["土鸡蛋"]
+    assert out["category"] == "禽蛋"
+    assert out["usda_id"] == 171287
+    assert out["usda_match_status"] == "matched"
+
+
+def test_serialize_ingredient_unmatched_when_no_usda():
+    ing = _make_ingredient()
+    out = serialize_ingredient(ing, category_display_name="其他", usda_id=None)
+    assert out["usda_match_status"] == "unmatched"
+    assert out["usda_id"] is None
+
+
+def test_serialize_ingredient_extended_fields():
+    ing = _make_ingredient()
+    out = serialize_ingredient(ing, category_display_name="禽蛋", usda_id=171287)
+    assert out["id"] == 5
+    assert out["category_id"] == 6
+    assert out["density"] == 1.03
+    assert out["nutrition_id"] == 20
+    assert out["piece_weight"] == 50.0
