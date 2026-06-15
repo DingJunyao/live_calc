@@ -66,7 +66,7 @@
           </template>
         </v-list-item>
 
-        <v-list-item>
+        <v-list-item @click="exportDialog = true">
           <template #prepend>
             <v-icon>mdi-export</v-icon>
           </template>
@@ -96,6 +96,53 @@
         退出登录
       </v-btn>
     </v-card>
+
+    <!-- 数据导出对话框 -->
+    <v-dialog v-model="exportDialog" max-width="420">
+      <v-card>
+        <v-card-title>数据导出</v-card-title>
+        <v-card-text>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            选择导出范围，导出文件将打包为 zip 下载。
+          </p>
+          <v-radio-group v-model="exportScope">
+            <v-radio value="full">
+              <template #label>
+                <div>
+                  <strong>全量数据</strong>
+                  <div class="text-caption text-medium-emphasis">
+                    包括我创建的和系统/管理员创建的所有数据
+                  </div>
+                </div>
+              </template>
+            </v-radio>
+            <v-radio value="mine">
+              <template #label>
+                <div>
+                  <strong>仅我的数据</strong>
+                  <div class="text-caption text-medium-emphasis">
+                    只导出我创建的数据；我引用到的系统数据会一并带上
+                  </div>
+                </div>
+              </template>
+            </v-radio>
+          </v-radio-group>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="exporting" @click="exportDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="exporting" @click="doExport">导出</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 导出进度遮罩 -->
+    <v-overlay v-model="exporting" class="align-center justify-center" persistent>
+      <div class="text-center">
+        <v-progress-circular indeterminate size="48" />
+        <div class="mt-3">正在打包数据，请稍候…</div>
+      </div>
+    </v-overlay>
   </v-container>
 </template>
 
@@ -103,6 +150,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
+import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
@@ -114,6 +162,47 @@ const theme = useTheme()
 const userStore = useUserStore()
 
 const search = ref('')
+
+// 数据导出
+const exportDialog = ref(false)
+const exportScope = ref<'full' | 'mine'>('full')
+const exporting = ref(false)
+
+const doExport = async () => {
+  exporting.value = true
+  try {
+    // 注意：api 客户端的响应拦截器对所有响应统一返回 response.data（见 frontend/src/api/client.ts），
+    // 这会剥离外层 AxiosResponse，导致 blob 请求无法拿到 response.headers/content-disposition。
+    // 因此此处直接使用原生 axios，手动附加 Authorization，以保留完整 AxiosResponse。
+    const token = localStorage.getItem('access_token')
+    const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
+    const response = await axios.get(`${baseURL}/export/data`, {
+      params: { scope: exportScope.value },
+      responseType: 'blob',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    // 从响应头取文件名
+    const disposition = response.headers?.['content-disposition'] || ''
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    const filename = match?.[1] || `export_${Date.now()}.zip`
+    // 触发下载
+    const blob = new Blob([response.data], { type: 'application/zip' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    exportDialog.value = false
+  } catch (e: any) {
+    console.error('数据导出失败', e)
+    alert('数据导出失败：' + (e?.userMessage || e?.message || '未知错误'))
+  } finally {
+    exporting.value = false
+  }
+}
 
 // 统计数据
 const monthlyExpense = ref<number | null>(null)
