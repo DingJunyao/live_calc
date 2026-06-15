@@ -48,5 +48,10 @@ def test_mine_set_pulls_referenced_admin_ingredient():
             if ri.ingredient_id is not None
         }
         assert referenced.issubset(es.ingredient_ids)
+        # mine 模式应纳入所有归属我的商家（user_id == user.id），
+        # 即使未为其记录过价格。
+        from app.models.merchant import Merchant
+        my_merchants = {m.id for m in db.query(Merchant).filter(Merchant.user_id == user.id).all()}
+        assert my_merchants.issubset(es.merchant_ids)
     finally:
         db.close()

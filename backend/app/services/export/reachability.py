@@ -53,7 +53,8 @@ def collect_full_set(db: Session) -> ExportSet:
     ingredients, ing_units, nutrition_ids, category_ids = _collect_ingredient_closure(db, seed)
     es.ingredient_ids = ingredients
     es.nutrition_ids = nutrition_ids
-    es.category_ids = category_ids
+    # 注意：category_ids（来自食材闭包）会被下方全量覆盖，此处是死代码，故不赋值；
+    # ingredients/nutrition 返回值仍在使用。
     es.unit_ids.update(ing_units)
     # 菜谱
     es.recipe_ids = {r.id for r in db.query(Recipe).all()}
@@ -200,8 +201,11 @@ def collect_mine_set(db: Session, user_id: int) -> ExportSet:
             l.id for l in db.query(ProductIngredientLink).filter(ProductIngredientLink.product_id.in_(es.product_ids)).all()
         }
 
-    # 6) 商家（价格记录引用的 + 我的收藏）
-    es.merchant_ids = merchant_ids
+    # 6) 商家（我的商家 + 价格记录引用的 + 我的收藏）
+    # Merchant 为用户私有（user_id 归属），mine 模式需纳入所有归属我的商家，
+    # 即使未为其记录过价格。
+    my_merchant_ids = {m.id for m in db.query(Merchant).filter(Merchant.user_id == user_id).all()}
+    es.merchant_ids = merchant_ids | my_merchant_ids
     es.favorite_merchant_ids = {
         f.id for f in db.query(FavoriteMerchant).filter(FavoriteMerchant.user_id == user_id).all()
     }
