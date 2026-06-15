@@ -225,3 +225,4 @@ live_calc/
 - 原料分类显示与编辑：原料详情页基本信息区显示分类，编辑表单支持选择分类（复用 GET /ingredients/categories）；后端 get_ingredient 详情接口补充返回 category_id/category。详见 [FEATURE_原料分类显示与编辑.md](cc/FEATURE_原料分类显示与编辑.md)
 - 快速填写：价格记录页 app-bar 新增闪电入口，进入独立批量填写页面。选商家后自动列出历史商品（按拼音/字母顺序排序），逐行填价格（数量/单位默认 1/斤，点击可改），可新增行搜索商品。只保存填了价格的商品，近 1h 内填过的按商家独立隐藏（sessionStorage）。纯前端，后端复用现有 API。详见 [FEATURE_QUICK_FILL.md](cc/FEATURE_QUICK_FILL.md)
 - 半成品菜谱成本传递：原料可指向其制作菜谱（激活 recipes.result_ingredient_id + 新增 ingredients.serving_weight），成本计算时商品无价则由制作菜谱推导每克单价（份×每份重桥接），支持递归套娃与循环检测。菜谱页「成品产出」与原料页「自制来源」双入口，成本明细 tooltip 显示 recipe_chain。附带修复 alembic 坏链与 as_of 的 Decimal×float 隐患。详见 [FEATURE_半成品菜谱成本传递.md](cc/FEATURE_半成品菜谱成本传递.md)
+- 数据导出：个人中心「数据导出」，两档（全量 `full` / 仅我的 `mine`，mine 含外键可达性遍历保证引用完整）；菜谱/食材/营养/单位 HowToCook 兼容 + id 扩展，扩展知识库与账户交易数据独立规格，图片打包 zip 同步流式下载（`GET /api/v1/export/data?scope=`）；`services/export/` 分层（serializers/reachability/packaging）。详见 [FEATURE_数据导出.md](cc/FEATURE_数据导出.md)
