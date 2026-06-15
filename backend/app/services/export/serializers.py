@@ -43,3 +43,22 @@ def convert_image_path(path: Optional[str]) -> Optional[str]:
     if path.startswith("/static/"):
         return path[len("/static/"):]
     return path
+
+
+def serialize_unit(unit: Any) -> dict:
+    """Unit → units.json 元素。HowToCook: {name, aliases}；扩展: id 等。"""
+    return {
+        # HowToCook 兼容
+        "name": unit.name,
+        "aliases": [],  # 数据库无别名列；缩写见 abbreviation
+        # 扩展
+        "id": unit.id,
+        "abbreviation": unit.abbreviation,
+        "unit_type": unit.unit_type,
+        "si_factor": to_float(unit.si_factor),
+        "unit_system": unit.unit_system,
+        "is_si_base": bool(unit.is_si_base),
+        "is_common": bool(unit.is_common),
+        "display_order": unit.display_order,
+        "default_estimate": to_float(unit.default_estimate),
+    }

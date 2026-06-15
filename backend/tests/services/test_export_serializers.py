@@ -1,10 +1,12 @@
 from decimal import Decimal
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from app.services.export.serializers import (
     to_float,
     to_iso,
     convert_image_path,
+    serialize_unit,
 )
 
 
@@ -44,3 +46,31 @@ def test_convert_image_path_keeps_remote_url():
 
 def test_convert_image_path_none():
     assert convert_image_path(None) is None
+
+
+def _make_unit(**kw):
+    base = dict(
+        id=10, name="克", abbreviation="g", plural_form=None,
+        unit_type="mass", si_factor=Decimal("0.001"), is_si_base=False,
+        is_common=True, display_order=3, unit_system="market",
+        default_estimate=None,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_serialize_unit_howto_cook_fields():
+    u = _make_unit()
+    out = serialize_unit(u)
+    assert out["name"] == "克"
+    assert out["aliases"] == []  # 数据库无别名列
+
+
+def test_serialize_unit_extended_fields():
+    u = _make_unit()
+    out = serialize_unit(u)
+    assert out["id"] == 10
+    assert out["abbreviation"] == "g"
+    assert out["unit_type"] == "mass"
+    assert out["si_factor"] == 0.001
+    assert out["unit_system"] == "market"
