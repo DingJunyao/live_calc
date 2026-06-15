@@ -10,6 +10,13 @@ from app.services.export.serializers import (
     serialize_ingredient,
     serialize_nutrition,
     serialize_recipe,
+    serialize_unit_conversion,
+    serialize_category,
+    serialize_hierarchy,
+    serialize_entity_density,
+    serialize_product,
+    serialize_barcode,
+    serialize_product_link,
 )
 
 
@@ -219,3 +226,68 @@ def test_serialize_recipe_quantity_unparseable():
     item = out["ingredients"][0]
     assert item["quantity"] is None
     assert item["quantity_description"] == "适量"
+
+
+def test_serialize_unit_conversion():
+    uc = SimpleNamespace(id=1, from_unit_id=1, to_unit_id=2,
+                         conversion_factor=Decimal("1000"), formula=None,
+                         is_bidirectional=True, precision=6)
+    out = serialize_unit_conversion(uc, from_unit_name="kg", to_unit_name="g")
+    assert out == {
+        "id": 1, "from_unit_id": 1, "from_unit_name": "kg",
+        "to_unit_id": 2, "to_unit_name": "g",
+        "conversion_factor": 1000.0, "formula": None,
+        "is_bidirectional": True, "precision": 6,
+    }
+
+
+def test_serialize_category():
+    cat = SimpleNamespace(id=6, name="eggs", display_name="禽蛋",
+                          parent_category_id=None, sort_order=6, description="鸡蛋鸭蛋等")
+    out = serialize_category(cat)
+    assert out["display_name"] == "禽蛋"
+    assert out["parent_category_id"] is None
+
+
+def test_serialize_hierarchy():
+    h = SimpleNamespace(id=1, parent_id=5, child_id=8,
+                        relation_type="substitutable", strength=80)
+    out = serialize_hierarchy(h, parent_name="鸡蛋", child_name="鸭蛋")
+    assert out["relation_type"] == "substitutable"
+    assert out["child_name"] == "鸭蛋"
+
+
+def test_serialize_entity_density():
+    ed = SimpleNamespace(id=1, entity_type="ingredient", entity_id=5,
+                         density=Decimal("1030"), temperature=None,
+                         condition=None, source="测得", confidence=Decimal("0.9"))
+    out = serialize_entity_density(ed, entity_name="鸡蛋")
+    assert out["density"] == 1030.0
+    assert out["entity_name"] == "鸡蛋"
+
+
+def test_serialize_product():
+    p = SimpleNamespace(id=3, name="鸡蛋(某品牌)", brand="品牌A", barcode=None,
+                        image_url="/static/images/products/x.jpg",
+                        ingredient_id=5, tags=None, aliases=[],
+                        custom_nutrition_data=None, custom_nutrition_source="custom")
+    out = serialize_product(p, ingredient_name="鸡蛋", primary_barcode="6901234567890")
+    assert out["name"] == "鸡蛋(某品牌)"
+    assert out["barcode"] == "6901234567890"
+    assert out["image_url"] == "images/products/x.jpg"
+    assert out["ingredient_name"] == "鸡蛋"
+
+
+def test_serialize_barcode():
+    b = SimpleNamespace(id=1, product_id=3, barcode="6901234567890",
+                        barcode_type="ean", is_primary=True, is_active=True)
+    out = serialize_barcode(b, product_name="鸡蛋(某品牌)")
+    assert out["barcode"] == "6901234567890"
+    assert out["is_primary"] is True
+
+
+def test_serialize_product_link():
+    link = SimpleNamespace(id=1, product_id=3, ingredient_id=5)
+    out = serialize_product_link(link, product_name="鸡蛋(某品牌)", ingredient_name="鸡蛋")
+    assert out["product_id"] == 3
+    assert out["ingredient_name"] == "鸡蛋"

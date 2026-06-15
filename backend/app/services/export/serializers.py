@@ -240,3 +240,117 @@ def serialize_recipe(
         "tags": recipe.tags,
         "result_ingredient_id": recipe.result_ingredient_id,
     }
+
+
+def serialize_unit_conversion(uc: Any, from_unit_name: Optional[str], to_unit_name: Optional[str]) -> dict:
+    """UnitConversion → unit_conversions.json 元素。
+
+    from_unit_name/to_unit_name 由调用方按 unit_id 解析冗余注入。
+    """
+    return {
+        "id": uc.id,
+        "from_unit_id": uc.from_unit_id,
+        "from_unit_name": from_unit_name,
+        "to_unit_id": uc.to_unit_id,
+        "to_unit_name": to_unit_name,
+        "conversion_factor": to_float(uc.conversion_factor),
+        "formula": uc.formula,
+        "is_bidirectional": bool(uc.is_bidirectional),
+        "precision": uc.precision,
+    }
+
+
+def serialize_category(cat: Any) -> dict:
+    """IngredientCategory → categories.json 元素。"""
+    return {
+        "id": cat.id,
+        "name": cat.name,
+        "display_name": cat.display_name,
+        "parent_category_id": cat.parent_category_id,
+        "sort_order": cat.sort_order,
+        "description": cat.description,
+    }
+
+
+def serialize_hierarchy(h: Any, parent_name: Optional[str], child_name: Optional[str]) -> dict:
+    """IngredientHierarchy → hierarchies.json 元素。
+
+    parent_name/child_name 由调用方按 id 解析冗余注入。
+    """
+    return {
+        "id": h.id,
+        "parent_id": h.parent_id,
+        "parent_name": parent_name,
+        "child_id": h.child_id,
+        "child_name": child_name,
+        "relation_type": h.relation_type,
+        "strength": h.strength,
+    }
+
+
+def serialize_entity_density(ed: Any, entity_name: Optional[str]) -> dict:
+    """EntityDensity → entity_densities.json 元素。
+
+    entity_name 由调用方按 entity_type+entity_id 解析冗余注入。
+    """
+    return {
+        "id": ed.id,
+        "entity_type": ed.entity_type,
+        "entity_id": ed.entity_id,
+        "entity_name": entity_name,
+        "density": to_float(ed.density),
+        "temperature": to_float(ed.temperature),
+        "condition": ed.condition,
+        "source": ed.source,
+        "confidence": to_float(ed.confidence),
+    }
+
+
+def serialize_product(p: Any, ingredient_name: Optional[str], primary_barcode: Optional[str]) -> dict:
+    """Product → products/{name}.json。
+
+    primary_barcode 由调用方从 ProductBarcode 解析注入；image_url 走静态路径转换。
+    """
+    return {
+        "id": p.id,
+        "name": p.name,
+        "brand": p.brand,
+        "barcode": primary_barcode,
+        "image_url": convert_image_path(p.image_url),
+        "ingredient_id": p.ingredient_id,
+        "ingredient_name": ingredient_name,
+        "tags": p.tags,
+        "aliases": p.aliases or [],
+        "custom_nutrition_data": p.custom_nutrition_data,
+        "custom_nutrition_source": p.custom_nutrition_source,
+    }
+
+
+def serialize_barcode(b: Any, product_name: Optional[str]) -> dict:
+    """ProductBarcode → barcodes.json 元素。
+
+    product_name 由调用方按 product_id 解析冗余注入。
+    """
+    return {
+        "id": b.id,
+        "product_id": b.product_id,
+        "product_name": product_name,
+        "barcode": b.barcode,
+        "barcode_type": b.barcode_type,
+        "is_primary": bool(b.is_primary),
+        "is_active": bool(b.is_active),
+    }
+
+
+def serialize_product_link(link: Any, product_name: Optional[str], ingredient_name: Optional[str]) -> dict:
+    """ProductIngredientLink → product_links.json 元素。
+
+    product_name/ingredient_name 由调用方按 id 解析冗余注入。
+    """
+    return {
+        "id": link.id,
+        "product_id": link.product_id,
+        "product_name": product_name,
+        "ingredient_id": link.ingredient_id,
+        "ingredient_name": ingredient_name,
+    }
