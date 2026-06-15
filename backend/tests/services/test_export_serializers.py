@@ -8,6 +8,7 @@ from app.services.export.serializers import (
     convert_image_path,
     serialize_unit,
     serialize_ingredient,
+    serialize_nutrition,
 )
 
 
@@ -114,3 +115,47 @@ def test_serialize_ingredient_extended_fields():
     assert out["density"] == 1.03
     assert out["nutrition_id"] == 20
     assert out["piece_weight"] == 50.0
+
+
+def _make_nutrition(**kw):
+    base = dict(
+        id=20, ingredient_id=5, source="usda_import",
+        usda_id="171287", usda_name="Egg, whole, raw, fresh",
+        nutrients={
+            "all_nutrients": {
+                "protein": {"value": 12.6, "unit": "g", "nrp_pct": 21.0, "standard": "中国GB标准"},
+                "energy": {"value": 143.0, "unit": "kcal", "nrp_pct": 7.15, "standard": "中国GB标准"},
+            }
+        },
+        reference_amount=100.0, reference_unit="g", match_confidence=1.0,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_serialize_nutrition_howto_cook_fields():
+    nd = _make_nutrition()
+    out = serialize_nutrition(nd, ingredient_name="鸡蛋")
+    assert out["usda_id"] == "171287"
+    assert out["ingredient_name"] == "鸡蛋"
+    assert out["usda_name"] == "Egg, whole, raw, fresh"
+    # nutrients 扁平数组
+    names = [n["name"] for n in out["nutrients"]]
+    assert "蛋白质" in names  # protein→蛋白质 经映射
+    energy = [n for n in out["nutrients"] if n["name"] == "能量"][0]
+    assert energy["value"] == 143.0
+
+
+def test_serialize_nutrition_keeps_raw():
+    nd = _make_nutrition()
+    out = serialize_nutrition(nd, ingredient_name="鸡蛋")
+    assert out["raw_nutrients"]["all_nutrients"]["protein"]["value"] == 12.6
+
+
+def test_serialize_nutrition_extended_fields():
+    nd = _make_nutrition()
+    out = serialize_nutrition(nd, ingredient_name="鸡蛋")
+    assert out["id"] == 20
+    assert out["ingredient_id"] == 5
+    assert out["source"] == "usda_import"
+    assert out["reference_unit"] == "g"

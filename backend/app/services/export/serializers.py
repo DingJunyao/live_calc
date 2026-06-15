@@ -96,3 +96,81 @@ def serialize_ingredient(
         "is_merged": bool(ingredient.is_merged),
         "merged_into_id": ingredient.merged_into_id,
     }
+
+
+# 营养素 key → (中文名, 英文名) 映射；覆盖主要营养素。
+# 未命中的 key 退化为 (key, key)，保证不丢数据。
+NUTRIENT_KEY_NAME_MAP: dict[str, tuple[str, str]] = {
+    "energy": ("能量", "Energy"),
+    "protein": ("蛋白质", "Protein"),
+    "fat": ("脂肪", "Total lipid (fat)"),
+    "carbohydrate": ("碳水化合物", "Carbohydrate, by difference"),
+    "fiber": ("膳食纤维", "Fiber, total dietary"),
+    "sugars": ("糖", "Sugars, total"),
+    "saturated_fat": ("饱和脂肪", "Fatty acids, total saturated"),
+    "sodium": ("钠", "Sodium, Na"),
+    "cholesterol": ("胆固醇", "Cholesterol"),
+    "calcium": ("钙", "Calcium, Ca"),
+    "iron": ("铁", "Iron, Fe"),
+    "zinc": ("锌", "Zinc, Zn"),
+    "selenium": ("硒", "Selenium, Se"),
+    "vitamin_a": ("维生素A", "Vitamin A, RAE"),
+    "vitamin_d": ("维生素D", "Vitamin D (D2 + D3)"),
+    "vitamin_e": ("维生素E", "Vitamin E (alpha-tocopherol)"),
+    "vitamin_c": ("维生素C", "Vitamin C, total ascorbic acid"),
+    "thiamin": ("维生素B1（硫胺素）", "Thiamin"),
+    "riboflavin": ("维生素B2（核黄素）", "Riboflavin"),
+    "niacin": ("烟酸", "Niacin"),
+    "vitamin_b6": ("维生素B6", "Vitamin B-6"),
+    "vitamin_b12": ("维生素B12", "Vitamin B-12"),
+    "folate": ("叶酸", "Folate, total"),
+    "pantothenic_acid": ("泛酸", "Pantothenic acid"),
+    "biotin": ("生物素", "Biotin"),
+    "vitamin_k": ("维生素K", "Vitamin K (phylloquinone)"),
+    "potassium": ("钾", "Potassium, K"),
+    "magnesium": ("镁", "Magnesium, Mg"),
+    "phosphorus": ("磷", "Phosphorus, P"),
+}
+
+
+def _flatten_nutrients(nutrients_json: Any) -> list[dict]:
+    """嵌套 nutrients JSON → HowToCook 扁平数组 [{name, name_en, value, unit, nrp_pct, standard}]。"""
+    if not isinstance(nutrients_json, dict):
+        return []
+    source_map = nutrients_json.get("all_nutrients") or nutrients_json.get("nutrient_details") or {}
+    out = []
+    for key, payload in source_map.items():
+        if not isinstance(payload, dict):
+            continue
+        cn, en = NUTRIENT_KEY_NAME_MAP.get(key, (key, key))
+        out.append({
+            "name": cn,
+            "name_en": en,
+            "value": to_float(payload.get("value")),
+            "unit": payload.get("unit"),
+            "nrp_pct": to_float(payload.get("nrp_pct")),
+            "standard": payload.get("standard"),
+        })
+    return out
+
+
+def serialize_nutrition(nutrition_data: Any, ingredient_name: str) -> dict:
+    """NutritionData → nutritions.json 元素。
+
+    HowToCook: {usda_id, ingredient_name, usda_name, nutrients[]}；扩展: id + raw_nutrients。
+    """
+    return {
+        # HowToCook 兼容
+        "usda_id": nutrition_data.usda_id,
+        "ingredient_name": ingredient_name,
+        "usda_name": nutrition_data.usda_name,
+        "nutrients": _flatten_nutrients(nutrition_data.nutrients),
+        # 扩展
+        "id": nutrition_data.id,
+        "ingredient_id": nutrition_data.ingredient_id,
+        "source": nutrition_data.source,
+        "reference_amount": to_float(nutrition_data.reference_amount),
+        "reference_unit": nutrition_data.reference_unit,
+        "match_confidence": to_float(nutrition_data.match_confidence),
+        "raw_nutrients": nutrition_data.nutrients,  # 原始嵌套，恢复导入用
+    }
