@@ -392,6 +392,7 @@ const formatIngredientCost = (ingredient: RecipeIngredient) => {
 const getIngredientFallbackChain = (ingredient: RecipeIngredient): string | null => {
   if (!props.costBreakdown) return null
   const item = props.costBreakdown.find((b: any) => b.recipe_ingredient_id === ingredient.id)
+  if (item?.recipe_chain) return item.recipe_chain
   if (item?.aggregation_chain) return item.aggregation_chain
   return item?.fallback_chain || null
 }

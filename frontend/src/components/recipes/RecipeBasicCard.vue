@@ -51,6 +51,12 @@
             variant="tonal"
             color="secondary"
           >{{ difficultyLabel }}</v-chip>
+          <v-chip
+            v-if="resultIngredientName"
+            size="small"
+            variant="tonal"
+            color="success"
+          >⤴ 成品：{{ resultIngredientName }}</v-chip>
         </div>
         <div
           v-if="recipe.description"
@@ -111,6 +117,24 @@
         class="mb-4"
       />
 
+      <!-- 成品产出原料（半成品菜谱） -->
+      <div class="text-subtitle-2 mb-1">成品产出</div>
+      <div class="text-caption text-medium-emphasis mb-2">若本菜谱产出的成品可作为其它菜谱的原料（如蒸米饭→米饭），请选择对应原料，其成本将由本菜谱推导。</div>
+      <v-autocomplete
+        v-model="editForm.result_ingredient_id"
+        :items="ingredientOptions"
+        item-title="name"
+        item-value="id"
+        label="成品产出原料"
+        variant="outlined"
+        density="compact"
+        clearable
+        :loading="ingredientSearching"
+        @update:search="onIngredientSearch"
+        hide-details
+        class="mb-4"
+      />
+
       <!-- 配图管理 -->
       <v-divider class="mb-3" />
       <div class="text-subtitle-2 mb-2">配图管理</div>
@@ -126,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { api } from '@/api/client'
 import ImageManager from './ImageManager.vue'
 import type { RecipeDetail } from './types'
@@ -148,8 +172,46 @@ const editForm = ref({
   category: '',
   difficulty: '',
   description: '',
+  result_ingredient_id: null as number | null,
 })
 const editImages = ref<string[]>([])
+
+// 成品产出原料搜索
+const ingredientOptions = ref<{ id: number; name: string }[]>([])
+const ingredientSearching = ref(false)
+const resultIngredientName = ref('')
+let searchTimer: any = null
+
+const onIngredientSearch = (q: string) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!q || !q.trim()) return
+  searchTimer = setTimeout(async () => {
+    ingredientSearching.value = true
+    try {
+      const res = await api.get(`/ingredients/search-by-name/${encodeURIComponent(q.trim())}`)
+      ingredientOptions.value = (res || []).map((i: any) => ({ id: i.id, name: i.name }))
+    } catch (e) {
+      console.error('搜索原料失败', e)
+    } finally {
+      ingredientSearching.value = false
+    }
+  }, 300)
+}
+
+// 成品原料名（查看模式展示）：初始加载时若已绑定则查名
+watch(() => props.recipe.result_ingredient_id, async (id) => {
+  if (id) {
+    try {
+      const r = await api.get(`/ingredients/${id}`)
+      resultIngredientName.value = r?.name || ''
+      ingredientOptions.value = [{ id, name: r?.name || '' }]
+    } catch {
+      resultIngredientName.value = ''
+    }
+  } else {
+    resultIngredientName.value = ''
+  }
+}, { immediate: true })
 
 const categoryOptions = [
   { title: '荤菜', value: '荤菜' },
@@ -183,6 +245,7 @@ const startEdit = () => {
     category: props.recipe.category || '',
     difficulty: props.recipe.difficulty || '',
     description: props.recipe.description || '',
+    result_ingredient_id: props.recipe.result_ingredient_id ?? null,
   }
   editImages.value = [...(props.recipe.images || [])]
   editing.value = true
@@ -236,6 +299,9 @@ const handleSave = async () => {
     if (editForm.value.category !== props.recipe.category) payload.category = editForm.value.category
     if (editForm.value.difficulty !== props.recipe.difficulty) payload.difficulty = editForm.value.difficulty
     if (editForm.value.description !== (props.recipe.description || '')) payload.description = editForm.value.description
+    const newRiId = editForm.value.result_ingredient_id ?? null
+    const oldRiId = props.recipe.result_ingredient_id ?? null
+    if (newRiId !== oldRiId) payload.result_ingredient_id = newRiId
     if (JSON.stringify(editImages.value) !== JSON.stringify(props.recipe.images || [])) {
       payload.images = editImages.value
     }

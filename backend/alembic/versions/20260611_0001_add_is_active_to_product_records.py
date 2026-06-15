@@ -1,7 +1,7 @@
 """add is_active to product_records
 
 Revision ID: 20260611_0001
-Revises: 20260609_0001_add_is_open_to_merchants
+Revises: 20260609_0001
 Create Date: 2026-06-11 19:00:00.000000
 
 """
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = '20260611_0001'
-down_revision = '20260609_0001_add_is_open_to_merchants'
+down_revision = '20260609_0001'
 branch_labels = None
 depends_on = None
 

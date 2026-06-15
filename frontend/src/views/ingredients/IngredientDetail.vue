@@ -89,6 +89,22 @@
               </v-list-item-subtitle>
             </v-list-item>
 
+            <v-list-item v-if="ingredient.making_recipe_name">
+              <template #prepend>
+                <v-icon size="small" color="success">mdi-pot-steam-outline</v-icon>
+              </template>
+              <v-list-item-title>制作来源</v-list-item-title>
+              <v-list-item-subtitle>由「{{ ingredient.making_recipe_name }}」制作</v-list-item-subtitle>
+            </v-list-item>
+
+            <v-list-item v-if="ingredient.serving_weight">
+              <template #prepend>
+                <v-icon size="small" color="medium-emphasis">mdi-scale-balance</v-icon>
+              </template>
+              <v-list-item-title>成品基准量</v-list-item-title>
+              <v-list-item-subtitle>{{ ingredient.serving_weight }}{{ ingredient.serving_weight_unit_name || 'g' }}/份</v-list-item-subtitle>
+            </v-list-item>
+
             <v-list-item>
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-calendar</v-icon>
@@ -140,7 +156,50 @@
               closable-chips
               hint="按回车添加别名"
               persistent-hint
+              class="mb-3"
             />
+            <div class="text-subtitle-2 mb-1">自制来源（半成品）</div>
+            <div class="text-caption text-medium-emphasis mb-2">若此原料由某菜谱制作（如米饭由蒸米饭制作），选择制作菜谱并填写成品基准量，其成本将由该菜谱推导。</div>
+            <v-autocomplete
+              v-model="basicEditForm.making_recipe_id"
+              :items="recipeOptions"
+              item-title="name"
+              item-value="id"
+              label="制作菜谱"
+              variant="outlined"
+              density="compact"
+              clearable
+              :loading="recipeSearching"
+              @update:search="onRecipeSearch"
+              class="mb-3"
+            />
+            <v-row>
+              <v-col cols="6">
+                <v-text-field
+                  v-model.number="basicEditForm.serving_weight"
+                  label="成品基准量"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                  hint="每份多重（如1碗饭200g）"
+                  persistent-hint
+                />
+              </v-col>
+              <v-col cols="6">
+                <v-autocomplete
+                  v-model="basicEditForm.serving_weight_unit_id"
+                  :items="units"
+                  item-title="name"
+                  item-value="id"
+                  label="基准量单位"
+                  variant="outlined"
+                  density="compact"
+                  clearable
+                  hide-details
+                />
+              </v-col>
+            </v-row>
           </v-form>
         </v-card-text>
       </v-card>
@@ -1501,6 +1560,11 @@ interface Ingredient {
   default_unit_name?: string
   category_id?: number
   category?: string
+  serving_weight?: number | null
+  serving_weight_unit_id?: number | null
+  serving_weight_unit_name?: string
+  making_recipe_id?: number | null
+  making_recipe_name?: string
   created_at: string
   updated_at?: string
 }
@@ -1751,7 +1815,32 @@ const basicEditForm = ref({
   default_unit_id: null as number | null,
   category_id: null as number | null,
   aliases: [] as string[],
+  serving_weight: null as number | null,
+  serving_weight_unit_id: null as number | null,
+  making_recipe_id: null as number | null,
 })
+
+// 制作菜谱搜索（半成品自制来源）
+const recipeOptions = ref<{ id: number; name: string }[]>([])
+const recipeSearching = ref(false)
+let recipeSearchTimer: any = null
+
+const onRecipeSearch = (q: string) => {
+  if (recipeSearchTimer) clearTimeout(recipeSearchTimer)
+  if (!q || !q.trim()) return
+  recipeSearchTimer = setTimeout(async () => {
+    recipeSearching.value = true
+    try {
+      const res = await api.get('/recipes', { params: { search: q.trim(), page: 1, per_page: 20 } })
+      const items = (res as any)?.items || (res as any)?.data || []
+      recipeOptions.value = items.map((r: any) => ({ id: r.id, name: r.name }))
+    } catch (e) {
+      console.error('搜索菜谱失败', e)
+    } finally {
+      recipeSearching.value = false
+    }
+  }, 300)
+}
 
 // 营养编辑
 const editingNutrition = ref(false)
@@ -3081,6 +3170,16 @@ const startEditBasicInfo = () => {
     default_unit_id: ingredient.value.default_unit_id || jinUnitId.value,
     category_id: ingredient.value.category_id ?? null,
     aliases: [...(ingredient.value.aliases || [])],
+    serving_weight: ingredient.value.serving_weight ?? null,
+    serving_weight_unit_id: ingredient.value.serving_weight_unit_id ?? null,
+    making_recipe_id: ingredient.value.making_recipe_id ?? null,
+  }
+  // 预填当前制作菜谱到选项
+  if (ingredient.value.making_recipe_id) {
+    recipeOptions.value = [{
+      id: ingredient.value.making_recipe_id,
+      name: ingredient.value.making_recipe_name || `菜谱#${ingredient.value.making_recipe_id}`,
+    }]
   }
   editingBasicInfo.value = true
 }
@@ -3101,9 +3200,26 @@ const saveBasicInfo = async () => {
       default_unit_id: basicEditForm.value.default_unit_id,
       category_id: basicEditForm.value.category_id,
       aliases: basicEditForm.value.aliases,
+      serving_weight: basicEditForm.value.serving_weight,
+      serving_weight_unit_id: basicEditForm.value.serving_weight_unit_id,
     }
-    const response = await api.put(`/ingredients/${ingredientId.value}`, payload)
-    ingredient.value = response
+    await api.put(`/ingredients/${ingredientId.value}`, payload)
+    // 处理制作菜谱关系变更（设置/清除某菜谱的 result_ingredient_id）
+    const oldRecipeId = ingredient.value.making_recipe_id ?? null
+    const newRecipeId = basicEditForm.value.making_recipe_id ?? null
+    if (oldRecipeId !== newRecipeId) {
+      // 清除旧制作菜谱的成品绑定
+      if (oldRecipeId) {
+        await api.put(`/recipes/${oldRecipeId}`, { result_ingredient_id: null })
+      }
+      // 设置新制作菜谱的成品绑定
+      if (newRecipeId) {
+        await api.put(`/recipes/${newRecipeId}`, { result_ingredient_id: ingredientId.value })
+      }
+    }
+    // 重新拉取原料详情（含新的 making_recipe_* / serving_weight 信息）
+    const fresh = await api.get(`/ingredients/${ingredientId.value}`)
+    ingredient.value = fresh
     // 刷新价格数据（默认单位可能影响价格显示）
     await loadLatestPrice()
     await loadPriceRecords()

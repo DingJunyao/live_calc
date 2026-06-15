@@ -14,6 +14,11 @@ class IngredientResponse(TimeZoneAwareModel):
     default_unit_name: Optional[str] = None
     category_id: Optional[int] = None
     category: Optional[str] = None
+    serving_weight: Optional[Decimal] = None
+    serving_weight_unit_id: Optional[int] = None
+    serving_weight_unit_name: Optional[str] = None
+    making_recipe_id: Optional[int] = None
+    making_recipe_name: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
     sparkline_data: Optional[List[float]] = None  # 近90天每日平均价格，用于迷你图

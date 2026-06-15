@@ -34,6 +34,11 @@ class Ingredient(Base, AuditMixin):
     piece_weight = Column(Numeric(10, 3), nullable=True)
     piece_weight_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
 
+    # 成品基准量（每份/每基准单位多重），用于"制作菜谱"成本换算
+    # 语义：servings 是它的倍数，total_yield = servings × serving_weight(折算为克)
+    serving_weight = Column(Numeric(10, 3), nullable=True)
+    serving_weight_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
+
     # 是否为导入菜谱时顺带导入的原料
     is_imported = Column(Boolean, default=False, nullable=False)
 
@@ -53,6 +58,7 @@ class Ingredient(Base, AuditMixin):
     product_links = relationship("ProductIngredientLink", back_populates="ingredient", lazy="select")
     default_unit = relationship("Unit", lazy="select", foreign_keys=[default_unit_id])
     piece_weight_unit = relationship("Unit", lazy="select", foreign_keys=[piece_weight_unit_id])
+    serving_weight_unit = relationship("Unit", lazy="select", foreign_keys=[serving_weight_unit_id])
     # 新增：合并相关的关系
     merged_to_target = relationship("Ingredient", remote_side=[id], back_populates="merged_from_sources")
     merged_from_sources = relationship("Ingredient", back_populates="merged_to_target", foreign_keys=[merged_into_id])

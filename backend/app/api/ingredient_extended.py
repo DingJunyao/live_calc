@@ -474,6 +474,8 @@ async def update_ingredient(
     density: Optional[float] = Body(None),
     default_unit: Optional[str] = Body(None),
     default_unit_id: Optional[int] = Body(None),
+    serving_weight: Optional[float] = Body(None, description="成品基准量（每份多重），用于制作菜谱成本换算"),
+    serving_weight_unit_id: Optional[int] = Body(None, description="成品基准量单位ID"),
     nutrition: Optional[dict] = Body(None, description="营养素数据，如 {protein: 10, fat: 5}"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -516,6 +518,12 @@ async def update_ingredient(
             matcher = UnitMatcher(db)
             unit_obj = matcher.match_or_create_unit(default_unit)
             ingredient.default_unit_id = unit_obj.id if unit_obj else None
+
+        # 处理成品基准量（用于制作菜谱成本换算）
+        if serving_weight is not None:
+            ingredient.serving_weight = serving_weight if serving_weight > 0 else None
+        if serving_weight_unit_id is not None:
+            ingredient.serving_weight_unit_id = serving_weight_unit_id if serving_weight_unit_id > 0 else None
 
         ingredient.updated_by = current_user.id
 
@@ -618,7 +626,8 @@ async def update_ingredient(
         # 重新查询以加载 default_unit 和 category_obj 关系
         ingredient_with_unit = db.query(Ingredient).options(
             joinedload(Ingredient.default_unit),
-            joinedload(Ingredient.category_obj)
+            joinedload(Ingredient.category_obj),
+            joinedload(Ingredient.serving_weight_unit)
         ).filter(Ingredient.id == ingredient.id).first()
 
         return {
@@ -629,6 +638,9 @@ async def update_ingredient(
             "density": ingredient.density,
             "default_unit_id": ingredient.default_unit_id,
             "default_unit_name": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
+            "serving_weight": float(ingredient.serving_weight) if ingredient.serving_weight is not None else None,
+            "serving_weight_unit_id": ingredient.serving_weight_unit_id,
+            "serving_weight_unit_name": ingredient_with_unit.serving_weight_unit.abbreviation if ingredient_with_unit.serving_weight_unit else None,
             "aliases": ingredient.aliases or [],
             "is_imported": ingredient.is_imported,
             "created_at": ingredient.created_at,
@@ -814,10 +826,18 @@ async def get_ingredient(
     try:
         ingredient = db.query(Ingredient).options(
             joinedload(Ingredient.default_unit),
-            joinedload(Ingredient.category_obj)
+            joinedload(Ingredient.category_obj),
+            joinedload(Ingredient.serving_weight_unit)
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
+
+        # 反查制作菜谱（哪个菜谱把我当成品产出）
+        from app.models.recipe import Recipe
+        making_recipe = db.query(Recipe).filter(
+            Recipe.result_ingredient_id == ingredient_id,
+            Recipe.is_active == True
+        ).first()
 
         return {
             "id": ingredient.id,
@@ -826,6 +846,11 @@ async def get_ingredient(
             "category": ingredient.category_obj.display_name if ingredient.category_obj else None,
             "density": ingredient.density,
             "default_unit": ingredient.default_unit.abbreviation if ingredient.default_unit else None,
+            "serving_weight": float(ingredient.serving_weight) if ingredient.serving_weight is not None else None,
+            "serving_weight_unit_id": ingredient.serving_weight_unit_id,
+            "serving_weight_unit_name": ingredient.serving_weight_unit.abbreviation if ingredient.serving_weight_unit else None,
+            "making_recipe_id": making_recipe.id if making_recipe else None,
+            "making_recipe_name": making_recipe.name if making_recipe else None,
             "aliases": ingredient.aliases or [],
             "created_at": ingredient.created_at
         }

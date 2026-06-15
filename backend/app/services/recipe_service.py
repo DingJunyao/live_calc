@@ -460,6 +460,90 @@ def _get_aggregated_cost_from_children(
     return weighted_avg, chain
 
 
+def _serving_weight_to_grams(db: Session, ingredient: Ingredient) -> Optional[Decimal]:
+    """将原料的成品基准量 serving_weight 折算为克。无法转换返回 None。"""
+    if not ingredient or ingredient.serving_weight is None:
+        return None
+    sw = Decimal(str(ingredient.serving_weight))
+    if sw <= 0:
+        return None
+    unit_id = ingredient.serving_weight_unit_id
+    # 已是克（unit_id=3）或无单位：直接视为克
+    if unit_id is None or unit_id == 3:
+        return sw
+    unit = db.query(Unit).filter(Unit.id == unit_id).first()
+    gram_unit = db.query(Unit).filter(Unit.id == 3).first()
+    if not unit or not gram_unit:
+        return None
+    ucs = UnitConversionService(db)
+    converted = ucs.convert(
+        sw,
+        unit.abbreviation,
+        gram_unit.abbreviation,
+        entity_type="ingredient",
+        entity_id=ingredient.id,
+    )
+    if converted:
+        grams = Decimal(str(converted[0]))
+        return grams if grams > 0 else None
+    return None
+
+
+def _get_cost_from_recipe(
+    db: Session,
+    ingredient: Ingredient,
+    user_id: int,
+    as_of_date: datetime,
+    visited: Optional[set] = None
+) -> Optional[tuple[Decimal, "Recipe", str]]:
+    """
+    从制作菜谱推导原料的每克成本（半成品成本传递）。
+
+    查找把该原料当成品(result_ingredient_id)的菜谱，递归计算其成本，
+    再用「份 × 每份重」桥接为每克单价。
+
+    Returns:
+        (price_per_gram, making_recipe, chain) 或 None
+        - price_per_gram: 元/克
+        - making_recipe: 制作菜谱对象
+        - chain: 链描述（如 "米饭 ← 制作自「电饭煲蒸米饭」"）
+    """
+    if not ingredient:
+        return None
+    # 反查制作菜谱（哪个菜谱把我当成品产出）
+    recipe = db.query(Recipe).filter(
+        Recipe.result_ingredient_id == ingredient.id,
+        Recipe.is_active == True,
+    ).first()
+    if not recipe:
+        return None
+    # 循环检测：链上已见过的菜谱直接放弃
+    if visited is None:
+        visited = set()
+    if recipe.id in visited:
+        return None
+    # 份重桥接 → 总产量(克)
+    sw_g = _serving_weight_to_grams(db, ingredient)
+    if sw_g is None or sw_g <= 0:
+        return None
+    servings = recipe.servings or 1
+    if servings <= 0:
+        return None
+    # 递归算制作菜谱成本（支持套娃），把 recipe.id 纳入 visited 透传
+    recipe_cost = calculate_recipe_cost_as_of(
+        recipe.id, user_id, as_of_date, db, visited=visited | {recipe.id}
+    )
+    if not recipe_cost:
+        return None
+    total_cost = Decimal(str(recipe_cost.get("total_cost") or 0))
+    total_yield_g = Decimal(str(servings)) * sw_g
+    if total_yield_g <= 0:
+        return None
+    ppg = total_cost / total_yield_g
+    chain = f"{ingredient.name} ← 制作自「{recipe.name}」"
+    return ppg, recipe, chain
+
+
 def _get_ingredient_nutrition(
     db: Session,
     ingredient: Ingredient,
@@ -641,12 +725,16 @@ def _get_effective_quantity(recipe_ingredient) -> tuple[Decimal, int | None]:
 async def calculate_recipe_cost(
     recipe_id: int,
     user_id: int,
-    db: Session = None
+    db: Session = None,
+    visited: Optional[set] = None
 ) -> Dict:
     """计算菜谱成本，使用当天价格区间的平均值"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         return None
+
+    # 循环检测：把自身菜谱纳入已访问集合，透传给制作菜谱回退
+    visited = (visited or set()) | {recipe_id}
 
     total_cost = Decimal("0.00")
     cost_breakdown = []
@@ -676,6 +764,7 @@ async def calculate_recipe_cost(
         unit_price = None
         fallback_chain = None  # 回退链信息
         aggregation_chain = None  # 子食材聚合链信息
+        recipe_chain = None  # 制作菜谱链信息（半成品成本传递）
         original_ingredient_name = ingredient.name  # 保存原始食材名称
         product = None
 
@@ -779,14 +868,21 @@ async def calculate_recipe_cost(
                 if latest_record:
                     day_records = [latest_record]
 
+        # 尝试从制作菜谱推导成本（半成品，优先于子食材聚合）
+        if not day_records and unit_price is None:
+            recipe_result = _get_cost_from_recipe(db, ingredient, user_id, now, visited)
+            if recipe_result:
+                unit_price, _mk_recipe, recipe_chain = recipe_result
+                # unit_price 已经是元/克
+
         # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
-        if not day_records:
+        if not day_records and unit_price is None:
             child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, now)
             if child_agg:
                 unit_price, aggregation_chain = child_agg
                 # unit_price 已经是元/克
 
-        if day_records or aggregation_chain is not None:
+        if day_records or aggregation_chain is not None or recipe_chain is not None:
             # 计算当天所有记录的平均单价（仅在 day_records 有真实记录时计算）
             unit_prices = []
             for record in day_records:
@@ -812,8 +908,8 @@ async def calculate_recipe_cost(
             # 单位转换：将菜谱用量转换为价格记录的单位
             # price_record 的单价是基于 standard_unit_id，菜谱用量基于 effective_unit_id
             if quantity and effective_unit_id:
-                if aggregation_chain is not None:
-                    # 从子食材聚合得到的 unit_price 是元/克，需要将菜谱用量转换为克
+                if aggregation_chain is not None or recipe_chain is not None:
+                    # 子食材聚合 或 制作菜谱 的 unit_price 是元/克，需要将菜谱用量转换为克
                     if effective_unit_id != 3:
                         recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
                         gram_unit = db.query(Unit).filter(Unit.id == 3).first()
@@ -865,7 +961,8 @@ async def calculate_recipe_cost(
                         "cost": float(cost),
                         "fallback_chain": fallback_chain,  # 回退链信息（如果有）
                         "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
-                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
+                        "recipe_chain": recipe_chain,  # 制作菜谱链信息（如果有）
+                        "cost_source": "recipe" if recipe_chain else ("contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct"))
                     })
                 except Exception as e:
                     # 数量解析失败，使用基础价格
@@ -880,7 +977,8 @@ async def calculate_recipe_cost(
                         "cost": float(cost),
                         "fallback_chain": fallback_chain,  # 回退链信息（如果有）
                         "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
-                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
+                        "recipe_chain": recipe_chain,  # 制作菜谱链信息（如果有）
+                        "cost_source": "recipe" if recipe_chain else ("contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct"))
                     })
             else:
                 # 对于数量为0的食材，我们仍然添加到明细中但成本为0
@@ -895,7 +993,8 @@ async def calculate_recipe_cost(
                     "cost": 0.0,
                     "fallback_chain": fallback_chain,  # 回退链信息（如果有）
                     "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
-                    "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
+                    "recipe_chain": recipe_chain,  # 制作菜谱链信息（如果有）
+                    "cost_source": "recipe" if recipe_chain else ("contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct"))
                 })
 
     return {
@@ -1911,7 +2010,8 @@ def calculate_recipe_cost_as_of(
     recipe_id: int,
     user_id: int,
     as_of_date: datetime,
-    db: Session
+    db: Session,
+    visited: Optional[set] = None
 ) -> Dict:
     """
     计算菜谱在指定日期的成本
@@ -1921,6 +2021,9 @@ def calculate_recipe_cost_as_of(
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         return None
+
+    # 循环检测：把自身菜谱纳入已访问集合，透传给制作菜谱回退
+    visited = (visited or set()) | {recipe_id}
 
     total_cost = Decimal("0.00")
     cost_breakdown = []
@@ -1946,6 +2049,7 @@ def calculate_recipe_cost_as_of(
         unit_price = None
         fallback_chain = None  # 回退链信息
         aggregation_chain = None  # 子食材聚合链信息
+        recipe_chain = None  # 制作菜谱链信息（半成品成本传递）
         original_ingredient_name = ingredient.name  # 保存原始食材名称
         product = None
 
@@ -2033,6 +2137,13 @@ def calculate_recipe_cost_as_of(
                     record_quantity = Decimal(str(std_qty))
                     unit_price = record_price / record_quantity
 
+        # 尝试从制作菜谱推导成本（半成品，优先于子食材聚合）
+        if not latest_record and unit_price is None:
+            recipe_result = _get_cost_from_recipe(db, ingredient, user_id, as_of_date, visited)
+            if recipe_result:
+                unit_price, _mk_recipe, recipe_chain = recipe_result
+                # unit_price 已经是元/克
+
         # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
         if not latest_record and unit_price is None:
             child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date)
@@ -2040,7 +2151,7 @@ def calculate_recipe_cost_as_of(
                 unit_price, aggregation_chain = child_agg
                 # unit_price 已经是元/克
 
-        if latest_record or aggregation_chain is not None:
+        if latest_record or aggregation_chain is not None or recipe_chain is not None:
             # 计算成本：单价 × 菜谱中的数量 = 成本
             # 计算成本：单价 × 菜谱中的数量 = 成本
             # 优先使用 quantity，如果为 None 则从 quantity_range 取平均值
@@ -2049,8 +2160,8 @@ def calculate_recipe_cost_as_of(
 
             # 单位转换：将菜谱用量转换为价格记录的单位
             if quantity and effective_unit_id:
-                if aggregation_chain is not None:
-                    # 从子食材聚合得到的 unit_price 是元/克，需要将菜谱用量转换为克
+                if aggregation_chain is not None or recipe_chain is not None:
+                    # 子食材聚合 或 制作菜谱 的 unit_price 是元/克，需要将菜谱用量转换为克
                     if effective_unit_id != 3:
                         recipe_unit = db.query(Unit).filter(Unit.id == effective_unit_id).first()
                         gram_unit = db.query(Unit).filter(Unit.id == 3).first()
@@ -2087,7 +2198,7 @@ def calculate_recipe_cost_as_of(
             # 对于数量为0的食材，不计入成本（但可能需要显示在成本明细中）
             if quantity:
                 try:
-                    cost = unit_price * quantity if unit_price else Decimal("0")
+                    cost = unit_price * Decimal(str(quantity)) if unit_price else Decimal("0")
                     total_cost += cost
 
                     cost_breakdown.append({
@@ -2100,7 +2211,8 @@ def calculate_recipe_cost_as_of(
                         "cost": float(cost),
                         "fallback_chain": fallback_chain,  # 回退链信息（如果有）
                         "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
-                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
+                        "recipe_chain": recipe_chain,  # 制作菜谱链信息（如果有）
+                        "cost_source": "recipe" if recipe_chain else ("contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct"))
                     })
                 except Exception as e:
                     # 数量解析失败，使用基础价格
@@ -2115,7 +2227,8 @@ def calculate_recipe_cost_as_of(
                         "cost": float(cost),
                         "fallback_chain": fallback_chain,  # 回退链信息（如果有）
                         "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
-                        "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
+                        "recipe_chain": recipe_chain,  # 制作菜谱链信息（如果有）
+                        "cost_source": "recipe" if recipe_chain else ("contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct"))
                     })
             else:
                 # 对于数量为0的食材，我们仍然添加到明细中但成本为0
@@ -2130,7 +2243,8 @@ def calculate_recipe_cost_as_of(
                     "cost": 0.0,
                     "fallback_chain": fallback_chain,  # 回退链信息（如果有）
                     "aggregation_chain": aggregation_chain,  # 子食材聚合链信息（如果有）
-                    "cost_source": "contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct")
+                    "recipe_chain": recipe_chain,  # 制作菜谱链信息（如果有）
+                    "cost_source": "recipe" if recipe_chain else ("contains_aggregation" if aggregation_chain else ("fallback" if fallback_chain else "direct"))
                 })
 
     return {

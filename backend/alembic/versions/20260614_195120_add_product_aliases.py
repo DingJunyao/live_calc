@@ -1,7 +1,7 @@
 """add product aliases column
 
 Revision ID: 20260614_195120
-Revises: (none - initial migration)
+Revises: 20260613_0001
 Create Date: 2026-06-14 19:51:20.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "20260614_195120"
-down_revision: Union[str, None] = None
+down_revision: Union[str, None] = "20260613_0001"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
