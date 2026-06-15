@@ -354,3 +354,66 @@ def serialize_product_link(link: Any, product_name: Optional[str], ingredient_na
         "ingredient_id": link.ingredient_id,
         "ingredient_name": ingredient_name,
     }
+
+
+def serialize_price_record(
+    pr: Any,
+    product_name: Optional[str],
+    merchant_name: Optional[str],
+    original_unit_name: Optional[str],
+    standard_unit_name: Optional[str],
+) -> dict:
+    """ProductRecord → price_records.json 元素。
+
+    商品/商家/单位 name 由调用方按 id 解析冗余注入，便于人眼阅读与导入容错。
+    Decimal→float，datetime→ISO 字符串。
+    """
+    return {
+        "id": pr.id,
+        "user_id": pr.user_id,
+        "product_id": pr.product_id,
+        "product_name": product_name,
+        "merchant_id": pr.merchant_id,
+        "merchant_name": merchant_name,
+        "price": to_float(pr.price),
+        "currency": pr.currency,
+        "original_quantity": to_float(pr.original_quantity),
+        "original_unit_id": pr.original_unit_id,
+        "original_unit_name": original_unit_name,
+        "standard_quantity": to_float(pr.standard_quantity),
+        "standard_unit_id": pr.standard_unit_id,
+        "standard_unit_name": standard_unit_name,
+        "record_type": pr.record_type,
+        "exchange_rate": to_float(pr.exchange_rate),
+        "recorded_at": to_iso(pr.recorded_at),
+        "notes": pr.notes,
+    }
+
+
+def serialize_merchant(m: Any) -> dict:
+    """Location（商家）→ merchants.json 元素。
+
+    与商品/价格记录解耦，独立导出商家基础信息。
+    """
+    return {
+        "id": m.id,
+        "name": m.name,
+        "address": m.address,
+        "latitude": to_float(m.latitude),
+        "longitude": to_float(m.longitude),
+        "is_open": bool(m.is_open),
+    }
+
+
+def serialize_favorite_merchant(fm: Any) -> dict:
+    """FavoriteLocation → favorite_merchants.json 元素。
+
+    收藏的常用地点（家/公司/常用商家等）。
+    """
+    return {
+        "id": fm.id,
+        "name": fm.name,
+        "type": fm.type,
+        "latitude": to_float(fm.latitude),
+        "longitude": to_float(fm.longitude),
+    }

@@ -17,6 +17,9 @@ from app.services.export.serializers import (
     serialize_product,
     serialize_barcode,
     serialize_product_link,
+    serialize_price_record,
+    serialize_merchant,
+    serialize_favorite_merchant,
 )
 
 
@@ -291,3 +294,46 @@ def test_serialize_product_link():
     out = serialize_product_link(link, product_name="鸡蛋(某品牌)", ingredient_name="鸡蛋")
     assert out["product_id"] == 3
     assert out["ingredient_name"] == "鸡蛋"
+
+
+def _make_price_record(**kw):
+    base = dict(
+        id=1, user_id=5, product_id=3, product_name="鸡蛋(某品牌)",
+        merchant_id=2, price=Decimal("12.5"), currency="CNY",
+        original_quantity=Decimal("1"), original_unit_id=1,
+        standard_quantity=Decimal("500"), standard_unit_id=2,
+        record_type="purchase", exchange_rate=Decimal("1.0"),
+        recorded_at=datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc),
+        notes="促销",
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_serialize_price_record():
+    pr = _make_price_record()
+    out = serialize_price_record(
+        pr, product_name="鸡蛋(某品牌)", merchant_name="永辉",
+        original_unit_name="斤", standard_unit_name="g",
+    )
+    assert out["price"] == 12.5
+    assert out["record_type"] == "purchase"
+    assert out["merchant_name"] == "永辉"
+    assert out["standard_unit_name"] == "g"
+    assert out["recorded_at"] == "2026-06-15T10:00:00+00:00"
+
+
+def test_serialize_merchant():
+    m = SimpleNamespace(id=2, name="永辉", address="xx路",
+                        latitude=Decimal("30.1"), longitude=Decimal("120.2"), is_open=True)
+    out = serialize_merchant(m)
+    assert out["latitude"] == 30.1
+    assert out["is_open"] is True
+
+
+def test_serialize_favorite_merchant():
+    fm = SimpleNamespace(id=1, name="家", type="home",
+                         latitude=Decimal("30.1"), longitude=Decimal("120.2"))
+    out = serialize_favorite_merchant(fm)
+    assert out["type"] == "home"
+    assert out["longitude"] == 120.2
