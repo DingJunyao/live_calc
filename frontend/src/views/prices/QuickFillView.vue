@@ -90,8 +90,13 @@
         </div>
       </div>
 
+      <!-- 加载中 -->
+      <div v-if="loading" class="text-center py-4">
+        <v-progress-circular indeterminate color="primary" size="24" width="2" />
+        <div class="text-medium-emphasis text-caption mt-2">加载中…</div>
+      </div>
       <!-- 空状态 -->
-      <div v-if="allHistoryRows.length === 0" class="text-center py-4 text-medium-emphasis">
+      <div v-else-if="allHistoryRows.length === 0" class="text-center py-4 text-medium-emphasis">
         该商家暂无历史商品
       </div>
       <div v-else-if="visibleHistoryRows.length === 0" class="text-center py-4 text-medium-emphasis">
@@ -219,6 +224,18 @@ interface UnitOption {
   value: string
 }
 
+// 中文拼音/字母排序 collator（模块级缓存复用）
+// 优先显式 zh pinyin collation，不支持时逐级回退 zh、最终回退默认比较，
+// 保证旧引擎/精简 ICU 下不抛错、降级而非崩。依赖浏览器内置 ICU，零额外依赖。
+const zhCollator: Intl.Collator = (() => {
+  for (const loc of ['zh-Hans-CN-u-co-pinyin', 'zh-Hans-CN', 'zh']) {
+    if (Intl.Collator.supportedLocalesOf([loc]).length > 0) {
+      return new Intl.Collator(loc, { numeric: true, sensitivity: 'base' })
+    }
+  }
+  return new Intl.Collator()
+})()
+
 // --- 隐藏逻辑 (sessionStorage) ---
 const HIDDEN_KEY_PREFIX = 'quick-fill-hidden-'
 
@@ -253,6 +270,7 @@ function addHiddenItems(merchantId: number, productIds: number[]) {
 const merchants = ref<Merchant[]>([])
 const selectedMerchantId = ref<number | null>(null)
 const saving = ref(false)
+const loading = ref(false)
 const historyRows = ref<FillRow[]>([])
 const newRows = ref<FillRow[]>([])
 const newRowSuggestions = ref<Record<number, any[]>>({})
@@ -335,11 +353,16 @@ const loadMerchants = async () => {
 const onMerchantChange = async (val: number | null) => {
   historyRows.value = []
   if (!val) return
+  loading.value = true
   try {
     const res = await api.get(`/merchants/${val}/product-prices`, {
       params: { skip: 0, limit: 100 },
     })
     const items = (res as any).items || (res as any[]) || []
+    // 按商品名称的拼音/字母顺序排序（zhCollator 见模块顶部）
+    items.sort((a: any, b: any) =>
+      zhCollator.compare(String(a.product_name ?? ''), String(b.product_name ?? '')),
+    )
     historyRows.value = items.map((item: any) => ({
       productId: item.product_id,
       productName: item.product_name,
@@ -353,6 +376,8 @@ const onMerchantChange = async (val: number | null) => {
   } catch {
     historyRows.value = []
     showSnackbar('加载历史商品失败，请重试', 'error')
+  } finally {
+    loading.value = false
   }
 }
 

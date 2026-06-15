@@ -5,7 +5,7 @@
 ## 需求
 
 价格记录页面新增「快速填写」入口，进入独立页面，支持到一家超市后逐个批量记录商品价格：
-- 选商家后自动列出该商家历史所有商品（按名称排序）
+- 选商家后自动列出该商家历史所有商品（按拼音/字母顺序排序）
 - 每行只填价格，数量/单位默认 1/斤，点击可改
 - 可新增行搜索添加商品
 - 保存时只保存填了价格的商品；近 1 小时内填过的商品按商家独立隐藏，未填的保留
@@ -32,7 +32,7 @@
 
 - **导航栏**：左侧返回箭头（回 `/prices`）、标题、右侧 `mdi-check-all` 保存按钮（`:loading="saving"`）。
 - **商家选择器**：`v-autocomplete`，`GET /merchants?limit=100` 加载；选中触发 `onMerchantChange`。
-- **历史商品列表**：`onMerchantChange` 调 `GET /merchants/{id}/product-prices`（后端 SQL 已 `ORDER BY p.name ASC`），映射为 `FillRow[]`，**默认 price 空、quantity=1、unit='斤'**（不复用上次值，因为价格每次重填，数量/单位来源可能不同）。
+- **历史商品列表**：`onMerchantChange` 调 `GET /merchants/{id}/product-prices`，结果用模块级缓存的 `zhCollator`（`Intl.Collator('zh-Hans-CN-u-co-pinyin', {numeric, sensitivity:'base'})`，配 `Intl.Collator.supportedLocalesOf` 逐级回退 `zh`→默认比较）按商品名拼音/字母顺序重排（后端 SQL 虽 `ORDER BY p.name ASC`，但那是 Unicode 码点序、中文为乱序，前端覆盖重排），再映射为 `FillRow[]`，**默认 price 空、quantity=1、unit='斤'**（不复用上次值，因为价格每次重填，数量/单位来源可能不同）。
 - **每行布局**：商品名（只读）+ 价格输入框（`step=0.01`，placeholder `¥0.00`）+ `/` + 数量（默认显示文本，点击变 `v-text-field`）+ 单位（默认显示文本，点击变 `v-select`）。
 - **新增商品区域**：`v-autocomplete`（`return-object`、`custom-filter="() => true"`、`#no-data` 创建提示），防抖 300ms 调 `GET /products/autocomplete`，结果过滤掉 `existingProductIds`（历史行 + 已选新增行的商品 ID）。
 - **隐藏逻辑（sessionStorage）**：
@@ -53,6 +53,8 @@
 
 - 前端 `npm run build` 通过（`QuickFillView` 约 8.8 kB）。
 - 经 spec 合规审查 + 代码质量审查两轮，修复 record_type 缺失、return-object、timer 索引错位、内存泄漏、防重复选择、iOS 缩放、错误提示等问题。
+- 2026-06-15 增强：历史商品列表改为前端 `Intl.Collator` 中文拼音/字母序排序。后端 `ORDER BY p.name` 是 Unicode 码点序，中文为乱序，前端用模块级缓存的 `zhCollator`（`zh-Hans-CN-u-co-pinyin` + `supportedLocalesOf` 逐级回退 `zh`→默认比较）覆盖重排。兼容桌面/移动端现代浏览器（Chrome/Edge/Firefox/Safari 14.1+），旧引擎降级不崩；前端 build 通过。
+- 2026-06-15 修复：选商家加载历史商品期间新增 `loading` 状态，显示 `v-progress-circular` 转圈，避免加载未完成时误显「该商家暂无历史商品」；仅加载完成且确无商品时才显示空状态（`v-if="loading"` → `v-else-if` 空状态链）。
 
 ## 设计与计划文档
 
