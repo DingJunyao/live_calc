@@ -3,7 +3,18 @@
     <v-btn icon="mdi-arrow-left" variant="text" @click="$router.push('/prices')" />
     <v-app-bar-title class="text-h6">快速填写</v-app-bar-title>
     <template #append>
-      <v-btn icon="mdi-check-all" variant="text" :loading="saving" @click="saveAll" />
+      <div class="d-flex align-center">
+        <span v-if="saveProgress" class="text-caption text-medium-emphasis mr-2">
+          {{ saveProgress.current }}/{{ saveProgress.total }}
+        </span>
+        <v-btn
+          icon="mdi-content-paste"
+          variant="text"
+          :disabled="!selectedMerchantId"
+          @click="pasteDialog = true"
+        />
+        <v-btn icon="mdi-check-all" variant="text" :loading="saving" @click="saveAll" />
+      </div>
     </template>
   </v-app-bar>
 
@@ -30,11 +41,12 @@
         选商家后自动列出历史所有商品，只保存填了价格的
       </div>
 
-      <!-- 历史商品 -->
-      <div v-if="visibleHistoryRows.length > 0" class="mb-4">
+      <!-- 历史商品（按分类分组） -->
+      <div v-if="groupedHistoryRows.length > 0" class="mb-4">
         <div class="text-subtitle-2 mb-2">历史商品</div>
-        <v-list class="fill-list" density="compact">
-          <v-list-item v-for="(row, i) in visibleHistoryRows" :key="'h-' + i">
+        <v-list v-for="group in groupedHistoryRows" :key="group.categoryName" class="fill-list" density="compact">
+          <div class="text-caption text-medium-emphasis px-4 py-1 font-weight-medium">{{ group.categoryName }}</div>
+          <v-list-item v-for="(row, i) in group.rows" :key="'h-' + group.categoryName + '-' + i">
             <div class="fill-row">
               <div class="fill-row__name">{{ row.productName }}</div>
               <div class="fill-row__inputs">
@@ -65,22 +77,26 @@
                     {{ row.quantity }}
                   </span>
                 </template>
-                <template v-if="row.isEditingUnit">
-                  <v-select
-                    v-model="row.unit"
-                    :items="unitOptions"
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    class="fill-row__unit-select"
-                    @blur="row.isEditingUnit = false"
-                  />
-                </template>
-                <template v-else>
-                  <span class="fill-row__edit-text" @click="row.isEditingUnit = true">
-                    {{ row.unit }}
-                  </span>
-                </template>
+                <v-menu
+                  :close-on-content-click="true"
+                  location="bottom"
+                  origin="bottom"
+                >
+                  <template #activator="{ props: menuProps }">
+                    <span class="fill-row__edit-text" v-bind="menuProps">
+                      {{ row.unit }}
+                    </span>
+                  </template>
+                  <v-list density="compact" max-height="300">
+                    <v-list-item
+                      v-for="opt in unitOptions"
+                      :key="opt.value"
+                      :title="opt.title"
+                      :active="row.unit === opt.value"
+                      @click="row.unit = opt.value"
+                    />
+                  </v-list>
+                </v-menu>
               </div>
             </div>
           </v-list-item>
@@ -99,7 +115,7 @@
       <div v-else-if="allHistoryRows.length === 0" class="text-center py-4 text-medium-emphasis">
         该商家暂无历史商品
       </div>
-      <div v-else-if="visibleHistoryRows.length === 0" class="text-center py-4 text-medium-emphasis">
+      <div v-else-if="groupedHistoryRows.length === 0" class="text-center py-4 text-medium-emphasis">
         本期所有商品已填写完成
       </div>
 
@@ -123,6 +139,7 @@
                 auto-select-first
                 hide-selected
                 return-object
+                attach
                 :custom-filter="() => true"
                 class="fill-row__product-search"
                 @update:search="onNewRowSearch(i, $event)"
@@ -159,22 +176,26 @@
                     {{ row.quantity }}
                   </span>
                 </template>
-                <template v-if="row.isEditingUnit">
-                  <v-select
-                    v-model="row.unit"
-                    :items="unitOptions"
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    class="fill-row__unit-select"
-                    @blur="row.isEditingUnit = false"
-                  />
-                </template>
-                <template v-else>
-                  <span class="fill-row__edit-text" @click="row.isEditingUnit = true">
-                    {{ row.unit }}
-                  </span>
-                </template>
+                <v-menu
+                  :close-on-content-click="true"
+                  location="bottom"
+                  origin="bottom"
+                >
+                  <template #activator="{ props: menuProps }">
+                    <span class="fill-row__edit-text" v-bind="menuProps">
+                      {{ row.unit }}
+                    </span>
+                  </template>
+                  <v-list density="compact" max-height="300">
+                    <v-list-item
+                      v-for="opt in unitOptions"
+                      :key="opt.value"
+                      :title="opt.title"
+                      :active="row.unit === opt.value"
+                      @click="row.unit = opt.value"
+                    />
+                  </v-list>
+                </v-menu>
                 <v-btn v-if="!row.price" icon="mdi-close" size="x-small" variant="text" @click="removeNewRow(i)" />
               </div>
             </div>
@@ -189,12 +210,19 @@
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000" location="top">
       {{ snackbar.message }}
     </v-snackbar>
+
+    <PasteImportDialog
+      v-model="pasteDialog"
+      :merchant-id="selectedMerchantId"
+      @imported="onPasteImported"
+    />
   </v-container>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '@/api/client'
+import PasteImportDialog from '@/components/prices/PasteImportDialog.vue'
 
 interface Merchant {
   id: number
@@ -208,10 +236,11 @@ interface FillRow {
   quantity: number
   unit: string
   isEditingQuantity: boolean
-  isEditingUnit: boolean
   isNew: boolean
   searchText?: string
   loading?: boolean
+  categoryId: number | null
+  categoryName: string
 }
 
 interface HiddenItem {
@@ -225,8 +254,6 @@ interface UnitOption {
 }
 
 // 中文拼音/字母排序 collator（模块级缓存复用）
-// 优先显式 zh pinyin collation，不支持时逐级回退 zh、最终回退默认比较，
-// 保证旧引擎/精简 ICU 下不抛错、降级而非崩。依赖浏览器内置 ICU，零额外依赖。
 const zhCollator: Intl.Collator = (() => {
   for (const loc of ['zh-Hans-CN-u-co-pinyin', 'zh-Hans-CN', 'zh']) {
     if (Intl.Collator.supportedLocalesOf([loc]).length > 0) {
@@ -270,6 +297,7 @@ function addHiddenItems(merchantId: number, productIds: number[]) {
 const merchants = ref<Merchant[]>([])
 const selectedMerchantId = ref<number | null>(null)
 const saving = ref(false)
+const saveProgress = ref<{ current: number; total: number } | null>(null)
 const loading = ref(false)
 const historyRows = ref<FillRow[]>([])
 const newRows = ref<FillRow[]>([])
@@ -277,6 +305,7 @@ const newRowSuggestions = ref<Record<number, any[]>>({})
 const searchDebounceTimers: Record<number, ReturnType<typeof setTimeout>> = {}
 const snackbar = ref({ show: false, message: '', color: 'success' })
 const unitOptions = ref<UnitOption[]>([])
+const pasteDialog = ref(false)
 
 function showSnackbar(message: string, color: string = 'success') {
   snackbar.value = { show: true, message, color }
@@ -312,6 +341,27 @@ const visibleHistoryRows = computed(() => {
 
 const allHistoryRows = computed(() => historyRows.value)
 
+// 历史商品按分类分组（组内已按拼音排序）
+const groupedHistoryRows = computed(() => {
+  const hiddenIds = selectedMerchantId.value
+    ? getHiddenProductIds(selectedMerchantId.value)
+    : new Set<number>()
+  const groups: Array<{ categoryName: string; rows: FillRow[] }> = []
+  const groupMap = new Map<string, typeof groups[0]>()
+  for (const row of historyRows.value) {
+    const pid = getRowProductId(row)
+    if (pid && hiddenIds.has(pid)) continue
+    const name = row.categoryName || '其他'
+    if (!groupMap.has(name)) {
+      const g = { categoryName: name, rows: [] }
+      groupMap.set(name, g)
+      groups.push(g)
+    }
+    groupMap.get(name)!.rows.push(row)
+  }
+  return groups
+})
+
 const hiddenCount = computed(() => {
   const hiddenIds = selectedMerchantId.value
     ? getHiddenProductIds(selectedMerchantId.value)
@@ -325,8 +375,8 @@ const hiddenCount = computed(() => {
 // --- 单位加载 ---
 const loadUnits = async () => {
   try {
-    const res = await api.get('/units', { params: { limit: 100 } })
-    const items = (res as any).items || (res as any[]) || []
+    const res = await api.get('/units/', { params: { is_common: true } })
+    const items = Array.isArray(res) ? res : ((res as any).items || [])
     unitOptions.value = items.map((u: any) => ({
       title: `${u.name} (${u.abbreviation})`,
       value: u.abbreviation,
@@ -359,10 +409,12 @@ const onMerchantChange = async (val: number | null) => {
       params: { skip: 0, limit: 100 },
     })
     const items = (res as any).items || (res as any[]) || []
-    // 按商品名称的拼音/字母顺序排序（zhCollator 见模块顶部）
-    items.sort((a: any, b: any) =>
-      zhCollator.compare(String(a.product_name ?? ''), String(b.product_name ?? '')),
-    )
+    // 后端已按 category sort_order 排序；前端在组内按拼音/字母顺序重排
+    items.sort((a: any, b: any) => {
+      const catCmp = (a.category_sort_order ?? 999999) - (b.category_sort_order ?? 999999)
+      if (catCmp !== 0) return catCmp
+      return zhCollator.compare(String(a.product_name ?? ''), String(b.product_name ?? ''))
+    })
     historyRows.value = items.map((item: any) => ({
       productId: item.product_id,
       productName: item.product_name,
@@ -370,8 +422,9 @@ const onMerchantChange = async (val: number | null) => {
       quantity: 1,
       unit: '斤',
       isEditingQuantity: false,
-      isEditingUnit: false,
       isNew: false,
+      categoryId: item.category_id ?? null,
+      categoryName: item.category_display_name ?? '其他',
     }))
   } catch {
     historyRows.value = []
@@ -390,10 +443,11 @@ function addNewRow() {
     quantity: 1,
     unit: '斤',
     isEditingQuantity: false,
-    isEditingUnit: false,
     isNew: true,
     searchText: '',
     loading: false,
+    categoryId: null,
+    categoryName: '',
   }
   newRows.value.push(newRow)
 }
@@ -424,7 +478,6 @@ function removeNewRow(index: number) {
       shiftedTimers[k] = searchDebounceTimers[k]
     }
   }
-  // 清空原 map 再回填（保留引用）
   for (const k of Object.keys(searchDebounceTimers)) {
     delete searchDebounceTimers[Number(k)]
   }
@@ -436,7 +489,6 @@ const onNewRowSearch = (index: number, query: string) => {
     clearTimeout(searchDebounceTimers[index])
   }
   searchDebounceTimers[index] = setTimeout(async () => {
-    // 防御：行可能已被删除或移位
     const row = newRows.value[index]
     if (!row) return
     if (!query || query.length < 1) {
@@ -461,7 +513,6 @@ const onNewRowSearch = (index: number, query: string) => {
   }, 300)
 }
 
-// 组件卸载时清理所有 pending 的 debounce timer，避免内存泄漏和回调误执行
 onUnmounted(() => {
   for (const k of Object.keys(searchDebounceTimers)) {
     clearTimeout(searchDebounceTimers[Number(k)])
@@ -493,39 +544,68 @@ const saveAll = async () => {
   }
 
   saving.value = true
+  saveProgress.value = { current: 0, total: rowsToSave.length }
+
+  const payloads = rowsToSave.map(row => {
+    const pid = getRowProductId(row)
+    const payload: Record<string, any> = {
+      price: parseFloat(row.price),
+      original_quantity: row.quantity,
+      original_unit: row.unit,
+      merchant_id: selectedMerchantId.value,
+      record_type: 'price',
+    }
+    if (pid) {
+      payload.product_id = pid
+    } else if (row.searchText) {
+      payload.product_name = row.searchText
+    }
+    return { row, pid, payload }
+  })
+
+  // 并发提交（限制并发数避免后端压力）
+  const CONCURRENCY = 5
+  const results: Array<{ fillRow: FillRow; pid: number | null; ok: boolean }> = []
+  for (let i = 0; i < payloads.length; i += CONCURRENCY) {
+    const batch = payloads.slice(i, i + CONCURRENCY)
+    const settled = await Promise.allSettled(
+      batch.map(async (p) => {
+        await api.post('/products', p.payload)
+        return p
+      }),
+    )
+    for (let j = 0; j < settled.length; j++) {
+      const s = settled[j]
+      const orig = batch[j]
+      if (s.status === 'fulfilled') {
+        results.push({ fillRow: orig.row, pid: orig.pid, ok: true })
+      } else {
+        results.push({ fillRow: orig.row, pid: orig.pid, ok: false })
+      }
+      saveProgress.value!.current++
+    }
+  }
+
+  saving.value = false
+  saveProgress.value = null
+
   let successCount = 0
   let failCount = 0
   let newSavedCount = 0
   const savedProductIds: number[] = []
 
-  for (const row of rowsToSave) {
-    try {
-      const pid = getRowProductId(row)
-      const payload: Record<string, any> = {
-        price: parseFloat(row.price),
-        original_quantity: row.quantity,
-        original_unit: row.unit,
-        merchant_id: selectedMerchantId.value,
-        record_type: 'purchase',
-      }
-      if (pid) {
-        payload.product_id = pid
-      } else if (row.searchText) {
-        payload.product_name = row.searchText
-      }
-      await api.post('/products', payload)
-      if (!row.isNew && pid) {
-        savedProductIds.push(pid)
-      } else if (row.isNew) {
+  for (const r of results) {
+    if (r.ok) {
+      successCount++
+      if (!r.fillRow.isNew && r.pid) {
+        savedProductIds.push(r.pid)
+      } else if (r.fillRow.isNew) {
         newSavedCount++
       }
-      successCount++
-    } catch {
+    } else {
       failCount++
     }
   }
-
-  saving.value = false
 
   if (savedProductIds.length > 0) {
     addHiddenItems(selectedMerchantId.value, savedProductIds)
@@ -542,6 +622,12 @@ const saveAll = async () => {
     showSnackbar(`成功保存 ${successCount} 条价格记录${newHint}`, 'success')
   } else {
     showSnackbar(`保存完成：${successCount} 成功，${failCount} 失败`, 'warning')
+  }
+}
+
+async function onPasteImported() {
+  if (selectedMerchantId.value) {
+    await onMerchantChange(selectedMerchantId.value)
   }
 }
 
@@ -570,6 +656,7 @@ onMounted(() => {
   width: 120px;
   flex-shrink: 0;
 }
+.fill-row__product-search :deep(input) { font-size: 16px; }
 .fill-row__inputs {
   display: flex;
   align-items: center;
@@ -582,9 +669,6 @@ onMounted(() => {
 .fill-row__sep { color: rgba(0,0,0,0.38); font-size: 14px; flex-shrink: 0; }
 .fill-row__qty-input { max-width: 60px; min-width: 50px; }
 .fill-row__qty-input :deep(input) { font-size: 16px; text-align: center; }
-.fill-row__unit-select { max-width: 80px; min-width: 60px; }
-.fill-row__unit-select :deep(input) { font-size: 16px; }
-.fill-row__product-search :deep(input) { font-size: 16px; }
 .fill-row__edit-text {
   cursor: pointer; font-size: 14px; padding: 6px 10px;
   border-radius: 4px; min-width: 24px; text-align: center;
@@ -592,4 +676,9 @@ onMounted(() => {
 }
 .fill-row__edit-text:hover { background: rgba(0,0,0,0.06); }
 .fill-list { background: transparent; }
+/* 解除 v-list-item 的 overflow 限制，避免 autocomplete 下拉被裁剪 */
+.fill-list :deep(.v-list-item) { overflow: visible; }
+.fill-list :deep(.v-list-item__content) { overflow: visible; }
+/* attach 模式下下拉列表跟随定位 */
+.fill-row__product-search :deep(.v-select__selection) { overflow: visible; }
 </style>

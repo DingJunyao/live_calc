@@ -203,22 +203,32 @@ async def lifespan(app: FastAPI):
         # 初始化默认数据（单位、分类等）
         init_default_data(db)
 
-        # 如果配置了本地数据路径，优先从本地导入，跳过 GitHub 远程导入
-        from app.config import settings
-        if settings.data_local_path:
-            local_path = settings.data_local_path
-            logger.info(f"检测到本地数据路径配置: {local_path}")
-            if os.path.isdir(local_path):
-                from app.services.enhanced_recipe_import_service import EnhancedRecipeImportService
-                service = EnhancedRecipeImportService(db, user_id=1)
-                local_result = service.import_from_local_dir(local_path)
-                logger.info(f"本地数据导入结果: {local_result.get('message', local_result)}")
-            else:
-                logger.warning(f"本地数据路径不存在或不是目录: {local_path}")
+        # 启动时导入菜谱等初始数据：仅在首次初始化数据库时进行。
+        # 若已存在初始导入的菜谱（source=json_repo），视为已初始化，直接跳过，
+        # 避免每次重启都重复遍历数据文件、重复执行营养增量导入（开销大）。
+        # 如需重新导入，请通过管理接口触发，或先清空 source=json_repo 的菜谱。
+        from app.models.recipe import Recipe
+        imported_count = db.query(Recipe).filter(Recipe.source == "json_repo").count()
+
+        if imported_count > 0:
+            logger.info(f"初始数据已导入（{imported_count} 条菜谱），跳过启动导入")
         else:
-            # 未配置本地路径时，从远程仓库导入初始数据
-            result = check_and_import_initial_recipes(db, user_id=1)
-            logger.info(f"远程数据导入结果: {result}")
+            # 首次初始化：配置了本地数据路径则从本地导入，否则从远程仓库导入
+            from app.config import settings
+            if settings.data_local_path:
+                local_path = settings.data_local_path
+                logger.info(f"检测到本地数据路径配置: {local_path}")
+                if os.path.isdir(local_path):
+                    from app.services.enhanced_recipe_import_service import EnhancedRecipeImportService
+                    service = EnhancedRecipeImportService(db, user_id=1)
+                    local_result = service.import_from_local_dir(local_path)
+                    logger.info(f"本地数据导入结果: {local_result.get('message', local_result)}")
+                else:
+                    logger.warning(f"本地数据路径不存在或不是目录: {local_path}")
+            else:
+                # 未配置本地路径时，从远程仓库导入初始数据
+                result = check_and_import_initial_recipes(db, user_id=1)
+                logger.info(f"远程数据导入结果: {result}")
 
         # 检查是否需要为现有原料批量创建商品
         from app.models.nutrition import Ingredient

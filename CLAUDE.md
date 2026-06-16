@@ -215,9 +215,11 @@ live_calc/
 - quantity_range 成本计算修复：修复了使用 quantity_range（用量区间）的食材成本显示为 0 的问题。在成本计算函数中新增 `_get_effective_quantity()` 辅助函数，当 quantity 为 None 时从 quantity_range 取平均值计算成本。详见 [QUANTITY_RANGE_COST_FIX.md](cc/QUANTITY_RANGE_COST_FIX.md)
 - 成本计算单位转换 & substitutable 回退：修复成本计算中价格记录单位（如"个"）与菜谱用量单位（如"克"）不同时直接相乘导致成本异常偏高的问题；同时让 substitutable（可替代）关系也能作为价格/营养回退源。详见 [BUGFIX_UNIT_CONVERSION_IN_COST.md](cc/BUGFIX_UNIT_CONVERSION_IN_COST.md)
 
+- 快速填写移动端三处修复：新增商品搜索下拉与 iOS 地址栏重叠（菜单改 `location: 'top'`）、单位选择器闪退且只有斤/个（`v-select`+`@blur` 改 `v-menu`+`v-list`，`loadUnits` 加 `is_common` 过滤和 `Array.isArray` 兼容）、批量保存缓慢（串行改并发 `Promise.allSettled`，并发数 5，加进度显示）。详见 [BUGFIX_快速填写移动端修复.md](cc/BUGFIX_快速填写移动端修复.md)
 - 旧版数据库迁移：从 livecalc_bak.db 迁移用户、商家、商品和价格记录（475 条）到新数据库，含兼容 SQLite/MySQL/PostgreSQL 的 SQL 脚本。详见 [DATA_MIGRATION_BAK_DB.md](cc/DATA_MIGRATION_BAK_DB.md)
 - 成本数据延迟加载优化：菜谱管理列表和详情页的成本/营养/趋势数据改为异步延迟加载，先渲染基础数据再后台补计算数据。列表取消 `include_cost` 参数，详情页拆分加载流程，趋势图覆盖层不销毁图表 DOM。详见 [LAZY_LOADING_COST_DATA.md](cc/LAZY_LOADING_COST_DATA.md)
 - 原料删除后无法同名重建修复：去掉 ingredients.name 的数据库唯一约束（改普通索引），创建/更新接口重名检查增加 is_active 过滤，与 Product 模型对齐；附带将 alembic.ini 注释 ASCII 化以修复 Python 3.14 下的 GBK 编码加载问题。详见 [BUGFIX_原料同名重建.md](cc/BUGFIX_原料同名重建.md)
+- 启动导入仅在数据库初始化时进行：菜谱/原料/营养等初始数据的导入改为仅首次初始化时执行，lifespan 外层统一判断「已有 `source=json_repo` 菜谱则跳过」，修复本地路径 `import_from_local_dir` 每次重启重复遍历数据文件、重复执行营养增量导入的问题（判据与远程路径短路逻辑一致）。详见 [BUGFIX_启动导入仅初始化时进行.md](cc/BUGFIX_启动导入仅初始化时进行.md)
 
 ### 功能实现记录
 - 商品拆分为原料：在商品详情页添加「拆分为原料」按钮，将商品从当前原料中拆分为独立同名原料，迁移营养数据 mixin，同名冲突时支持重命名。详见 [FEATURE_PRODUCT_SPLIT_TO_INGREDIENT.md](cc/FEATURE_PRODUCT_SPLIT_TO_INGREDIENT.md)
@@ -226,3 +228,4 @@ live_calc/
 - 快速填写：价格记录页 app-bar 新增闪电入口，进入独立批量填写页面。选商家后自动列出历史商品（按拼音/字母顺序排序），逐行填价格（数量/单位默认 1/斤，点击可改），可新增行搜索商品。只保存填了价格的商品，近 1h 内填过的按商家独立隐藏（sessionStorage）。纯前端，后端复用现有 API。详见 [FEATURE_QUICK_FILL.md](cc/FEATURE_QUICK_FILL.md)
 - 半成品菜谱成本传递：原料可指向其制作菜谱（激活 recipes.result_ingredient_id + 新增 ingredients.serving_weight），成本计算时商品无价则由制作菜谱推导每克单价（份×每份重桥接），支持递归套娃与循环检测。菜谱页「成品产出」与原料页「自制来源」双入口，成本明细 tooltip 显示 recipe_chain。附带修复 alembic 坏链与 as_of 的 Decimal×float 隐患。详见 [FEATURE_半成品菜谱成本传递.md](cc/FEATURE_半成品菜谱成本传递.md)
 - 数据导出：个人中心「数据导出」，两档（全量 `full` / 仅我的 `mine`，mine 含外键可达性遍历保证引用完整）；菜谱/食材/营养/单位 HowToCook 兼容 + id 扩展，扩展知识库与账户交易数据独立规格，图片打包 zip 同步流式下载（`GET /api/v1/export/data?scope=`）；`services/export/` 分层（serializers/reachability/packaging）。详见 [FEATURE_数据导出.md](cc/FEATURE_数据导出.md)
+- 快速填写粘贴导入：快速填写导航栏「粘贴导入」按钮，对话框粘贴文本（`名称 价格[/[数量]单位]` 四种格式）→ 解析预览 → 未匹配商品支持「关联已有 / 创建同名原料+商品 / 挂靠已有原料」三种手动处理 → 并发导入（`record_type=price` 不计入支出，并发数 5，进度+失败明细）；后端 `POST /products` 加可选 `ingredient_id` 支持「挂靠已有原料」创建商品。详见 [FEATURE_快速填写粘贴导入.md](cc/FEATURE_快速填写粘贴导入.md)

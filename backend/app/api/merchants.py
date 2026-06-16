@@ -258,14 +258,18 @@ async def get_merchant_product_prices(
                    su.unit_type     AS standard_unit_type,
                    du.abbreviation AS default_unit_abbr,
                    du.unit_type     AS default_unit_type,
-                   p.name
+                   p.name,
+                   ic.id            AS category_id,
+                   ic.display_name  AS category_display_name,
+                   ic.sort_order    AS category_sort_order
             FROM latest l
             JOIN units su ON su.id = l.standard_unit_id
             JOIN products p ON p.id = l.product_id
             LEFT JOIN ingredients i ON i.id = p.ingredient_id
             LEFT JOIN units du ON du.id = i.default_unit_id
+            LEFT JOIN ingredient_categories ic ON ic.id = i.category_id
             WHERE l.rn = 1
-            ORDER BY p.name ASC
+            ORDER BY COALESCE(ic.sort_order, 999999) ASC, p.name ASC
             LIMIT :limit OFFSET :skip
         """)
 
@@ -332,6 +336,9 @@ async def get_merchant_product_prices(
                 "standard_unit_label": unit_label,
                 "original_quantity": float(r.original_quantity) if r.original_quantity is not None else 0,
                 "recorded_at": _to_iso(r.recorded_at),
+                "category_id": r.category_id,
+                "category_display_name": r.category_display_name,
+                "category_sort_order": r.category_sort_order,
             })
 
         page = (skip // limit) + 1 if limit else 1

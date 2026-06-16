@@ -61,9 +61,16 @@ def _get_or_create_ingredient(db: Session, product_name: str, current_user) -> I
     return ingredient
 
 
-def _get_or_create_product(db: Session, product_name: str, current_user) -> Product:
-    """获取或创建商品"""
-    # 首先尝试查找已存在的同名商品
+def _get_or_create_product(
+    db: Session, product_name: str, current_user, ingredient_id: Optional[int] = None
+) -> Product:
+    """获取或创建商品
+
+    指定 ingredient_id 时，在该原料下创建商品（用于挂靠已有原料场景）；
+    否则获取或创建同名原料并在其下创建同名商品。
+    注意：若已存在同名激活商品，直接复用并忽略 ingredient_id。
+    """
+    # 首先尝试查找已存在的同名商品（处于激活状态）
     product = db.query(Product).filter(
         Product.name == product_name,
         Product.is_active == True
@@ -72,9 +79,19 @@ def _get_or_create_product(db: Session, product_name: str, current_user) -> Prod
     if product:
         return product
 
-    # 如果不存在，创建新商品
-    # 先获取或创建对应的食材
-    ingredient = _get_or_create_ingredient(db, product_name, current_user)
+    # 确定挂靠的原料（用 is not None，避免把 0 误判为未提供）
+    if ingredient_id is not None:
+        ingredient = db.query(Ingredient).filter(
+            Ingredient.id == ingredient_id,
+            Ingredient.is_active == True
+        ).first()
+        if not ingredient:
+            raise HTTPException(
+                status_code=404,
+                detail=f"原料ID {ingredient_id} 不存在"
+            )
+    else:
+        ingredient = _get_or_create_ingredient(db, product_name, current_user)
 
     # 创建商品
     product = Product(
@@ -152,7 +169,7 @@ async def create_product_record(
             product_name = product.name
         else:
             # 如果没有提供 product_id，自动创建或获取商品
-            product = _get_or_create_product(db, record.product_name, current_user)
+            product = _get_or_create_product(db, record.product_name, current_user, record.ingredient_id)
             product_id = product.id
             product_name = product.name
 
