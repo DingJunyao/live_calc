@@ -492,6 +492,8 @@
               color="primary"
               @click="startEditNutrition"
             />
+            <v-btn size="small" variant="text" color="primary" prepend-icon="mdi-database-search"
+              @click="usdaDialog = true">匹配 USDA</v-btn>
           </template>
           <template v-else>
             <v-btn size="small" variant="text" @click="cancelEditNutrition">取消</v-btn>
@@ -625,6 +627,8 @@
             color="primary"
             @click="startEditNutrition"
           />
+          <v-btn v-if="!loadingNutrition" size="small" variant="text" color="primary" prepend-icon="mdi-database-search"
+            @click="usdaDialog = true">匹配 USDA</v-btn>
         </v-card-title>
         <v-divider />
         <!-- 懒加载中状态 -->
@@ -1532,6 +1536,9 @@
       :products="quickPriceProducts"
       @saved="onQuickPriceSaved"
     />
+
+    <!-- USDA 匹配对话框 -->
+    <UsdaMatchDialog v-model="usdaDialog" entity-type="ingredient" :entity-id="ingredientId" @matched="onUsdaMatched" />
   </v-container>
 </template>
 
@@ -1547,7 +1554,13 @@ import { usePageTitle } from '@/composables/usePageTitle'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
+import UsdaMatchDialog from '@/components/usda/UsdaMatchDialog.vue'
 import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
+
+const usdaDialog = ref(false)
+function onUsdaMatched() {
+  loadNutritionData()
+}
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { setDetailTitle } = usePageTitle()

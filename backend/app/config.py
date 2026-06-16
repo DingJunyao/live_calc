@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     max_upload_size: int = 10485760  # 10MB
     upload_dir: str = "./data/uploads"
 
+    # 翻译/AI HTTP 超时（秒）——批量翻译与 CLI 子进程耗时长，独立于通用 API 的短超时
+    translate_http_timeout: int = 3600
+
     # 日志配置
     log_level: str = "INFO"
     log_dir: str = "./logs"

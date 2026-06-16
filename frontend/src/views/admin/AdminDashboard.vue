@@ -113,6 +113,39 @@
             <v-icon>mdi-chevron-right</v-icon>
           </template>
         </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-robot"
+          title="AI 配置"
+          subtitle="AI 服务密钥与模型设置"
+          to="/admin/ai-config"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-translate"
+          title="机翻配置"
+          subtitle="机器翻译服务设置"
+          to="/admin/mt-config"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-database"
+          title="USDA 数据"
+          subtitle="USDA 营养数据库管理"
+          to="/admin/usda-data"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
       </v-list>
     </v-card>
   </v-container>
