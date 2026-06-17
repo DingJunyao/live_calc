@@ -378,7 +378,17 @@ async function doImport() {
   for (let i = 0; i < payloads.length; i += CONCURRENCY) {
     const batch = payloads.slice(i, i + CONCURRENCY)
     const settled = await Promise.allSettled(
-      batch.map(p => api.post('/products', p.payload).then(() => p))
+      batch.map(async p => {
+        await api.post('/products', p.payload)
+        // 关联已有商品时，将导入的商品名添加为别名
+        if (p.row.mode === 'existing' && p.row.productId) {
+          try {
+            await api.post(`/products/entity/${p.row.productId}/add-import-alias`, {
+              name: p.row.name
+            })
+          } catch { /* 别名添加为附加操作，不影响导入结果 */ }
+        }
+      })
     )
     settled.forEach((s, j) => {
       if (s.status === 'fulfilled') {

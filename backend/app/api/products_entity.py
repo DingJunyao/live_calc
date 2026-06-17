@@ -1166,3 +1166,59 @@ def merge_product_into(
         print(f"[ERROR] 合并商品失败: {str(e)}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"合并商品失败: {str(e)}")
+
+
+@router.post("/products/entity/{product_id}/add-import-alias")
+def add_import_alias(
+    product_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """粘贴导入时将商品名添加为别名
+
+    规则：
+    - 商品与原料同名 → 别名加到原料
+    - 原料下唯一商品 → 别名加到原料
+    - 否则 → 别名加到商品
+    """
+    alias_name = body.get("name", "").strip()
+    if not alias_name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    product = db.query(Product).filter(
+        Product.id == product_id, Product.is_active == True
+    ).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="商品不存在")
+
+    ingredient = product.ingredient
+    if not ingredient or not ingredient.is_active:
+        raise HTTPException(status_code=404, detail="关联原料不存在")
+
+    # 判断别名加到商品还是原料
+    same_name_as_ingredient = (product.name == ingredient.name)
+    sibling_count = db.query(Product).filter(
+        Product.ingredient_id == ingredient.id,
+        Product.is_active == True,
+        Product.id != product_id
+    ).count()
+    only_product = (sibling_count == 0)
+
+    if same_name_as_ingredient or only_product:
+        target = ingredient
+        target_type = "ingredient"
+    else:
+        target = product
+        target_type = "product"
+
+    target_name = target.name
+    aliases = target.aliases or []
+
+    if alias_name != target_name and alias_name not in aliases:
+        aliases.append(alias_name)
+        target.aliases = aliases
+        target.updated_by = current_user.id
+        db.commit()
+
+    return {"target": target_type, "target_id": target.id, "target_name": target_name}
