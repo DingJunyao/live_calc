@@ -23,6 +23,7 @@ from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
 from app.models.product_entity import Product
 from app.models.usda import UsdaFood, UsdaFoodNutrient
+from app.services.nutrition_calculator import NutritionCalculator, calc_nrv_pct
 from app.services.usda.nutrient_mapping import map_nutrient_name
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -45,6 +46,30 @@ NAME_ZH_TO_KEY = {
     "维生素B1": "vitamin_b1", "维生素B2": "vitamin_b2", "维生素B12": "vitamin_b12",
     "维生素D": "vitamin_d", "维生素E": "vitamin_e", "维生素K": "vitamin_k",
     "饱和脂肪酸": "saturated_fat", "胆固醇": "cholesterol", "叶酸": "folate",
+    # 常见 USDA 英文营养素名 → 标准 key（name_zh 未翻译时，避免数字 key / 未识别 key）
+    "Energy": "energy",
+    "Protein": "protein",
+    "Total lipid (fat)": "fat",
+    "Carbohydrate, by difference": "carbohydrate",
+    "Fiber, total dietary": "fiber",
+    "Sugars, total": "total_sugars",
+    "Calcium, Ca": "calcium",
+    "Iron, Fe": "iron",
+    "Sodium, Na": "sodium",
+    "Potassium, K": "potassium",
+    "Vitamin A, RAE": "vitamin_a_rae",
+    "Vitamin C, total ascorbic acid": "vitamin_c",
+    "Vitamin D (D2 + D3)": "vitamin_d",
+    "Vitamin E (alpha-tocopherol)": "vitamin_e",
+    "Vitamin K (phylloquinone)": "vitamin_k",
+    "Vitamin B-12": "vitamin_b12",
+    "Vitamin B-6": "vitamin_b6",
+    "Folate, total": "folate",
+    "Cholesterol": "cholesterol",
+    "Fatty acids, total saturated": "saturated_fat",
+    "Fatty acids, total monounsaturated": "monounsaturated_fat",
+    "Fatty acids, total polyunsaturated": "polyunsaturated_fat",
+    "Fatty acids, total trans": "fatty_acids_total_trans",
 }
 
 
@@ -56,9 +81,40 @@ def _resolve_zh(n: UsdaFoodNutrient) -> str:
     return mapped or n.name
 
 
-def _derive_key(name_zh: str, nutrient_no: str | None) -> str:
-    """核心营养素用预定义英文 key，其余回退 nutrient_no 或中文名。"""
-    return NAME_ZH_TO_KEY.get(name_zh) or (nutrient_no or name_zh)
+def _derive_key(name_zh: str, nutrient_no: str | None, fallback_name: str = "", alt_name: str = "") -> str:
+    """核心营养素用预定义英文 key，其余用 alt_name（原始 USDA 英文名）再查映射 → fallback_name → nutrient_no → 中文名。
+
+    name_zh 为翻译后的中文（可能在 NAME_ZH_TO_KEY 里查不到预设中文名），alt_name 为原始
+    USDA 英文营养素名（NAME_ZH_TO_KEY 补充了英文→标准 key 映射），查不到时才回退。
+    """
+    key = NAME_ZH_TO_KEY.get(name_zh)
+    if key:
+        return key
+    # name_zh 可能是翻译生成的中文（不在预设映射表里），用原始 USDA 英文名再试一次
+    if alt_name:
+        key = NAME_ZH_TO_KEY.get(alt_name)
+        if key:
+            return key
+    if fallback_name:
+        return fallback_name
+    return nutrient_no or name_zh
+
+
+def _normalize_nutrient_key(name: str) -> str | None:
+    """USDA 营养素英文名 → 标准 key（小写 + 逗号去空格转下划线）。
+
+    对齐 calculator NUTRIENT_NAMES 的键格式（如 'PUFA 22:6 n-3 (DHA)'
+    → 'pufa_22:6_n-3_(dha)'），使未在 NUTRIENT_TRANSLATIONS 覆盖的
+    具体脂肪酸等也能被 NUTRIENT_NAMES 映射到中文显示名。
+    """
+    if not name:
+        return None
+    key = name.strip().lower()
+    key = key.replace(", ", "_")
+    key = key.replace(",", "")
+    key = key.replace("-", "_")
+    key = key.replace(" ", "_")
+    return key or None
 
 
 def _build_nutrition_json(usda_nutrients: list[UsdaFoodNutrient]) -> dict:
@@ -77,8 +133,29 @@ def _build_nutrition_json(usda_nutrients: list[UsdaFoodNutrient]) -> dict:
 
     for n in usda_nutrients:
         zh = _resolve_zh(n)
-        key = _derive_key(zh, n.nutrient_no)
-        entry = {"value": n.amount, "unit": n.unit_name, "key": key}
+        # key 以 zh（_resolve_zh 结果，优先 name_zh）为主源，对齐 API 展示的中文名。
+        # zh → NAME_ZH_TO_KEY（标准 key，如"能量"→"energy"），未命中时 zh 本身作 key。
+        # zh 为空时回退规范化英文名，与旧路径一致。
+        if zh:
+            key = NAME_ZH_TO_KEY.get(zh) or zh
+        else:
+            key = _normalize_nutrient_key(n.name) or n.name or n.nutrient_no or zh
+            if key and key not in NutritionCalculator.NUTRIENT_NAMES:
+                import re as _re
+                stripped = _re.sub(r'_[ct]{1,2}$', '', key)
+                if stripped != key and stripped in NutritionCalculator.NUTRIENT_NAMES:
+                    key = stripped
+        # 算中国 GB 标准 NRV%（仅核心营养素有标准），对齐 nutrition_import_service 写入格式，
+        # 前端 getNutritionNRV 依赖每项的 nrp_pct / standard 字段。
+        nrp = calc_nrv_pct(zh, n.amount, n.unit_name)
+        entry = {
+            "value": n.amount,
+            "unit": n.unit_name,
+            "key": key,
+            "standard": "中国GB标准" if nrp is not None else "无标准",
+        }
+        if nrp is not None:
+            entry["nrp_pct"] = nrp
         all_n[key] = dict(entry)
         details[key] = dict(entry)
         if zh in CORE_NAMES:
@@ -115,9 +192,13 @@ def match_ingredient(db: Session, ingredient_id: int, fdc_id: int) -> dict:
         NutritionData.ingredient_id == ingredient_id
     ).delete(synchronize_session=False)
 
+    # is_verified=True：NutritionCalculator.calculate_ingredient_nutrition
+    # 只取 source='custom' 或 is_verified=True 的记录，手动匹配属用户已确认数据，
+    # 置 True 才能在原料详情页正常显示（source 保留为 usda_manual_match 用于追溯来源）。
     nd = NutritionData(
         ingredient_id=ingredient_id,
         source="usda_manual_match",
+        is_verified=True,
         usda_id=str(fdc_id),
         usda_name=food.description,
         nutrients=_build_nutrition_json(nutrients),

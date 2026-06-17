@@ -28,18 +28,18 @@ class OpenAICompatTranslator:
     @staticmethod
     def _build_prompt(texts: list[str]) -> str:
         return (
-            "请逐行翻译下列 USDA 食材描述，输出行数必须与输入完全一致，"
+            "请逐行翻译下列条目，输出行数必须与输入完全一致，"
             "不要编号、不要解释：\n" + "\n".join(texts)
         )
 
-    async def translate_batch(self, texts: list[str]) -> list[str]:
+    async def translate_batch(self, texts: list[str], system_prompt: str = FOOD_TRANSLATION_SYSTEM_PROMPT) -> list[str]:
         results: list[str] = []
         for i in range(0, len(texts), self.batch_size):
             chunk = texts[i:i + self.batch_size]
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": FOOD_TRANSLATION_SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": self._build_prompt(chunk)},
                 ],
                 "temperature": 0.2,

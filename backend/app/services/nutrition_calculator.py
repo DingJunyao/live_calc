@@ -14,6 +14,80 @@ from app.models.product_entity import Product
 from app.models.mixins import NutritionMixin
 
 
+# ==================== 中国 GB 28050 NRV 计算（模块级，供 matcher 等复用） ====================
+# 核心营养素中文名 → (NRV 参考值, 单位)
+NRV_REF = {
+    "能量": (2000, "kcal"),
+    "蛋白质": (60, "g"),
+    "脂肪": (60, "g"),
+    "碳水化合物": (300, "g"),
+    "膳食纤维": (25, "g"),
+    "钙": (800, "mg"),
+    "铁": (15, "mg"),
+    "钠": (2000, "mg"),
+    "钾": (2000, "mg"),
+    "维生素A": (800, "μg"),
+    "维生素C": (100, "mg"),
+    "维生素B1": (1.2, "mg"),
+    "维生素B2": (1.4, "mg"),
+    "维生素B12": (2.4, "μg"),
+    "维生素D": (5, "μg"),
+    "维生素E": (14, "mg"),
+    "维生素K": (80, "μg"),
+}
+
+# 原始单位 → 规范单位 的别名归一（小写化 + 常见写法）
+_NRV_UNIT_ALIASES = {
+    "kcal": "kcal", "kcalories": "kcal", "calories": "kcal", "cal": "kcal",
+    "kj": "kJ", "kilojoule": "kJ", "kilojoules": "kJ",
+    "g": "g", "gram": "g", "grams": "g", "gm": "g",
+    "mg": "mg", "milligram": "mg", "milligrams": "mg",
+    "ug": "μg", "mcg": "μg", "µg": "μg", "μg": "μg",
+    "microgram": "μg", "micrograms": "μg",
+}
+
+# 规范单位 → NRV 单位 的换算系数（值乘以该系数）
+_NRV_UNIT_FACTOR = {
+    ("kJ", "kcal"): 1.0 / 4.184,
+    ("mg", "g"): 0.001,
+    ("μg", "g"): 0.000001,
+    ("g", "mg"): 1000,
+    ("μg", "mg"): 0.001,
+    ("g", "μg"): 1000000,
+    ("mg", "μg"): 1000,
+}
+
+
+def _norm_nrv_unit(unit: str) -> str:
+    """原始单位字符串 → NRV 计算用规范单位（小写 + 别名归一）。"""
+    u = (unit or "").strip().lower()
+    return _NRV_UNIT_ALIASES.get(u, u)
+
+
+def calc_nrv_pct(display_name: str, value: float, unit: str) -> Optional[float]:
+    """按中国 GB 28050 标准计算 NRV 百分比。
+
+    Returns: 百分比数值（保留 2 位）；无标准 / 值非正 / 单位无法换算时返回 None。
+    """
+    ref = NRV_REF.get(display_name)
+    try:
+        v = float(value or 0)
+    except (TypeError, ValueError):
+        return None
+    if not ref or v <= 0:
+        return None
+    nrv_value, nrv_unit = ref
+    u = _norm_nrv_unit(unit)
+    if u != nrv_unit:
+        factor = _NRV_UNIT_FACTOR.get((u, nrv_unit))
+        if factor is None:
+            return None
+        v = v * factor
+    if nrv_value <= 0:
+        return None
+    return round(v / nrv_value * 100, 2)
+
+
 class NutritionCalculator:
     """
     营养计算器
@@ -431,55 +505,6 @@ class NutritionCalculator:
                               "钙", "铁", "钠", "钾", "维生素A", "维生素C",
                               "维生素B1", "维生素B2", "维生素D", "维生素E", "维生素K", "维生素B12"}
 
-        # NRV 参考值（GB 28050-2011 中国标准）
-        NRV_REF = {
-            "能量": (2000, "kcal"),
-            "蛋白质": (60, "g"),
-            "脂肪": (60, "g"),
-            "碳水化合物": (300, "g"),
-            "膳食纤维": (25, "g"),
-            "钙": (800, "mg"),
-            "铁": (15, "mg"),
-            "钠": (2000, "mg"),
-            "钾": (2000, "mg"),
-            "维生素A": (800, "μg"),
-            "维生素C": (100, "mg"),
-            "维生素B1": (1.2, "mg"),
-            "维生素B2": (1.4, "mg"),
-            "维生素B12": (2.4, "μg"),
-            "维生素D": (5, "μg"),
-            "维生素E": (14, "mg"),
-            "维生素K": (80, "μg"),
-        }
-
-        # 单位换算系数：从给定单位 → NRV 标准单位，乘以该系数
-        # 例：kJ → kcal: kJ × (1/4.184)
-        _TO_NRV_FACTOR = {
-            ("kJ", "kcal"): 1.0 / 4.184,
-            ("mg", "g"): 0.001,
-            ("μg", "g"): 0.000001,
-            ("g", "mg"): 1000,
-            ("μg", "mg"): 0.001,
-            ("g", "μg"): 1000000,
-            ("mg", "μg"): 1000,
-        }
-
-        def _calc_nrp_pct(display_name: str, value: float, unit: str) -> Optional[float]:
-            """根据 NRV 标准计算百分比"""
-            ref = NRV_REF.get(display_name)
-            if not ref or value <= 0:
-                return None
-            nrv_value, nrv_unit = ref
-            if unit != nrv_unit:
-                factor = _TO_NRV_FACTOR.get((unit, nrv_unit))
-                if factor:
-                    value = value * factor
-                else:
-                    return None
-            if nrv_value <= 0:
-                return None
-            return round((value / nrv_value) * 100, 2)
-
         core_nutrients = {}
         all_nutrients = {}
         nrp_totals = {}
@@ -491,7 +516,7 @@ class NutritionCalculator:
                 nut_unit = value.get('unit', '')
 
                 # 重新计算 NRV（值可能被商品覆盖过，原料的 NRV 已过时）
-                nrp = _calc_nrp_pct(display_name, nut_value, nut_unit)
+                nrp = calc_nrv_pct(display_name, nut_value, nut_unit)
                 if nrp is not None:
                     value = dict(value)
                     value['nrp_pct'] = nrp

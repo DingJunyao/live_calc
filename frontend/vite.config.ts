@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
-import eruda from 'vite-plugin-eruda'
+// import eruda from 'vite-plugin-eruda'
 
 export default defineConfig(({ mode }) => {
   // 加载环境变量
@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
-    eruda(),
+    // eruda(),
   ],
   server: {
     host: '0.0.0.0',

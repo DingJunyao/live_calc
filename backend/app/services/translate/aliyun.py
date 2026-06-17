@@ -1,47 +1,93 @@
 # backend/app/services/translate/aliyun.py
-"""阿里云机器翻译通用 API（alimt TranslateGeneral）。POP 签名（HMAC-SHA1）。"""
-import base64, hashlib, hmac, httpx, time, urllib.parse
+"""阿里云机器翻译通用 API（alimt TranslateGeneral）。ACS3-HMAC-SHA256 V3 签名。
+
+参考 D:\\code\\HowToCook_json_organizer\\scripts\\build_usda_data.py AliyunMTProvider。
+旧版 POP HMAC-SHA1 签名会被阿里云新 API 拒绝，必须用 ACS3。
+"""
+import hashlib
+import hmac
+import time
+import uuid
+from urllib.parse import quote
+
+import httpx
 
 
 class AliyunTranslator:
     name = "aliyun"
-    ENDPOINT = "https://mt.aliyuncs.com"
+    # 阿里云通用翻译默认杭州地域 host
+    HOST = "mt.cn-hangzhou.aliyuncs.com"
 
     def __init__(self, access_key_id: str, access_key_secret: str, timeout: int, batch_size: int = 30):
-        self.ak = access_key_id
-        self.sk = access_key_secret
+        self.access_key_id = access_key_id
+        self.access_key_secret = access_key_secret
         self.timeout = timeout
         self.batch_size = batch_size
 
-    def _sign(self, params: dict) -> str:
-        sorted_q = "&".join(f"{urllib.parse.quote(k)}={urllib.parse.quote(str(v))}" for k, v in sorted(params.items()))
-        string_to_sign = "GET&%2F&" + urllib.parse.quote(sorted_q, safe="")
-        digest = hmac.new((self.sk + "&").encode(), string_to_sign.encode(), hashlib.sha1).digest()
-        return base64.b64encode(digest).decode()
-
-    async def _post(self, text: str) -> dict:
-        params = {
-            "FormatType": "text", "Scene": "general",
-            "SourceLanguage": "en", "TargetLanguage": "zh",
+    async def _post(self, text: str) -> str:
+        """调用 TranslateGeneral，返回译文。ACS3-HMAC-SHA256 签名（RPC 风格，参数走 query）。"""
+        query_params = {
+            "Action": "TranslateGeneral",
+            "Version": "2018-10-12",
+            "FormatType": "text",
+            "SourceLanguage": "en",
+            "TargetLanguage": "zh",
             "SourceText": text,
-            "AccessKeyId": self.ak,
-            "Action": "TranslateGeneral", "Version": "2018-10-12",
-            "SignatureMethod": "HMAC-SHA1", "SignatureVersion": "1.0",
-            "SignatureNonce": str(int(time.time() * 1000)), "Timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "Scene": "general",
         }
-        params["Signature"] = self._sign(params)
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(self.ENDPOINT, params=params)
-            r.raise_for_status()
-            return r.json()
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        nonce = str(uuid.uuid4())
+        hashed_payload = hashlib.sha256(b"").hexdigest()
 
-    async def translate_batch(self, texts: list[str]) -> list[str]:
+        sign_headers = {
+            "content-type": "application/json; charset=utf-8",
+            "host": self.HOST,
+            "x-acs-action": "TranslateGeneral",
+            "x-acs-content-sha256": hashed_payload,
+            "x-acs-date": now,
+            "x-acs-signature-nonce": nonce,
+            "x-acs-version": "2018-10-12",
+        }
+
+        canonical_qs = "&".join(
+            f"{quote(k, safe='')}={quote(str(v), safe='')}" for k, v in sorted(query_params.items())
+        )
+        sorted_keys = sorted(sign_headers.keys())
+        signed_headers_str = ";".join(sorted_keys)
+        canonical_headers = "".join(f"{k}:{sign_headers[k].strip()}\n" for k in sorted_keys)
+        canonical_request = (
+            f"POST\n/\n{canonical_qs}\n{canonical_headers}\n{signed_headers_str}\n{hashed_payload}"
+        )
+        string_to_sign = f"ACS3-HMAC-SHA256\n{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+        signature = hmac.new(
+            self.access_key_secret.encode("utf-8"),
+            string_to_sign.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        authorization = (
+            f"ACS3-HMAC-SHA256 Credential={self.access_key_id},"
+            f"SignedHeaders={signed_headers_str},Signature={signature}"
+        )
+
+        qs = "&".join(f"{quote(k, safe='')}={quote(str(v), safe='')}" for k, v in query_params.items())
+        url = f"https://{self.HOST}/?{qs}"
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            r = await client.post(url, content=b"", headers={**sign_headers, "Authorization": authorization})
+            r.raise_for_status()
+            data = r.json()
+
+        code = data.get("Code")
+        if code is not None and str(code) != "200":
+            raise RuntimeError(f"阿里云错误 {code}: {data.get('Message', '')}")
+        return data.get("Data", {}).get("Translated", "") or ""
+
+    async def translate_batch(self, texts: list[str], system_prompt: str | None = None) -> list[str]:
         results: list[str] = []
         for i in range(0, len(texts), self.batch_size):
             chunk = texts[i:i + self.batch_size]
             for t in chunk:
-                data = await self._post(t)
-                results.append(data.get("Data", {}).get("Translated", ""))
+                results.append(await self._post(t))
         return results
 
     async def health_check(self) -> bool:

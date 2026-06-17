@@ -19,7 +19,7 @@ export const getTranslationConfig = () => api.get('/admin/translation-config')
 export const putTranslationConfig = (config: Record<string, any>) =>
   api.put('/admin/translation-config', { config })
 export const testTranslationConnection = (provider: string) =>
-  api.post('/admin/translation-config/test', { provider })
+  api.post('/admin/translation-config/test', { provider }, { timeout: 3600000 })
 
 // === 后台：USDA 数据 ===
 export const getUsdaStatistics = () => api.get('/admin/usda/statistics')
@@ -35,5 +35,7 @@ export const uploadUsda = (file: File) => {
   })
 }
 export const translateUsda = (provider: string) =>
-  api.post('/admin/usda/translate', { provider })
+  api.post('/admin/usda/translate', { provider }, { timeout: 3600000 })
+export const translateNutrients = (provider: string) =>
+  api.post('/admin/usda/translate-nutrients', { provider }, { timeout: 3600000 })
 export const getUsdaTask = () => api.get('/admin/usda/task')

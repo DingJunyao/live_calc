@@ -1,5 +1,5 @@
 # backend/app/services/usda/search.py
-"""USDA 内存索引：空格分词 → OR 子串匹配 → 打分排序。"""
+"""USDA 内存索引：空格分词 → AND 子串匹配（每词中/英任一命中）→ 打分排序。"""
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
 from app.models.usda import UsdaFood
@@ -32,23 +32,22 @@ class UsdaSearchIndex:
         return [t for t in query.lower().split() if t]
 
     def _score(self, e: _Entry, tokens: list[str]) -> int:
-        """打分：精确 > 前缀 > 包含；命中 token 数加权。命中 0 返回 -1（不入选）。"""
+        """打分（AND）：所有 token 都须命中，每个 token 中/英任一子串命中即可。
+        精确 > 前缀 > 包含；任一 token 未命中返回 -1（不入选）。"""
         score = 0
-        hit = False
         for t in tokens:
             if not t:
                 continue
             in_en = t in e.desc_lower
             in_zh = t in e.zh
             if not (in_en or in_zh):
-                continue
-            hit = True
+                return -1  # AND：任一 token 未命中即淘汰
             score += 1
             if e.desc_lower == t or e.zh == t:
                 score += 100
             elif e.desc_lower.startswith(t) or e.zh.startswith(t):
                 score += 10
-        return score if hit else -1
+        return score
 
     def search(self, query: str, limit: int = 50) -> list[dict]:
         tokens = self._tokenize((query or "")[:200])

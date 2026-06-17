@@ -20,6 +20,7 @@ from app.services.usda.parser import parse_usda_food, dedupe_foods
 from app.services.usda.index_manager import build_usda_index
 from app.services.translate.registry import find_provider_section, get_translator
 from app.services.translate.task import TranslateTask
+from app.services.translate.nutrient_task import TranslateNutrientsTask
 
 router = APIRouter()
 
@@ -277,6 +278,38 @@ async def usda_translate(
     return {"message": f"翻译任务已启动（{body.provider}）"}
 
 
+class TranslateNutrientsRequest(BaseModel):
+    provider: str
+
+
+@router.post("/usda/translate-nutrients")
+async def usda_translate_nutrients(
+    body: TranslateNutrientsRequest,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """用 AI 翻译未映射营养素名（缩写/脂肪酸记号等需营养学知识）。"""
+    _require_admin(current_user)
+    cfg = get_stored_translation_config(db).to_dict()
+    if not find_provider_section(cfg, body.provider):
+        raise HTTPException(status_code=400, detail=f"未配置 provider: {body.provider}")
+
+    async def _run_nutrients():
+        d = SessionLocal()
+        try:
+            await TranslateNutrientsTask(d).run(
+                provider=body.provider,
+                config_dict=get_stored_translation_config(d).to_dict(),
+            )
+        except Exception:
+            logging.getLogger(__name__).exception("营养素翻译后台任务失败")
+        finally:
+            d.close()
+    background_tasks.add_task(_run_nutrients)
+    return {"message": f"营养素翻译任务已启动（{body.provider}）"}
+
+
 @router.post("/translation-config/test")
 async def translation_config_test(
     body: TestConnectionRequest,
@@ -289,5 +322,11 @@ async def translation_config_test(
     if not section:
         raise HTTPException(status_code=400, detail=f"未配置 provider: {body.provider}")
     translator = get_translator(body.provider, section, timeout=settings.translate_http_timeout)
-    ok = await translator.health_check()
-    return {"provider": body.provider, "ok": ok}
+    try:
+        out = await translator.translate_batch(["Water"])
+        ok = bool(out and out[0])
+        detail = "连接成功" if ok else f"调用成功但无有效译文：{out[:3]}"
+    except Exception as e:
+        ok = False
+        detail = f"{type(e).__name__}: {e}"
+    return {"provider": body.provider, "ok": ok, "detail": detail}

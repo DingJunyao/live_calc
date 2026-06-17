@@ -28,7 +28,7 @@ class AnthropicTranslator:
             r.raise_for_status()
             return r.json()
 
-    async def translate_batch(self, texts: list[str]) -> list[str]:
+    async def translate_batch(self, texts: list[str], system_prompt: str = FOOD_TRANSLATION_SYSTEM_PROMPT) -> list[str]:
         results: list[str] = []
         for i in range(0, len(texts), self.batch_size):
             chunk = texts[i:i + self.batch_size]
@@ -36,7 +36,7 @@ class AnthropicTranslator:
             payload = {
                 "model": self.model,
                 "max_tokens": 2048,
-                "system": FOOD_TRANSLATION_SYSTEM_PROMPT,
+                "system": system_prompt,
                 "messages": [{"role": "user", "content": user_prompt}],
             }
             data = await self._post_json(payload)

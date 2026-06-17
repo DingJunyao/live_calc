@@ -22,7 +22,7 @@ class DeepLTranslator:
             r.raise_for_status()
             return r.json()
 
-    async def translate_batch(self, texts: list[str]) -> list[str]:
+    async def translate_batch(self, texts: list[str], system_prompt: str | None = None) -> list[str]:
         results: list[str] = []
         for i in range(0, len(texts), self.batch_size):
             chunk = texts[i:i + self.batch_size]

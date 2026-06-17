@@ -24,9 +24,13 @@ class BaiduTranslator:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(self.ENDPOINT, data=params)
             r.raise_for_status()
-            return r.json()
+            data = r.json()
+        # 百度错误以 error_code 返回（非 HTTP 错误），转抛以便上层诊断
+        if data.get("error_code"):
+            raise RuntimeError(f"百度错误 {data.get('error_code')}: {data.get('error_msg', '')}")
+        return data
 
-    async def translate_batch(self, texts: list[str]) -> list[str]:
+    async def translate_batch(self, texts: list[str], system_prompt: str | None = None) -> list[str]:
         results: list[str] = []
         for i in range(0, len(texts), self.batch_size):
             chunk = texts[i:i + self.batch_size]
