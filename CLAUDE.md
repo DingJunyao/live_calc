@@ -220,6 +220,7 @@ live_calc/
 - 成本数据延迟加载优化：菜谱管理列表和详情页的成本/营养/趋势数据改为异步延迟加载，先渲染基础数据再后台补计算数据。列表取消 `include_cost` 参数，详情页拆分加载流程，趋势图覆盖层不销毁图表 DOM。详见 [LAZY_LOADING_COST_DATA.md](cc/LAZY_LOADING_COST_DATA.md)
 - 原料删除后无法同名重建修复：去掉 ingredients.name 的数据库唯一约束（改普通索引），创建/更新接口重名检查增加 is_active 过滤，与 Product 模型对齐；附带将 alembic.ini 注释 ASCII 化以修复 Python 3.14 下的 GBK 编码加载问题。详见 [BUGFIX_原料同名重建.md](cc/BUGFIX_原料同名重建.md)
 - 启动导入仅在数据库初始化时进行：菜谱/原料/营养等初始数据的导入改为仅首次初始化时执行，lifespan 外层统一判断「已有 `source=json_repo` 菜谱则跳过」，修复本地路径 `import_from_local_dir` 每次重启重复遍历数据文件、重复执行营养增量导入的问题（判据与远程路径短路逻辑一致）。详见 [BUGFIX_启动导入仅初始化时进行.md](cc/BUGFIX_启动导入仅初始化时进行.md)
+- USDA 下载 SSL 握手失败修复：四组对照定位根因——USDA 的 WAF 按 TLS 指纹 + UA 概率性切断非浏览器客户端，原 downloader 的 `USDA_UA` 是半截（缺 `Chrome/... Safari/... Edg/...`）被当 bot 切断率飙升（同库同窗口：完整 UA 4/6、半截 1/6），叠加网络窗口剧烈波动（好窗口单次近 100%、差窗口近 0%）。核心修复：UA 改完整 Edge 浏览器串（对齐参考项目 HowToCook_json_organizer）；纯 Python 兜底：httpx 并发重试（每轮 5 握手任一成功即返、全失败指数退避等窗口恢复）+ 可选 `usda_http_proxy`。不依赖 curl/curl_cffi（跨系统不可靠/Py3.14 库错误）。实测 fetch 3/3、foundation 363 条、sr_legacy 7793 条均成功。详见 [BUGFIX_USDA_DOWNLOAD_SSL_RETRY.md](cc/BUGFIX_USDA_DOWNLOAD_SSL_RETRY.md)
 
 ### 功能实现记录
 - 商品拆分为原料：在商品详情页添加「拆分为原料」按钮，将商品从当前原料中拆分为独立同名原料，迁移营养数据 mixin，同名冲突时支持重命名。详见 [FEATURE_PRODUCT_SPLIT_TO_INGREDIENT.md](cc/FEATURE_PRODUCT_SPLIT_TO_INGREDIENT.md)

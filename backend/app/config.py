@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     max_upload_size: int = 10485760  # 10MB
     upload_dir: str = "./data/uploads"
 
+    # USDA FoodData Central 下载配置
+    # 直连 USDA 的 TLS 握手会被网络按指纹概率性切断（SSL UNEXPECTED_EOF），
+    # 单次成功率约 50%，故用「并发重试」拉高整体成功率：每轮并发 N 个握手，
+    # 全失败则退避再来，最多 ceil(retries/concurrency) 轮。
+    # 仍可配置 usda_http_proxy 走境外代理（默认留空，并兼容 HTTPS_PROXY 环境变量）。
+    usda_http_proxy: Optional[str] = None
+    usda_download_timeout: int = 600    # 单次请求读/写超时（秒）
+    usda_connect_timeout: int = 8       # TLS 握手超时（秒），缩短以快速失败、快速重试
+    usda_download_retries: int = 20     # 总尝试次数
+    usda_download_concurrency: int = 5  # 每轮并发握手数
+
     # 翻译/AI HTTP 超时（秒）——批量翻译与 CLI 子进程耗时长，独立于通用 API 的短超时
     translate_http_timeout: int = 3600
 
