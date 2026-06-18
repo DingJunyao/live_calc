@@ -1,6 +1,6 @@
 """AI 后处理：模糊量推测 + 密度推测。"""
 import json
-from typing import Optional
+from typing import Optional, Callable
 
 from sqlalchemy.orm import Session
 
@@ -28,7 +28,8 @@ class AIInferrer:
     # 模糊量推测
     # ----------------------------------------------------------------
 
-    def infer_fuzzy_quantities(self, force: bool = False) -> ImportResult:
+    def infer_fuzzy_quantities(self, force: bool = False,
+                                progress_callback: Optional[Callable] = None) -> ImportResult:
         """推测菜谱原料的模糊量。
 
         扫描所有 RecipeIngredient，筛选出：
@@ -56,11 +57,16 @@ class AIInferrer:
                 }
             groups[key]["recipe_ingredients"].append(ri)
 
+        total_groups = len(groups)
         inferred = 0
-        for (ing_id, unit_id), group in groups.items():
+        for idx, ((ing_id, unit_id), group) in enumerate(groups.items(), 1):
             ingredient = group["ingredient"]
             if not ingredient:
                 continue
+
+            if progress_callback:
+                progress_callback("模糊量推测", idx, total_groups,
+                                  ingredient.name)
 
             recipes = [ri.recipe.name for ri in group["recipe_ingredients"]
                        if ri.recipe and ri.recipe.name]
@@ -176,7 +182,8 @@ class AIInferrer:
     # 密度推测
     # ----------------------------------------------------------------
 
-    def infer_densities(self, force: bool = False) -> ImportResult:
+    def infer_densities(self, force: bool = False,
+                         progress_callback: Optional[Callable] = None) -> ImportResult:
         """推测没有密度值的原料的密度。"""
         result = ImportResult()
 
@@ -189,8 +196,12 @@ class AIInferrer:
             result.warnings.append("没有需要推测密度的原料")
             return result
 
+        total = len(candidates)
         inferred = 0
-        for ingredient in candidates:
+        for idx, ingredient in enumerate(candidates, 1):
+            if progress_callback:
+                progress_callback("密度推测", idx, total,
+                                  f"{ingredient.name} ({idx}/{total})")
             prompt = (
                 f"请推测食材\"{ingredient.name}\"的密度（g/cm³），"
                 f"即每毫升多少克。\n"

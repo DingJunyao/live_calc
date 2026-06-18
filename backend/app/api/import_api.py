@@ -194,6 +194,7 @@ def _run_ai_inference(task_id: int, inference_type: str, force: bool,
         if not task:
             return
         task.status = "running"
+        task.progress = {"stage": "初始化", "current": 0, "total": 0, "message": "准备 AI 推测..."}
         db.commit()
 
         ai_caller = _create_ai_caller(provider, db)
@@ -201,10 +202,19 @@ def _run_ai_inference(task_id: int, inference_type: str, force: bool,
         if ai_caller:
             inferrer.set_ai_caller(ai_caller)
 
+        def progress_callback(stage: str, current: int, total: int, message: str = ""):
+            try:
+                t = db.query(ImportTask).get(task_id)
+                if t:
+                    t.progress = {"stage": stage, "current": current, "total": total, "message": message}
+                    db.commit()
+            except Exception:
+                pass
+
         if inference_type == "quantities":
-            result = inferrer.infer_fuzzy_quantities(force=force)
+            result = inferrer.infer_fuzzy_quantities(force=force, progress_callback=progress_callback)
         elif inference_type == "densities":
-            result = inferrer.infer_densities(force=force)
+            result = inferrer.infer_densities(force=force, progress_callback=progress_callback)
         else:
             raise ValueError(f"Unknown inference type: {inference_type}")
 
