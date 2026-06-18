@@ -280,10 +280,7 @@ function enabledIn(region: string): string[] {
     .map(([k]) => k)
 }
 
-const enabledProviders = computed<string[]>(() => [
-  ...enabledIn('ai'),
-  ...enabledIn('machine'),
-])
+const enabledProviders = computed<string[]>(() => enabledIn('ai'))
 
 onMounted(async () => {
   try {
