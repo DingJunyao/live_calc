@@ -1,11 +1,12 @@
 """导入 API 路由。"""
 import os
 
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.usda import TranslationConfig
 from app.services.importer.api_service import (
     import_from_git_repo,
     import_from_upload,
@@ -100,50 +101,61 @@ async def trigger_local_import(
 # ---- AI 后处理端点 ----
 
 
-def _try_create_ai_caller():
-    """尝试创建 AI 调用函数。
+def _create_ai_caller(provider: str, db: Session):
+    """根据 provider 名称创建 AI 调用函数。
 
-    优先使用 claude_code 后端（本机 claude CLI），
-    如果不可用则返回 None，调用方会跳过 AI 推测。
+    从 TranslationConfig 中读取该 provider 的配置并构造 Translator，
+    返回一个同步的 callable(prompt: str) -> str。
+    如果 provider 不可用则返回 None。
     """
     try:
-        import shutil
-        import subprocess
+        cfg_record = db.query(TranslationConfig).first()
+        if not cfg_record:
+            return None
+        config_dict = cfg_record.to_dict()
 
-        cli = shutil.which("claude") or "claude"
+        # 在 ai 和 machine 两区中查找 provider 配置
+        from app.services.translate.registry import get_translator, find_provider_section
+        prov_cfg = find_provider_section(config_dict, provider)
+        if not prov_cfg:
+            return None
+
+        import asyncio
+        translator = get_translator(provider, prov_cfg, timeout=120)
 
         def _call(prompt: str) -> str:
-            result = subprocess.run(
-                [cli, "-p"],
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                encoding="utf-8",
+            """同步调用 translator 的 translate_batch。"""
+            result_list = asyncio.run(
+                translator.translate_batch([prompt])
             )
-            return result.stdout.strip()
+            return result_list[0] if result_list else ""
 
         # 快速健康检查
-        test = _call("say ok")
-        if test:
-            return _call
+        try:
+            test = _call("回复一个词：ok")
+            if not test:
+                return None
+        except Exception:
+            return None
+
+        return _call
     except Exception:
-        pass
-    return None
+        return None
 
 
 @router.post("/ai-infer/quantities")
 async def infer_fuzzy_quantities(
     force: bool = False,
+    provider: str = Query("claude_code", description="AI 提供方名称"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """触发模糊量推测。
 
-    需要配置 AI 后端（默认使用本机 claude CLI）。
-    如未检测到可用 AI 后端，将跳过推测并返回提示。
+    需要先在 AI 配置页启用至少一个 AI 后端。
+    通过 provider 参数指定使用的 AI 提供方。
     """
-    ai_caller = _try_create_ai_caller()
+    ai_caller = _create_ai_caller(provider, db)
     inferrer = AIInferrer(db)
     if ai_caller:
         inferrer.set_ai_caller(ai_caller)
@@ -151,7 +163,10 @@ async def infer_fuzzy_quantities(
     result = inferrer.infer_fuzzy_quantities(force=force)
 
     if not ai_caller and len(result.warnings) == 0:
-        result.warnings.append("未检测到可用的 AI 后端，跳过 AI 推测。请确保 claude CLI 可用。")
+        result.warnings.append(
+            f"AI 后端 '{provider}' 不可用，跳过 AI 推测。"
+            "请先在 AI 配置页启用并测试连接。"
+        )
 
     return {
         "success": len(result.errors) == 0,
@@ -164,15 +179,16 @@ async def infer_fuzzy_quantities(
 @router.post("/ai-infer/densities")
 async def infer_densities(
     force: bool = False,
+    provider: str = Query("claude_code", description="AI 提供方名称"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """触发密度推测。
 
-    需要配置 AI 后端（默认使用本机 claude CLI）。
-    如未检测到可用 AI 后端，将跳过推测并返回提示。
+    需要先在 AI 配置页启用至少一个 AI 后端。
+    通过 provider 参数指定使用的 AI 提供方。
     """
-    ai_caller = _try_create_ai_caller()
+    ai_caller = _create_ai_caller(provider, db)
     inferrer = AIInferrer(db)
     if ai_caller:
         inferrer.set_ai_caller(ai_caller)
@@ -180,7 +196,10 @@ async def infer_densities(
     result = inferrer.infer_densities(force=force)
 
     if not ai_caller and len(result.warnings) == 0:
-        result.warnings.append("未检测到可用的 AI 后端，跳过 AI 推测。请确保 claude CLI 可用。")
+        result.warnings.append(
+            f"AI 后端 '{provider}' 不可用，跳过 AI 推测。"
+            "请先在 AI 配置页启用并测试连接。"
+        )
 
     return {
         "success": len(result.errors) == 0,

@@ -159,8 +159,22 @@
           <v-card-text class="pt-6">
             <p class="text-body-2 mb-4">
               使用 AI 推测原料的模糊用量（如鸡蛋 1 个 ≈ 55g）和密度值
-              （如食用油 ≈ 0.92 g/cm³）。需要配置 AI 后端。
+              （如食用油 ≈ 0.92 g/cm³）。请先在 AI 配置页启用至少一个后端。
             </p>
+
+            <!-- AI 提供方选择 -->
+            <v-select
+              v-model="aiProvider"
+              :items="enabledProviders"
+              label="AI 提供方"
+              variant="outlined"
+              prepend-icon="mdi-robot"
+              :hint="enabledProviders.length ? '' : '请先在 AI 配置页启用后端'"
+              persistent-hint
+              hide-details
+              class="mb-3"
+            />
+
             <v-row>
               <v-col cols="6">
                 <v-btn
@@ -168,6 +182,7 @@
                   color="purple"
                   variant="tonal"
                   :loading="loading.aiQuantities"
+                  :disabled="!enabledProviders.length"
                   @click="inferQuantities"
                 >
                   <v-icon start>mdi-scale</v-icon>
@@ -180,6 +195,7 @@
                   color="purple"
                   variant="tonal"
                   :loading="loading.aiDensities"
+                  :disabled="!enabledProviders.length"
                   @click="inferDensities"
                 >
                   <v-icon start>mdi-database</v-icon>
@@ -227,10 +243,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import axios from 'axios'
+import { getTranslationConfig } from '@/api/usda'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
@@ -249,6 +266,35 @@ const loading = reactive({
 const localPath = ref('')
 const uploadFile = ref<File | null>(null)
 const aiForce = ref(false)
+
+// AI 提供方选择（从翻译配置读取）
+const aiProvider = ref('')
+const translationConfig = ref<any>(null)
+
+function enabledIn(region: string): string[] {
+  const cfg = translationConfig.value
+  if (!cfg) return []
+  const provs = cfg[region]?.providers || {}
+  return Object.entries(provs)
+    .filter(([, v]: any) => v.enabled !== false)
+    .map(([k]) => k)
+}
+
+const enabledProviders = computed<string[]>(() => [
+  ...enabledIn('ai'),
+  ...enabledIn('machine'),
+])
+
+onMounted(async () => {
+  try {
+    translationConfig.value = await getTranslationConfig()
+    if (enabledProviders.value.length) {
+      aiProvider.value = enabledProviders.value[0]
+    }
+  } catch {
+    // 忽略错误，用户会看到"请先在 AI 配置页启用后端"
+  }
+})
 
 const resultMessage = ref('')
 const resultSuccess = ref(false)
@@ -346,7 +392,7 @@ async function inferQuantities() {
   loading.aiQuantities = true
   try {
     const resp = await axios.post(`${baseURL}/import/ai-infer/quantities`, {}, {
-      params: { force: aiForce.value },
+      params: { force: aiForce.value, provider: aiProvider.value || 'claude_code' },
       headers: getHeaders(),
     })
     handleApiResponse(resp.data, '模糊量推测')
@@ -361,7 +407,7 @@ async function inferDensities() {
   loading.aiDensities = true
   try {
     const resp = await axios.post(`${baseURL}/import/ai-infer/densities`, {}, {
-      params: { force: aiForce.value },
+      params: { force: aiForce.value, provider: aiProvider.value || 'claude_code' },
       headers: getHeaders(),
     })
     handleApiResponse(resp.data, '密度推测')
