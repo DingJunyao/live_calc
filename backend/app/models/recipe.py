@@ -44,6 +44,7 @@ class RecipeIngredient(Base):
     is_optional = Column(Boolean, default=False)  # 是否可选
     note = Column(Text)  # 备注信息
     original_quantity = Column(JSON)  # 原始数量描述（JSON，如 {"min": 100, "max": 150}）
+    ai_inferred = Column(Boolean, default=False, nullable=False)
 
     # 关系
     recipe = relationship("Recipe", back_populates="ingredients")

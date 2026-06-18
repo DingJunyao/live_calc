@@ -39,6 +39,8 @@ class Ingredient(Base, AuditMixin):
     serving_weight = Column(Numeric(10, 3), nullable=True)
     serving_weight_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
 
+    ai_inferred = Column(Boolean, default=False, nullable=False)
+
     # 是否为导入菜谱时顺带导入的原料
     is_imported = Column(Boolean, default=False, nullable=False)
 
