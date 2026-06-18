@@ -852,14 +852,6 @@ def check_and_import_initial_recipes(
 ) -> Dict[str, any]:
     """
     检查是否需要从 JSON 仓库导入数据
-
-    Args:
-        db: 数据库会话
-        user_id: 用户 ID（可选）
-        force_reimport: 是否强制重新导入
-
-    Returns:
-        导入结果统计
     """
     has_json_recipes = db.query(Recipe).filter(
         Recipe.source == "json_repo"
@@ -873,7 +865,7 @@ def check_and_import_initial_recipes(
             "message": f"跳过导入：已有 {count} 条 JSON 仓库菜谱",
             "imported": 0,
             "skipped": 0,
-            "failed": 0
+            "failed": 0,
         }
 
     if has_json_recipes and force_reimport:
@@ -893,9 +885,22 @@ def check_and_import_initial_recipes(
         db.commit()
         print("已清空 JSON 仓库菜谱数据，开始重新导入...")
 
-    print("开始导入 JSON 仓库菜谱...")
-    service = EnhancedRecipeImportService(db, user_id=user_id)
-    return service.import_all()
+    print("开始导入 JSON 仓库菜谱（使用新 import 模块）...")
+    from app.services.importer.sources.git_repo import GitRepoSource
+    from app.services.importer.importers.howtocook import HowToCookImporter
+
+    source = GitRepoSource()
+    collection = source.collect_files()
+    importer = HowToCookImporter(db, user_id=user_id)
+    result = importer.import_all(collection)
+
+    return {
+        "success": len(result.errors) == 0,
+        "message": f"导入完成：{result.stats}",
+        "imported": result.stats.get("recipes", 0),
+        "stats": result.stats,
+        "errors": result.errors,
+    }
 
 
 # 别名函数
@@ -908,16 +913,21 @@ def check_and_import_from_local_dir(
     user_id: Optional[int] = None
 ) -> Dict[str, any]:
     """
-    从本地路径导入数据
-
-    Args:
-        db: 数据库会话
-        local_path: 本地数据目录路径
-        user_id: 用户 ID（可选）
-
-    Returns:
-        导入结果统计
+    从本地路径导入数据（使用新 import 模块）
     """
     print(f"开始从本地路径导入: {local_path}")
-    service = EnhancedRecipeImportService(db, user_id=user_id)
-    return service.import_from_local_dir(local_path)
+    from app.services.importer.sources.local_fs import LocalDirSource
+    from app.services.importer.importers.howtocook import HowToCookImporter
+
+    source = LocalDirSource(local_path)
+    collection = source.collect_files()
+    importer = HowToCookImporter(db, user_id=user_id or 1)
+    result = importer.import_all(collection)
+
+    return {
+        "success": len(result.errors) == 0,
+        "message": f"导入完成：{result.stats}",
+        "imported": result.stats.get("recipes", 0),
+        "stats": result.stats,
+        "errors": result.errors,
+    }
