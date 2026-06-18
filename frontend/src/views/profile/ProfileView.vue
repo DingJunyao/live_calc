@@ -76,6 +76,16 @@
           </template>
         </v-list-item>
 
+        <v-list-item @click="importDialog = true">
+          <template #prepend>
+            <v-icon>mdi-upload</v-icon>
+          </template>
+          <v-list-item-title>数据导入</v-list-item-title>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
         <v-list-item>
           <template #prepend>
             <v-icon>mdi-information</v-icon>
@@ -96,6 +106,9 @@
         退出登录
       </v-btn>
     </v-card>
+
+    <!-- 数据导入对话框 -->
+    <ImportUploadDialog v-model="importDialog" />
 
     <!-- 数据导出对话框 -->
     <v-dialog v-model="exportDialog" max-width="420">
@@ -154,6 +167,7 @@ import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
+import { ImportUploadDialog } from '@/components/import'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -163,7 +177,8 @@ const userStore = useUserStore()
 
 const search = ref('')
 
-// 数据导出
+// 数据导入与导出
+const importDialog = ref(false)
 const exportDialog = ref(false)
 const exportScope = ref<'full' | 'mine'>('full')
 const exporting = ref(false)
