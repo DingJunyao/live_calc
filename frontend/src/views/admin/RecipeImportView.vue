@@ -1,40 +1,43 @@
 <template>
-  <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
   <v-app-bar elevation="0" color="background" density="comfortable" fixed>
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
     <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
-    <v-app-bar-title class="text-h6">菜谱导入</v-app-bar-title>
+    <v-app-bar-title class="text-h6">菜谱导入管理</v-app-bar-title>
   </v-app-bar>
 
   <v-container class="pa-4">
+    <!-- 结果提示 -->
+    <v-alert v-if="resultMessage" :type="resultSuccess ? 'success' : 'error'"
+             variant="tonal" class="mb-4" closable @click:close="resultMessage = ''">
+      <div class="d-flex align-center">
+        <v-icon start :color="resultSuccess ? 'success' : 'error'" class="mr-2">
+          {{ resultSuccess ? 'mdi-check-circle' : 'mdi-alert-circle' }}
+        </v-icon>
+        <div>
+          <div class="font-weight-medium">{{ resultSuccess ? '操作成功' : '操作失败' }}</div>
+          <div v-if="resultDetail" class="text-caption mt-1">{{ resultDetail }}</div>
+        </div>
+      </div>
+    </v-alert>
+
     <v-row>
-      <!-- 从 GitHub 导入 -->
+      <!-- 从仓库导入 -->
       <v-col cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
-            <v-icon class="mr-2" color="github">mdi-github</v-icon>
-            <span>从 GitHub 仓库导入</span>
+            <v-icon class="mr-2" color="github">mdi-source-repository</v-icon>
+            <span>从 Git 仓库导入</span>
           </v-card-title>
           <v-divider />
           <v-card-text class="pt-6">
             <p class="text-body-2 mb-4">
-              从指定的 GitHub 仓库导入菜谱数据。支持 howtocook 菜谱仓库格式。
+              从环境变量配置的 Git 仓库导入菜谱数据。
+              仓库地址、分支和数据目录由服务器配置（<code>DATA_REPO_URL</code>、
+              <code>DATA_REPO_BRANCH</code>、<code>DATA_REPO_DIR</code>）。
             </p>
-            <v-text-field
-              v-model="githubUrl"
-              label="仓库 URL"
-              variant="outlined"
-              placeholder="https://github.com/username/repo"
-              prepend-icon="mdi-github"
-              hint="输入 GitHub 仓库地址"
-              persistent-hint
-              :disabled="importing"
-            />
-            <v-alert type="info" variant="tonal" class="mt-4" density="compact">
+            <v-alert type="info" variant="tonal" density="compact">
               <div class="text-caption">
-                <strong>支持格式：</strong><br />
-                • Anduin2017/howtocook<br />
-                • 其他兼容的菜谱仓库
+                支持格式：HowToCook_json / 系统导出格式（自动检测）
               </div>
             </v-alert>
           </v-card-text>
@@ -45,51 +48,11 @@
               color="github"
               variant="tonal"
               size="large"
-              :loading="importing"
-              @click="importFromGitHub"
+              :loading="loading.repo"
+              @click="importFromRepo"
             >
-              <v-icon start>mdi-github</v-icon>
+              <v-icon start>mdi-source-repository</v-icon>
               开始导入
-            </v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-col>
-
-      <!-- 初始数据导入 -->
-      <v-col cols="12" md="6" lg="4">
-        <v-card class="rounded-lg h-100">
-          <v-card-title class="d-flex align-center py-4">
-            <v-icon class="mr-2" color="warning">mdi-database-import</v-icon>
-            <span>导入初始菜谱</span>
-          </v-card-title>
-          <v-divider />
-          <v-card-text class="pt-6">
-            <p class="text-body-2 mb-4">
-              导入预配置的初始菜谱数据。这是第一次设置应用时推荐的操作。
-            </p>
-            <v-list>
-              <v-list-item prepend-icon="mdi-check-circle" title="包含常用菜谱" />
-              <v-list-item prepend-icon="mdi-check-circle" title="已验证的营养数据" />
-              <v-list-item prepend-icon="mdi-check-circle" title="标准化的格式" />
-            </v-list>
-            <v-alert type="warning" variant="tonal" class="mt-4" density="compact">
-              <div class="text-caption">
-                <strong>注意：</strong>导入初始菜谱可能会添加重复数据。请确保在首次设置时使用。
-              </div>
-            </v-alert>
-          </v-card-text>
-          <v-divider />
-          <v-card-actions class="pa-4">
-            <v-spacer />
-            <v-btn
-              color="warning"
-              variant="tonal"
-              size="large"
-              :loading="importingInitial"
-              @click="importInitialRecipes"
-            >
-              <v-icon start>mdi-database-import</v-icon>
-              导入初始数据
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -105,25 +68,23 @@
           <v-divider />
           <v-card-text class="pt-6">
             <p class="text-body-2 mb-4">
-              从服务器上的本地目录导入菜谱数据。目录格式需与 HowToCook_json/out/ 一致。
+              从服务器上的本地目录导入数据。目录结构可以是
+              HowToCook_json 格式或系统导出格式（自动检测）。
             </p>
             <v-text-field
               v-model="localPath"
-              label="本地目录路径"
+              label="本地目录绝对路径"
               variant="outlined"
-              placeholder="例如：/data/recipes/out"
+              placeholder="/data/recipes/out"
               prepend-icon="mdi-folder-path"
-              hint="输入服务器上的数据目录绝对路径"
+              hint="输入服务器上的数据目录路径"
               persistent-hint
-              :disabled="importingLocal"
+              :disabled="loading.local"
             />
             <v-alert type="info" variant="tonal" class="mt-4" density="compact">
               <div class="text-caption">
-                <strong>目录格式：</strong><br />
-                • ingredients.json — 原料数据<br />
-                • units.json — 单位数据<br />
-                • nutritions.json — 营养数据<br />
-                • *.json — 菜谱文件
+                支持格式：HowToCook_json（ingredients.json + 菜谱 JSON）/<br />
+                系统导出格式（manifest.json）
               </div>
             </v-alert>
           </v-card-text>
@@ -134,7 +95,8 @@
               color="primary"
               variant="tonal"
               size="large"
-              :loading="importingLocal"
+              :loading="loading.local"
+              :disabled="!localPath.trim()"
               @click="importFromLocalPath"
             >
               <v-icon start>mdi-folder-open</v-icon>
@@ -144,102 +106,123 @@
         </v-card>
       </v-col>
 
-      <!-- 导入历史 -->
-      <v-col cols="12">
-        <v-card class="rounded-lg">
+      <!-- 上传 ZIP 导入 -->
+      <v-col cols="12" md="6" lg="4">
+        <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
-            <v-icon class="mr-2">mdi-history</v-icon>
-            <span>导入记录</span>
+            <v-icon class="mr-2" color="success">mdi-upload</v-icon>
+            <span>上传压缩包导入</span>
           </v-card-title>
           <v-divider />
-          <v-card-text class="pt-4">
-            <v-alert v-if="importHistory.length === 0" type="info" variant="tonal">
+          <v-card-text class="pt-6">
+            <p class="text-body-2 mb-4">
+              上传 ZIP 压缩包导入数据。支持 HowToCook_json 格式的压缩包，
+              以及通过系统导出功能生成的压缩包（含价格记录等数据）。
+            </p>
+            <v-file-input
+              v-model="uploadFile"
+              label="选择 ZIP 文件"
+              accept=".zip"
+              variant="outlined"
+              prepend-icon="mdi-zip-box"
+              :loading="loading.upload"
+              :disabled="loading.upload"
+              hide-details
+            />
+          </v-card-text>
+          <v-divider />
+          <v-card-actions class="pa-4">
+            <v-spacer />
+            <v-btn
+              color="success"
+              variant="tonal"
+              size="large"
+              :loading="loading.upload"
+              :disabled="!uploadFile"
+              @click="uploadImport"
+            >
+              <v-icon start>mdi-upload</v-icon>
+              上传并导入
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+
+      <!-- AI 后处理 -->
+      <v-col cols="12" md="6" lg="4">
+        <v-card class="rounded-lg h-100">
+          <v-card-title class="d-flex align-center py-4">
+            <v-icon class="mr-2" color="purple">mdi-robot</v-icon>
+            <span>AI 推测处理</span>
+          </v-card-title>
+          <v-divider />
+          <v-card-text class="pt-6">
+            <p class="text-body-2 mb-4">
+              使用 AI 推测原料的模糊用量（如鸡蛋 1 个 ≈ 55g）和密度值
+              （如食用油 ≈ 0.92 g/cm³）。需要配置 AI 后端。
+            </p>
+            <v-row>
+              <v-col cols="6">
+                <v-btn
+                  block
+                  color="purple"
+                  variant="tonal"
+                  :loading="loading.aiQuantities"
+                  @click="inferQuantities"
+                >
+                  <v-icon start>mdi-scale</v-icon>
+                  推测模糊量
+                </v-btn>
+              </v-col>
+              <v-col cols="6">
+                <v-btn
+                  block
+                  color="purple"
+                  variant="tonal"
+                  :loading="loading.aiDensities"
+                  @click="inferDensities"
+                >
+                  <v-icon start>mdi-database</v-icon>
+                  推测密度
+                </v-btn>
+              </v-col>
+            </v-row>
+            <v-checkbox v-model="aiForce" label="强制重新处理全部" hide-details class="mt-2" />
+          </v-card-text>
+        </v-card>
+      </v-col>
+
+      <!-- 上次导入结果 -->
+      <v-col cols="12" md="6" lg="4">
+        <v-card class="rounded-lg h-100">
+          <v-card-title class="d-flex align-center py-4">
+            <v-icon class="mr-2" color="info">mdi-chart-box</v-icon>
+            <span>上次导入结果</span>
+          </v-card-title>
+          <v-divider />
+          <v-card-text class="pt-6">
+            <div v-if="lastImportStats">
+              <div v-for="(v, k) in lastImportStats" :key="k" class="d-flex align-center mb-2">
+                <v-chip size="small" variant="tonal" color="info" class="mr-2 text-caption font-weight-medium">
+                  {{ k }}
+                </v-chip>
+                <span class="text-body-1 font-weight-bold">{{ v }}</span>
+              </div>
+              <v-divider class="my-2" />
+              <div v-if="lastImportWarnings.length" class="mt-2">
+                <div class="text-caption font-weight-medium mb-1">警告：</div>
+                <div v-for="(w, i) in lastImportWarnings" :key="i" class="text-caption text-warning">
+                  • {{ w }}
+                </div>
+              </div>
+            </div>
+            <v-alert v-else type="info" variant="tonal" density="compact" class="mt-2">
               暂无导入记录
             </v-alert>
-            <v-timeline v-else side="end" density="compact">
-              <v-timeline-item
-                v-for="(record, index) in importHistory"
-                :key="index"
-                :dot-color="record.success ? 'success' : 'error'"
-                size="small"
-              >
-                <template #icon>
-                  <v-icon size="20">
-                    {{ record.success ? 'mdi-check' : 'mdi-alert-circle' }}
-                  </v-icon>
-                </template>
-                <div class="d-flex align-center">
-                  <strong>{{ record.source }}</strong>
-                  <v-chip
-                    :color="record.success ? 'success' : 'error'"
-                    size="x-small"
-                    class="ml-2"
-                    variant="tonal"
-                  >
-                    {{ record.success ? '成功' : '失败' }}
-                  </v-chip>
-                </div>
-                <div class="text-caption text-medium-emphasis">
-                  {{ record.timestamp }}
-                </div>
-                <div v-if="record.message" class="text-body-2 mt-1">
-                  {{ record.message }}
-                </div>
-              </v-timeline-item>
-            </v-timeline>
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
-
-    <!-- 导入结果对话框 -->
-    <v-dialog v-model="resultDialog" max-width="600px" persistent>
-      <v-card class="rounded-lg">
-        <v-card-title class="d-flex align-center py-4">
-          <v-icon class="mr-2" :color="importResult.success ? 'success' : 'error'">
-            {{ importResult.success ? 'mdi-check-circle' : 'mdi-alert-circle' }}
-          </v-icon>
-          <span>{{ importResult.success ? '导入成功' : '导入失败' }}</span>
-        </v-card-title>
-        <v-divider />
-        <v-card-text class="pt-6">
-          <div v-if="importResult.success">
-            <p class="text-body-1 mb-4">菜谱导入完成！</p>
-            <v-list>
-              <v-list-item v-if="importResult.imported">
-                <template #prepend>
-                  <v-icon color="success">mdi-check-circle</v-icon>
-                </template>
-                <v-list-item-title>导入菜谱：{{ importResult.imported }} 个</v-list-item-title>
-              </v-list-item>
-              <v-list-item v-if="importResult.updated">
-                <template #prepend>
-                  <v-icon color="info">mdi-update</v-icon>
-                </template>
-                <v-list-item-title>更新菜谱：{{ importResult.updated }} 个</v-list-item-title>
-              </v-list-item>
-              <v-list-item v-if="importResult.failed">
-                <template #prepend>
-                  <v-icon color="error">mdi-alert-circle</v-icon>
-                </template>
-                <v-list-item-title>失败菜谱：{{ importResult.failed }} 个</v-list-item-title>
-              </v-list-item>
-            </v-list>
-          </div>
-          <div v-else>
-            <p class="text-body-1 mb-4">导入过程中出现错误：</p>
-            <v-alert type="error" variant="tonal">
-              {{ importResult.error || '未知错误' }}
-            </v-alert>
-          </div>
-        </v-card-text>
-        <v-divider />
-        <v-card-actions class="pa-4">
-          <v-spacer />
-          <v-btn color="primary" @click="resultDialog = false">确定</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
   </v-container>
 </template>
 
@@ -247,160 +230,145 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import api from '@/api/client'
+import axios from 'axios'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
 
-const goBack = () => {
-  router.back()
-}
+const goBack = () => router.back()
 
-interface ImportResult {
-  success: boolean
-  imported?: number
-  updated?: number
-  failed?: number
-  error?: string
-}
-
-interface ImportRecord {
-  source: string
-  success: boolean
-  timestamp: string
-  message?: string
-}
-
-const githubUrl = ref('')
-const importing = ref(false)
-const importingInitial = ref(false)
-const localPath = ref('')
-const importingLocal = ref(false)
-
-const resultDialog = ref(false)
-const importResult = reactive<ImportResult>({
-  success: false,
+// 状态
+const loading = reactive({
+  repo: false,
+  local: false,
+  upload: false,
+  aiQuantities: false,
+  aiDensities: false,
 })
 
-const importHistory = ref<ImportRecord[]>([])
+const localPath = ref('')
+const uploadFile = ref<File | null>(null)
+const aiForce = ref(false)
 
-const importFromGitHub = async () => {
-  if (!githubUrl.value.trim()) {
-    alert('请输入 GitHub 仓库地址')
-    return
+const resultMessage = ref('')
+const resultSuccess = ref(false)
+const resultDetail = ref('')
+
+const lastImportStats = ref<Record<string, number> | null>(null)
+const lastImportWarnings = ref<string[]>([])
+
+// API 基础路径
+const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
+
+function getHeaders() {
+  const token = localStorage.getItem('access_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+function showResult(success: boolean, message: string, detail?: string) {
+  resultSuccess.value = success
+  resultMessage.value = message
+  resultDetail.value = detail || ''
+  setTimeout(() => { resultMessage.value = '' }, 8000)
+}
+
+function handleApiResponse(data: any, actionName: string) {
+  const success = data.success !== false
+  if (data.stats) {
+    lastImportStats.value = data.stats
   }
+  lastImportWarnings.value = data.warnings || []
 
-  importing.value = true
-  try {
-    const response = await api.post('/admin/import-recipes-from-url', null, {
-      params: { url: githubUrl.value },
-    })
-    Object.assign(importResult, {
-      success: true,
-      imported: response.imported || 0,
-      updated: response.updated || 0,
-      failed: response.failed || 0,
-    })
-    addImportHistory({
-      source: `GitHub: ${githubUrl.value}`,
-      success: true,
-      timestamp: new Date().toLocaleString('zh-CN'),
-      message: `导入 ${response.imported || 0} 个菜谱`,
-    })
-  } catch (error: any) {
-    Object.assign(importResult, {
-      success: false,
-      error: error.response?.data?.detail || error.message || '导入失败',
-    })
-    addImportHistory({
-      source: `GitHub: ${githubUrl.value}`,
-      success: false,
-      timestamp: new Date().toLocaleString('zh-CN'),
-      message: error.response?.data?.detail || error.message,
-    })
-  } finally {
-    importing.value = false
-    resultDialog.value = true
+  const total = data.stats ? Object.values(data.stats).reduce((a: any, b: any) => a + b, 0) : 0
+  const errors = data.errors?.length || 0
+
+  if (success) {
+    showResult(true, `${actionName}成功`, errors > 0
+      ? `完成 ${total} 项（${errors} 项失败）`
+      : `完成 ${total} 项`)
+  } else {
+    showResult(false, `${actionName}失败`, data.errors?.join('; ') || '未知错误')
   }
 }
 
-const importInitialRecipes = async () => {
-  importingInitial.value = true
+// 从仓库导入
+async function importFromRepo() {
+  loading.repo = true
   try {
-    const response = await api.post('/admin/import-recipes-initial')
-    Object.assign(importResult, {
-      success: true,
-      imported: response.imported || 0,
-      updated: response.updated || 0,
+    const resp = await axios.post(`${baseURL}/import/data/import-from-repo`, {}, {
+      headers: getHeaders(),
     })
-    addImportHistory({
-      source: '初始菜谱数据',
-      success: true,
-      timestamp: new Date().toLocaleString('zh-CN'),
-      message: `导入 ${response.imported || 0} 个初始菜谱`,
-    })
-  } catch (error: any) {
-    Object.assign(importResult, {
-      success: false,
-      error: error.response?.data?.detail || error.message || '导入失败',
-    })
-    addImportHistory({
-      source: '初始菜谱数据',
-      success: false,
-      timestamp: new Date().toLocaleString('zh-CN'),
-      message: error.response?.data?.detail || error.message,
-    })
+    handleApiResponse(resp.data, '仓库导入')
+  } catch (e: any) {
+    showResult(false, '仓库导入失败', e.response?.data?.detail || e.message)
   } finally {
-    importingInitial.value = false
-    resultDialog.value = true
+    loading.repo = false
   }
 }
 
-const importFromLocalPath = async () => {
-  if (!localPath.value.trim()) {
-    alert('请输入本地目录路径')
-    return
-  }
-
-  importingLocal.value = true
+// 从本地路径导入
+async function importFromLocalPath() {
+  loading.local = true
   try {
-    const response = await api.post('/admin/import-from-local-path', {
-      local_path: localPath.value,
+    const resp = await axios.post(`${baseURL}/import/data/import-from-local`, {}, {
+      params: { local_path: localPath.value.trim() },
+      headers: getHeaders(),
     })
-    Object.assign(importResult, {
-      success: true,
-      imported: response.imported || 0,
-      updated: response.updated || 0,
-      failed: response.failed || 0,
-    })
-    addImportHistory({
-      source: `本地路径: ${localPath.value}`,
-      success: true,
-      timestamp: new Date().toLocaleString('zh-CN'),
-      message: `导入 ${response.imported || 0} 个菜谱`,
-    })
-  } catch (error: any) {
-    Object.assign(importResult, {
-      success: false,
-      error: error.response?.data?.detail || error.message || '导入失败',
-    })
-    addImportHistory({
-      source: `本地路径: ${localPath.value}`,
-      success: false,
-      timestamp: new Date().toLocaleString('zh-CN'),
-      message: error.response?.data?.detail || error.message,
-    })
+    handleApiResponse(resp.data, '本地导入')
+  } catch (e: any) {
+    showResult(false, '本地导入失败', e.response?.data?.detail || e.message)
   } finally {
-    importingLocal.value = false
-    resultDialog.value = true
+    loading.local = false
   }
 }
 
-const addImportHistory = (record: ImportRecord) => {
-  importHistory.value.unshift(record)
-  // 只保留最近 10 条记录
-  if (importHistory.value.length > 10) {
-    importHistory.value = importHistory.value.slice(0, 10)
+// 上传 ZIP 导入
+async function uploadImport() {
+  if (!uploadFile.value) return
+  loading.upload = true
+  try {
+    const form = new FormData()
+    form.append('file', uploadFile.value)
+    const resp = await axios.post(`${baseURL}/import/data/upload`, form, {
+      headers: { ...getHeaders(), 'Content-Type': 'multipart/form-data' },
+    })
+    handleApiResponse(resp.data, '上传导入')
+    uploadFile.value = null
+  } catch (e: any) {
+    showResult(false, '上传导入失败', e.response?.data?.detail || e.message)
+  } finally {
+    loading.upload = false
+  }
+}
+
+// AI 推测
+async function inferQuantities() {
+  loading.aiQuantities = true
+  try {
+    const resp = await axios.post(`${baseURL}/import/ai-infer/quantities`, {}, {
+      params: { force: aiForce.value },
+      headers: getHeaders(),
+    })
+    handleApiResponse(resp.data, '模糊量推测')
+  } catch (e: any) {
+    showResult(false, '模糊量推测失败', e.response?.data?.detail || e.message)
+  } finally {
+    loading.aiQuantities = false
+  }
+}
+
+async function inferDensities() {
+  loading.aiDensities = true
+  try {
+    const resp = await axios.post(`${baseURL}/import/ai-infer/densities`, {}, {
+      params: { force: aiForce.value },
+      headers: getHeaders(),
+    })
+    handleApiResponse(resp.data, '密度推测')
+  } catch (e: any) {
+    showResult(false, '密度推测失败', e.response?.data?.detail || e.message)
+  } finally {
+    loading.aiDensities = false
   }
 }
 </script>
