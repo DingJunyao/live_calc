@@ -6,18 +6,10 @@
   </v-app-bar>
 
   <v-container class="pa-4">
-    <!-- 结果提示 -->
-    <v-alert v-if="resultMessage" :type="resultSuccess ? 'success' : 'error'"
-             variant="tonal" class="mb-4" closable @click:close="resultMessage = ''">
-      <div class="d-flex align-center">
-        <v-icon start :color="resultSuccess ? 'success' : 'error'" class="mr-2">
-          {{ resultSuccess ? 'mdi-check-circle' : 'mdi-alert-circle' }}
-        </v-icon>
-        <div>
-          <div class="font-weight-medium">{{ resultSuccess ? '操作成功' : '操作失败' }}</div>
-          <div v-if="resultDetail" class="text-caption mt-1">{{ resultDetail }}</div>
-        </div>
-      </div>
+    <!-- 简短的错误提示 -->
+    <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4" closable
+             @click:close="errorMessage = ''">
+      {{ errorMessage }}
     </v-alert>
 
     <v-row>
@@ -48,7 +40,7 @@
               color="github"
               variant="tonal"
               size="large"
-              :loading="loading.repo"
+              :loading="submitting.repo"
               @click="importFromRepo"
             >
               <v-icon start>mdi-source-repository</v-icon>
@@ -79,7 +71,7 @@
               prepend-icon="mdi-folder-path"
               hint="输入服务器上的数据目录路径"
               persistent-hint
-              :disabled="loading.local"
+              :disabled="submitting.local"
             />
             <v-alert type="info" variant="tonal" class="mt-4" density="compact">
               <div class="text-caption">
@@ -95,7 +87,7 @@
               color="primary"
               variant="tonal"
               size="large"
-              :loading="loading.local"
+              :loading="submitting.local"
               :disabled="!localPath.trim()"
               @click="importFromLocalPath"
             >
@@ -125,8 +117,8 @@
               accept=".zip"
               variant="outlined"
               prepend-icon="mdi-zip-box"
-              :loading="loading.upload"
-              :disabled="loading.upload"
+              :loading="submitting.upload"
+              :disabled="submitting.upload"
               hide-details
             />
           </v-card-text>
@@ -137,7 +129,7 @@
               color="success"
               variant="tonal"
               size="large"
-              :loading="loading.upload"
+              :loading="submitting.upload"
               :disabled="!uploadFile"
               @click="uploadImport"
             >
@@ -181,7 +173,7 @@
                   block
                   color="purple"
                   variant="tonal"
-                  :loading="loading.aiQuantities"
+                  :loading="submitting.aiQuantities"
                   :disabled="!enabledProviders.length"
                   @click="inferQuantities"
                 >
@@ -194,7 +186,7 @@
                   block
                   color="purple"
                   variant="tonal"
-                  :loading="loading.aiDensities"
+                  :loading="submitting.aiDensities"
                   :disabled="!enabledProviders.length"
                   @click="inferDensities"
                 >
@@ -208,33 +200,78 @@
         </v-card>
       </v-col>
 
-      <!-- 上次导入结果 -->
-      <v-col cols="12" md="6" lg="4">
-        <v-card class="rounded-lg h-100">
+      <!-- 任务列表 -->
+      <v-col cols="12">
+        <v-card class="rounded-lg">
           <v-card-title class="d-flex align-center py-4">
-            <v-icon class="mr-2" color="info">mdi-chart-box</v-icon>
-            <span>上次导入结果</span>
+            <v-icon class="mr-2">mdi-format-list-bulleted</v-icon>
+            <span>任务列表</span>
+            <v-spacer />
+            <v-btn variant="text" size="small" @click="fetchTasks(10)">刷新</v-btn>
           </v-card-title>
           <v-divider />
-          <v-card-text class="pt-6">
-            <div v-if="lastImportStats">
-              <div v-for="(v, k) in lastImportStats" :key="k" class="d-flex align-center mb-2">
-                <v-chip size="small" variant="tonal" color="info" class="mr-2 text-caption font-weight-medium">
-                  {{ k }}
-                </v-chip>
-                <span class="text-body-1 font-weight-bold">{{ v }}</span>
-              </div>
-              <v-divider class="my-2" />
-              <div v-if="lastImportWarnings.length" class="mt-2">
-                <div class="text-caption font-weight-medium mb-1">警告：</div>
-                <div v-for="(w, i) in lastImportWarnings" :key="i" class="text-caption text-warning">
-                  • {{ w }}
-                </div>
-              </div>
-            </div>
-            <v-alert v-else type="info" variant="tonal" density="compact" class="mt-2">
-              暂无导入记录
+          <v-card-text class="pt-4">
+            <v-alert v-if="tasks.length === 0" type="info" variant="tonal" density="compact">
+              暂无任务记录
             </v-alert>
+            <v-list v-else>
+              <v-list-item
+                v-for="t in tasks" :key="t.id"
+                class="mb-2 border rounded"
+                :class="taskRunningClass(t.status)"
+              >
+                <template #prepend>
+                  <v-icon :color="statusColor(t.status)" class="mr-3">
+                    {{ statusIcon(t.status) }}
+                  </v-icon>
+                </template>
+                <v-list-item-title class="font-weight-medium">
+                  {{ taskTypeLabel(t.task_type) }}
+                  <v-chip :color="statusColor(t.status)" size="x-small" variant="tonal" class="ml-2">
+                    {{ statusLabel(t.status) }}
+                  </v-chip>
+                </v-list-item-title>
+                <v-list-item-subtitle>
+                  <!-- 阶段和消息 -->
+                  <div v-if="t.progress?.stage" class="text-caption mt-1">
+                    {{ t.progress.stage }}: {{ t.progress.message }}
+                  </div>
+                  <!-- 进度条 -->
+                  <div v-if="t.progress?.total > 0" class="mt-1">
+                    <v-progress-linear
+                      :model-value="Math.round((t.progress.current / t.progress.total) * 100)"
+                      height="6"
+                      rounded
+                      color="primary"
+                    />
+                    <div class="text-caption text-medium-emphasis mt-1">
+                      {{ t.progress.current }} / {{ t.progress.total }}
+                      ({{ Math.round((t.progress.current / t.progress.total) * 100) }}%)
+                    </div>
+                  </div>
+                  <!-- 统计信息 -->
+                  <div v-if="t.stats && Object.keys(t.stats).length" class="text-caption mt-1">
+                    <v-chip v-for="(v, k) in t.stats" :key="k" size="x-small" variant="tonal"
+                            class="mr-1 mb-1">
+                      {{ k }}: {{ v }}
+                    </v-chip>
+                  </div>
+                  <!-- 错误信息 -->
+                  <div v-if="t.error" class="text-caption text-error mt-1">{{ t.error }}</div>
+                  <!-- 时间 -->
+                  <div class="text-caption text-medium-emphasis mt-1">{{ formatTime(t.created_at) }}</div>
+                </v-list-item-subtitle>
+                <template #append>
+                  <v-progress-circular
+                    v-if="t.status === 'running'"
+                    indeterminate
+                    size="20"
+                    width="2"
+                    color="primary"
+                  />
+                </template>
+              </v-list-item>
+            </v-list>
           </v-card-text>
         </v-card>
       </v-col>
@@ -246,22 +283,26 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import axios from 'axios'
+import { useImportTask } from '@/composables/useImportTask'
 import { getTranslationConfig } from '@/api/usda'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { tasks, fetchTasks, startTask, startUploadTask } = useImportTask()
 const router = useRouter()
 
 const goBack = () => router.back()
 
-// 状态
-const loading = reactive({
+// 各卡片提交中状态
+const submitting = reactive({
   repo: false,
   local: false,
   upload: false,
   aiQuantities: false,
   aiDensities: false,
 })
+
+// 简短错误提示（仅在启动任务失败时显示）
+const errorMessage = ref('')
 
 const localPath = ref('')
 const uploadFile = ref<File | null>(null)
@@ -283,6 +324,9 @@ function enabledIn(region: string): string[] {
 const enabledProviders = computed<string[]>(() => enabledIn('ai'))
 
 onMounted(async () => {
+  // 加载近期任务列表，恢复对运行中任务的轮询
+  fetchTasks(10)
+  // 加载 AI 配置
   try {
     translationConfig.value = await getTranslationConfig()
     if (enabledProviders.value.length) {
@@ -293,125 +337,107 @@ onMounted(async () => {
   }
 })
 
-const resultMessage = ref('')
-const resultSuccess = ref(false)
-const resultDetail = ref('')
+// === 任务操作 ===
 
-const lastImportStats = ref<Record<string, number> | null>(null)
-const lastImportWarnings = ref<string[]>([])
-
-// API 基础路径
-const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
-
-function getHeaders() {
-  const token = localStorage.getItem('access_token')
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
-function showResult(success: boolean, message: string, detail?: string) {
-  resultSuccess.value = success
-  resultMessage.value = message
-  resultDetail.value = detail || ''
-  setTimeout(() => { resultMessage.value = '' }, 8000)
-}
-
-function handleApiResponse(data: any, actionName: string) {
-  const success = data.success !== false
-  if (data.stats) {
-    lastImportStats.value = data.stats
-  }
-  lastImportWarnings.value = data.warnings || []
-
-  const total = data.stats ? Object.values(data.stats).reduce((a: any, b: any) => a + b, 0) : 0
-  const errors = data.errors?.length || 0
-
-  if (success) {
-    showResult(true, `${actionName}成功`, errors > 0
-      ? `完成 ${total} 项（${errors} 项失败）`
-      : `完成 ${total} 项`)
-  } else {
-    showResult(false, `${actionName}失败`, data.errors?.join('; ') || '未知错误')
-  }
-}
-
-// 从仓库导入
 async function importFromRepo() {
-  loading.repo = true
-  try {
-    const resp = await axios.post(`${baseURL}/import/data/import-from-repo`, {}, {
-      headers: getHeaders(),
-    })
-    handleApiResponse(resp.data, '仓库导入')
-  } catch (e: any) {
-    showResult(false, '仓库导入失败', e.response?.data?.detail || e.message)
-  } finally {
-    loading.repo = false
+  submitting.repo = true
+  const taskId = await startTask('/import/data/import-from-repo')
+  if (!taskId) {
+    errorMessage.value = '仓库导入任务启动失败，请检查后端状态'
   }
+  submitting.repo = false
 }
 
-// 从本地路径导入
 async function importFromLocalPath() {
-  loading.local = true
-  try {
-    const resp = await axios.post(`${baseURL}/import/data/import-from-local`, {}, {
-      params: { local_path: localPath.value.trim() },
-      headers: getHeaders(),
-    })
-    handleApiResponse(resp.data, '本地导入')
-  } catch (e: any) {
-    showResult(false, '本地导入失败', e.response?.data?.detail || e.message)
-  } finally {
-    loading.local = false
+  submitting.local = true
+  const taskId = await startTask('/import/data/import-from-local', {
+    params: { local_path: localPath.value.trim() },
+  })
+  if (!taskId) {
+    errorMessage.value = '本地导入任务启动失败，请检查路径和后端状态'
   }
+  submitting.local = false
 }
 
-// 上传 ZIP 导入
 async function uploadImport() {
   if (!uploadFile.value) return
-  loading.upload = true
-  try {
-    const form = new FormData()
-    form.append('file', uploadFile.value)
-    const resp = await axios.post(`${baseURL}/import/data/upload`, form, {
-      headers: { ...getHeaders(), 'Content-Type': 'multipart/form-data' },
-    })
-    handleApiResponse(resp.data, '上传导入')
+  submitting.upload = true
+  const taskId = await startUploadTask(uploadFile.value)
+  if (taskId) {
     uploadFile.value = null
-  } catch (e: any) {
-    showResult(false, '上传导入失败', e.response?.data?.detail || e.message)
-  } finally {
-    loading.upload = false
+  } else {
+    errorMessage.value = '上传导入任务启动失败，请检查文件和后端状态'
   }
+  submitting.upload = false
 }
 
-// AI 推测
 async function inferQuantities() {
-  loading.aiQuantities = true
-  try {
-    const resp = await axios.post(`${baseURL}/import/ai-infer/quantities`, {}, {
-      params: { force: aiForce.value, provider: aiProvider.value || 'claude_code' },
-      headers: getHeaders(),
-    })
-    handleApiResponse(resp.data, '模糊量推测')
-  } catch (e: any) {
-    showResult(false, '模糊量推测失败', e.response?.data?.detail || e.message)
-  } finally {
-    loading.aiQuantities = false
+  submitting.aiQuantities = true
+  const taskId = await startTask('/import/ai-infer/quantities', {
+    params: { force: aiForce.value, provider: aiProvider.value || 'claude_code' },
+  })
+  if (!taskId) {
+    errorMessage.value = 'AI 模糊量推测任务启动失败，请检查后端状态'
   }
+  submitting.aiQuantities = false
 }
 
 async function inferDensities() {
-  loading.aiDensities = true
+  submitting.aiDensities = true
+  const taskId = await startTask('/import/ai-infer/densities', {
+    params: { force: aiForce.value, provider: aiProvider.value || 'claude_code' },
+  })
+  if (!taskId) {
+    errorMessage.value = 'AI 密度推测任务启动失败，请检查后端状态'
+  }
+  submitting.aiDensities = false
+}
+
+// === 辅助函数 ===
+
+const taskTypeLabels: Record<string, string> = {
+  git_import: 'Git 仓库导入',
+  local_import: '本地路径导入',
+  upload_import: '上传导入',
+  ai_quantities: 'AI 模糊量推测',
+  ai_densities: 'AI 密度推测',
+}
+
+function taskTypeLabel(type: string): string {
+  return taskTypeLabels[type] || type
+}
+
+const statusConfig: Record<string, { color: string; icon: string; label: string }> = {
+  pending: { color: 'grey', icon: 'mdi-clock-outline', label: '等待中' },
+  running: { color: 'primary', icon: 'mdi-loading', label: '运行中' },
+  success: { color: 'success', icon: 'mdi-check-circle', label: '完成' },
+  failed: { color: 'error', icon: 'mdi-alert-circle', label: '失败' },
+}
+
+function statusColor(status: string): string {
+  return statusConfig[status]?.color || 'grey'
+}
+
+function statusIcon(status: string): string {
+  return statusConfig[status]?.icon || 'mdi-help-circle'
+}
+
+function statusLabel(status: string): string {
+  return statusConfig[status]?.label || status
+}
+
+function taskRunningClass(status: string): string {
+  return status === 'running' ? 'status-running' : ''
+}
+
+function formatTime(iso: string): string {
+  if (!iso) return ''
   try {
-    const resp = await axios.post(`${baseURL}/import/ai-infer/densities`, {}, {
-      params: { force: aiForce.value, provider: aiProvider.value || 'claude_code' },
-      headers: getHeaders(),
-    })
-    handleApiResponse(resp.data, '密度推测')
-  } catch (e: any) {
-    showResult(false, '密度推测失败', e.response?.data?.detail || e.message)
-  } finally {
-    loading.aiDensities = false
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch {
+    return iso
   }
 }
 </script>
@@ -430,5 +456,15 @@ async function inferDensities() {
 .v-theme--dark .v-btn.color-github.v-btn--variant-tonal {
   background-color: rgb(220, 220, 220);
   color: black;
+}
+
+/* 运行中任务脉冲动画 */
+:deep(.v-list-item.status-running) {
+  animation: pulse-bg 2s ease-in-out infinite;
+}
+
+@keyframes pulse-bg {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
 }
 </style>
