@@ -100,15 +100,58 @@ async def trigger_local_import(
 # ---- AI 后处理端点 ----
 
 
+def _try_create_ai_caller():
+    """尝试创建 AI 调用函数。
+
+    优先使用 claude_code 后端（本机 claude CLI），
+    如果不可用则返回 None，调用方会跳过 AI 推测。
+    """
+    try:
+        import shutil
+        import subprocess
+
+        cli = shutil.which("claude") or "claude"
+
+        def _call(prompt: str) -> str:
+            result = subprocess.run(
+                [cli, "-p"],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                encoding="utf-8",
+            )
+            return result.stdout.strip()
+
+        # 快速健康检查
+        test = _call("say ok")
+        if test:
+            return _call
+    except Exception:
+        pass
+    return None
+
+
 @router.post("/ai-infer/quantities")
 async def infer_fuzzy_quantities(
     force: bool = False,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """触发模糊量推测。"""
+    """触发模糊量推测。
+
+    需要配置 AI 后端（默认使用本机 claude CLI）。
+    如未检测到可用 AI 后端，将跳过推测并返回提示。
+    """
+    ai_caller = _try_create_ai_caller()
     inferrer = AIInferrer(db)
+    if ai_caller:
+        inferrer.set_ai_caller(ai_caller)
+
     result = inferrer.infer_fuzzy_quantities(force=force)
+
+    if not ai_caller and len(result.warnings) == 0:
+        result.warnings.append("未检测到可用的 AI 后端，跳过 AI 推测。请确保 claude CLI 可用。")
 
     return {
         "success": len(result.errors) == 0,
@@ -124,9 +167,20 @@ async def infer_densities(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """触发密度推测。"""
+    """触发密度推测。
+
+    需要配置 AI 后端（默认使用本机 claude CLI）。
+    如未检测到可用 AI 后端，将跳过推测并返回提示。
+    """
+    ai_caller = _try_create_ai_caller()
     inferrer = AIInferrer(db)
+    if ai_caller:
+        inferrer.set_ai_caller(ai_caller)
+
     result = inferrer.infer_densities(force=force)
+
+    if not ai_caller and len(result.warnings) == 0:
+        result.warnings.append("未检测到可用的 AI 后端，跳过 AI 推测。请确保 claude CLI 可用。")
 
     return {
         "success": len(result.errors) == 0,
