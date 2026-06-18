@@ -210,28 +210,32 @@ async def lifespan(app: FastAPI):
         # 若已存在初始导入的菜谱（source=json_repo），视为已初始化，直接跳过，
         # 避免每次重启都重复遍历数据文件、重复执行营养增量导入（开销大）。
         # 如需重新导入，请通过管理接口触发，或先清空 source=json_repo 的菜谱。
+        # 若 FIRST_RUN_INIT_RECIPES=false，也跳过启动导入。
         from app.models.recipe import Recipe
-        imported_count = db.query(Recipe).filter(Recipe.source == "json_repo").count()
+        from app.config import settings
 
-        if imported_count > 0:
-            logger.info(f"初始数据已导入（{imported_count} 条菜谱），跳过启动导入")
+        if not settings.first_run_init_recipes:
+            logger.info("FIRST_RUN_INIT_RECIPES=false，跳过启动导入")
         else:
-            # 首次初始化：配置了本地数据路径则从本地导入，否则从远程仓库导入
-            from app.config import settings
-            if settings.data_local_path:
-                local_path = settings.data_local_path
-                logger.info(f"检测到本地数据路径配置: {local_path}")
-                if os.path.isdir(local_path):
-                    from app.services.importer.api_service import import_from_local_dir as local_import
-                    local_result = local_import(db, local_path, user_id=1)
-                    logger.info(f"本地数据导入结果: {local_result.stats}")
-                else:
-                    logger.warning(f"本地数据路径不存在或不是目录: {local_path}")
+            imported_count = db.query(Recipe).filter(Recipe.source == "json_repo").count()
+            if imported_count > 0:
+                logger.info(f"初始数据已导入（{imported_count} 条菜谱），跳过启动导入")
             else:
-                # 未配置本地路径时，从远程仓库导入初始数据
-                from app.services.importer.api_service import import_from_git_repo
-                result = import_from_git_repo(db, user_id=1)
-                logger.info(f"远程数据导入结果: {result.stats}")
+                # 首次初始化：配置了本地数据路径则从本地导入，否则从远程仓库导入
+                if settings.data_local_path:
+                    local_path = settings.data_local_path
+                    logger.info(f"检测到本地数据路径配置: {local_path}")
+                    if os.path.isdir(local_path):
+                        from app.services.importer.api_service import import_from_local_dir as local_import
+                        local_result = local_import(db, local_path, user_id=1)
+                        logger.info(f"本地数据导入结果: {local_result.stats}")
+                    else:
+                        logger.warning(f"本地数据路径不存在或不是目录: {local_path}")
+                else:
+                    # 未配置本地路径时，从远程仓库导入初始数据
+                    from app.services.importer.api_service import import_from_git_repo
+                    result = import_from_git_repo(db, user_id=1)
+                    logger.info(f"远程数据导入结果: {result.stats}")
 
         # 检查是否需要为现有原料批量创建商品
         from app.models.nutrition import Ingredient
