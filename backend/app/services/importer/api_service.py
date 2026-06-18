@@ -1,7 +1,10 @@
 """导入 API 编排服务——协调输入源、格式检测、导入器和 AI 后处理。"""
+import logging
 import os
 import tempfile
 from typing import Optional
+
+logger = logging.getLogger("app.importer.api_service")
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -16,9 +19,11 @@ from app.services.importer.importers.export import ExportImporter
 
 def import_from_git_repo(db: Session, user_id: int) -> ImportResult:
     """从 git 仓库导入（启动时或管理员触发）。"""
+    logger.info("=== 开始从 Git 仓库导入 ===")
     source = GitRepoSource()
     collection = source.collect_files()
     fmt = FormatDetector.detect(collection)
+    logger.info("格式检测结果: %s", fmt.value)
 
     if fmt == FormatType.HOWTOCOOK_JSON:
         importer = HowToCookImporter(db, user_id=user_id)
@@ -29,6 +34,7 @@ def import_from_git_repo(db: Session, user_id: int) -> ImportResult:
 
     result = importer.import_all(collection)
     collection.cleanup_temp()
+    logger.info("=== Git 仓库导入完成: %s ===", result.stats)
     return result
 
 

@@ -1,5 +1,6 @@
 """HowToCook_json 格式导入器。"""
 import json
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -36,6 +37,9 @@ CATEGORY_MAPPING = {
 }
 
 
+logger = logging.getLogger("app.importer.howtocook")
+
+
 class HowToCookImporter(Importer):
     """HowToCook_json 格式导入器。"""
 
@@ -50,6 +54,8 @@ class HowToCookImporter(Importer):
     def import_all(self, collection: FileCollection) -> ImportResult:
         self.result = ImportResult()
 
+        logger.info("开始 HowToCook 数据导入...")
+
         # 1. 导入单位
         self._import_units(collection)
 
@@ -60,16 +66,19 @@ class HowToCookImporter(Importer):
         self._import_recipes(collection)
 
         self.db.commit()
+        logger.info("导入完成: %s", self.result.stats)
         return self.result
 
     def _import_units(self, collection: FileCollection):
         unit_file = collection.find_one("units.json")
         if not unit_file:
+            logger.info("units.json 不存在，跳过单位导入")
             return
 
         with open(unit_file.absolute_path, "r", encoding="utf-8") as f:
             units_data = json.load(f)
 
+        logger.info("导入单位: 共 %d 个", len(units_data))
         imported = 0
         for item in units_data:
             name = item.get("name", "").strip()
@@ -87,10 +96,12 @@ class HowToCookImporter(Importer):
                 self.result.warnings.append(f"无法创建单位: {name}")
 
         self.result.stats["units"] = imported
+        logger.info("单位导入完成: %d 个新单位", imported)
 
     def _import_ingredients(self, collection: FileCollection):
         ing_file = collection.find_one("ingredients.json")
         if not ing_file:
+            logger.info("ingredients.json 不存在，跳过原料导入")
             return
 
         with open(ing_file.absolute_path, "r", encoding="utf-8") as f:
@@ -99,8 +110,10 @@ class HowToCookImporter(Importer):
         categories = {cat.name: cat
                       for cat in self.db.query(IngredientCategory).all()}
 
+        total = len(ingredients_data)
+        logger.info("导入原料: 共 %d 个", total)
         imported = 0
-        for key, item in ingredients_data.items():
+        for idx, (key, item) in enumerate(ingredients_data.items(), 1):
             ing_name = item.get("name", "").strip() or key.strip()
             if not ing_name:
                 continue
@@ -144,15 +157,21 @@ class HowToCookImporter(Importer):
 
             imported += 1
 
+            if idx % 100 == 0:
+                logger.info("  原料进度: %d/%d (已导入 %d)", idx, total, imported)
+
         self.result.stats["ingredients"] = imported
+        logger.info("原料导入完成: %d 个新原料", imported)
 
     def _import_recipes(self, collection: FileCollection):
         recipe_files = [f for f in collection.files
                         if f.name.endswith(".json")
                         and f.name not in NON_RECIPE_FILES]
 
+        total = len(recipe_files)
+        logger.info("导入菜谱: 共 %d 个文件", total)
         imported = 0
-        for rf in recipe_files:
+        for idx, rf in enumerate(recipe_files, 1):
             try:
                 with open(rf.absolute_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -203,7 +222,11 @@ class HowToCookImporter(Importer):
 
             imported += 1
 
+            if idx % 50 == 0:
+                logger.info("  菜谱进度: %d/%d (已导入 %d)", idx, total, imported)
+
         self.result.stats["recipes"] = imported
+        logger.info("菜谱导入完成: %d 个新菜谱", imported)
 
     def _download_image(self, image_path: str, recipe_dir: str) -> Optional[str]:
         """从本地文件复制图片到 static 目录。"""
