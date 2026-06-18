@@ -153,8 +153,14 @@ class HowToCookImporter(Importer):
 
         imported = 0
         for rf in recipe_files:
-            with open(rf.absolute_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            try:
+                with open(rf.absolute_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                self.result.warnings.append(
+                    f"跳过无效 JSON 文件 {rf.relative_path}: {e}"
+                )
+                continue
 
             name = data.get("name", "").strip()
             if not name:

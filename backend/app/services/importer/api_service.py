@@ -34,7 +34,19 @@ def import_from_git_repo(db: Session, user_id: int) -> ImportResult:
 
 def import_from_local_dir(db: Session, local_path: str,
                            user_id: int) -> ImportResult:
-    """从本地目录导入。"""
+    """从本地目录导入。
+
+    自动检测数据子目录（如 out/），兼容指向仓库根目录和直接指向
+    数据目录两种路径。
+    """
+    # 检测常见数据子目录（兼容旧版 EnhancedRecipeImportService 的行为）
+    for subdir in ("out", "data", "recipes"):
+        candidate = os.path.join(local_path, subdir)
+        if os.path.isdir(candidate) and os.path.isfile(
+            os.path.join(candidate, "ingredients.json")):
+            local_path = candidate
+            break
+
     source = LocalDirSource(local_path)
     collection = source.collect_files()
     fmt = FormatDetector.detect(collection)
