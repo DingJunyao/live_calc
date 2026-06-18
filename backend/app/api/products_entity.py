@@ -15,7 +15,8 @@ from app.models.product import ProductRecord
 from app.models.nutrition import Ingredient
 from app.schemas.product_entity import (
     ProductCreate, ProductUpdate, ProductResponse, ProductWithDetails,
-    ProductBarcodeCreate, ProductBarcodeUpdate, ProductBarcodeResponse
+    ProductBarcodeCreate, ProductBarcodeUpdate, ProductBarcodeResponse,
+    ImportAliasRequest
 )
 from app.schemas.common import PaginatedResponse
 from app.utils.database_helpers import serialize_tags, deserialize_tags
@@ -717,6 +718,12 @@ def product_autocomplete(
             joinedload(Product.ingredient)
         ).filter(Product.is_active == True).all()
 
+        # 统计每个原料下的活跃商品数量（用于前端原料→商品择优）
+        from collections import Counter
+        ingredient_product_counts: dict[int, int] = Counter(
+            p.ingredient_id for p in products if p.ingredient_id
+        )
+
         results = []
         for product in products:
             matched_alias = None
@@ -753,7 +760,9 @@ def product_autocomplete(
                     "ingredient_name": product.ingredient.name if product.ingredient else None,
                     "aliases": product.aliases or [],
                     "match_type": match_type,
-                    "matched_alias": matched_alias
+                    "matched_alias": matched_alias,
+                    "created_at": product.created_at.isoformat() if product.created_at else None,
+                    "ingredient_product_count": ingredient_product_counts.get(product.ingredient_id, 0)
                 })
 
         # 按匹配类型排序：名称匹配 > 商品别名匹配 > 食材名称匹配 > 食材别名匹配
@@ -1171,7 +1180,7 @@ def merge_product_into(
 @router.post("/products/entity/{product_id}/add-import-alias")
 def add_import_alias(
     product_id: int,
-    body: dict = Body(...),
+    body: ImportAliasRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1182,7 +1191,7 @@ def add_import_alias(
     - 原料下唯一商品 → 别名加到原料
     - 否则 → 别名加到商品
     """
-    alias_name = body.get("name", "").strip()
+    alias_name = body.name.strip()
     if not alias_name:
         raise HTTPException(status_code=400, detail="name is required")
 
@@ -1213,12 +1222,29 @@ def add_import_alias(
         target_type = "product"
 
     target_name = target.name
-    aliases = target.aliases or []
+    aliases = list(target.aliases or [])  # 拷贝，避免直接操作 ORM 追踪对象
 
+    added = False
     if alias_name != target_name and alias_name not in aliases:
         aliases.append(alias_name)
-        target.aliases = aliases
-        target.updated_by = current_user.id
+        # 直接用数据库级 UPDATE 绕过 SQLAlchemy JSON 列变更检测问题
+        if target_type == "ingredient":
+            db.query(Ingredient).filter(Ingredient.id == target.id).update(
+                {"aliases": aliases, "updated_by": current_user.id},
+                synchronize_session="fetch"
+            )
+        else:
+            db.query(Product).filter(Product.id == target.id).update(
+                {"aliases": aliases, "updated_by": current_user.id},
+                synchronize_session="fetch"
+            )
         db.commit()
+        added = True
 
-    return {"target": target_type, "target_id": target.id, "target_name": target_name}
+    return {
+        "target": target_type,
+        "target_id": target.id,
+        "target_name": target_name,
+        "added": added,
+        "aliases": aliases
+    }

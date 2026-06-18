@@ -54,7 +54,6 @@
               </td>
               <td>
                 <template v-if="row.status === 'invalid'">{{ row.name || '（' + row.error + '）' }}</template>
-                <template v-else-if="row.status === 'matched'">{{ row.name }}</template>
                 <template v-else>
                   <!-- 未展开：可点击商品名 -->
                   <span v-if="!row.editing" class="paste-editable" @click="openEditor(row)">
@@ -248,19 +247,75 @@ async function doParse() {
   }
 }
 
-// 解析时仅做精确匹配（名字完全相等），候选不再缓存到 suggestions（由用户搜索驱动）
+// 自动匹配：按优先级识别商品主名、原料主名、商品别名、原料别名
+// 命中原料时解析最合适的商品（唯一商品 > 同名商品 > 最早创建）
 async function tryAutoMatch(row: ImportRow) {
   try {
     const list: any[] = await api.get('/products/autocomplete', { params: { q: row.name, limit: 20 } })
-    const exact = (list || []).find((it: any) => it.name === row.name)
-    if (exact) {
-      row.productId = exact.id
-      row.status = 'matched'
-      row.mode = 'existing'
+    if (!list || list.length === 0) return
+
+    // Priority 1: 商品主名精确匹配
+    const nameMatch = list.find((it: any) => it.match_type === 'name' && it.name === row.name)
+    if (nameMatch) {
+      setAutoMatched(row, nameMatch.id)
+      return
+    }
+
+    // Priority 2: 原料主名匹配 → 解析最佳商品
+    const ingNameMatch = list.find((it: any) => it.match_type === 'ingredient_name')
+    if (ingNameMatch && ingNameMatch.ingredient_id) {
+      const bestId = resolveIngredientProduct(list, ingNameMatch.ingredient_id, ingNameMatch.ingredient_name)
+      if (bestId) {
+        setAutoMatched(row, bestId)
+        return
+      }
+    }
+
+    // Priority 3: 商品别名匹配
+    const aliasMatch = list.find((it: any) => it.match_type === 'alias')
+    if (aliasMatch) {
+      setAutoMatched(row, aliasMatch.id)
+      return
+    }
+
+    // Priority 4: 原料别名匹配 → 解析最佳商品
+    const ingAliasMatch = list.find((it: any) => it.match_type === 'ingredient_alias')
+    if (ingAliasMatch && ingAliasMatch.ingredient_id) {
+      const bestId = resolveIngredientProduct(list, ingAliasMatch.ingredient_id, ingAliasMatch.ingredient_name)
+      if (bestId) {
+        setAutoMatched(row, bestId)
+        return
+      }
     }
   } catch {
     /* 保持 unmatched，用户手动处理 */
   }
+}
+
+// 原料匹配时解析最佳商品：仅一个 → 同名 → 最早创建
+function resolveIngredientProduct(list: any[], ingredientId: number, ingredientName: string): number | null {
+  const products = list.filter((it: any) => it.ingredient_id === ingredientId)
+  if (products.length === 0) return null
+
+  // 实际只有唯一商品
+  const totalCount = products[0]?.ingredient_product_count ?? products.length
+  if (totalCount === 1) return products[0].id
+
+  // 存在与原料同名的商品
+  const sameName = products.find((p: any) => p.name === ingredientName)
+  if (sameName) return sameName.id
+
+  // 取最早创建的商品
+  const sorted = [...products].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  )
+  return sorted[0]?.id ?? null
+}
+
+function setAutoMatched(row: ImportRow, productId: number) {
+  row.productId = productId
+  row.status = 'matched'
+  row.mode = 'existing'
 }
 
 // 展开内联面板：预填搜索词为商品名，触发首次搜索
@@ -379,14 +434,20 @@ async function doImport() {
     const batch = payloads.slice(i, i + CONCURRENCY)
     const settled = await Promise.allSettled(
       batch.map(async p => {
-        await api.post('/products', p.payload)
-        // 关联已有商品时，将导入的商品名添加为别名
-        if (p.row.mode === 'existing' && p.row.productId) {
+        const res = await api.post('/products', p.payload)
+        // 将导入的商品名添加为别名（existing→已有商品ID/new_attach→从响应取新建商品ID）
+        const aliasProductId: number | null =
+          p.row.mode === 'existing' ? p.row.productId
+          : p.row.mode === 'new_attach' ? res?.data?.product_id ?? null
+          : null
+        if (aliasProductId) {
           try {
-            await api.post(`/products/entity/${p.row.productId}/add-import-alias`, {
+            await api.post(`/products/entity/${aliasProductId}/add-import-alias`, {
               name: p.row.name
             })
-          } catch { /* 别名添加为附加操作，不影响导入结果 */ }
+          } catch (e: any) {
+            console.error('[paste-import] 添加别名失败:', e?.response?.status, e?.response?.data || e?.message || e)
+          }
         }
       })
     )

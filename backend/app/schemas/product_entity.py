@@ -94,3 +94,9 @@ class ProductBarcodeResponse(TimeZoneAwareModel, ProductBarcodeBase):
 
     class Config:
         from_attributes = True
+
+
+# ==================== 导入别名相关 Schema ====================
+
+class ImportAliasRequest(BaseModel):
+    name: str = Field(..., min_length=1, description="要添加的别名")
