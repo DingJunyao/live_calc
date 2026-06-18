@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.post("/data/upload")
-async def upload_import(
+def upload_import(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -51,7 +51,7 @@ async def upload_import(
 
 
 @router.post("/data/import-from-repo")
-async def trigger_repo_import(
+def trigger_repo_import(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -73,7 +73,7 @@ async def trigger_repo_import(
 
 
 @router.post("/data/import-from-local")
-async def trigger_local_import(
+def trigger_local_import(
     local_path: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -144,7 +144,7 @@ def _create_ai_caller(provider: str, db: Session):
 
 
 @router.post("/ai-infer/quantities")
-async def infer_fuzzy_quantities(
+def infer_fuzzy_quantities(
     force: bool = False,
     provider: str = Query("claude_code", description="AI 提供方名称"),
     db: Session = Depends(get_db),
@@ -177,7 +177,7 @@ async def infer_fuzzy_quantities(
 
 
 @router.post("/ai-infer/densities")
-async def infer_densities(
+def infer_densities(
     force: bool = False,
     provider: str = Query("claude_code", description="AI 提供方名称"),
     db: Session = Depends(get_db),
