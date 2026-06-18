@@ -15,12 +15,12 @@ logger = logging.getLogger("app.importer.git_repo")
 
 
 def _get_repo_config():
-    """从环境变量读取数据仓库配置"""
+    """从 Settings 读取数据仓库配置"""
+    from app.config import settings
     return {
-        "url": os.getenv("DATA_REPO_URL",
-                         "https://github.com/DingJunyao/HowToCook_json.git"),
-        "branch": os.getenv("DATA_REPO_BRANCH", "corr"),
-        "data_dir": os.getenv("DATA_REPO_DIR", "out"),
+        "url": settings.data_repo_url,
+        "branch": settings.data_repo_branch,
+        "data_dir": settings.data_repo_dir,
     }
 
 
