@@ -1,4 +1,5 @@
 """导入 API 路由。"""
+import asyncio
 import os
 import threading
 
@@ -139,6 +140,33 @@ def list_tasks(
 
     tasks = query.order_by(ImportTask.id.desc()).limit(limit).all()
     return [t.to_dict() for t in tasks]
+
+
+@router.post("/task/{task_id}/cancel")
+def cancel_import_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """取消正在运行的导入/AI 推测任务。
+
+    - 只有 pending / running 状态可取消。
+    - 取消后任务保留在列表上，status 变为 cancelled。
+    - 实际的后台线程会继续运行（daemon thread），但状态已标记。
+    """
+    task = db.query(ImportTask).filter(ImportTask.id == task_id).first()
+    if not task:
+        raise HTTPException(404, detail="任务不存在")
+
+    if task.status not in ("pending", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"任务状态为 {task.status}，不可取消",
+        )
+
+    task.status = "cancelled"
+    db.commit()
+    return {"status": "cancelled"}
 
 
 # ---- AI 后处理端点 ----
@@ -286,6 +314,208 @@ def infer_densities(
     thread = threading.Thread(
         target=_run_ai_inference,
         args=(task.id, "densities", force, provider, SessionLocal),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"task_id": task.id}
+
+
+# ---- USDA 翻译任务（带 ImportTask 跟踪） ----
+
+
+def _run_translate_task(task_id: int, translate_type: str, provider: str, db_session_factory,
+                          force: bool = False):
+    """后台运行 USDA 翻译任务（食材名或营养素），带 ImportTask 进度跟踪。
+
+    在独立线程中运行翻译，同时轮询 UsdaTask 进度同步到 ImportTask，
+    并在轮询中检查 ImportTask 是否被取消。
+    """
+    db = db_session_factory()
+    try:
+        task = db.query(ImportTask).get(task_id)
+        if not task:
+            return
+        if task.status == "cancelled":
+            return
+
+        task.status = "running"
+        task.progress = {"stage": "翻译中", "current": 0, "total": 0, "message": f"使用 {provider} 翻译..."}
+        db.commit()
+
+        from app.models.usda import TranslationConfig
+        cfg_record = db.query(TranslationConfig).first()
+        config_dict = cfg_record.to_dict() if cfg_record else {}
+        db.close()  # 关闭当前 db，翻译和轮询用独立 Session
+
+        # 在独立线程中运行翻译，拿到结果。
+        result_box: list = [None]
+        error_box: list = [None]
+        import threading as _threading
+        barrier = _threading.Event()
+        cancel_event = _threading.Event()
+
+        def _translate_worker():
+            """在新 Session 中执行翻译（可被 cancel_event 中断）。"""
+            wdb = db_session_factory()
+            try:
+                async def _do():
+                    if translate_type == "foods":
+                        from app.services.translate.task import TranslateTask
+                        return await TranslateTask(wdb).run(
+                            provider=provider, config_dict=config_dict,
+                            cancel_event=cancel_event, force=force,
+                        )
+                    else:
+                        from app.services.translate.nutrient_task import TranslateNutrientsTask
+                        return await TranslateNutrientsTask(wdb).run(
+                            provider=provider, config_dict=config_dict,
+                            cancel_event=cancel_event, force=force,
+                        )
+                r = asyncio.run(_do())
+                result_box[0] = r
+            except Exception as e:
+                error_box[0] = e
+            finally:
+                wdb.close()
+                barrier.set()
+
+        t = _threading.Thread(target=_translate_worker, daemon=True)
+        t.start()
+
+        # 主线程：轮询 UsdaTask 进度 + 检查取消
+        poll_db = db_session_factory()
+        try:
+            while not barrier.is_set():
+                cancelled = barrier.wait(timeout=2)
+                if cancelled:
+                    # 超时未 set，继续轮询
+                    pass
+
+                # 同步 UsdaTask 进度 → ImportTask
+                try:
+                    sync_db = db_session_factory()
+                    try:
+                        from app.models.usda import UsdaTask
+                        ut = sync_db.query(UsdaTask).filter(
+                            UsdaTask.task_type == ("translate" if translate_type == "foods" else "translate_nutrients"),
+                            UsdaTask.status == "running",
+                        ).order_by(UsdaTask.id.desc()).first()
+                        if ut and ut.progress:
+                            p = ut.progress
+                            done = p.get("done", 0)
+                            total = p.get("total", 0) or 1
+                            sync_import = sync_db.query(ImportTask).get(task_id)
+                            if sync_import:
+                                sync_import.progress = {
+                                    "stage": "翻译中",
+                                    "current": done,
+                                    "total": total,
+                                    "message": f"已翻译 {done}/{total} 条",
+                                }
+                                sync_db.commit()
+                    finally:
+                        sync_db.close()
+                except Exception:
+                    pass
+
+                # 检查取消：信号翻译线程停止 + 不再更新进度
+                try:
+                    check_db = db_session_factory()
+                    try:
+                        check_task = check_db.query(ImportTask).get(task_id)
+                        if check_task and check_task.status == "cancelled":
+                            cancel_event.set()
+                            return
+                    finally:
+                        check_db.close()
+                except Exception:
+                    pass
+
+                if barrier.is_set():
+                    break
+        finally:
+            poll_db.close()
+
+        # 翻译完成，更新 ImportTask
+        final_db = db_session_factory()
+        try:
+            final_task = final_db.query(ImportTask).get(task_id)
+            if final_task is None:
+                return
+            if final_task.status == "cancelled":
+                return  # 取消优先，不改状态
+            if error_box[0] is not None:
+                final_task.status = "failed"
+                final_task.error = str(error_box[0])
+            else:
+                final_task.status = "success"
+                final_task.progress = {"stage": "完成", "current": 1, "total": 1, "message": "翻译完成"}
+                final_task.stats = result_box[0] if isinstance(result_box[0], dict) else {}
+            final_db.commit()
+        finally:
+            final_db.close()
+    except Exception as e:
+        try:
+            exc_db = db_session_factory()
+            try:
+                exc_task = exc_db.query(ImportTask).get(task_id)
+                if exc_task and exc_task.status != "cancelled":
+                    exc_task.status = "failed"
+                    exc_task.error = str(e)
+                    exc_db.commit()
+            finally:
+                exc_db.close()
+        except Exception:
+            pass
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+@router.post("/translate/foods")
+def translate_foods(
+    provider: str = Query("claude_code", description="翻译后端名称"),
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """触发 USDA 食材名翻译（带 ImportTask 跟踪）。"""
+    task = ImportTask(task_type="usda_translate", status="pending", user_id=current_user.id)
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    thread = threading.Thread(
+        target=_run_translate_task,
+        args=(task.id, "foods", provider, SessionLocal),
+        kwargs={"force": force},
+        daemon=True,
+    )
+    thread.start()
+
+    return {"task_id": task.id}
+
+
+@router.post("/translate/nutrients")
+def translate_nutrients(
+    provider: str = Query("claude_code", description="AI 翻译后端名称"),
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """触发 USDA 营养素翻译（带 ImportTask 跟踪）。"""
+    task = ImportTask(task_type="nutrient_translate", status="pending", user_id=current_user.id)
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    thread = threading.Thread(
+        target=_run_translate_task,
+        args=(task.id, "nutrients", provider, SessionLocal),
+        kwargs={"force": force},
         daemon=True,
     )
     thread.start()

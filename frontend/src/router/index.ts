@@ -125,9 +125,13 @@ const router = createRouter({
         },
         {
           path: 'admin/recipe-import',
-          name: 'admin-recipe-import',
-          meta: { adminOnly: true, title: '菜谱导入' },
-          component: () => import('@/views/admin/RecipeImportView.vue'),
+          redirect: '/admin/data-maintenance',
+        },
+        {
+          path: 'admin/data-maintenance',
+          name: 'admin-data-maintenance',
+          meta: { adminOnly: true, title: '数据维护' },
+          component: () => import('@/views/admin/DataMaintenanceView.vue'),
         },
         {
           path: 'admin/ai-config',

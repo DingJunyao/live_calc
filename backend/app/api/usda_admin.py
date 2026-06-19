@@ -183,7 +183,7 @@ async def usda_upload(
     foods = []
     for key, dtype in key_map.items():
         if key in data:
-            foods.extend(parse_usda_food(r, data_type=dtype) for r in data[key])
+            foods.extend(parse_usda_food(r, data_type=dtype) for r in data[key] if r is not None)
     deduped = dedupe_foods(foods)
 
     def _run():

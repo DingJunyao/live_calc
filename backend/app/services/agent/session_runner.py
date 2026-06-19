@@ -30,6 +30,7 @@ from app.models.agent_approval import AgentApproval
 from app.models.agent_message import AgentMessage
 from app.models.agent_session import AgentSession
 from app.services.agent import stream_bridge
+from app.services.agent.claude_code_runner import ClaudeCodeRunner
 from app.services.agent.runner import AgentEvent, AgentRunner
 from app.services.agent.sql_extractor import extract_sqls
 from app.services.agent.sql_guard import SqlVerdict, classify_sql
@@ -46,6 +47,62 @@ __all__ = [
 # wake_approval 写决策后 set 对应 Event 唤醒 loop。
 _pending_approvals: "dict[int, threading.Event]" = {}
 _pending_lock = threading.Lock()
+
+# session_id -> ClaudeCodeRunner，用于从外部终止正在运行的 Runner。
+# cancel_session 通过此 dict 获取 Runner 实例并调用 .cancel()。
+_running_runners: "dict[int, ClaudeCodeRunner]" = {}
+_running_runners_lock = threading.Lock()
+
+
+def register_runner(session_id: int, runner: ClaudeCodeRunner) -> None:
+    """注册正在运行的 Runner，供 cancel 操作定位。"""
+    with _running_runners_lock:
+        _running_runners[session_id] = runner
+
+
+def unregister_runner(session_id: int) -> None:
+    """取消注册 Runner（cancel 或自然结束）。"""
+    with _running_runners_lock:
+        _running_runners.pop(session_id, None)
+
+
+def cancel_session(session_id: int) -> bool:
+    """从外部取消正在运行的 Agent 会话。
+
+    1. 通过 _running_runners 定位并终止 Runner 子进程。
+    2. 更新 AgentSession.status 为 'cancelled'。
+
+    Returns:
+        True 表示找到了 Runner 或 DB 行并已处理；
+        False 表示会话不存在或已终态。
+    """
+    # 终止子进程。
+    with _running_runners_lock:
+        runner = _running_runners.get(session_id)
+    if runner is not None:
+        try:
+            runner.cancel()
+        except Exception:
+            pass
+
+    # 更新 DB status。
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        sess = db.query(AgentSession).get(session_id)
+        if sess is None:
+            return False
+        if sess.status not in ("pending", "running", "awaiting_approval"):
+            return False
+        sess.status = "cancelled"
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        return False
+    finally:
+        db.close()
 
 
 def _event_to_dict(ev: AgentEvent) -> dict:
@@ -476,6 +533,7 @@ def run_agent_loop(
         from app.core.database import SessionLocal as db_session_factory  # type: ignore[assignment]
 
     db = db_session_factory()
+    register_runner(session_id, runner)
     seq_counter = [0]
     # 首轮 resume_session_id 由入参决定（插话用）；后续轮用本轮捕获的 sid。
     current_sid: "str | None" = resume_session_id
@@ -514,6 +572,13 @@ def run_agent_loop(
             if s is not None and current_sid:
                 s.claude_session_id = current_sid
                 db.commit()
+
+            # 取消检查：若外部调用了 cancel_session，DB 状态已变，立即终止。
+            s = db.query(AgentSession).get(session_id)
+            if s is not None and s.status == "cancelled":
+                s.error = "用户取消了会话"
+                db.commit()
+                return
 
             # 终态错误：终止。
             if is_error:
@@ -580,6 +645,13 @@ def run_agent_loop(
             if session_failed:
                 return
 
+            # 再次检查取消。
+            s = db.query(AgentSession).get(session_id)
+            if s is not None and s.status == "cancelled":
+                s.error = "用户取消了会话"
+                db.commit()
+                return
+
             next_prompt = _build_resume_prompt(summary_items)
 
         # 达到 max_turns：保守置 success 并附说明。
@@ -600,6 +672,7 @@ def run_agent_loop(
         except Exception:  # noqa: BLE001
             pass
     finally:
+        unregister_runner(session_id)
         # 清理可能残留的 pending approval Event（loop 异常退出兜底）。
         db.close()
 

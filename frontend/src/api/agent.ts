@@ -36,3 +36,8 @@ export function decideApproval(
 export function getTaskTypes(): Promise<TaskType[]> {
   return api.get('/agent/task-types')
 }
+
+/** 取消正在运行的 Agent 会话（管理员）。 */
+export function cancelSession(sid: number): Promise<{ status: string }> {
+  return api.post(`/agent/sessions/${sid}/cancel`)
+}

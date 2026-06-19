@@ -42,6 +42,7 @@ from app.schemas.agent import (
     SessionDetailOut,
 )
 from app.services.agent import runner_factory, session_runner, stream_bridge
+from app.services.agent.session_runner import cancel_session, _pending_approvals
 from app.services.agent.task_templates import get_template, list_task_types
 
 logger = logging.getLogger("app.api.agent")
@@ -415,6 +416,34 @@ async def post_message(
     threading.Thread(target=_launch, daemon=True).start()
 
     return {"session_id": sid, "resumed": True}
+
+
+@router.post("/sessions/{sid}/cancel")
+async def cancel_agent_session(
+    sid: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """取消正在运行的 Agent 会话（仅管理员）。
+
+    - 只有 pending / running / awaiting_approval 状态可取消。
+    - 会终止正在运行的 Claude Code CLI 子进程。
+    - 取消后会话保留在列表上，status 变为 cancelled。
+    """
+    _require_admin(current_user)
+    sess = _get_session_or_404(db, sid, current_user)
+
+    if sess.status not in ("pending", "running", "awaiting_approval"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"会话状态为 {sess.status}，不可取消",
+        )
+
+    ok = cancel_session(sid)
+    if not ok:
+        raise HTTPException(status_code=500, detail="取消失败")
+
+    return {"status": "cancelled"}
 
 
 @router.post("/approvals/{aid}")

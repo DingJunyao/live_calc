@@ -4,6 +4,7 @@ from typing import Optional, Callable
 
 from sqlalchemy.orm import Session
 
+from app.models.entity_density import EntityDensity
 from app.models.nutrition import Ingredient
 from app.models.recipe import RecipeIngredient
 from app.services.importer.models import ImportResult
@@ -184,16 +185,24 @@ class AIInferrer:
 
     def infer_densities(self, force: bool = False,
                          progress_callback: Optional[Callable] = None) -> ImportResult:
-        """推测没有密度值的原料的密度。"""
+        """推测没有密度值的原料的密度，写入 entity_densities 表（kg/m³）。"""
         result = ImportResult()
 
-        query = self.db.query(Ingredient).filter(Ingredient.density.is_(None))
-        if not force:
-            query = query.filter(Ingredient.ai_inferred == False)
+        # 找出缺少 density 的原料（与 entity_densities 左连接）
+        from sqlalchemy import not_
+        existing_ids = (
+            self.db.query(EntityDensity.entity_id)
+            .filter(EntityDensity.entity_type == 'ingredient', EntityDensity.condition.is_(None))
+            .subquery()
+        )
+        query = self.db.query(Ingredient).filter(
+            Ingredient.is_active == True,
+            not_(Ingredient.id.in_(existing_ids)),
+        )
 
         candidates = query.all()
         if not candidates:
-            result.warnings.append("没有需要推测密度的原料")
+            result.warnings.append("没有需要推测密度的原料（entity_densities 均已覆盖）")
             return result
 
         total = len(candidates)
@@ -217,8 +226,16 @@ class AIInferrer:
                 parsed = json.loads(response_text)
                 density = parsed.get("density_g_per_cm3")
                 if density is not None:
-                    ingredient.density = density
-                    ingredient.ai_inferred = True
+                    # AI 返回 g/cm³，entity_densities 需 kg/m³（×1000）
+                    ed = EntityDensity(
+                        entity_type='ingredient',
+                        entity_id=ingredient.id,
+                        density=round(density * 1000, 6),
+                        temperature=20.0,
+                        source='ai_inferrer',
+                        confidence=0.8,
+                    )
+                    self.db.add(ed)
                     inferred += 1
 
             except (json.JSONDecodeError, Exception) as e:

@@ -1,6 +1,7 @@
 # backend/app/services/translate/task.py
 """翻译任务：增量（只译 pending）+ 进度写 UsdaTask + 单批重试 3 次。"""
 import logging
+import threading
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.usda import UsdaFood, UsdaTask
@@ -14,7 +15,9 @@ class TranslateTask:
     def __init__(self, db: Session):
         self.db = db
 
-    async def run(self, provider: str, config_dict: dict, batch_size: int = 50) -> dict:
+    async def run(self, provider: str, config_dict: dict, batch_size: int = 50,
+                  cancel_event: "threading.Event | None" = None,
+                  force: bool = False) -> dict:
         section = find_provider_section(config_dict, provider)
         if not section:
             raise ValueError(f"配置中未找到 provider: {provider}")
@@ -23,11 +26,22 @@ class TranslateTask:
         task = UsdaTask(task_type="translate", status="running", provider=provider)
         self.db.add(task); self.db.commit(); self.db.refresh(task)
 
+        if force:
+            # 强制重翻：把所有 translate_status 重置为 pending
+            self.db.query(UsdaFood).filter(
+                UsdaFood.translate_status.in_(["done", "error"]),
+            ).update({UsdaFood.translate_status: "pending"}, synchronize_session=False)
+            self.db.commit()
         foods = self.db.query(UsdaFood).filter(UsdaFood.translate_status == "pending").all()
         total = len(foods)
         done = 0
         try:
             for i in range(0, total, batch_size):
+                if cancel_event and cancel_event.is_set():
+                    logger.info(f"翻译任务被取消（已处理 {done}/{total}）")
+                    task.status = "failed"
+                    task.error_log = "用户取消了翻译任务"
+                    break
                 chunk = foods[i:i + batch_size]
                 texts = [f.description for f in chunk]
                 translations = None

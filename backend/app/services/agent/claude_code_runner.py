@@ -296,6 +296,7 @@ class ClaudeCodeRunner:
         self.cli = cli
 
         self._last_session_id: str | None = None
+        self._proc: subprocess.Popen[str] | None = None
 
     # ------------------------------------------------------------------ #
     # AgentRunner 协议
@@ -329,10 +330,10 @@ class ClaudeCodeRunner:
         env = build_env(self.extra_env)
 
         cli_path = shutil.which(cmd[0]) or cmd[0]
-        proc: subprocess.Popen[str] | None = None
+        self._proc = None
         start_time = time.monotonic()
         try:
-            proc = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 cmd,
                 cwd=self.cwd,
                 env=env,
@@ -366,10 +367,10 @@ class ClaudeCodeRunner:
                     stderr_q.put(None)
 
             th_out = threading.Thread(
-                target=_pump_stdout, args=(proc.stdout,), daemon=True
+                target=_pump_stdout, args=(self._proc.stdout,), daemon=True
             )
             th_err = threading.Thread(
-                target=_pump_stderr, args=(proc.stderr,), daemon=True
+                target=_pump_stderr, args=(self._proc.stderr,), daemon=True
             )
             th_out.start()
             th_err.start()
@@ -433,7 +434,7 @@ class ClaudeCodeRunner:
 
             # 等待子进程退出与线程结束。EOF 已到，进程应秒退；10s 不退视为异常。
             try:
-                rc = proc.wait(timeout=10)
+                rc = self._proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 rc = -1
             th_out.join(timeout=5)
@@ -461,11 +462,19 @@ class ClaudeCodeRunner:
         except Exception as exc:  # noqa: BLE001 - 顶层兜底，必须产 error 让调用方收尾
             yield AgentEvent(kind="error", error=f"{type(exc).__name__}: {exc}")
         finally:
-            if proc is not None and proc.poll() is None:
+            if self._proc is not None and self._proc.poll() is None:
                 try:
-                    proc.kill()
+                    self._proc.kill()
                 except Exception:  # noqa: BLE001
                     pass
+
+    def cancel(self) -> None:
+        """从外部终止正在运行的 claude CLI 子进程。"""
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.kill()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ #
     # 内部

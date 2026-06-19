@@ -5,6 +5,7 @@
 翻译，写回 name_zh。营养素名多为缩写/脂肪酸记号（MUFA、12:1 等），机翻不准，故主用 AI。
 """
 import logging
+import threading
 from sqlalchemy.orm import Session
 from sqlalchemy import distinct
 
@@ -21,7 +22,9 @@ class TranslateNutrientsTask:
     def __init__(self, db: Session):
         self.db = db
 
-    async def run(self, provider: str, config_dict: dict, batch_size: int = 50) -> dict:
+    async def run(self, provider: str, config_dict: dict, batch_size: int = 50,
+                  cancel_event: "threading.Event | None" = None,
+                  force: bool = False) -> dict:
         section = find_provider_section(config_dict, provider)
         if not section:
             raise ValueError(f"配置中未找到 provider: {provider}")
@@ -30,6 +33,12 @@ class TranslateNutrientsTask:
         task = UsdaTask(task_type="translate_nutrients", status="running", provider=provider)
         self.db.add(task); self.db.commit(); self.db.refresh(task)
 
+        if force:
+            # 强制重翻：清空所有 name_zh
+            self.db.query(UsdaFoodNutrient).update(
+                {UsdaFoodNutrient.name_zh: None}, synchronize_session=False
+            )
+            self.db.commit()
         # 取未映射的 distinct 营养素名（name_zh 为空）
         names = [r[0] for r in self.db.query(distinct(UsdaFoodNutrient.name))
                  .filter(UsdaFoodNutrient.name_zh.is_(None)).all()]
@@ -37,6 +46,11 @@ class TranslateNutrientsTask:
         done = 0
         try:
             for i in range(0, total, batch_size):
+                if cancel_event and cancel_event.is_set():
+                    logger.info(f"营养素翻译任务被取消（已处理 {done}/{total}）")
+                    task.status = "failed"
+                    task.error_log = "用户取消了营养素翻译任务"
+                    break
                 chunk = names[i:i + batch_size]
                 translations = None
                 for attempt in range(MAX_RETRIES):

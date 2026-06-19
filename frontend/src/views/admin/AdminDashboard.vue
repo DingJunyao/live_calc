@@ -104,10 +104,10 @@
         </v-list-item>
 
         <v-list-item
-          prepend-icon="mdi-import"
-          title="菜谱导入"
-          subtitle="从外部来源导入菜谱数据"
-          to="/admin/recipe-import"
+          prepend-icon="mdi-database-cog"
+          title="数据维护中心"
+          subtitle="菜谱导入、AI 维护、USDA 数据管理"
+          to="/admin/data-maintenance"
         >
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>

@@ -15,6 +15,8 @@ def parse_usda_food(raw: dict, data_type: str) -> dict:
     - 新版（``foodNutrients`` 中每项含 ``nutrient`` 子对象，含 ``name``/``number``）
     - 旧版/简化（``foodComponents`` 或扁平 ``nutrient``）
     """
+    if raw is None:
+        return {"fdc_id": 0, "description": "", "data_type": data_type, "nutrients": []}
     nutrients = []
     food_nutrients = raw.get("foodNutrients") or raw.get("foodComponents") or []
     for fn in food_nutrients:

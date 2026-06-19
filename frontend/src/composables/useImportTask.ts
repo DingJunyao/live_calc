@@ -4,7 +4,7 @@ import api from '@/api/client'
 export interface ImportTask {
   id: number
   task_type: string
-  status: 'pending' | 'running' | 'success' | 'failed'
+  status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   progress: {
     stage: string
     current: number
@@ -115,7 +115,7 @@ export function useImportTask() {
           tasks.value.unshift(task)
         }
         // Stop polling when task reaches a terminal state
-        if (task.status === 'success' || task.status === 'failed') {
+        if (task.status === 'success' || task.status === 'failed' || task.status === 'cancelled') {
           stopPolling(taskId)
         }
       } catch {
