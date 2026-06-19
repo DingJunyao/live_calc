@@ -146,6 +146,17 @@
             <v-icon>mdi-chevron-right</v-icon>
           </template>
         </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-robot-outline"
+          title="Agent 任务台"
+          subtitle="发起 Agent 维护任务、审批 SQL、对话流"
+          to="/admin/agent-console"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
       </v-list>
     </v-card>
   </v-container>

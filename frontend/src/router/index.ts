@@ -147,6 +147,12 @@ const router = createRouter({
           meta: { adminOnly: true, title: 'USDA 数据' },
           component: () => import('@/views/admin/UsdaDataView.vue'),
         },
+        {
+          path: 'admin/agent-console',
+          name: 'admin-agent-console',
+          meta: { adminOnly: true, title: 'Agent 任务台' },
+          component: () => import('@/views/admin/AgentTaskConsole.vue'),
+        },
       ],
     },
   ],

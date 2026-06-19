@@ -19,7 +19,15 @@ python-multipart = "^0.0.6"
 apscheduler = "^3.10.4"
 celery = {extras = ["redis"], version = "^5.3.6", optional = true}
 redis = {extras = ["hiredis"], version = "^5.0.1", optional = true}
-httpx = "^0.26.0"
+# Agent 维护任务台（Task 2）：受控只读数据库 MCP。
+# mcp 1.28.x 会拉入 starlette>=1.0 / uvicorn>=0.40 / httpx>=0.28，而：
+#   - starlette 1.x 移除 `on_startup` 形参 → 破坏 FastAPI 0.109.x（Router.__init__ 报错）
+#   - httpx 0.28 移除 TestClient 用的 `app` 形参 → 破坏 starlette 0.36.x 的 TestClient
+# 故显式锁回 starlette<0.37 与 httpx<0.28 以兼容现有 FastAPI/Starlette。
+# mcp 本身对 httpx/starlette 无严格上界要求（unpinned），0.27.x/0.36.x 可正常运行。
+mcp = "^1.28"
+starlette = ">=0.35,<0.37"
+httpx = ">=0.26,<0.28"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.4"

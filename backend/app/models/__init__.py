@@ -19,6 +19,9 @@ from app.models.map_config import MapConfiguration
 from app.models.entity_unit_override import EntityUnitOverride
 from app.models.entity_density import EntityDensity
 from app.models.usda import UsdaFood, UsdaFoodNutrient, TranslationConfig, UsdaTask
+from app.models.agent_session import AgentSession
+from app.models.agent_message import AgentMessage
+from app.models.agent_approval import AgentApproval
 
 __all__ = [
     "User", "Merchant", "FavoriteMerchant", "ProductRecord", "RecordType",
@@ -38,4 +41,5 @@ __all__ = [
     "EntityUnitOverride",
     "EntityDensity",
     "UsdaFood", "UsdaFoodNutrient", "TranslationConfig", "UsdaTask",
+    "AgentSession", "AgentMessage", "AgentApproval",
 ]

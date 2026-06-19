@@ -65,9 +65,22 @@ def validate_token_type(token: str, expected_type: str = "access") -> bool:
 security = HTTPBearer()
 
 
-async def get_current_user(credentials: HTTPBearer = Depends(security)):
-    """获取当前登录用户（依赖注入）"""
-    token = credentials.credentials
+def resolve_user_from_token(token: "Optional[str]"):
+    """根据 access token 解析出 User 对象。
+
+    供 ``get_current_user``（HTTPBearer 依赖注入）与 SSE 端点的 query token
+    鉴权（``_auth_user_from_token``）共享同一套校验逻辑：空 token / 解码失败 /
+    非 access 类型 / sub 缺失 → 401；用户不存在 → 404。
+
+    Args:
+        token: JWT 字符串，可为 None（视为未授权）。
+
+    Returns:
+        User 对象。
+
+    Raises:
+        HTTPException: 401 / 404。
+    """
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -109,3 +122,8 @@ async def get_current_user(credentials: HTTPBearer = Depends(security)):
         )
 
     return user
+
+
+async def get_current_user(credentials: HTTPBearer = Depends(security)):
+    """获取当前登录用户（依赖注入）"""
+    return resolve_user_from_token(credentials.credentials)
