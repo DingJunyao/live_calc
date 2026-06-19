@@ -5,8 +5,8 @@ import api from './client'
 import type { AgentSession, SessionDetail, TaskType } from '@/types/agent'
 
 /** 建会话（管理员）。返回 { session_id }。 */
-export function createSession(taskType: string): Promise<{ session_id: number }> {
-  return api.post('/agent/sessions', { task_type: taskType })
+export function createSession(taskType: string, force = false): Promise<{ session_id: number }> {
+  return api.post('/agent/sessions', { task_type: taskType, force })
 }
 
 /** 列出会话（登录）。 */

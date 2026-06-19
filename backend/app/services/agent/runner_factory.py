@@ -145,6 +145,15 @@ def make_mcp_config_path(db_url: str, *, config_path: str | os.PathLike[str] | N
     return str(out_path)
 
 
+def _mcp_available() -> bool:
+    """检测 ``mcp`` Python 包是否可用（决定是否启用受控 MCP 只读工具）。"""
+    try:
+        import mcp  # noqa: F401 - 仅检测 import
+        return True
+    except ImportError:
+        return False
+
+
 def build_runner(
     task_type: str,
     db_url: str,
@@ -155,17 +164,22 @@ def build_runner(
     extra_env: "dict[str, str] | None" = None,
     cli: "str | None" = None,
     mcp_config_path: "str | None" = None,
+    use_mcp: "bool | None" = None,
 ) -> ClaudeCodeRunner:
-    """构造 ``ClaudeCodeRunner``，对接 controlled_db MCP。
+    """构造 ``ClaudeCodeRunner``。
+
+    MCP 可用时：对接 controlled_db MCP（Agent 通过 MCP 工具读库）。
+    MCP 不可用时：不使用 MCP（Agent 通过 bash + db_query 脚本查库，```sql``` 块写库）。
 
     Args:
-        task_type: 任务类型（保留入参，目前未影响 Runner 行为；Task 6 接模板）。
+        task_type: 任务类型（当前不影响 Runner 构造）。
         db_url: 原始 db_url（内部用 ``resolve_db_url`` 解析）。
         max_budget_usd: 成本上限，透传 ``--max-budget-usd``。
         idle_timeout / total_timeout: CLI 子进程超时（秒），None 用 Runner 默认。
         extra_env: 追加到子进程 env。
         cli: CLI 可执行文件名/路径覆盖。
         mcp_config_path: 自定义 mcp_config 路径，None 时自动生成。
+        use_mcp: 强制指定是否使用 MCP。None 时自动检测（``_mcp_available()``）。
 
     Returns:
         配置好的 ``ClaudeCodeRunner`` 实例。
@@ -173,17 +187,27 @@ def build_runner(
     del task_type  # 当前不影响 Runner 构造；Task 6 接模板时再处理 prompt。
 
     resolved_url = resolve_db_url(db_url)
-    config_path = mcp_config_path or make_mcp_config_path(resolved_url)
     cwd = str(_backend_root())
 
+    mcp_available = _mcp_available() if use_mcp is None else use_mcp
+
     kwargs: dict[str, Any] = {
-        "mcp_config_path": config_path,
-        "allowed_tools": allowed_tools_for_db(),
         "cwd": cwd,
         "max_budget_usd": max_budget_usd,
         "extra_env": extra_env,
         "cli": cli,
     }
+
+    if mcp_available:
+        config_path = mcp_config_path or make_mcp_config_path(resolved_url)
+        kwargs["mcp_config_path"] = config_path
+        kwargs["allowed_tools"] = allowed_tools_for_db()
+    else:
+        # 非 MCP 模式：不使用 MCP 配置，不限制工具集
+        # Agent 通过 bash 调用 db_query 脚本查库
+        kwargs["mcp_config_path"] = None
+        kwargs["allowed_tools"] = None
+
     if idle_timeout is not None:
         kwargs["idle_timeout"] = idle_timeout
     if total_timeout is not None:

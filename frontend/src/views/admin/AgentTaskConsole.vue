@@ -366,6 +366,15 @@ watch(
   () => messages.value.map((m) => m.content).join('|'),
   () => scrollToBottom(),
 )
+// 会话终态时刷新历史会话列表
+watch(
+  () => status.value,
+  (newVal) => {
+    if (TERMINAL.has(newVal)) {
+      loadSessions()
+    }
+  },
+)
 
 // ---------- 交互 ----------
 async function loadMeta() {

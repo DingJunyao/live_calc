@@ -53,8 +53,8 @@ _DEFAULT_CLI = "claude"
 def build_cmd(
     *,
     prompt: str,
-    mcp_config_path: str | os.PathLike[str],
-    allowed_tools: list[str],
+    mcp_config_path: str | os.PathLike[str] | None = None,
+    allowed_tools: list[str] | None = None,
     cli: str | None = None,
     resume_session_id: str | None = None,
     max_budget_usd: float | None = None,
@@ -64,8 +64,10 @@ def build_cmd(
 
     Args:
         prompt: 用户指令文本，作为 ``-p`` 参数透传。
-        mcp_config_path: 受控只读 MCP 配置文件路径，透传给 ``--mcp-config``。
+        mcp_config_path: 受控只读 MCP 配置文件路径。
+            ``None`` 时不添加 ``--mcp-config``（非 MCP 模式）。
         allowed_tools: 工具白名单，逗号拼接进 ``--allowedTools``。
+            ``None`` 时不添加（Agent 可使用默认工具集，含 bash）。
         cli: CLI 可执行文件名/路径，None 时取 ``$CLAUDE_CLI`` 或 ``claude``。
         resume_session_id: 非 None 时附加 ``--resume``。
         max_budget_usd: 非 None 时附加 ``--max-budget-usd``（成本兜底）。
@@ -76,10 +78,6 @@ def build_cmd(
         list[str]: 命令行参数列表。
     """
     cli_resolved = cli or os.environ.get("CLAUDE_CLI") or _DEFAULT_CLI
-    mcp_path = str(Path(mcp_config_path))
-    # 若 mcp_config 是相对路径，按 cwd 解析成绝对路径，避免 CLI 子进程 cwd 变化后失效。
-    if not os.path.isabs(mcp_path):
-        mcp_path = str((Path(cwd) / mcp_path).resolve())
 
     cmd: list[str] = [
         cli_resolved,
@@ -89,12 +87,19 @@ def build_cmd(
         "stream-json",
         "--include-partial-messages",
         "--verbose",
-        "--strict-mcp-config",
-        "--mcp-config",
-        mcp_path,
-        "--allowedTools",
-        ",".join(allowed_tools),
     ]
+
+    if mcp_config_path is not None:
+        mcp_path = str(Path(mcp_config_path))
+        if not os.path.isabs(mcp_path):
+            mcp_path = str((Path(cwd) / mcp_path).resolve())
+        cmd += ["--strict-mcp-config", "--mcp-config", mcp_path]
+        if allowed_tools:
+            cmd += ["--allowedTools", ",".join(allowed_tools)]
+    else:
+        # 非 MCP 模式：明确允许 bash（用于 db_query 查库）+ 基本文件工具
+        cmd += ["--allowedTools", "Bash,Read,Write,Edit"]
+
     if resume_session_id:
         cmd += ["--resume", str(resume_session_id)]
     if max_budget_usd is not None:
@@ -254,8 +259,8 @@ class ClaudeCodeRunner:
     def __init__(
         self,
         *,
-        mcp_config_path: str | os.PathLike[str],
-        allowed_tools: list[str],
+        mcp_config_path: str | os.PathLike[str] | None = None,
+        allowed_tools: list[str] | None = None,
         cwd: str | os.PathLike[str] = ".",
         idle_timeout: float = 120.0,
         total_timeout: float = 600.0,
@@ -267,7 +272,8 @@ class ClaudeCodeRunner:
 
         Args:
             mcp_config_path: 受控只读 MCP 配置文件路径。
-            allowed_tools: 工具白名单。
+                ``None`` 时不使用 MCP（Agent 通过 bash + db_query 查库）。
+            allowed_tools: 工具白名单。``None`` 时不限制（非 MCP 模式默认行为）。
             cwd: 子进程工作目录。
             idle_timeout: **两行输出之间的最大间隔秒数**（默认 120s）。用于
                 ``queue.get`` / stderr drain 超时。超时表示「CLI 卡死、长时间
@@ -281,7 +287,7 @@ class ClaudeCodeRunner:
             cli: CLI 可执行文件名/路径，None 时取 ``$CLAUDE_CLI`` 或 ``claude``。
         """
         self.mcp_config_path = mcp_config_path
-        self.allowed_tools = list(allowed_tools)
+        self.allowed_tools = list(allowed_tools) if allowed_tools else None
         self.cwd = str(cwd)
         self.idle_timeout = float(idle_timeout)
         self.total_timeout = float(total_timeout)

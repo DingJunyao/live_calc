@@ -23,6 +23,7 @@ class CreateSessionIn(BaseModel):
     """
 
     task_type: str = Field(..., description="任务类型（fill_piece_weight 等）")
+    force: bool = Field(False, description="强制重新处理全部（追加到 prompt 提示 Agent 忽略已处理标记）")
 
 
 class PostMessageIn(BaseModel):

@@ -211,14 +211,16 @@
           </v-card-title>
           <v-divider />
           <v-card-text class="pt-4">
-            <v-alert v-if="tasks.length === 0" type="info" variant="tonal" density="compact">
+            <v-alert v-if="mergedTasks.length === 0" type="info" variant="tonal" density="compact">
               暂无任务记录
             </v-alert>
             <v-list v-else>
               <v-list-item
-                v-for="t in tasks" :key="t.id"
+                v-for="t in mergedTasks" :key="t._kind === 'import' ? 'imp-' + t.id : 'agt-' + t.session_id"
                 class="mb-2 border rounded"
-                :class="taskRunningClass(t.status)"
+                :class="t._kind === 'import' ? taskRunningClass(t.status) : ''"
+                :style="t._kind === 'agent' ? { cursor: 'pointer' } : {}"
+                @click="t._kind === 'agent' ? router.push('/admin/agent-console?session_id=' + t.session_id) : undefined"
               >
                 <template #prepend>
                   <v-icon :color="statusColor(t.status)" class="mr-3">
@@ -226,48 +228,46 @@
                   </v-icon>
                 </template>
                 <v-list-item-title class="font-weight-medium">
-                  {{ taskTypeLabel(t.task_type) }}
+                  {{ t._kind === 'agent' ? t.label : taskTypeLabel(t.task_type) }}
                   <v-chip :color="statusColor(t.status)" size="x-small" variant="tonal" class="ml-2">
                     {{ statusLabel(t.status) }}
                   </v-chip>
                 </v-list-item-title>
                 <v-list-item-subtitle>
-                  <!-- 阶段和消息 -->
-                  <div v-if="t.progress?.stage" class="text-caption mt-1">
-                    {{ t.progress.stage }}: {{ t.progress.message }}
-                  </div>
-                  <!-- 进度条 -->
-                  <div v-if="t.progress?.total > 0" class="mt-1">
-                    <v-progress-linear
-                      :model-value="Math.round((t.progress.current / t.progress.total) * 100)"
-                      height="6"
-                      rounded
-                      color="primary"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-1">
-                      {{ t.progress.current }} / {{ t.progress.total }}
-                      ({{ Math.round((t.progress.current / t.progress.total) * 100) }}%)
+                  <!-- import 任务：进度条 / 统计 / 错误 -->
+                  <template v-if="t._kind === 'import'">
+                    <div v-if="t.progress?.stage" class="text-caption mt-1">
+                      {{ t.progress.stage }}: {{ t.progress.message }}
                     </div>
-                  </div>
-                  <!-- 统计信息 -->
-                  <div v-if="t.stats && Object.keys(t.stats).length" class="text-caption mt-1">
-                    <v-chip v-for="(v, k) in t.stats" :key="k" size="x-small" variant="tonal"
-                            class="mr-1 mb-1">
-                      {{ k }}: {{ v }}
-                    </v-chip>
-                  </div>
-                  <!-- 错误信息 -->
-                  <div v-if="t.error" class="text-caption text-error mt-1">{{ t.error }}</div>
-                  <!-- 时间 -->
+                    <div v-if="t.progress?.total > 0" class="mt-1">
+                      <v-progress-linear
+                        :model-value="Math.round((t.progress.current / t.progress.total) * 100)"
+                        height="6" rounded color="primary"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-1">
+                        {{ t.progress.current }} / {{ t.progress.total }}
+                        ({{ Math.round((t.progress.current / t.progress.total) * 100) }}%)
+                      </div>
+                    </div>
+                    <div v-if="t.stats && Object.keys(t.stats).length" class="text-caption mt-1">
+                      <v-chip v-for="(v, k) in t.stats" :key="k" size="x-small" variant="tonal"
+                              class="mr-1 mb-1">{{ k }}: {{ v }}</v-chip>
+                    </div>
+                    <div v-if="t.error" class="text-caption text-error mt-1">{{ t.error }}</div>
+                  </template>
+                  <!-- agent 任务：简洁状态 -->
+                  <template v-else>
+                    <div v-if="agentErrorMap[t.session_id]" class="text-caption text-error mt-1">
+                      {{ agentErrorMap[t.session_id] }}
+                    </div>
+                    <div class="text-caption text-medium-emphasis mt-1">点击查看实时详情</div>
+                  </template>
                   <div class="text-caption text-medium-emphasis mt-1">{{ formatTime(t.created_at) }}</div>
                 </v-list-item-subtitle>
                 <template #append>
                   <v-progress-circular
-                    v-if="t.status === 'running'"
-                    indeterminate
-                    size="20"
-                    width="2"
-                    color="primary"
+                    v-if="t.status === 'running' || t.status === 'pending'"
+                    indeterminate size="20" width="2" color="primary"
                   />
                 </template>
               </v-list-item>
@@ -280,11 +280,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useImportTask } from '@/composables/useImportTask'
 import { getTranslationConfig } from '@/api/usda'
+import { createSession, getSession, listSessions } from '@/api/agent'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { tasks, fetchTasks, startTask, startUploadTask } = useImportTask()
@@ -303,6 +304,18 @@ const submitting = reactive({
 
 // 简短错误提示（仅在启动任务失败时显示）
 const errorMessage = ref('')
+
+interface AgentTaskItem {
+  session_id: number
+  task_type: string
+  label: string
+  status: 'pending' | 'running' | 'success' | 'failed'
+  created_at: string
+}
+
+const agentTasks = ref<AgentTaskItem[]>([])
+const agentPollingMap = new Map<number, ReturnType<typeof setInterval>>()
+const agentErrorMap = ref<Record<number, string>>({})
 
 const localPath = ref('')
 const uploadFile = ref<File | null>(null)
@@ -335,6 +348,38 @@ onMounted(async () => {
   } catch {
     // 忽略错误，用户会看到"请先在 AI 配置页启用后端"
   }
+
+  // 恢复最近的 agent 会话到任务列表（刷新后重建）
+  try {
+    const recent = await listSessions(20)
+    const relevant = recent.filter(
+      (s) => s.task_type === 'infer_quantities' || s.task_type === 'infer_densities',
+    )
+    for (const s of relevant) {
+      if (!agentTasks.value.find((t) => t.session_id === s.id)) {
+        agentTasks.value.push({
+          session_id: s.id,
+          task_type: s.task_type,
+          label: s.task_type === 'infer_quantities' ? 'Agent 模糊量推测' : 'Agent 密度推测',
+          status: s.status === 'completed' ? 'success' : (s.status as any),
+          created_at: s.created_at || new Date().toISOString(),
+        })
+      }
+    }
+  } catch {
+    // 列表加载失败不阻塞
+  }
+
+  // 恢复 agent 任务的轮询
+  const pendingAgent = agentTasks.value.filter(
+    (t) => t.status === 'pending' || t.status === 'running'
+  )
+  pendingAgent.forEach((t) => startAgentPolling(t.session_id))
+})
+
+onUnmounted(() => {
+  agentPollingMap.forEach((interval) => clearInterval(interval))
+  agentPollingMap.clear()
 })
 
 // === 任务操作 ===
@@ -373,11 +418,30 @@ async function uploadImport() {
 
 async function inferQuantities() {
   submitting.aiQuantities = true
-  const taskId = await startTask('/import/ai-infer/quantities', {
-    params: { force: aiForce.value, provider: aiProvider.value || 'claude_code' },
-  })
-  if (!taskId) {
-    errorMessage.value = 'AI 模糊量推测任务启动失败，请检查后端状态'
+  try {
+    const provider = aiProvider.value || 'claude_code'
+    if (provider === 'claude_code') {
+      // Agent 路径：使用 Claude Code CLI 批量推测
+      const { session_id } = await createSession('infer_quantities', aiForce.value)
+      agentTasks.value.unshift({
+        session_id,
+        task_type: 'infer_quantities',
+        label: 'Agent 模糊量推测',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      })
+      startAgentPolling(session_id)
+    } else {
+      // 旧 AIInferrer 路径：串行逐组推测（适用于 OpenAI 等非 claude_code 提供方）
+      const taskId = await startTask('/import/ai-infer/quantities', {
+        params: { force: aiForce.value, provider },
+      })
+      if (!taskId) {
+        errorMessage.value = 'AI 模糊量推测任务启动失败，请检查后端状态'
+      }
+    }
+  } catch (e: any) {
+    errorMessage.value = e?.response?.data?.detail || '模糊量推测任务启动失败'
   }
   submitting.aiQuantities = false
 }
@@ -393,7 +457,72 @@ async function inferDensities() {
   submitting.aiDensities = false
 }
 
+// === Agent 轮询 ===
+
+function startAgentPolling(sessionId: number) {
+  if (agentPollingMap.has(sessionId)) return
+  const interval = setInterval(async () => {
+    try {
+      const data = await getSession(sessionId) as any
+      const idx = agentTasks.value.findIndex(t => t.session_id === sessionId)
+      if (idx >= 0) {
+        const status = data.status === 'completed' ? 'success' : data.status
+        if (status !== agentTasks.value[idx].status) {
+          agentTasks.value[idx] = { ...agentTasks.value[idx], status }
+        }
+        if (data.error) {
+          agentErrorMap.value[sessionId] = data.error
+        }
+      }
+      if (data.status === 'success' || data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+        stopAgentPolling(sessionId)
+      }
+    } catch {
+      // On polling failure, mark as failed so it doesn't stay pending forever
+      const idx = agentTasks.value.findIndex(t => t.session_id === sessionId)
+      if (idx >= 0) {
+        agentTasks.value[idx] = { ...agentTasks.value[idx], status: 'failed' }
+      }
+      stopAgentPolling(sessionId)
+    }
+  }, 3000)
+  agentPollingMap.set(sessionId, interval)
+}
+
+function stopAgentPolling(sessionId: number) {
+  const interval = agentPollingMap.get(sessionId)
+  if (interval) {
+    clearInterval(interval)
+    agentPollingMap.delete(sessionId)
+  }
+}
+
 // === 辅助函数 ===
+
+interface ImportTaskLike {
+  id: number
+  task_type: string
+  status: string
+  progress?: { stage: string; current: number; total: number; message: string }
+  stats?: Record<string, number>
+  error?: string | null
+  created_at: string
+  _kind: 'import'
+}
+
+interface AgentTaskLike extends AgentTaskItem {
+  _kind: 'agent'
+}
+
+type MergedTask = ImportTaskLike | AgentTaskLike
+
+const mergedTasks = computed<MergedTask[]>(() => {
+  const imports: ImportTaskLike[] = tasks.value.map(t => ({ ...t, _kind: 'import' as const }))
+  const agents: AgentTaskLike[] = agentTasks.value.map(t => ({ ...t, _kind: 'agent' as const }))
+  return [...imports, ...agents].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+})
 
 const taskTypeLabels: Record<string, string> = {
   git_import: 'Git 仓库导入',
@@ -412,6 +541,7 @@ const statusConfig: Record<string, { color: string; icon: string; label: string 
   running: { color: 'primary', icon: 'mdi-loading', label: '运行中' },
   success: { color: 'success', icon: 'mdi-check-circle', label: '完成' },
   failed: { color: 'error', icon: 'mdi-alert-circle', label: '失败' },
+  cancelled: { color: 'warning', icon: 'mdi-cancel', label: '已取消' },
 }
 
 function statusColor(status: string): string {

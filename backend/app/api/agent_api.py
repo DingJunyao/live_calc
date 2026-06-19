@@ -108,6 +108,12 @@ async def create_session(
             detail=f"未知任务类型: {body.task_type}（可用类型见 GET /api/v1/agent/task-types）",
         )
     initial_prompt = tpl["prompt"]
+    if body.force:
+        initial_prompt += (
+            "\n\n# 强制重新处理\n"
+            "本次为强制重新处理。忽略所有 `ai_inferred` 标记和已有数据，"
+            "对所有符合条件的条目重新推理并输出修正 SQL。"
+        )
     title = tpl["title"]
     sess = AgentSession(
         task_type=body.task_type,
