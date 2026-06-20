@@ -3,6 +3,7 @@
 字段尽量对齐 ``AgentSession`` / ``AgentMessage`` / ``AgentApproval`` 模型，
 datetime 统一序列化为 ISO 字符串。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -20,10 +21,21 @@ class CreateSessionIn(BaseModel):
     task_type 必须命中 ``TASK_TEMPLATES``（见 ``services/agent/task_templates.py``）；
     未知 task_type 由 ``agent_api.create_session`` 返回 400。可用类型清单见
     ``GET /api/v1/agent/task-types``。
+
+    provider 指定底层 AgentRunner 实现：``"claude_code"``（默认，走 Claude Code
+    CLI + controlled_db MCP）、``"openai"`` / ``"anthropic"``（走 LangChainRunner，
+    配置取自后台 AI 配置页的 ``TranslationConfig``）。
     """
 
     task_type: str = Field(..., description="任务类型（fill_piece_weight 等）")
-    force: bool = Field(False, description="强制重新处理全部（追加到 prompt 提示 Agent 忽略已处理标记）")
+    force: bool = Field(
+        False,
+        description="强制重新处理全部（追加到 prompt 提示 Agent 忽略已处理标记）",
+    )
+    provider: str = Field(
+        "claude_code",
+        description="AgentRunner 实现：claude_code（默认）/ openai / anthropic",
+    )
 
 
 class PostMessageIn(BaseModel):

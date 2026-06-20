@@ -4,9 +4,28 @@
 import api from './client'
 import type { AgentSession, SessionDetail, TaskType } from '@/types/agent'
 
-/** 建会话（管理员）。返回 { session_id }。 */
-export function createSession(taskType: string, force = false): Promise<{ session_id: number }> {
-  return api.post('/agent/sessions', { task_type: taskType, force })
+/**
+ * Agent Provider 标识。后端 Task 5 的 runner_factory 按此分流：
+ * - claude_code → ClaudeCodeRunner（默认，保现有行为）
+ * - openai → LangChainRunner（OpenAI 兼容端点）
+ * - anthropic → LangChainRunner（Anthropic 兼容端点）
+ */
+export type AgentProvider = 'claude_code' | 'openai' | 'anthropic'
+
+/** 建会话（管理员）。返回 { session_id }。
+ * provider: claude_code（默认）/ openai / anthropic，
+ * 后端 runner_factory 按此分流（Task 5）。
+ */
+export function createSession(
+  taskType: string,
+  force = false,
+  provider: AgentProvider = 'claude_code',
+): Promise<{ session_id: number }> {
+  return api.post('/agent/sessions', {
+    task_type: taskType,
+    force,
+    provider,
+  })
 }
 
 /** 列出会话（登录）。 */

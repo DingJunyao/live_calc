@@ -15,13 +15,14 @@
 关键复用：4a 的事件 → AgentMessage 落库 + stream_bridge 推送逻辑抽成
 ``_consume_events``，4a 的 ``run_session`` 与 4b 的 ``run_agent_loop`` 共用它，避免重复。
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import threading
 from datetime import datetime
-from typing import Any, Callable, Iterator
+from typing import Callable, Iterator
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -504,6 +505,7 @@ def run_agent_loop(
     approval_timeout: float = 3600.0,
     safe_row_threshold: int = 100,
     resume_session_id: "str | None" = None,
+    unattended: bool = False,
 ) -> None:
     """后台线程入口：多轮 Runner + 写操作提取/执行/审批 + 回流。
 
@@ -528,6 +530,11 @@ def run_agent_loop(
             SSE 推 ``sql_timeout``，不再重试同条 SQL（语义与 rejected 区分）。
         safe_row_threshold: safe SQL 运行时影响行数护栏；超阈值则回滚该 SQL 并转
             dangerous 审批（防止 ``UPDATE ... WHERE 1=1`` 类恒真条件全表更新）。
+        unattended: 无人值守模式（默认 False）。为 True 时，dangerous SQL **不** 阻塞
+            等审批——不写 pending AgentApproval、不进 awaiting_approval、不调
+            ``_handle_dangerous_sql``，改为记 warning + 推 ``sql_skipped`` SSE +
+            摘要标注「已跳过」。safe SQL 行为不变（照常执行 + D15 护栏）。
+            老路径（导入后处理等用户不在线的场景）应传 True，dangerous 兜底跳过。
     """
     if db_session_factory is None:
         from app.core.database import SessionLocal as db_session_factory  # type: ignore[assignment]
@@ -535,8 +542,15 @@ def run_agent_loop(
     db = db_session_factory()
     register_runner(session_id, runner)
     seq_counter = [0]
-    # 首轮 resume_session_id 由入参决定（插话用）；后续轮用本轮捕获的 sid。
-    current_sid: "str | None" = resume_session_id
+    # resume 锚分流：
+    # - uses_db_pk_resume=True（LangChainRunner）：锚恒为 str(session_id)，
+    #   因为 _load_history 按 AgentMessage.session_id（= AgentSession DB PK）查历史。
+    #   首轮即设值 → claude_session_id 非 NULL → post_message 插话不再 409；
+    #   每轮 resume 都能恢复历史。
+    # - 否则（ClaudeCodeRunner）：首轮用入参 resume_session_id（插话场景），
+    #   后续轮用 runner.last_session_id（CLI 捕获的 claude session id）。
+    uses_db_pk = bool(getattr(runner, "uses_db_pk_resume", False))
+    current_sid: "str | None" = str(session_id) if uses_db_pk else resume_session_id
     next_prompt = initial_prompt
 
     try:
@@ -564,8 +578,13 @@ def run_agent_loop(
                     db.commit()
 
             # 捕获 last_session_id（下一轮 resume 用）。
+            # uses_db_pk_resume=True（LangChainRunner）路径：锚恒为 str(session_id)，
+            # 与 runner.last_session_id（仅 echo 入参，首轮为 None）无关。
             try:
-                current_sid = runner.last_session_id
+                if uses_db_pk:
+                    current_sid = str(session_id)
+                else:
+                    current_sid = runner.last_session_id
             except Exception:  # noqa: BLE001
                 current_sid = None
             s = db.query(AgentSession).get(session_id)
@@ -616,6 +635,7 @@ def run_agent_loop(
                         sql,
                         safe_row_threshold=safe_row_threshold,
                         approval_timeout=approval_timeout,
+                        unattended=unattended,
                     )
                     summary_items.append(item)
                     if escalated:
@@ -625,22 +645,42 @@ def run_agent_loop(
                             session_failed = True
                             break
                 else:
-                    summary_items.append(
-                        _handle_dangerous_sql(
-                            db,
+                    if unattended:
+                        # 无人值守：dangerous SQL 不挂审批、不阻塞——记日志 + 推
+                        # sql_skipped SSE + 摘要标注「已跳过」。session 仍 running。
+                        logger.warning(
+                            "unattended 模式跳过 dangerous SQL: %s", sql[:120]
+                        )
+                        _emit_sse(
                             session_id,
                             main_loop,
-                            i,
-                            sql,
-                            verdict,
-                            approval_timeout=approval_timeout,
+                            {
+                                "kind": "sql_skipped",
+                                "sql": sql,
+                                "danger_reason": verdict.reason,
+                            },
                         )
-                    )
-                    # 超时 / 拒绝 / 异常分支可能将 session 置 failed——若 failed 则终止。
-                    s_after = db.query(AgentSession).get(session_id)
-                    if s_after is not None and s_after.status == "failed":
-                        session_failed = True
-                        break
+                        preview = sql if len(sql) <= 80 else sql[:77] + "..."
+                        summary_items.append(
+                            f"{i}. {preview} → 已跳过（无人值守，{verdict.reason}）"
+                        )
+                    else:
+                        summary_items.append(
+                            _handle_dangerous_sql(
+                                db,
+                                session_id,
+                                main_loop,
+                                i,
+                                sql,
+                                verdict,
+                                approval_timeout=approval_timeout,
+                            )
+                        )
+                        # 超时 / 拒绝 / 异常分支可能将 session 置 failed——若 failed 则终止。
+                        s_after = db.query(AgentSession).get(session_id)
+                        if s_after is not None and s_after.status == "failed":
+                            session_failed = True
+                            break
 
             if session_failed:
                 return
@@ -686,6 +726,7 @@ def _handle_safe_sql(
     *,
     safe_row_threshold: int = 100,
     approval_timeout: float = 3600.0,
+    unattended: bool = False,
 ) -> "tuple[str, bool]":
     """safe SQL：执行 + 运行时 rowcount 护栏（D15）。
 
@@ -696,17 +737,39 @@ def _handle_safe_sql(
     - rowcount > safe_row_threshold：**回滚该 SQL**（见 ``_execute_safe_with_threshold``
       事务未提交即 rollback，不影响 loop 的 db）→ 转 ``_handle_dangerous_sql`` 走审批
       （danger_reason="影响行数超阈值 {n}"）。返回 ``(审批摘要, escalated=True)``。
+      若 ``unattended=True``：转 dangerous 后不挂审批——记 warning + 推
+      ``sql_skipped`` SSE + 摘要标注「已跳过」，返回 ``(跳过摘要, escalated=True)``
+      （escalated 仍 True 以保持返回值语义一致，但 session 不会变 failed——unattended
+      分支永不阻塞）。
 
     返回 ``(摘要条目, escalated)``。``escalated=True`` 时调用方需检查 session.status
-    是否因审批超时变为 failed。
+    是否因审批超时变为 failed（unattended 分支永不置 failed）。
     """
     affected, err, escalated = _execute_safe_with_threshold(sql, safe_row_threshold)
 
     if escalated:
         # 超阈值 → 转 dangerous 审批。danger_reason 用运行时实测 rowcount。
         verdict = SqlVerdict(
-            dangerous=True, reason=f"影响行数超阈值 {affected}（> {safe_row_threshold}）"
+            dangerous=True,
+            reason=f"影响行数超阈值 {affected}（> {safe_row_threshold}）",
         )
+        if unattended:
+            # 无人值守：超阈值 SQL 也不挂审批——跳过。
+            logger.warning("unattended 模式跳过超阈值 SQL: %s", sql[:120])
+            _emit_sse(
+                session_id,
+                main_loop,
+                {
+                    "kind": "sql_skipped",
+                    "sql": sql,
+                    "danger_reason": verdict.reason,
+                },
+            )
+            preview = sql if len(sql) <= 80 else sql[:77] + "..."
+            return (
+                f"{index}. {preview} → 已跳过（无人值守，{verdict.reason}）",
+                True,
+            )
         summary = _handle_dangerous_sql(
             db,
             session_id,
@@ -745,7 +808,10 @@ def _handle_safe_sql(
 
     preview = sql if len(sql) <= 80 else sql[:77] + "..."
     if err is not None:
-        return f"{index}. [执行失败] {preview} → 错误：{err}（source=agent, auto）", False
+        return (
+            f"{index}. [执行失败] {preview} → 错误：{err}（source=agent, auto）",
+            False,
+        )
     return f"{index}. {preview} → 影响 {affected} 行（source=agent, auto）", False
 
 
@@ -880,8 +946,12 @@ def _handle_dangerous_sql(
             s.status = "running"
             db.commit()
         if err is not None:
-            return f"{index}. [执行失败] {preview} → 错误：{err}（source=agent, approved）"
-        return f"{index}. {preview} → 已执行 影响 {affected} 行（source=agent, approved）"
+            return (
+                f"{index}. [执行失败] {preview} → 错误：{err}（source=agent, approved）"
+            )
+        return (
+            f"{index}. {preview} → 已执行 影响 {affected} 行（source=agent, approved）"
+        )
 
     # rejected（或其它非 approved 终态）。
     _emit_sse(

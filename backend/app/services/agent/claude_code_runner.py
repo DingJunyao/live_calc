@@ -22,6 +22,7 @@
 ``_build_cmd`` / ``_build_env`` / ``_translate`` 均抽成纯函数便于单测，
 ``run`` 仅做线程编排。
 """
+
 from __future__ import annotations
 
 import json
@@ -217,9 +218,7 @@ def translate_event(evt: dict) -> list[AgentEvent]:
                     AgentEvent(
                         kind="tool_result",
                         tool_use_id=str(blk.get("tool_use_id", "")),
-                        tool_result=_coerce_tool_result_content(
-                            blk.get("content")
-                        ),
+                        tool_result=_coerce_tool_result_content(blk.get("content")),
                     )
                 )
         return out
@@ -301,6 +300,10 @@ class ClaudeCodeRunner:
     # ------------------------------------------------------------------ #
     # AgentRunner 协议
     # ------------------------------------------------------------------ #
+    # resume 锚取 last_session_id（CLI 捕获的 claude session id），
+    # 非 AgentSession DB PK。与 LangChainRunner.uses_db_pk_resume=True 对称。
+    uses_db_pk_resume = False
+
     @property
     def last_session_id(self) -> str | None:
         return self._last_session_id
@@ -447,8 +450,7 @@ class ClaudeCodeRunner:
                     kind="error",
                     is_error=True,
                     error=(
-                        f"claude CLI 异常退出 rc={rc}。"
-                        f" stderr: {stderr_tail[:500]}"
+                        f"claude CLI 异常退出 rc={rc}。" f" stderr: {stderr_tail[:500]}"
                     ),
                 )
         except FileNotFoundError:

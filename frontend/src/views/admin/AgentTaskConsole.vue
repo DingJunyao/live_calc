@@ -35,6 +35,19 @@
       <v-col cols="12" md="3" class="agent-sidebar d-none d-md-flex">
         <div class="sidebar-section">
           <div class="text-caption text-medium-emphasis px-3 pt-3 pb-1">任务类型</div>
+          <div class="px-3 pb-2">
+            <v-select
+              v-model="provider"
+              :items="providerOptions"
+              item-title="label"
+              item-value="value"
+              label="Provider"
+              variant="outlined"
+              density="compact"
+              hide-details
+              :disabled="starting"
+            />
+          </div>
           <v-list density="compact" nav>
             <v-list-item
               v-for="t in taskTypes"
@@ -176,6 +189,19 @@
     >
       <div class="sidebar-section">
         <div class="text-caption text-medium-emphasis px-3 pt-3 pb-1">任务类型</div>
+        <div class="px-3 pb-2">
+          <v-select
+            v-model="provider"
+            :items="providerOptions"
+            item-title="label"
+            item-value="value"
+            label="Provider"
+            variant="outlined"
+            density="compact"
+            hide-details
+            :disabled="starting"
+          />
+        </div>
         <v-list density="compact" nav>
           <v-list-item
             v-for="t in taskTypes"
@@ -225,6 +251,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useAgentSession } from '@/composables/useAgentSession'
 import { getTaskTypes, listSessions } from '@/api/agent'
+import type { AgentProvider } from '@/api/agent'
 import type { AgentSession, TaskType } from '@/types/agent'
 import AgentMessageBubble from '@/components/agent/AgentMessageBubble.vue'
 import AgentApprovalCard from '@/components/agent/AgentApprovalCard.vue'
@@ -253,6 +280,16 @@ const sessions = ref<AgentSession[]>([])
 const loadingMeta = ref(false)
 const starting = ref(false)
 const sending = ref(false)
+
+/** Provider 选择（默认 claude_code，保现有行为）。
+ * 三选项前端硬编码（YAGNI，不动后端 /task-types）。
+ */
+const provider = ref<AgentProvider>('claude_code')
+const providerOptions: { value: AgentProvider; label: string }[] = [
+  { value: 'claude_code', label: 'Claude Code' },
+  { value: 'openai', label: 'OpenAI 兼容' },
+  { value: 'anthropic', label: 'Anthropic 兼容' },
+]
 
 const currentSid = ref<number | null>(null)
 const interjectText = ref('')
@@ -403,7 +440,7 @@ async function onStartTask(taskType: string) {
   error.value = ''
   try {
     reset()
-    const sid = await startTask(taskType)
+    const sid = await startTask(taskType, provider.value)
     currentSid.value = sid
     await router.replace({ query: { ...route.query, session_id: String(sid) } })
     await loadSessions()

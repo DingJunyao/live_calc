@@ -354,8 +354,8 @@
                 :key="t._kind === 'import' ? 'imp-' + t.id : t._kind === 'usda' ? 'usda-' + t.id : 'agt-' + t.session_id"
                 class="mb-2 border rounded"
                 :class="(t._kind === 'import' || t._kind === 'usda') ? taskRunningClass(t.status) : ''"
-                :style="t._kind === 'agent' ? { cursor: 'pointer' } : {}"
-                @click="t._kind === 'agent' ? router.push('/admin/agent-console?session_id=' + t.session_id) : undefined"
+                :style="hasAgentLink(t) ? { cursor: 'pointer' } : {}"
+                @click="onTaskClick(t)"
               >
                 <template #prepend>
                   <v-icon :color="statusColor(t.status)" class="mr-3">
@@ -566,7 +566,9 @@ onMounted(async () => {
   // 恢复最近的 agent 会话到任务列表（刷新后重建）
   try {
     const recent = await listSessions(20)
-    const relevant = recent.filter((s) => AGENT_TASK_TYPES.includes(s.task_type))
+    const relevant = recent.filter(
+      (s) => AGENT_TASK_TYPES.includes(s.task_type) && !(s.title || '').startsWith('[后台]')
+    )
     for (const s of relevant) {
       if (!agentTasks.value.find((t) => t.session_id === s.id)) {
         agentTasks.value.push({
@@ -967,6 +969,23 @@ const mergedTasks = computed<MergedTask[]>(() => {
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
 })
+
+// 是否可跳转到任务台对话：agent 任务，或带 agent_session_id 的 import 任务（AI 推测
+// 走 Agent 路径时，inferrer 把 [后台] AgentSession.id 写进 ImportTask.stats.agent_session_id）。
+function hasAgentLink(t: MergedTask): boolean {
+  if (t._kind === 'agent') return true
+  if (t._kind === 'import') return !!t.stats?.agent_session_id
+  return false
+}
+
+// 点击任务条目跳转任务台对话。
+function onTaskClick(t: MergedTask) {
+  if (t._kind === 'agent') {
+    router.push('/admin/agent-console?session_id=' + t.session_id)
+  } else if (t._kind === 'import' && t.stats?.agent_session_id) {
+    router.push('/admin/agent-console?session_id=' + t.stats.agent_session_id)
+  }
+}
 
 const taskTypeLabels: Record<string, string> = {
   git_import: 'Git 仓库导入',

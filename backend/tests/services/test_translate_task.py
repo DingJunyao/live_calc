@@ -1,44 +1,9 @@
 # backend/tests/services/test_translate_task.py
-import pytest
-from unittest.mock import patch
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.core.database import Base
-from app.models.usda import UsdaFood
-from app.services.translate.task import TranslateTask
+"""TranslateTask 老路径测试已被 Task 7 引擎替换重构。
 
-
-@pytest.fixture()
-def db():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    s = Session()
-    s.add_all([
-        UsdaFood(fdc_id=1, data_type="foundation", description="Apple, raw", translate_status="pending"),
-        UsdaFood(fdc_id=2, data_type="foundation", description="Beef, raw", translate_status="done"),
-        UsdaFood(fdc_id=3, data_type="foundation", description="Chicken, raw", translate_status="pending"),
-    ])
-    s.commit()
-    yield s
-    s.close()
-
-
-class FakeTranslator:
-    name = "openai"
-    async def translate_batch(self, texts):
-        return [f"译-{t}" for t in texts]
-    async def health_check(self):
-        return True
-
-
-@pytest.mark.asyncio
-async def test_only_pending_translated(db):
-    config_dict = {"ai": {"providers": {"openai": {"enabled": True, "base_url": "x", "api_key": "y", "model": "z"}}}}
-    with patch("app.services.translate.task.get_translator", return_value=FakeTranslator()):
-        result = await TranslateTask(db).run(provider="openai", config_dict=config_dict, batch_size=10)
-    assert result["translated"] == 2
-    assert db.query(UsdaFood).filter(UsdaFood.fdc_id == 1).one().description_zh == "译-Apple, raw"
-    assert db.query(UsdaFood).filter(UsdaFood.fdc_id == 1).one().translate_status == "done"
-    # fdc=2 原本 done，未被重新翻译（增量）
-    assert db.query(UsdaFood).filter(UsdaFood.fdc_id == 2).one().description_zh is None
+原测试针对 ``translate_batch`` 分批串行路径（mock ``get_translator``），
+Task 7 把引擎换成 ``LangChainRunner`` + ``run_agent_loop(unattended=True)``
+后该 mock 不再存在。新引擎的「只译 pending / 不动 done」语义已由
+``tests/translate/test_translate_task_agent.py`` 完整覆盖（fdc=3 原 done
+行 translate_status/description_zh 不变），此处保留占位避免导入空模块。
+"""

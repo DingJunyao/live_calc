@@ -13,6 +13,7 @@
 任何具体 Runner（如 ``ClaudeCodeRunner``）实现 ``AgentRunner`` 协议，``run`` 返回
 一个 ``AgentEvent`` 迭代器，调用方按需消费、转发或落库（Task 4/5）。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -74,4 +75,20 @@ class AgentRunner(Protocol):
     @property
     def last_session_id(self) -> str | None:
         """最近一次（或当前）会话的 session_id，未捕获到则为 None。"""
+        ...
+
+    @property
+    def uses_db_pk_resume(self) -> bool:
+        """resume 锚是否为 AgentSession 的 DB PK（字符串形式）而非外部 session id。
+
+        - ``False``（默认）：resume 锚取 ``last_session_id``，适用于
+          ``ClaudeCodeRunner``——它捕获 CLI 的 claude session id。
+        - ``True``：resume 锚恒为 ``str(AgentSession.id)``，适用于
+          ``LangChainRunner``——其 ``_load_history`` 按 ``AgentMessage.session_id``
+          （= AgentSession DB PK）查历史，与外部 session id 无关。
+
+        ``run_agent_loop`` 据此分流：True 时每轮 ``current_sid = str(session_id)``，
+        首轮即写 ``claude_session_id`` 使插话不再 409；False 时保持原 ``runner
+        .last_session_id`` 路径，不改 ClaudeCodeRunner 行为。
+        """
         ...

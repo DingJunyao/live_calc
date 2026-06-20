@@ -1,18 +1,22 @@
-"""runner_factory - 构造 ClaudeCodeRunner + 生成 mcp_config.json（Task 5）。
+"""runner_factory - 按 provider 分流构造 AgentRunner（Task 5）。
 
-职责：
-1. 生成临时 mcp_config.json，指向 controlled_db_mcp.py（stdio 子进程），
-   通过 env 字段注入 ``LIVECALC_DB_URL``。
-2. 构造 ``ClaudeCodeRunner``：allowed_tools 对齐 controlled_db_mcp 暴露的
-   ``db_read`` / ``describe`` / ``list_tables``，cwd=backend，max_budget_usd
-   透传。
+分流规则：
+- ``provider="claude_code"``（默认）：构造 ``ClaudeCodeRunner`` + 生成临时
+  ``mcp_config.json``（指向 controlled_db_mcp.py 的 stdio 子进程，env 注入
+  ``LIVECALC_DB_URL``）。allowed_tools 对齐 controlled_db_mcp 暴露的
+  ``db_read`` / ``describe`` / ``list_tables``。
+- ``provider="openai"`` / ``"anthropic"``：调 ``_build_langchain_runner``，
+  从 ``TranslationConfig`` 取 provider 配置，构造 ``LangChainRunner``
+  （挂 ``READ_ONLY_TOOLS``）。
 
 设计要点：
 - mcp_config 的 server 名固定 ``controlled_db``，工具名前缀 ``mcp__controlled_db__``。
 - db_url 通过 env 传递（比 argv 稳，避免路径含空格/转义）。
 - SQLite 相对路径（``sqlite:///./data/livecalc.db``）需相对 backend 目录解析成
   绝对路径，否则 MCP 子进程的 cwd 可能不同导致读错文件。
+- LangChainRunner 分支的 langchain 依赖在函数内 import，避免模块加载期强依赖。
 """
+
 from __future__ import annotations
 
 import json
@@ -88,7 +92,7 @@ def resolve_db_url(raw_url: str | None = None) -> str:
         return raw_url
 
     prefix = "sqlite:///"
-    path_part = raw_url[len(prefix):]
+    path_part = raw_url[len(prefix) :]
     # 已是绝对路径或纯内存库（``sqlite://``）原样返回。
     if path_part.startswith("/") or path_part == "" or ":memory:" in path_part:
         return raw_url
@@ -107,7 +111,9 @@ def allowed_tools_for_db() -> list[str]:
     ]
 
 
-def make_mcp_config_path(db_url: str, *, config_path: str | os.PathLike[str] | None = None) -> str:
+def make_mcp_config_path(
+    db_url: str, *, config_path: str | os.PathLike[str] | None = None
+) -> str:
     """生成 mcp_config.json，指向 controlled_db_mcp.py（stdio 子进程）。
 
     db_url 通过 env 字段注入（``LIVECALC_DB_URL``），避免 argv 路径含空格问题。
@@ -149,6 +155,7 @@ def _mcp_available() -> bool:
     """检测 ``mcp`` Python 包是否可用（决定是否启用受控 MCP 只读工具）。"""
     try:
         import mcp  # noqa: F401 - 仅检测 import
+
         return True
     except ImportError:
         return False
@@ -158,6 +165,7 @@ def build_runner(
     task_type: str,
     db_url: str,
     *,
+    provider: str = "claude_code",
     max_budget_usd: "float | None" = None,
     idle_timeout: "float | None" = None,
     total_timeout: "float | None" = None,
@@ -165,26 +173,35 @@ def build_runner(
     cli: "str | None" = None,
     mcp_config_path: "str | None" = None,
     use_mcp: "bool | None" = None,
-) -> ClaudeCodeRunner:
-    """构造 ``ClaudeCodeRunner``。
+):
+    """按 ``provider`` 分流构造 AgentRunner。
 
-    MCP 可用时：对接 controlled_db MCP（Agent 通过 MCP 工具读库）。
-    MCP 不可用时：不使用 MCP（Agent 通过 bash + db_query 脚本查库，```sql``` 块写库）。
+    - ``provider="claude_code"``（默认）：构造 ``ClaudeCodeRunner``。MCP 可用时
+      对接 controlled_db MCP（Agent 通过 MCP 工具读库）；不可用时不使用 MCP
+      （Agent 通过 bash + db_query 脚本查库，```sql``` 块写库）。
+    - ``provider="openai"`` / ``"anthropic"``：调 ``_build_langchain_runner``，
+      从 ``TranslationConfig`` 取 provider 配置构造 ``LangChainRunner``。
 
     Args:
-        task_type: 任务类型（当前不影响 Runner 构造）。
-        db_url: 原始 db_url（内部用 ``resolve_db_url`` 解析）。
-        max_budget_usd: 成本上限，透传 ``--max-budget-usd``。
-        idle_timeout / total_timeout: CLI 子进程超时（秒），None 用 Runner 默认。
-        extra_env: 追加到子进程 env。
-        cli: CLI 可执行文件名/路径覆盖。
-        mcp_config_path: 自定义 mcp_config 路径，None 时自动生成。
+        task_type: 任务类型（当前不影响 Runner 构造；Task 6 接模板时再处理 prompt）。
+        db_url: 原始 db_url（仅 claude_code 分支用，内部 ``resolve_db_url`` 解析）。
+        provider: ``"claude_code"`` / ``"openai"`` / ``"anthropic"``。其它值落到
+            claude_code 分支兜底。
+        max_budget_usd: 成本上限，透传 ``--max-budget-usd``（仅 claude_code 分支）。
+        idle_timeout / total_timeout: CLI 子进程超时（秒），None 用 Runner 默认
+            （仅 claude_code 分支）。
+        extra_env: 追加到子进程 env（仅 claude_code 分支）。
+        cli: CLI 可执行文件名/路径覆盖（仅 claude_code 分支）。
+        mcp_config_path: 自定义 mcp_config 路径，None 时自动生成
+            （仅 claude_code 分支）。
         use_mcp: 强制指定是否使用 MCP。None 时自动检测（``_mcp_available()``）。
 
     Returns:
-        配置好的 ``ClaudeCodeRunner`` 实例。
+        ``ClaudeCodeRunner`` 或 ``LangChainRunner`` 实例。
     """
-    del task_type  # 当前不影响 Runner 构造；Task 6 接模板时再处理 prompt。
+    # 分流：openai/anthropic 走 LangChainRunner，其余（含 claude_code）走原分支。
+    if provider in ("openai", "anthropic"):
+        return _build_langchain_runner(task_type, provider=provider)
 
     resolved_url = resolve_db_url(db_url)
     cwd = str(_backend_root())
@@ -214,3 +231,57 @@ def build_runner(
         kwargs["total_timeout"] = total_timeout
 
     return ClaudeCodeRunner(**kwargs)
+
+
+def _build_langchain_runner(task_type: str, *, provider: str):
+    """从 ``TranslationConfig`` 取 provider 配置构造 ``LangChainRunner``。
+
+    流程：
+    1. 读 ``TranslationConfig`` 单行（``to_dict()`` → ``{ai, machine}``）。
+    2. ``find_provider_section`` 在 ai/machine 两区找 provider 配置片段。
+    3. ``build_chat_model(provider, section)`` 构造 langchain ChatModel。
+    4. ``LangChainRunner(chat=..., tools=READ_ONLY_TOOLS)`` 装配。
+
+    import 放函数内，避免模块加载时强依赖 langchain（claude_code 分支不需要）。
+    ``task_type`` 当前不影响 Runner 构造（与 claude_code 分支一致），保留入参
+    以便 Task 6 接 task_templates prompt 时统一处理。
+
+    Args:
+        task_type: 任务类型（当前未使用）。
+        provider: ``"openai"`` 或 ``"anthropic"``。
+
+    Returns:
+        配置好的 ``LangChainRunner`` 实例。
+
+    Raises:
+        ValueError: 配置中找不到 provider（提示去后台 AI 配置页配置）。
+    """
+    del task_type  # 当前未使用；Task 6 接模板时再处理。
+
+    # 函数内 import：避免 claude_code 分支也强依赖 langchain / DB。
+    # SessionLocal 走模块属性访问（``app.core.database.SessionLocal``），便于
+    # 测试 monkeypatch 替换内存库。
+    import app.core.database as dbmod
+    from app.models.usda import TranslationConfig
+    from app.services.agent.langchain_chat import build_chat_model
+    from app.services.agent.langchain_runner import LangChainRunner
+    from app.services.agent.langchain_tools import READ_ONLY_TOOLS
+    from app.services.translate.registry import find_provider_section
+
+    db = dbmod.SessionLocal()
+    try:
+        cfg_row = db.query(TranslationConfig).first()
+        cfg_dict = (
+            cfg_row.to_dict()
+            if cfg_row is not None
+            else {"ai": {"providers": {}}, "machine": {"providers": {}}}
+        )
+    finally:
+        db.close()
+
+    section = find_provider_section(cfg_dict, provider)
+    if not section:
+        raise ValueError(f"配置中未找到 provider: {provider}（请在后台 AI 配置页配置）")
+
+    chat = build_chat_model(provider, section)
+    return LangChainRunner(chat=chat, tools=READ_ONLY_TOOLS)

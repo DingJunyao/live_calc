@@ -360,6 +360,8 @@ Expected: FAIL（ModuleNotFoundError）。
 
 **Step 3: 实现 langchain_runner.py**
 
+> ⚠️ **langchain 已是 1.x（Task 0 实测：langchain 1.3.10）**：`create_tool_calling_agent` + `AgentExecutor` 已移除，改用 `create_agent(model, tools, system_prompt=..., middleware=...)`（基于 langgraph，返回的 agent 本身即执行器，支持 `.stream()`/`.astream()`）。**实现时按 v1 重写**：先用 context7（libraryId `/langchain-ai/langchain`）查 `create_agent` 的 stream 事件结构，再调整 `_map_chunk` 映射。测试用 `GenericFakeChatModel`（`langchain_core.language_models.fake_chat_models`，Task 0 已验证可用），不要用 `FakeListChatModel`（需额外装 langchain-community）。下面代码是 0.3.x 旧 API，仅作结构参考。
+
 ```python
 # backend/app/services/agent/langchain_runner.py
 """LangChainRunner：用 langchain AgentExecutor 驱动 OpenAI/Anthropic 的 tool-use 循环，

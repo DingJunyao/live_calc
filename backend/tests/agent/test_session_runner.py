@@ -410,3 +410,117 @@ def test_tool_use_id_pairing(mem_db):
     r2 = next(m.tool_result for m in by_id["tu_2"] if m.tool_result is not None)
     assert r1 == "r1"
     assert r2 == "r2"
+
+
+# --------------------------------------------------------------------------- #
+# C1 回归：LangChainRunner 路径的 resume 锚 = str(session_id)，
+# 多轮不丢历史 + claude_session_id 首轮即写入（插话不再 409）。
+# --------------------------------------------------------------------------- #
+def test_c1_langchain_resume_uses_db_pk_each_turn(mem_db):
+    """uses_db_pk_resume=True 时，run_agent_loop 每轮 resume_session_id=str(sid)。
+
+    验证：
+    1. 第 1 轮（首轮）resume_session_id 非 None（= str(sid)），不是 echo None。
+    2. 第 2 轮 resume_session_id 仍是 str(sid)（多轮不丢锚）。
+    3. AgentSession.claude_session_id 被写为 str(sid)（插话 409 放行前提）。
+    """
+    sid = _make_session(mem_db)
+    captured_turns: list[tuple[str, "str | None"]] = []
+
+    class DbPkResumeRunner:
+        """模拟 LangChainRunner：uses_db_pk_resume=True，每轮产 1 条 SQL。"""
+
+        uses_db_pk_resume = True
+
+        @property
+        def last_session_id(self):
+            # 模拟 LangChainRunner：仅 echo 入参，首轮为 None。
+            return None
+
+        def run(self, prompt, *, resume_session_id=None):
+            captured_turns.append((prompt, resume_session_id))
+            # 第 1 轮：产 SQL（触发第 2 轮）。
+            # 第 2 轮：无 SQL（Agent 表示完成）。
+            if len(captured_turns) == 1:
+                yield AgentEvent(
+                    kind="text_delta", text="```sql\nUPDATE t SET x=1;\n```"
+                )
+            else:
+                yield AgentEvent(kind="text_delta", text="已完成，无更多操作。")
+            yield AgentEvent(kind="done")
+
+    loop = asyncio.new_event_loop()
+    try:
+        session_runner.run_agent_loop(
+            sid,
+            DbPkResumeRunner(),
+            "开始",
+            loop,
+            db_session_factory=mem_db,
+            max_turns=3,
+            unattended=True,
+        )
+    finally:
+        loop.close()
+
+    # 1. 跑了 2 轮。
+    assert len(captured_turns) == 2, f"expected 2 turns, got {captured_turns}"
+    # 2. 每轮 resume_session_id 都是 str(sid)（首轮非 None 是 C1 核心）。
+    assert captured_turns[0][1] == str(sid), captured_turns[0]
+    assert captured_turns[1][1] == str(sid), captured_turns[1]
+    # 3. claude_session_id 被写入（插话不再 409）。
+    sess = _session(mem_db, sid)
+    assert sess.claude_session_id == str(sid), sess.claude_session_id
+    # 4. 会话以 success 终态。
+    assert sess.status == "success"
+
+
+def test_c1_claude_code_runner_path_unchanged(mem_db):
+    """uses_db_pk_resume 未设（False）时，保持原 ClaudeCodeRunner 行为。
+
+    验证：首轮 resume_session_id=入参（None 或插话值），后续轮用 last_session_id。
+    """
+    sid = _make_session(mem_db)
+    captured_turns: list[tuple[str, "str | None"]] = []
+
+    class ClaudeLikeRunner:
+        """模拟 ClaudeCodeRunner：无 uses_db_pk_resume，last_session_id 捕获值。"""
+
+        def __init__(self):
+            self._captured_sid = "claude-cli-sid-abc"
+
+        @property
+        def last_session_id(self):
+            return self._captured_sid
+
+        def run(self, prompt, *, resume_session_id=None):
+            captured_turns.append((prompt, resume_session_id))
+            if len(captured_turns) == 1:
+                yield AgentEvent(
+                    kind="text_delta", text="```sql\nUPDATE t SET x=1;\n```"
+                )
+            else:
+                yield AgentEvent(kind="text_delta", text="done")
+            yield AgentEvent(kind="done")
+
+    loop = asyncio.new_event_loop()
+    try:
+        session_runner.run_agent_loop(
+            sid,
+            ClaudeLikeRunner(),
+            "开始",
+            loop,
+            db_session_factory=mem_db,
+            max_turns=3,
+            unattended=True,
+        )
+    finally:
+        loop.close()
+
+    assert len(captured_turns) == 2
+    # 首轮用入参 None（非插话场景）。
+    assert captured_turns[0][1] is None
+    # 第 2 轮用 runner.last_session_id（CLI 捕获的 claude session id）。
+    assert captured_turns[1][1] == "claude-cli-sid-abc"
+    sess = _session(mem_db, sid)
+    assert sess.claude_session_id == "claude-cli-sid-abc"

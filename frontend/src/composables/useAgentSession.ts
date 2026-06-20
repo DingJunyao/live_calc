@@ -20,6 +20,7 @@ import {
   decideApproval as apiDecideApproval,
   postMessage as apiPostMessage,
 } from '@/api/agent'
+import type { AgentProvider } from '@/api/agent'
 
 /**
  * 渲染用的消息项（assistant 文本气泡 / tool 卡片）。
@@ -326,10 +327,15 @@ export function useAgentSession() {
     connected.value = false
   }
 
-  /** 一站式：建会话 + 连接 SSE，返回 session_id。 */
-  async function startTask(taskType: string): Promise<number> {
+  /** 一站式：建会话 + 连接 SSE，返回 session_id。
+   * provider 默认 claude_code（保现有行为）；Vue 层传入用户选择。
+   */
+  async function startTask(
+    taskType: string,
+    provider: AgentProvider = 'claude_code',
+  ): Promise<number> {
     reset()
-    const { session_id } = await apiCreateSession(taskType)
+    const { session_id } = await apiCreateSession(taskType, false, provider)
     status.value = 'running'
     await connect(session_id)
     return session_id

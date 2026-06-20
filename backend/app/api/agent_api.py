@@ -14,6 +14,7 @@
 跨线程 main_loop：async 端点用 ``asyncio.get_event_loop()`` 捕获，传给后台线程，
 后台线程用 ``loop.call_soon_threadsafe`` 经 stream_bridge 推送事件给订阅者 queue。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -120,7 +121,7 @@ async def create_session(
         task_type=body.task_type,
         title=title,
         status="pending",
-        runner_type="claude_code",
+        runner_type=body.provider,
         initial_prompt=initial_prompt,
         user_id=current_user.id,
     )
@@ -135,7 +136,9 @@ async def create_session(
 
     def _launch() -> None:
         try:
-            runner = runner_factory.build_runner(body.task_type, db_url)
+            runner = runner_factory.build_runner(
+                body.task_type, db_url, provider=body.provider
+            )
             session_runner.run_agent_loop(
                 session_id,
                 runner,
@@ -386,10 +389,13 @@ async def post_message(
     resume_sid = sess.claude_session_id
     user_text = body.text
     task_type = sess.task_type or "followup"
+    # 复用原 session 的 runner_type 作为 provider（与 create_session 对齐）。
+    # 历史数据可能 runner_type 为 NULL，回退默认 claude_code。
+    provider = sess.runner_type or "claude_code"
 
     def _launch() -> None:
         try:
-            runner = runner_factory.build_runner(task_type, db_url)
+            runner = runner_factory.build_runner(task_type, db_url, provider=provider)
             session_runner.run_agent_loop(
                 sid,
                 runner,

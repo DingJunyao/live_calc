@@ -1,4 +1,5 @@
 """导入 API 路由。"""
+
 import asyncio
 import os
 import threading
@@ -23,6 +24,7 @@ router = APIRouter()
 
 # ---- 数据导入端点 ----
 
+
 @router.post("/data/upload")
 def upload_import(
     file: UploadFile = File(...),
@@ -39,6 +41,7 @@ def upload_import(
 
     # 保存上传文件到临时路径
     import tempfile as _tmpfile
+
     suffix = os.path.splitext(file.filename or "upload.zip")[1] or ".zip"
     tmp = _tmpfile.NamedTemporaryFile(delete=False, suffix=suffix)
     content = file.read()
@@ -52,10 +55,13 @@ def upload_import(
     # 使用闭包包装导入函数，在后台线程中用独立会话执行
     def _do_import(progress_callback=None):
         from app.core.database import SessionLocal as _SessionLocal
+
         import_db = _SessionLocal()
         try:
             return import_from_upload_path(
-                import_db, file_path, current_user_id,
+                import_db,
+                file_path,
+                current_user_id,
                 is_admin,
                 progress_callback=progress_callback,
             )
@@ -63,7 +69,10 @@ def upload_import(
             import_db.close()
 
     task_id = start_background_import(
-        db, "upload_import", current_user.id, _do_import,
+        db,
+        "upload_import",
+        current_user.id,
+        _do_import,
     )
     return {"task_id": task_id}
 
@@ -78,8 +87,12 @@ def trigger_repo_import(
         raise HTTPException(403, detail="仅管理员可操作")
 
     task_id = start_background_import(
-        db, "git_import", current_user.id,
-        import_from_git_repo, db, current_user.id,
+        db,
+        "git_import",
+        current_user.id,
+        import_from_git_repo,
+        db,
+        current_user.id,
     )
     return {"task_id": task_id}
 
@@ -98,13 +111,19 @@ def trigger_local_import(
         raise HTTPException(400, detail=f"目录不存在: {local_path}")
 
     task_id = start_background_import(
-        db, "local_import", current_user.id,
-        import_from_local_dir, db, local_path, current_user.id,
+        db,
+        "local_import",
+        current_user.id,
+        import_from_local_dir,
+        db,
+        local_path,
+        current_user.id,
     )
     return {"task_id": task_id}
 
 
 # ---- 任务状态查询 ----
+
 
 @router.get("/task/{task_id}")
 def get_task_status(
@@ -113,10 +132,14 @@ def get_task_status(
     current_user=Depends(get_current_user),
 ):
     """查询导入任务状态。"""
-    task = db.query(ImportTask).filter(
-        ImportTask.id == task_id,
-        ImportTask.user_id == current_user.id,
-    ).first()
+    task = (
+        db.query(ImportTask)
+        .filter(
+            ImportTask.id == task_id,
+            ImportTask.user_id == current_user.id,
+        )
+        .first()
+    )
     if not task:
         # 管理员可以查看所有任务
         if getattr(current_user, "is_admin", False):
@@ -171,6 +194,7 @@ def cancel_import_task(
 
 # ---- AI 后处理端点 ----
 
+
 def _create_ai_caller(provider: str, db: Session):
     """根据 provider 名称创建 AI 调用函数。
 
@@ -185,19 +209,22 @@ def _create_ai_caller(provider: str, db: Session):
         config_dict = cfg_record.to_dict()
 
         # 在 ai 和 machine 两区中查找 provider 配置
-        from app.services.translate.registry import get_translator, find_provider_section
+        from app.services.translate.registry import (
+            get_translator,
+            find_provider_section,
+        )
+
         prov_cfg = find_provider_section(config_dict, provider)
         if not prov_cfg:
             return None
 
         import asyncio
+
         translator = get_translator(provider, prov_cfg, timeout=120)
 
         def _call(prompt: str) -> str:
             """同步调用 translator 的 translate_batch。"""
-            result_list = asyncio.run(
-                translator.translate_batch([prompt])
-            )
+            result_list = asyncio.run(translator.translate_batch([prompt]))
             return result_list[0] if result_list else ""
 
         # 快速健康检查
@@ -213,8 +240,10 @@ def _create_ai_caller(provider: str, db: Session):
         return None
 
 
-def _run_ai_inference(task_id: int, inference_type: str, force: bool,
-                       provider: str, db_session_factory):
+def _run_ai_inference(
+    task_id: int, inference_type: str, force: bool, provider: str, db_session_factory,
+    main_loop: "asyncio.AbstractEventLoop | None" = None,
+):
     """后台运行 AI 推测。"""
     db = db_session_factory()
     try:
@@ -222,36 +251,68 @@ def _run_ai_inference(task_id: int, inference_type: str, force: bool,
         if not task:
             return
         task.status = "running"
-        task.progress = {"stage": "初始化", "current": 0, "total": 0, "message": "准备 AI 推测..."}
+        task.progress = {
+            "stage": "初始化",
+            "current": 0,
+            "total": 0,
+            "message": "准备 AI 推测...",
+        }
         db.commit()
 
         ai_caller = _create_ai_caller(provider, db)
-        inferrer = AIInferrer(db)
+        inferrer = AIInferrer(db, provider=provider, main_loop=main_loop)
         if ai_caller:
             inferrer.set_ai_caller(ai_caller)
 
-        def progress_callback(stage: str, current: int, total: int, message: str = ""):
+        def progress_callback(
+            stage: str,
+            current: int,
+            total: int,
+            message: str = "",
+            agent_session_id: "int | None" = None,
+        ):
             try:
                 t = db.query(ImportTask).get(task_id)
                 if t:
-                    t.progress = {"stage": stage, "current": current, "total": total, "message": message}
+                    t.progress = {
+                        "stage": stage,
+                        "current": current,
+                        "total": total,
+                        "message": message,
+                    }
+                    # 即时把 agent_session_id 写进 stats，供前端任务进行中点击跳转任务台对话
+                    # （不等任务完成——完成时 task.stats = result.stats 会覆盖，但 result.stats
+                    # 也含 agent_session_id，故全程可见）。
+                    if agent_session_id is not None:
+                        prev = dict(t.stats or {})
+                        prev["agent_session_id"] = agent_session_id
+                        t.stats = prev
                     db.commit()
             except Exception:
                 pass
 
         if inference_type == "quantities":
-            result = inferrer.infer_fuzzy_quantities(force=force, progress_callback=progress_callback)
+            result = inferrer.infer_fuzzy_quantities(
+                force=force, progress_callback=progress_callback
+            )
         elif inference_type == "densities":
-            result = inferrer.infer_densities(force=force, progress_callback=progress_callback)
+            result = inferrer.infer_densities(
+                force=force, progress_callback=progress_callback
+            )
         else:
             raise ValueError(f"Unknown inference type: {inference_type}")
 
         task = db.query(ImportTask).get(task_id)
         if task:
             task.status = "success"
-            task.progress = {"stage": "完成", "current": 1, "total": 1, "message": "推测完成"}
-            task.stats = result.stats if hasattr(result, 'stats') else {}
-            if hasattr(result, 'errors') and result.errors:
+            task.progress = {
+                "stage": "完成",
+                "current": 1,
+                "total": 1,
+                "message": "推测完成",
+            }
+            task.stats = result.stats if hasattr(result, "stats") else {}
+            if hasattr(result, "errors") and result.errors:
                 task.error = "\n".join(result.errors)
             db.commit()
     except Exception as e:
@@ -268,7 +329,7 @@ def _run_ai_inference(task_id: int, inference_type: str, force: bool,
 
 
 @router.post("/ai-infer/quantities")
-def infer_fuzzy_quantities(
+async def infer_fuzzy_quantities(
     force: bool = False,
     provider: str = Query("claude_code", description="AI 提供方名称"),
     db: Session = Depends(get_db),
@@ -279,14 +340,17 @@ def infer_fuzzy_quantities(
     需要先在 AI 配置页启用至少一个 AI 后端。
     通过 provider 参数指定使用的 AI 提供方。
     """
-    task = ImportTask(task_type="ai_quantities", status="pending", user_id=current_user.id)
+    task = ImportTask(
+        task_type="ai_quantities", status="pending", user_id=current_user.id
+    )
     db.add(task)
     db.commit()
     db.refresh(task)
 
+    main_loop = asyncio.get_running_loop()
     thread = threading.Thread(
         target=_run_ai_inference,
-        args=(task.id, "quantities", force, provider, SessionLocal),
+        args=(task.id, "quantities", force, provider, SessionLocal, main_loop),
         daemon=True,
     )
     thread.start()
@@ -295,7 +359,7 @@ def infer_fuzzy_quantities(
 
 
 @router.post("/ai-infer/densities")
-def infer_densities(
+async def infer_densities(
     force: bool = False,
     provider: str = Query("claude_code", description="AI 提供方名称"),
     db: Session = Depends(get_db),
@@ -306,14 +370,17 @@ def infer_densities(
     需要先在 AI 配置页启用至少一个 AI 后端。
     通过 provider 参数指定使用的 AI 提供方。
     """
-    task = ImportTask(task_type="ai_densities", status="pending", user_id=current_user.id)
+    task = ImportTask(
+        task_type="ai_densities", status="pending", user_id=current_user.id
+    )
     db.add(task)
     db.commit()
     db.refresh(task)
 
+    main_loop = asyncio.get_running_loop()
     thread = threading.Thread(
         target=_run_ai_inference,
-        args=(task.id, "densities", force, provider, SessionLocal),
+        args=(task.id, "densities", force, provider, SessionLocal, main_loop),
         daemon=True,
     )
     thread.start()
@@ -324,8 +391,13 @@ def infer_densities(
 # ---- USDA 翻译任务（带 ImportTask 跟踪） ----
 
 
-def _run_translate_task(task_id: int, translate_type: str, provider: str, db_session_factory,
-                          force: bool = False):
+def _run_translate_task(
+    task_id: int,
+    translate_type: str,
+    provider: str,
+    db_session_factory,
+    force: bool = False,
+):
     """后台运行 USDA 翻译任务（食材名或营养素），带 ImportTask 进度跟踪。
 
     在独立线程中运行翻译，同时轮询 UsdaTask 进度同步到 ImportTask，
@@ -340,10 +412,16 @@ def _run_translate_task(task_id: int, translate_type: str, provider: str, db_ses
             return
 
         task.status = "running"
-        task.progress = {"stage": "翻译中", "current": 0, "total": 0, "message": f"使用 {provider} 翻译..."}
+        task.progress = {
+            "stage": "翻译中",
+            "current": 0,
+            "total": 0,
+            "message": f"使用 {provider} 翻译...",
+        }
         db.commit()
 
         from app.models.usda import TranslationConfig
+
         cfg_record = db.query(TranslationConfig).first()
         config_dict = cfg_record.to_dict() if cfg_record else {}
         db.close()  # 关闭当前 db，翻译和轮询用独立 Session
@@ -352,6 +430,7 @@ def _run_translate_task(task_id: int, translate_type: str, provider: str, db_ses
         result_box: list = [None]
         error_box: list = [None]
         import threading as _threading
+
         barrier = _threading.Event()
         cancel_event = _threading.Event()
 
@@ -359,19 +438,29 @@ def _run_translate_task(task_id: int, translate_type: str, provider: str, db_ses
             """在新 Session 中执行翻译（可被 cancel_event 中断）。"""
             wdb = db_session_factory()
             try:
+
                 async def _do():
                     if translate_type == "foods":
                         from app.services.translate.task import TranslateTask
+
                         return await TranslateTask(wdb).run(
-                            provider=provider, config_dict=config_dict,
-                            cancel_event=cancel_event, force=force,
+                            provider=provider,
+                            config_dict=config_dict,
+                            cancel_event=cancel_event,
+                            force=force,
                         )
                     else:
-                        from app.services.translate.nutrient_task import TranslateNutrientsTask
-                        return await TranslateNutrientsTask(wdb).run(
-                            provider=provider, config_dict=config_dict,
-                            cancel_event=cancel_event, force=force,
+                        from app.services.translate.nutrient_task import (
+                            TranslateNutrientsTask,
                         )
+
+                        return await TranslateNutrientsTask(wdb).run(
+                            provider=provider,
+                            config_dict=config_dict,
+                            cancel_event=cancel_event,
+                            force=force,
+                        )
+
                 r = asyncio.run(_do())
                 result_box[0] = r
             except Exception as e:
@@ -397,10 +486,21 @@ def _run_translate_task(task_id: int, translate_type: str, provider: str, db_ses
                     sync_db = db_session_factory()
                     try:
                         from app.models.usda import UsdaTask
-                        ut = sync_db.query(UsdaTask).filter(
-                            UsdaTask.task_type == ("translate" if translate_type == "foods" else "translate_nutrients"),
-                            UsdaTask.status == "running",
-                        ).order_by(UsdaTask.id.desc()).first()
+
+                        ut = (
+                            sync_db.query(UsdaTask)
+                            .filter(
+                                UsdaTask.task_type
+                                == (
+                                    "translate"
+                                    if translate_type == "foods"
+                                    else "translate_nutrients"
+                                ),
+                                UsdaTask.status == "running",
+                            )
+                            .order_by(UsdaTask.id.desc())
+                            .first()
+                        )
                         if ut and ut.progress:
                             p = ut.progress
                             done = p.get("done", 0)
@@ -450,8 +550,15 @@ def _run_translate_task(task_id: int, translate_type: str, provider: str, db_ses
                 final_task.error = str(error_box[0])
             else:
                 final_task.status = "success"
-                final_task.progress = {"stage": "完成", "current": 1, "total": 1, "message": "翻译完成"}
-                final_task.stats = result_box[0] if isinstance(result_box[0], dict) else {}
+                final_task.progress = {
+                    "stage": "完成",
+                    "current": 1,
+                    "total": 1,
+                    "message": "翻译完成",
+                }
+                final_task.stats = (
+                    result_box[0] if isinstance(result_box[0], dict) else {}
+                )
             final_db.commit()
         finally:
             final_db.close()
@@ -483,7 +590,9 @@ def translate_foods(
     current_user=Depends(get_current_user),
 ):
     """触发 USDA 食材名翻译（带 ImportTask 跟踪）。"""
-    task = ImportTask(task_type="usda_translate", status="pending", user_id=current_user.id)
+    task = ImportTask(
+        task_type="usda_translate", status="pending", user_id=current_user.id
+    )
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -507,7 +616,9 @@ def translate_nutrients(
     current_user=Depends(get_current_user),
 ):
     """触发 USDA 营养素翻译（带 ImportTask 跟踪）。"""
-    task = ImportTask(task_type="nutrient_translate", status="pending", user_id=current_user.id)
+    task = ImportTask(
+        task_type="nutrient_translate", status="pending", user_id=current_user.id
+    )
     db.add(task)
     db.commit()
     db.refresh(task)

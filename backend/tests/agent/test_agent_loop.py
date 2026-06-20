@@ -3,6 +3,7 @@
 用 FakeMultiTurnRunner（按 run 调用次数返回不同事件序列）+ 内存 SQLite +
 独立 create_engine 建临时表（验证 SQL 真执行）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,10 +34,16 @@ class FakeMultiTurnRunner:
     与 resume_session_id。
     """
 
-    def __init__(self, turns: "list[list[AgentEvent]]", last_sids: "list[str | None] | None" = None):
+    def __init__(
+        self,
+        turns: "list[list[AgentEvent]]",
+        last_sids: "list[str | None] | None" = None,
+    ):
         self._turns = list(turns)
         n = len(self._turns)
-        self._last_sids = list(last_sids) if last_sids else [f"sid-{i+1}" for i in range(n)]
+        self._last_sids = (
+            list(last_sids) if last_sids else [f"sid-{i+1}" for i in range(n)]
+        )
         self._call_count = 0
         self.tracks: dict = {"prompts": [], "resumes": []}
 
@@ -48,7 +55,9 @@ class FakeMultiTurnRunner:
             return None
         return self._last_sids[idx]
 
-    def run(self, prompt: str, *, resume_session_id: "str | None" = None) -> "Iterator[AgentEvent]":
+    def run(
+        self, prompt: str, *, resume_session_id: "str | None" = None
+    ) -> "Iterator[AgentEvent]":
         self._call_count += 1
         self.tracks["prompts"].append(prompt)
         self.tracks["resumes"].append(resume_session_id)
@@ -155,7 +164,10 @@ def test_safe_sql_auto_executed_and_loop_completes(mem_db):
     """
     sid = _make_session(mem_db)
     turn1 = [
-        AgentEvent(kind="text_delta", text="我来更新一行：\n```sql\nUPDATE t SET x=999 WHERE id=1 AND x=100\n```\n"),
+        AgentEvent(
+            kind="text_delta",
+            text="我来更新一行：\n```sql\nUPDATE t SET x=999 WHERE id=1 AND x=100\n```\n",
+        ),
         AgentEvent(kind="done", cost_usd=0.01),
     ]
     turn2 = [
@@ -174,7 +186,9 @@ def test_safe_sql_auto_executed_and_loop_completes(mem_db):
     assert runner.tracks["resumes"][1] == "sid-1"
     # 回流 prompt 含执行结果。
     assert "影响" in runner.tracks["prompts"][1]
-    assert "999" in runner.tracks["prompts"][1] or "UPDATE" in runner.tracks["prompts"][1]
+    assert (
+        "999" in runner.tracks["prompts"][1] or "UPDATE" in runner.tracks["prompts"][1]
+    )
 
     # UPDATE 真执行。
     assert _rows(mem_db)[1] == 999
@@ -308,7 +322,9 @@ def test_max_turns_terminates(mem_db):
     sid = _make_session(mem_db)
     # 4 轮都含 safe UPDATE（无完成轮）。
     one_turn = [
-        AgentEvent(kind="text_delta", text="```sql\nUPDATE t SET x=1 WHERE id=1\n```\n"),
+        AgentEvent(
+            kind="text_delta", text="```sql\nUPDATE t SET x=1 WHERE id=1\n```\n"
+        ),
         AgentEvent(kind="done"),
     ]
     runner = FakeMultiTurnRunner([one_turn, one_turn, one_turn, one_turn])
@@ -327,7 +343,10 @@ def test_error_terminates_loop(mem_db):
     """某轮 Runner 产 error → session.failed，循环终止。"""
     sid = _make_session(mem_db)
     turn1 = [
-        AgentEvent(kind="text_delta", text="我先试试：\n```sql\nUPDATE t SET x=1 WHERE id=1\n```\n"),
+        AgentEvent(
+            kind="text_delta",
+            text="我先试试：\n```sql\nUPDATE t SET x=1 WHERE id=1\n```\n",
+        ),
         AgentEvent(kind="error", error="CLI 崩溃", is_error=True),
     ]
     runner = FakeMultiTurnRunner([turn1])
@@ -401,8 +420,10 @@ def test_resume_prompt_contains_all_items(mem_db):
 def _patch_sse_recorder(monkeypatch):
     """patch session_runner._emit_sse，记录所有推送的 payload 到 list。"""
     events: "list[dict]" = []
+
     def _fake(session_id, main_loop, payload):
         events.append(dict(payload))
+
     monkeypatch.setattr(session_runner, "_emit_sse", _fake)
     return events
 
@@ -417,6 +438,7 @@ def test_c10_event_registered_before_sse(mem_db, monkeypatch):
     # 包装 _emit_sse 的 fake，在 approval_needed 推送时验证 dict 已含 approval_id。
     checked: "list[int]" = []
     real_fake = session_runner._emit_sse  # 上面 patch 的 _fake（已被绑定）
+
     def _fake_with_check(session_id, main_loop, payload):
         if payload.get("kind") == "approval_needed":
             aid = payload.get("approval_id")
@@ -425,6 +447,7 @@ def test_c10_event_registered_before_sse(mem_db, monkeypatch):
             if has:
                 checked.append(aid)
         real_fake(session_id, main_loop, payload)
+
     monkeypatch.setattr(session_runner, "_emit_sse", _fake_with_check)
 
     sid = _make_session(mem_db)
@@ -491,6 +514,7 @@ def test_c10_wake_in_race_window_no_deadlock(mem_db, monkeypatch):
         def hook(approval_id):
             ok = session_runner.wake_approval(approval_id, approved=True, user_id=99)
             fired.append(ok)
+
         kwargs["pre_sse_hook"] = hook
         result = real_handler(*args, **kwargs)
         # hook 应已触发并返回 True（找到 pending + 写决策 + set Event）。
@@ -664,9 +688,7 @@ def test_d15_safe_sql_under_threshold_executes(mem_db):
     loop = _new_loop()
 
     # t 表只有 3 行（fixture 默认），阈值设 10：3 <= 10 应正常执行。
-    session_runner.run_agent_loop(
-        sid, runner, "请更新", loop, safe_row_threshold=10
-    )
+    session_runner.run_agent_loop(sid, runner, "请更新", loop, safe_row_threshold=10)
 
     # 3 行全被更新为 0。
     assert _rows(mem_db) == {1: 0, 2: 0, 3: 0}
@@ -675,3 +697,70 @@ def test_d15_safe_sql_under_threshold_executes(mem_db):
     assert aps[0].status == "auto_executed"
     assert aps[0].affected_estimate == 3
     assert _session(mem_db, sid).status == "success"
+
+
+# --------------------------------------------------------------------------- #
+# Task 4：unattended（无人值守）模式
+# --------------------------------------------------------------------------- #
+def test_unattended_dangerous_sql_auto_skipped(mem_db):
+    """unattended=True：dangerous SQL 不挂审批，自动跳过 + 记录，session 不进 awaiting_approval。"""
+    sid = _make_session(mem_db, task_type="infer_densities")
+    runner = FakeMultiTurnRunner(
+        [
+            [
+                AgentEvent(
+                    kind="text_delta",
+                    text="```sql\nDELETE FROM t;\n```\n",
+                ),
+                AgentEvent(kind="done"),
+            ],
+            [AgentEvent(kind="done")],  # 第二轮：无 SQL → 完成
+        ]
+    )
+    main_loop = _new_loop()
+    session_runner.run_agent_loop(
+        sid,
+        runner,
+        "初始指令",
+        main_loop,
+        unattended=True,
+        max_turns=4,
+    )
+    s = _session(mem_db, sid)
+    assert s.status == "success"  # 未卡 awaiting_approval，未 failed
+    db = mem_db()
+    try:
+        assert db.execute(text("SELECT COUNT(*) FROM t")).scalar() == 3  # 数据未删
+    finally:
+        db.close()
+
+
+def test_unattended_safe_sql_still_executed(mem_db):
+    """unattended=True：safe SQL 照常执行。"""
+    sid = _make_session(mem_db, task_type="infer_densities")
+    runner = FakeMultiTurnRunner(
+        [
+            [
+                AgentEvent(
+                    kind="text_delta",
+                    text="```sql\nUPDATE t SET x=999 WHERE id=1;\n```\n",
+                ),
+                AgentEvent(kind="done"),
+            ],
+            [AgentEvent(kind="done")],
+        ]
+    )
+    main_loop = _new_loop()
+    session_runner.run_agent_loop(
+        sid,
+        runner,
+        "初始指令",
+        main_loop,
+        unattended=True,
+        max_turns=4,
+    )
+    db = mem_db()
+    try:
+        assert db.execute(text("SELECT x FROM t WHERE id=1")).scalar() == 999
+    finally:
+        db.close()
