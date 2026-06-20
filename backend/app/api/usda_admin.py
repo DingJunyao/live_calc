@@ -126,13 +126,19 @@ async def unmapped_nutrients(
     return {"names": sorted(names), "count": len(names)}
 
 
-def _do_download(db_factory, datasets):
-    """后台任务：下载 → 入库 → 重建索引 → 更新 task。"""
+def _do_download(db_factory, task_id, datasets):
+    """后台任务：下载 → 入库 → 重建索引 → 更新 task。
+
+    task 由调用方（POST /usda/download）预先创建并把 id 返回给前端，
+    此处按 id 取回记录更新；极端情况下记录丢失则现场兜底新建。
+    """
     db = db_factory()
-    task = UsdaTask(task_type="download", status="running")
-    db.add(task)
-    db.commit()
-    db.refresh(task)
+    task = db.query(UsdaTask).get(task_id) if task_id else None
+    if task is None:
+        task = UsdaTask(task_type="download", status="running")
+        db.add(task)
+        db.commit()
+        db.refresh(task)
     try:
         from app.services.usda.downloader import download_all
 
@@ -159,8 +165,13 @@ async def usda_download(
 ):
     _require_admin(current_user)
     ds_list = datasets.split(",") if datasets else None
-    background_tasks.add_task(_do_download, SessionLocal, ds_list)
-    return {"message": "下载任务已启动"}
+    # 先建 task 拿 id 返回前端，便于立即入列 + 轮询；后台任务按 id 更新该记录
+    task = UsdaTask(task_type="download", status="running")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    background_tasks.add_task(_do_download, SessionLocal, task.id, ds_list)
+    return {"task_id": task.id, "message": "下载任务已启动"}
 
 
 @router.post("/usda/upload")
@@ -186,27 +197,36 @@ async def usda_upload(
             foods.extend(parse_usda_food(r, data_type=dtype) for r in data[key] if r is not None)
     deduped = dedupe_foods(foods)
 
+    # 先建 task 拿 id 返回前端，后台任务按 id 更新该记录
+    task = UsdaTask(task_type="upload", status="running")
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    upload_task_id = task.id
+
     def _run():
         d = SessionLocal()
-        task = UsdaTask(task_type="upload", status="running")
-        d.add(task)
-        d.commit()
-        d.refresh(task)
+        t = d.query(UsdaTask).get(upload_task_id)
+        if t is None:
+            t = UsdaTask(task_type="upload", status="running")
+            d.add(t)
+            d.commit()
+            d.refresh(t)
         try:
             res = UsdaImporter(d).import_entries(deduped)
             build_usda_index(d)
-            task.status = "success"
-            task.progress = {"foods": len(deduped), **res}
+            t.status = "success"
+            t.progress = {"foods": len(deduped), **res}
         except Exception as e:
             logging.getLogger(__name__).exception("USDA 上传任务失败")
-            task.status = "failed"
-            task.error_log = traceback.format_exc()
+            t.status = "failed"
+            t.error_log = traceback.format_exc()
         finally:
             d.commit()
             d.close()
 
     background_tasks.add_task(_run)
-    return {"message": "上传解析任务已启动", "foods_parsed": len(deduped)}
+    return {"task_id": upload_task_id, "message": "上传解析任务已启动", "foods_parsed": len(deduped)}
 
 
 @router.get("/usda/task")
@@ -226,6 +246,51 @@ async def usda_task(
         "provider": latest.provider,
         "error_log": latest.error_log,
     }
+
+
+def _usda_task_dict(t: UsdaTask) -> dict:
+    """USDA 任务序列化（列表 / 单条端点共用）。"""
+    return {
+        "id": t.id,
+        "task_type": t.task_type,
+        "status": t.status,
+        "progress": t.progress,
+        "provider": t.provider,
+        "error_log": t.error_log,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    }
+
+
+@router.get("/usda/tasks")
+async def usda_tasks(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """USDA 任务列表（按 id 倒序），供数据维护页任务列表展示。"""
+    _require_admin(current_user)
+    rows = (
+        db.query(UsdaTask)
+        .order_by(UsdaTask.id.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    return [_usda_task_dict(t) for t in rows]
+
+
+@router.get("/usda/tasks/{task_id}")
+async def usda_task_by_id(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """单条 USDA 任务（前端轮询用）。"""
+    _require_admin(current_user)
+    t = db.query(UsdaTask).get(task_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return _usda_task_dict(t)
 
 
 @router.get("/translation-config")

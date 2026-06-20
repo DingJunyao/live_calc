@@ -39,3 +39,6 @@ export const translateUsda = (provider: string) =>
 export const translateNutrients = (provider: string) =>
   api.post('/admin/usda/translate-nutrients', { provider }, { timeout: 3600000 })
 export const getUsdaTask = () => api.get('/admin/usda/task')
+export const getUsdaTasks = (limit = 20) =>
+  api.get('/admin/usda/tasks', { params: { limit } })
+export const getUsdaTaskById = (id: number) => api.get(`/admin/usda/tasks/${id}`)

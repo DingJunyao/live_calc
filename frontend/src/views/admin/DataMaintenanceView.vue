@@ -350,9 +350,10 @@
             </v-alert>
             <v-list v-else>
               <v-list-item
-                v-for="t in mergedTasks" :key="t._kind === 'import' ? 'imp-' + t.id : 'agt-' + t.session_id"
+                v-for="t in mergedTasks"
+                :key="t._kind === 'import' ? 'imp-' + t.id : t._kind === 'usda' ? 'usda-' + t.id : 'agt-' + t.session_id"
                 class="mb-2 border rounded"
-                :class="t._kind === 'import' ? taskRunningClass(t.status) : ''"
+                :class="(t._kind === 'import' || t._kind === 'usda') ? taskRunningClass(t.status) : ''"
                 :style="t._kind === 'agent' ? { cursor: 'pointer' } : {}"
                 @click="t._kind === 'agent' ? router.push('/admin/agent-console?session_id=' + t.session_id) : undefined"
               >
@@ -389,6 +390,16 @@
                     </div>
                     <div v-if="t.error" class="text-caption text-error mt-1">{{ t.error }}</div>
                   </template>
+                  <!-- usda 任务：完成统计 / 错误 / 运行中提示 -->
+                  <template v-else-if="t._kind === 'usda'">
+                    <div v-if="t.progress?.foods != null" class="text-caption mt-1">
+                      食材: {{ t.progress.foods }}
+                    </div>
+                    <div v-if="t.error" class="text-caption text-error mt-1">{{ t.error }}</div>
+                    <div v-else-if="t.status === 'running' || t.status === 'pending'" class="text-caption text-medium-emphasis mt-1">
+                      后台处理中…
+                    </div>
+                  </template>
                   <!-- agent 任务：简洁状态 -->
                   <template v-else>
                     <div v-if="agentErrorMap[t.session_id]" class="text-caption text-error mt-1">
@@ -400,7 +411,7 @@
                 </v-list-item-subtitle>
                 <template #append>
                   <v-btn
-                    v-if="t.status === 'running' || t.status === 'pending'"
+                    v-if="(t.status === 'running' || t.status === 'pending') && t._kind !== 'usda'"
                     icon="mdi-close-circle-outline" size="small" variant="text"
                     color="grey"
                     @click.stop="cancelTask(t)"
@@ -430,6 +441,8 @@ import {
   getUnmappedNutrients,
   downloadUsda,
   uploadUsda,
+  getUsdaTasks,
+  getUsdaTaskById,
 } from '@/api/usda'
 import { createSession, getSession, listSessions, cancelSession } from '@/api/agent'
 import api from '@/api/client'
@@ -466,6 +479,18 @@ interface AgentTaskItem {
 const agentTasks = ref<AgentTaskItem[]>([])
 const agentPollingMap = new Map<number, ReturnType<typeof setInterval>>()
 const agentErrorMap = ref<Record<number, string>>({})
+
+interface UsdaTaskItem {
+  id: number
+  task_type: string
+  status: 'pending' | 'running' | 'success' | 'failed'
+  progress?: Record<string, any> | null
+  error?: string | null
+  created_at: string
+}
+
+const usdaTasks = ref<UsdaTaskItem[]>([])
+const usdaPollingMap = new Map<number, ReturnType<typeof setInterval>>()
 
 const localPath = ref('')
 const uploadFile = ref<File | null>(null)
@@ -562,11 +587,37 @@ onMounted(async () => {
     (t) => t.status === 'pending' || t.status === 'running'
   )
   pendingAgent.forEach((t) => startAgentPolling(t.session_id))
+
+  // 恢复最近的 USDA 任务（下载 / 上传）到任务列表（刷新后重建）
+  try {
+    const usdaRecent: any[] = await getUsdaTasks(20)
+    for (const s of usdaRecent || []) {
+      if (!usdaTasks.value.find((t) => t.id === s.id)) {
+        usdaTasks.value.push({
+          id: s.id,
+          task_type: s.task_type,
+          status: s.status,
+          progress: s.progress,
+          error: s.error_log || null,
+          created_at: s.created_at || new Date().toISOString(),
+        })
+      }
+    }
+  } catch {
+    // 列表加载失败不阻塞
+  }
+
+  // 恢复 USDA 运行中任务的轮询
+  usdaTasks.value
+    .filter((t) => t.status === 'running' || t.status === 'pending')
+    .forEach((t) => startUsdaPolling(t.id))
 })
 
 onUnmounted(() => {
   agentPollingMap.forEach((interval) => clearInterval(interval))
   agentPollingMap.clear()
+  usdaPollingMap.forEach((interval) => clearInterval(interval))
+  usdaPollingMap.clear()
 })
 
 // === 任务操作 ===
@@ -744,7 +795,10 @@ async function loadUnmapped() {
 async function downloadUsdaData() {
   usdaDownloading.value = true
   try {
-    await downloadUsda()
+    const data: any = await downloadUsda()
+    if (data?.task_id) {
+      addUsdaTask(data.task_id, 'download')
+    }
     successMessage.value = 'USDA 数据下载任务已启动'
   } catch (e: any) {
     errorMessage.value = e?.userMessage || 'USDA 数据下载失败'
@@ -762,7 +816,10 @@ function triggerUsdaUpload() {
     if (!file) return
     usdaUploading.value = true
     try {
-      await uploadUsda(file)
+      const data: any = await uploadUsda(file)
+      if (data?.task_id) {
+        addUsdaTask(data.task_id, 'upload')
+      }
       successMessage.value = 'USDA 数据上传成功'
       loadUsdaStats()
     } catch (e: any) {
@@ -813,6 +870,54 @@ function stopAgentPolling(sessionId: number) {
   }
 }
 
+// === USDA 任务（下载 / 上传）入列 + 轮询 ===
+
+function addUsdaTask(taskId: number, taskType: string) {
+  if (usdaTasks.value.find((t) => t.id === taskId)) return
+  usdaTasks.value.unshift({
+    id: taskId,
+    task_type: taskType,
+    status: 'running',
+    progress: null,
+    error: null,
+    created_at: new Date().toISOString(),
+  })
+  startUsdaPolling(taskId)
+}
+
+function startUsdaPolling(taskId: number) {
+  if (usdaPollingMap.has(taskId)) return
+  const interval = setInterval(async () => {
+    try {
+      const data: any = await getUsdaTaskById(taskId)
+      const idx = usdaTasks.value.findIndex((t) => t.id === taskId)
+      if (idx >= 0) {
+        usdaTasks.value[idx] = {
+          ...usdaTasks.value[idx],
+          status: data.status,
+          progress: data.progress,
+          error: data.error_log || null,
+        }
+      }
+      if (data.status === 'success' || data.status === 'failed') {
+        stopUsdaPolling(taskId)
+        loadUsdaStats()
+      }
+    } catch {
+      stopUsdaPolling(taskId)
+    }
+  }, 3000)
+  usdaPollingMap.set(taskId, interval)
+}
+
+function stopUsdaPolling(taskId: number) {
+  const interval = usdaPollingMap.get(taskId)
+  if (interval) {
+    clearInterval(interval)
+    usdaPollingMap.delete(taskId)
+  }
+}
+
 // === 取消任务 ===
 
 async function cancelTask(t: any) {
@@ -848,12 +953,17 @@ interface AgentTaskLike extends AgentTaskItem {
   _kind: 'agent'
 }
 
-type MergedTask = ImportTaskLike | AgentTaskLike
+interface UsdaTaskLike extends UsdaTaskItem {
+  _kind: 'usda'
+}
+
+type MergedTask = ImportTaskLike | AgentTaskLike | UsdaTaskLike
 
 const mergedTasks = computed<MergedTask[]>(() => {
   const imports: ImportTaskLike[] = tasks.value.map(t => ({ ...t, _kind: 'import' as const }))
   const agents: AgentTaskLike[] = agentTasks.value.map(t => ({ ...t, _kind: 'agent' as const }))
-  return [...imports, ...agents].sort(
+  const usdas: UsdaTaskLike[] = usdaTasks.value.map(t => ({ ...t, _kind: 'usda' as const }))
+  return [...imports, ...agents, ...usdas].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
 })
@@ -866,6 +976,8 @@ const taskTypeLabels: Record<string, string> = {
   ai_densities: 'AI 密度推测',
   usda_translate: '食材名翻译',
   nutrient_translate: '营养素翻译',
+  download: 'USDA 数据下载',
+  upload: 'USDA 数据上传',
 }
 
 function taskTypeLabel(type: string): string {
