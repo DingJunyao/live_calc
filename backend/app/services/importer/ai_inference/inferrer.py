@@ -131,10 +131,21 @@ class AIInferrer:
             initial_prompt = tpl["prompt"]
             if force:
                 initial_prompt = (
-                    "# 强制重推\n"
-                    "本次为强制重推所有模糊量条目（含已 ai_inferred 的）。"
-                    "忽略已有 piece_weight/quantity_range，对所有命中条件的行重新"
-                    "估值并输出 UPDATE。\n\n" + initial_prompt
+                    "# ⚠️ 强制重推模式 — SQL 修改规则\n\n"
+                    "本次为**强制重推**。请对**所有**符合条件的条目（"
+                    "**包括已 ai_inferred 的**）重新估值并输出 UPDATE。\n\n"
+                    "【你必须移除以下 SQL 条件，否则已有值的条目不会被处理】\n"
+                    "1. 摸底查询：移除 `AND (i.piece_weight IS NULL OR i.piece_weight = 100)`\n"
+                    "2. 摸底查询：移除 `(ri.quantity IS NULL AND ri.quantity_range IS NULL)` "
+                    "的前置筛选——只保留 `original_quantity` 的过滤\n"
+                    "3. UPDATE 守卫：移除 `AND (piece_weight IS NULL OR piece_weight = 100)`\n"
+                    "4. UPDATE 守卫：移除 `AND (quantity_range IS NULL OR "
+                    "json_extract(...))`\n"
+                    "5. 复核查询：移除 `AND ri.ai_inferred = 0`\n\n"
+                    "即：只保留 `WHERE id IN (...)` 定位目标行，"
+                    "移除所有「原值为空/占位值」的守卫条件。"
+                    "对已有合理值的条目也要重新估值并输出 UPDATE。\n\n"
+                    + initial_prompt
                 )
 
             # 建 [后台] AgentSession。
@@ -452,11 +463,24 @@ class AIInferrer:
             initial_prompt = tpl["prompt"]
             if force:
                 initial_prompt = (
-                    "# 强制重推\n"
-                    "本次为强制重推所有密度条目（含已 source='agent' 的）。"
-                    "忽略 entity_densities 已有记录，对所有缺密度的原料重新估值"
-                    "并输出 INSERT（注意 WHERE NOT EXISTS 守卫在 force 下不会触发"
-                    "重复 INSERT，故无需特别调整）。\n\n" + initial_prompt
+                    "# ⚠️ 强制重推模式 — SQL 修改规则\n\n"
+                    "本次为**强制重推**。请对**所有**原料（"
+                    "**包括已有 entity_densities 记录的**）重新估值。\n\n"
+                    "【你必须修改以下 SQL 条件，否则已有记录的条目不会被处理】\n"
+                    "1. 摸底查询：移除 `AND ed.id IS NULL` 条件——查询全部原料，"
+                    "而非只查缺密度的\n"
+                    "2. **已有密度记录的原料用 UPDATE 更新**（INSERT 的 WHERE NOT EXISTS "
+                    "守卫会阻止重复插入，所以不能只输出 INSERT）：\n"
+                    "   ```sql\n"
+                    "   UPDATE entity_densities\n"
+                    "   SET density = <新值>, source = 'agent',\n"
+                    "       confidence = <信心值>, updated_at = datetime('now')\n"
+                    "   WHERE entity_type = 'ingredient' AND entity_id = <id>\n"
+                    "     AND condition IS NULL;\n"
+                    "   ```\n"
+                    "3. 没有密度记录的原料仍用原模板 INSERT（带 WHERE NOT EXISTS 守卫）\n"
+                    "4. 不要只处理缺密度的原料——已有记录也要重新估值并 UPDATE\n\n"
+                    + initial_prompt
                 )
 
             sess = AgentSession(

@@ -187,6 +187,12 @@ def cancel_import_task(
             detail=f"任务状态为 {task.status}，不可取消",
         )
 
+    # 如果该 ImportTask 关联了 Agent 会话，一并取消 Agent（推测模糊量/密度/翻译等）。
+    if task.stats and task.stats.get("agent_session_id"):
+        from app.services.agent.session_runner import cancel_session
+
+        cancel_session(task.stats["agent_session_id"])
+
     task.status = "cancelled"
     db.commit()
     return {"status": "cancelled"}
@@ -424,6 +430,8 @@ def _run_translate_task(
 
         cfg_record = db.query(TranslationConfig).first()
         config_dict = cfg_record.to_dict() if cfg_record else {}
+        # 在关闭 db 前捕获 task.created_at（之后 task 对象 detached 无法安全访问）。
+        _task_created_at = task.created_at
         db.close()  # 关闭当前 db，翻译和轮询用独立 Session
 
         # 在独立线程中运行翻译，拿到结果。
@@ -472,8 +480,9 @@ def _run_translate_task(
         t = _threading.Thread(target=_translate_worker, daemon=True)
         t.start()
 
-        # 主线程：轮询 UsdaTask 进度 + 检查取消
+        # 主线程：轮询 UsdaTask 进度 + 检查取消 + 即时暴露 agent_session_id
         poll_db = db_session_factory()
+        _reported_agent_sid = False
         try:
             while not barrier.is_set():
                 cancelled = barrier.wait(timeout=2)
@@ -511,9 +520,35 @@ def _run_translate_task(
                                     "stage": "翻译中",
                                     "current": done,
                                     "total": total,
-                                    "message": f"已翻译 {done}/{total} 条",
+                                    "message": f"Agent 翻译中（{total} 条待处理）",
                                 }
                                 sync_db.commit()
+
+                        # 即时把 agent_session_id 暴露到 ImportTask.stats（前端任务列表据此跳转任务台）。
+                        if not _reported_agent_sid:
+                            from app.models.agent_session import AgentSession
+
+                            agent_task_type = (
+                                "usda_translate" if translate_type == "foods"
+                                else "unmapped_nutrient_translate"
+                            )
+                            agent_sess = (
+                                sync_db.query(AgentSession)
+                                .filter(
+                                    AgentSession.task_type == agent_task_type,
+                                    AgentSession.created_at >= _task_created_at,
+                                )
+                                .order_by(AgentSession.id.asc())
+                                .first()
+                            )
+                            if agent_sess:
+                                sync_import = sync_db.query(ImportTask).get(task_id)
+                                if sync_import:
+                                    prev = dict(sync_import.stats or {})
+                                    prev["agent_session_id"] = agent_sess.id
+                                    sync_import.stats = prev
+                                    _reported_agent_sid = True
+                                    sync_db.commit()
                     finally:
                         sync_db.close()
                 except Exception:

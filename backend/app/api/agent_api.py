@@ -111,10 +111,55 @@ async def create_session(
         )
     initial_prompt = tpl["prompt"]
     if body.force:
-        initial_prompt += (
-            "\n\n# 强制重新处理\n"
-            "本次为强制重新处理。忽略所有 `ai_inferred` 标记和已有数据，"
-            "对所有符合条件的条目重新推理并输出修正 SQL。"
+        # 按任务类型生成具体的 SQL 修改规则（prepend 在模板之前，比 append 醒目）。
+        _force_rules: dict[str, str] = {
+            "fill_piece_weight": (
+                "【补单位质量 · 必须修改】\n"
+                "- 摸底：不移除 `weight_per_unit IS NULL OR = 100` 条件（仍以脏数据为目标）\n"
+                "- UPDATE：移除 `AND weight_per_unit = <原值>` 守卫——对所有行重新估值\n"
+            ),
+            "infer_quantities": (
+                "【推测模糊量 · 必须修改】\n"
+                "- 摸底：移除 `AND (i.piece_weight IS NULL OR i.piece_weight = 100)`\n"
+                "- 摸底：移除 `(ri.quantity IS NULL AND ri.quantity_range IS NULL)` 筛选\n"
+                "- UPDATE：移除 `AND (piece_weight IS NULL OR piece_weight = 100)` 守卫\n"
+                "- UPDATE：移除 `AND (quantity_range IS NULL OR json_extract(...))` 守卫\n"
+                "- 复核：移除 `AND ri.ai_inferred = 0`\n"
+            ),
+            "infer_densities": (
+                "【推断密度 · 必须修改】\n"
+                "- 摸底：移除 `AND ed.id IS NULL` 条件——查询全部原料\n"
+                "- 已有密度记录的用 UPDATE（不能用 INSERT，WHERE NOT EXISTS 会阻止）：\n"
+                "  ```sql\n"
+                "  UPDATE entity_densities SET density = <新值>,\n"
+                "    source = 'agent', updated_at = datetime('now')\n"
+                "  WHERE entity_type = 'ingredient' AND entity_id = <id>\n"
+                "    AND condition IS NULL;\n"
+                "  ```\n"
+                "- 无密度记录的仍用 INSERT（带 WHERE NOT EXISTS 守卫）\n"
+            ),
+            "usda_translate": (
+                "【USDA 食材翻译 · 必须修改】\n"
+                "- 模板 SQL 中的 `WHERE translate_status = 'pending'` 条件保留\n"
+                "  （强制模式下已重置状态为 pending）\n"
+                "- 对已有译文的也要重新翻译\n"
+            ),
+            "unmapped_nutrient_translate": (
+                "【营养素翻译 · 必须修改】\n"
+                "- 模板 SQL 中的 `WHERE name_zh IS NULL` 条件保留\n"
+                "  （强制模式下已清空译文）\n"
+                "- 对已有译文的也要重新翻译\n"
+            ),
+        }
+        rules = _force_rules.get(body.task_type, "- 移除摸底/UPDATE 中所有 `IS NULL`、`= 'pending'` 等守卫条件\n")
+        initial_prompt = (
+            "# ⚠️ 强制重推模式 — SQL 修改规则\n\n"
+            "本次为**强制重推**。请对**所有**符合条件的条目（包括已处理过的）"
+            "重新推理并输出修正 SQL。已有值的条目也要重新估值。\n\n"
+            + rules
+            + "\n即：只保留 `WHERE id IN (...)` 定位目标行，"
+            "移除所有「原值为空/已处理」的守卫条件。\n\n"
+            + initial_prompt
         )
     title = tpl["title"]
     sess = AgentSession(

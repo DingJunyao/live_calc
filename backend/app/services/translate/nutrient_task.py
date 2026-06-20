@@ -133,6 +133,17 @@ class TranslateNutrientsTask:
         self.db.refresh(sess)
         session_id = sess.id
 
+        # 4b. cancel_event → cancel_session 桥接。
+        if cancel_event is not None:
+
+            def _watch_cancel(_sid: int = session_id) -> None:
+                cancel_event.wait()
+                from app.services.agent.session_runner import cancel_session
+
+                cancel_session(_sid)
+
+            threading.Thread(target=_watch_cancel, daemon=True).start()
+
         # 5. 构造 Runner + 后台跑 run_agent_loop（unattended：dangerous 自动跳过）。
         db_url = settings.database_url
         main_loop = asyncio.get_running_loop()
@@ -176,7 +187,7 @@ class TranslateNutrientsTask:
             usda_task.progress = {"done": translated, "total": total}
             self.db.commit()
 
-        return {"translated": translated, "total": total}
+        return {"translated": translated, "total": total, "agent_session_id": session_id}
 
 
 def _session_runner_db_factory():

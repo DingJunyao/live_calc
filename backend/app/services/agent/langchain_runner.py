@@ -27,6 +27,7 @@ tool-use 循环，产出 ``AgentEvent`` 流，与 ``ClaudeCodeRunner`` 行为对
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Iterator
 
 from langchain_core.messages import AIMessage, AIMessageChunk
@@ -101,6 +102,18 @@ class LangChainRunner:
         self._last_session_id: "str | None" = None
         self._agent: Any | None = None
 
+        # 取消事件：cancel() 设置此事件，_run_stream 在下一个 chunk 到达时提前终止。
+        self._cancel_event = threading.Event()
+
+    def cancel(self) -> None:
+        """从外部取消正在运行的 Agent 流。
+
+        设置取消标志后，_run_stream 会在下一个 chunk 到达时提前终止（不再继续调
+        LLM API），run() 随后正常产出 done 事件，run_agent_loop 收到后检查 DB
+        status == 'cancelled' 并停止循环。
+        """
+        self._cancel_event.set()
+
     # ------------------------------------------------------------------ #
     # AgentRunner 协议
     # ------------------------------------------------------------------ #
@@ -145,6 +158,7 @@ class LangChainRunner:
         """构建 agent 并流式产出 create_agent 的 stream chunk（dict）。
 
         抽成单独方法便于测试 mock（替换为返回固定 chunk 列表的迭代器）。
+        每产出一个 chunk 后检查 _cancel_event，若已取消则提前终止 stream。
         """
         agent = self._build_agent()
 
@@ -154,12 +168,15 @@ class LangChainRunner:
             messages.extend(self._load_history(resume_session_id))
         messages.append({"role": "user", "content": prompt})
 
-        yield from agent.stream(
+        for chunk in agent.stream(
             {"messages": messages},
             stream_mode=["messages", "updates"],
             version="v2",
             config={"recursion_limit": self._recursion_limit},
-        )
+        ):
+            if self._cancel_event.is_set():
+                break
+            yield chunk
 
     def _build_agent(self):
         """惰性构建 create_agent（首次 run 时；agent_factory 支持测试注入）。"""

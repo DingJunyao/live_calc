@@ -594,6 +594,8 @@ onMounted(async () => {
   try {
     const usdaRecent: any[] = await getUsdaTasks(20)
     for (const s of usdaRecent || []) {
+      // 翻译类 UsdaTask 是内部实现细节，不在任务列表显示（由 ImportTask + AgentSession 承载）。
+      if (s.task_type === 'translate' || s.task_type === 'translate_nutrients') continue
       if (!usdaTasks.value.find((t) => t.id === s.id)) {
         usdaTasks.value.push({
           id: s.id,
@@ -717,7 +719,7 @@ async function onTranslateFoods() {
   try {
     const provider = translateProvider.value || 'claude_code'
     if (provider === 'claude_code') {
-      const { session_id } = await createSession('usda_translate')
+      const { session_id } = await createSession('usda_translate', aiForce.value)
       agentTasks.value.unshift({
         session_id,
         task_type: 'usda_translate',
@@ -747,7 +749,7 @@ async function onTranslateNutrients() {
   try {
     const provider = translateProvider.value || 'claude_code'
     if (provider === 'claude_code') {
-      const { session_id } = await createSession('unmapped_nutrient_translate')
+      const { session_id } = await createSession('unmapped_nutrient_translate', aiForce.value)
       agentTasks.value.unshift({
         session_id,
         task_type: 'unmapped_nutrient_translate',
@@ -963,8 +965,16 @@ type MergedTask = ImportTaskLike | AgentTaskLike | UsdaTaskLike
 
 const mergedTasks = computed<MergedTask[]>(() => {
   const imports: ImportTaskLike[] = tasks.value.map(t => ({ ...t, _kind: 'import' as const }))
-  const agents: AgentTaskLike[] = agentTasks.value.map(t => ({ ...t, _kind: 'agent' as const }))
-  const usdas: UsdaTaskLike[] = usdaTasks.value.map(t => ({ ...t, _kind: 'usda' as const }))
+  // 排除已被 ImportTask 的 stats.agent_session_id 关联的 Agent（避免同一操作显示两条）。
+  const _importAgentIds = new Set(
+    imports.filter(t => t.stats?.agent_session_id).map(t => t.stats!.agent_session_id!)
+  )
+  const agents: AgentTaskLike[] = agentTasks.value
+    .filter(t => !_importAgentIds.has(t.session_id))
+    .map(t => ({ ...t, _kind: 'agent' as const }))
+  const usdas: UsdaTaskLike[] = usdaTasks.value
+    .filter(t => t.task_type !== 'translate' && t.task_type !== 'translate_nutrients')
+    .map(t => ({ ...t, _kind: 'usda' as const }))
   return [...imports, ...agents, ...usdas].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
