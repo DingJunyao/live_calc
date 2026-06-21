@@ -124,6 +124,16 @@ const router = createRouter({
           component: () => import('@/views/admin/MapSettingsView.vue'),
         },
         {
+          path: 'admin/ai-config',
+          name: 'admin-ai-config',
+          meta: { adminOnly: true, title: 'AI 与机翻配置' },
+          component: () => import('@/views/admin/AiConfigView.vue'),
+        },
+        {
+          path: 'admin/mt-config',
+          redirect: '/admin/ai-config',
+        },
+        {
           path: 'admin/recipe-import',
           redirect: '/admin/data-maintenance',
         },
@@ -132,24 +142,6 @@ const router = createRouter({
           name: 'admin-data-maintenance',
           meta: { adminOnly: true, title: '数据维护' },
           component: () => import('@/views/admin/DataMaintenanceView.vue'),
-        },
-        {
-          path: 'admin/ai-config',
-          name: 'admin-ai-config',
-          meta: { adminOnly: true, title: 'AI 配置' },
-          component: () => import('@/views/admin/AiConfigView.vue'),
-        },
-        {
-          path: 'admin/mt-config',
-          name: 'admin-mt-config',
-          meta: { adminOnly: true, title: '机翻配置' },
-          component: () => import('@/views/admin/MtConfigView.vue'),
-        },
-        {
-          path: 'admin/usda-data',
-          name: 'admin-usda-data',
-          meta: { adminOnly: true, title: 'USDA 数据' },
-          component: () => import('@/views/admin/UsdaDataView.vue'),
         },
         {
           path: 'admin/agent-console',

@@ -1,20 +1,97 @@
 <!-- frontend/src/views/admin/AiConfigView.vue -->
+<!-- AI 与机翻合并配置页：两个折叠面板（默认全展开），统一保存 -->
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { getTranslationConfig, putTranslationConfig, testTranslationConnection } from '@/api/usda'
+import ProviderCard from '@/components/admin/ProviderCard.vue'
+
+const router = useRouter()
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const goBack = () => router.back()
+
+type FieldType = 'text' | 'password' | 'switch'
+interface ProviderField { key: string; label: string; type?: FieldType }
+interface ProviderDef { key: string; title: string; hint?: string; fields: ProviderField[] }
+
+// AI 翻译 provider 字段配置（Claude Code / OpenAI 兼容 / Anthropic 兼容）
+const AI_PROVIDERS: ProviderDef[] = [
+  {
+    key: 'claude_code',
+    title: 'Claude Code（本机 CLI）',
+    hint: '需服务器 PATH 中有 claude CLI。',
+    fields: [{ key: 'enabled', label: '启用', type: 'switch' }],
+  },
+  {
+    key: 'openai',
+    title: 'OpenAI 兼容',
+    fields: [
+      { key: 'enabled', label: '启用', type: 'switch' },
+      { key: 'base_url', label: 'Base URL' },
+      { key: 'api_key', label: 'API Key', type: 'password' },
+      { key: 'model', label: 'Model' },
+    ],
+  },
+  {
+    key: 'anthropic',
+    title: 'Anthropic 兼容',
+    fields: [
+      { key: 'enabled', label: '启用', type: 'switch' },
+      { key: 'base_url', label: 'Base URL' },
+      { key: 'api_key', label: 'API Key', type: 'password' },
+      { key: 'model', label: 'Model' },
+    ],
+  },
+]
+
+// 机器翻译 provider 字段配置（百度 / 阿里云 / DeepL）
+const MT_PROVIDERS: ProviderDef[] = [
+  {
+    key: 'baidu',
+    title: '百度翻译',
+    fields: [
+      { key: 'enabled', label: '启用', type: 'switch' },
+      { key: 'appid', label: 'AppID' },
+      { key: 'secret', label: 'Secret', type: 'password' },
+    ],
+  },
+  {
+    key: 'aliyun',
+    title: '阿里云机器翻译',
+    fields: [
+      { key: 'enabled', label: '启用', type: 'switch' },
+      { key: 'access_key_id', label: 'AccessKey ID' },
+      { key: 'access_key_secret', label: 'AccessKey Secret', type: 'password' },
+    ],
+  },
+  {
+    key: 'deepl',
+    title: 'DeepL',
+    fields: [
+      { key: 'enabled', label: '启用', type: 'switch' },
+      { key: 'auth_key', label: 'Auth Key（free 以 :fx 结尾）', type: 'password' },
+    ],
+  },
+]
 
 const config = ref<any>(null)
-const testing = ref<string>('')
+const testing = ref('')
 const saving = ref(false)
 const saveMessage = ref('')
 // 每个 provider 的测试结果在按钮旁就地显示（成功/失败 + 后端返回的 detail）
 const testResult = reactive<Record<string, { ok: boolean; detail: string }>>({})
+// 两个折叠面板默认全展开
+const openPanels = ref<number[]>([0, 1])
 
 onMounted(async () => { config.value = await getTranslationConfig() })
 
-function setField(provider: string, field: string, value: any) {
-  config.value.ai.providers[provider][field] = value
+// 写入某分组下某 provider 的某字段
+function setField(group: 'ai' | 'machine', provider: string, field: string, value: any) {
+  config.value[group].providers[provider][field] = value
 }
+
+// 测试某 provider 连接（先保存当前配置，再触发后端测试）
 async function testProvider(provider: string) {
   testing.value = provider
   delete testResult[provider]
@@ -28,76 +105,74 @@ async function testProvider(provider: string) {
     testing.value = ''
   }
 }
+
+// 统一保存 AI + 机翻配置
 async function save() {
   saving.value = true
-  try { await putTranslationConfig(config.value); saveMessage.value = '已保存' }
-  catch (e: any) { saveMessage.value = e.userMessage || '保存失败' }
-  finally { saving.value = false }
+  try {
+    await putTranslationConfig(config.value)
+    saveMessage.value = '已保存'
+  } catch (e: any) {
+    saveMessage.value = e.userMessage || '保存失败'
+  } finally {
+    saving.value = false
+  }
 }
 </script>
 
 <template>
-  <v-container v-if="config">
-    <h2>AI 翻译配置</h2>
-    <p class="text-caption">用于 USDA 食材名称翻译。Anthropic/OpenAI 兼容 base_url 自定义端点。</p>
+  <!-- 顶部导航栏 -->
+  <v-app-bar elevation="0" color="background" density="comfortable" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+    <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
+    <v-app-bar-title class="text-h6">AI 与机翻配置</v-app-bar-title>
+  </v-app-bar>
 
-    <v-card class="my-3" variant="outlined">
-      <v-card-title>Claude Code（本机 CLI）</v-card-title>
-      <v-card-text>
-        <v-switch :model-value="config.ai.providers.claude_code.enabled" label="启用"
-          @update:model-value="setField('claude_code', 'enabled', $event)" />
-        <p class="text-caption">需服务器 PATH 中有 claude CLI。</p>
-        <div class="d-flex align-center">
-          <v-btn :loading="testing === 'claude_code'" @click="testProvider('claude_code')">测试连接</v-btn>
-          <span v-if="testResult['claude_code']" class="ml-3 text-body-2"
-            :class="testResult['claude_code'].ok ? 'text-success' : 'text-error'">
-            {{ testResult['claude_code'].detail }}
-          </span>
-        </div>
-      </v-card-text>
-    </v-card>
+  <v-container v-if="config" class="pa-4">
+    <p class="text-caption mb-2">
+      用于 USDA 食材名翻译。AI 走 Claude Code / OpenAI 兼容 / Anthropic 兼容；机翻走 百度 / 阿里云 / DeepL。
+    </p>
 
-    <v-card class="my-3" variant="outlined">
-      <v-card-title>OpenAI 兼容</v-card-title>
-      <v-card-text>
-        <v-switch :model-value="config.ai.providers.openai.enabled" label="启用"
-          @update:model-value="setField('openai', 'enabled', $event)" />
-        <v-text-field :model-value="config.ai.providers.openai.base_url" label="Base URL"
-          @update:model-value="setField('openai', 'base_url', $event)" />
-        <v-text-field :model-value="config.ai.providers.openai.api_key" label="API Key" type="password"
-          @update:model-value="setField('openai', 'api_key', $event)" />
-        <v-text-field :model-value="config.ai.providers.openai.model" label="Model"
-          @update:model-value="setField('openai', 'model', $event)" />
-        <div class="d-flex align-center">
-          <v-btn :loading="testing === 'openai'" @click="testProvider('openai')">测试连接</v-btn>
-          <span v-if="testResult['openai']" class="ml-3 text-body-2"
-            :class="testResult['openai'].ok ? 'text-success' : 'text-error'">
-            {{ testResult['openai'].detail }}
-          </span>
-        </div>
-      </v-card-text>
-    </v-card>
+    <v-expansion-panels multiple v-model="openPanels" class="my-3">
+      <v-expansion-panel>
+        <v-expansion-panel-title>
+          <v-icon class="mr-2">mdi-robot</v-icon>AI 翻译
+        </v-expansion-panel-title>
+        <v-expansion-panel-text>
+          <ProviderCard
+            v-for="p in AI_PROVIDERS"
+            :key="p.key"
+            :title="p.title"
+            :hint="p.hint"
+            :fields="p.fields"
+            :values="config.ai.providers[p.key]"
+            :testing="testing === p.key"
+            :test-result="testResult[p.key]"
+            @update:field="setField('ai', p.key, $event.field, $event.value)"
+            @test="testProvider(p.key)"
+          />
+        </v-expansion-panel-text>
+      </v-expansion-panel>
 
-    <v-card class="my-3" variant="outlined">
-      <v-card-title>Anthropic 兼容</v-card-title>
-      <v-card-text>
-        <v-switch :model-value="config.ai.providers.anthropic.enabled" label="启用"
-          @update:model-value="setField('anthropic', 'enabled', $event)" />
-        <v-text-field :model-value="config.ai.providers.anthropic.base_url" label="Base URL"
-          @update:model-value="setField('anthropic', 'base_url', $event)" />
-        <v-text-field :model-value="config.ai.providers.anthropic.api_key" label="API Key" type="password"
-          @update:model-value="setField('anthropic', 'api_key', $event)" />
-        <v-text-field :model-value="config.ai.providers.anthropic.model" label="Model"
-          @update:model-value="setField('anthropic', 'model', $event)" />
-        <div class="d-flex align-center">
-          <v-btn :loading="testing === 'anthropic'" @click="testProvider('anthropic')">测试连接</v-btn>
-          <span v-if="testResult['anthropic']" class="ml-3 text-body-2"
-            :class="testResult['anthropic'].ok ? 'text-success' : 'text-error'">
-            {{ testResult['anthropic'].detail }}
-          </span>
-        </div>
-      </v-card-text>
-    </v-card>
+      <v-expansion-panel>
+        <v-expansion-panel-title>
+          <v-icon class="mr-2">mdi-translate</v-icon>机器翻译
+        </v-expansion-panel-title>
+        <v-expansion-panel-text>
+          <ProviderCard
+            v-for="p in MT_PROVIDERS"
+            :key="p.key"
+            :title="p.title"
+            :fields="p.fields"
+            :values="config.machine.providers[p.key]"
+            :testing="testing === p.key"
+            :test-result="testResult[p.key]"
+            @update:field="setField('machine', p.key, $event.field, $event.value)"
+            @test="testProvider(p.key)"
+          />
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
 
     <v-btn color="primary" :loading="saving" @click="save">保存配置</v-btn>
     <v-alert v-if="saveMessage" class="mt-3" density="compact" :text="saveMessage" />
