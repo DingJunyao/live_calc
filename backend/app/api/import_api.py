@@ -7,6 +7,7 @@ import threading
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.database import get_db, SessionLocal
 from app.core.security import get_current_user
 from app.models.import_task import ImportTask
@@ -99,14 +100,23 @@ def trigger_repo_import(
 
 @router.post("/data/import-from-local")
 def trigger_local_import(
-    local_path: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """从本地目录导入（仅管理员）。"""
+    """从本地目录导入（仅管理员）。
+
+    导入目录取自 .env 的 DATA_LOCAL_PATH（settings.data_local_path），
+    与启动时的首次初始化导入共用同一来源，不在页面上手填。
+    """
     if not getattr(current_user, "is_admin", False):
         raise HTTPException(403, detail="仅管理员可操作")
 
+    local_path = settings.data_local_path
+    if not local_path:
+        raise HTTPException(
+            400,
+            detail="未在 .env 配置 DATA_LOCAL_PATH，请在 backend/.env 设置",
+        )
     if not os.path.isdir(local_path):
         raise HTTPException(400, detail=f"目录不存在: {local_path}")
 
@@ -120,6 +130,22 @@ def trigger_local_import(
         current_user.id,
     )
     return {"task_id": task_id}
+
+
+@router.get("/data/local-path-config")
+def get_local_path_config(
+    current_user=Depends(get_current_user),
+):
+    """返回 .env 中 DATA_LOCAL_PATH 的配置情况（仅管理员）。
+
+    供前端只读展示当前会导入哪个目录，不在此处校验目录是否存在
+    （目录存在性校验交给导入端点负责）。
+    """
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(403, detail="仅管理员可操作")
+
+    path = settings.data_local_path
+    return {"configured": bool(path), "path": path}
 
 
 # ---- 任务状态查询 ----

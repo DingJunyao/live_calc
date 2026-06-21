@@ -207,6 +207,7 @@ live_calc/
 如：部署说明：详见 [DEPLOYMENT.md](cc/DEPLOYMENT.md) 和 [QUICKSTART.md](cc/QUICKSTART.md)
 
 ### 最新修复记录
+- 本地路径导入改用 .env 配置：数据维护中心「从本地路径导入」不再在页面手填目录路径，改为直接复用 `.env` 的 `DATA_LOCAL_PATH`（与启动导入共用同一来源，消除配置漂移）。后端 `trigger_local_import` 去掉 `local_path` 参数改读 `settings.data_local_path`（未配置/目录不存在各一 400）、新增只读 `GET /data/local-path-config`；前端删输入框换三态只读展示、未配置禁用按钮、点击不再传参。详见 [BUGFIX_本地路径导入改用env配置.md](cc/BUGFIX_本地路径导入改用env配置.md)
 - 移动端优化和功能修复：详见 [BUGFIX_移动端优化和功能修复.md](cc/BUGFIX_移动端优化和功能修复.md) - 记录了移动端输入框放大、菜谱搜索功能、菜谱成本更新和商品自动完成功能的修复
 - None值处理修复：详见 [NONE_VALUE_FIXES.md](cc/NONE_VALUE_FIXES.md) - 修复了在计算菜谱成本和营养素时未将None值视为0的问题
 - 地图配置持久化：实现了地图配置的数据库存储功能，解决了地图API密钥等配置重启后丢失的问题。详细信息请见 [MAP_CONFIG_PERSISTENCE.md](cc/MAP_CONFIG_PERSISTENCE.md)

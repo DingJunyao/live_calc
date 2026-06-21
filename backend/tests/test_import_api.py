@@ -82,7 +82,7 @@ def test_local_import_admin_only():
     """非管理员无法触发本地目录导入。"""
     token = _user_token()
     resp = client.post(
-        "/api/v1/import/data/import-from-local?local_path=/tmp",
+        "/api/v1/import/data/import-from-local",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403

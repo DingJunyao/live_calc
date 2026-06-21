@@ -65,20 +65,28 @@
           <v-divider />
           <v-card-text class="pt-6">
             <p class="text-body-2 mb-4">
-              从服务器上的本地目录导入数据。目录结构可以是
-              HowToCook_json 格式或系统导出格式（自动检测）。
+              从服务器上的本地目录导入数据。目录路径取自配置文件
+              <code>backend/.env</code> 的 <code>DATA_LOCAL_PATH</code>，
+              与启动时导入共用同一来源（自动检测 HowToCook_json / 系统导出格式）。
             </p>
-            <v-text-field
-              v-model="localPath"
-              label="本地目录绝对路径"
-              variant="outlined"
-              placeholder="/data/recipes/out"
-              prepend-icon="mdi-folder-path"
-              hint="输入服务器上的数据目录路径"
-              persistent-hint
-              :disabled="submitting.local"
-            />
-            <v-alert type="info" variant="tonal" class="mt-4" density="compact">
+            <v-alert
+              :type="localPathConfig.configured ? 'info' : 'warning'"
+              variant="tonal"
+              density="compact"
+              class="mb-4"
+            >
+              <div v-if="!localPathConfig.loaded" class="text-caption">
+                正在读取配置…
+              </div>
+              <div v-else-if="localPathConfig.configured" class="text-caption">
+                将导入：<code>{{ localPathConfig.path }}</code>
+              </div>
+              <div v-else class="text-caption">
+                未配置 <code>DATA_LOCAL_PATH</code>，请在
+                <code>backend/.env</code> 设置后重启服务。
+              </div>
+            </v-alert>
+            <v-alert type="info" variant="tonal" density="compact">
               <div class="text-caption">
                 支持格式：HowToCook_json（ingredients.json + 菜谱 JSON）/<br />
                 系统导出格式（manifest.json）
@@ -93,7 +101,7 @@
               variant="tonal"
               size="large"
               :loading="submitting.local"
-              :disabled="!localPath.trim()"
+              :disabled="!localPathConfig.loaded || !localPathConfig.configured"
               @click="importFromLocalPath"
             >
               <v-icon start>mdi-folder-open</v-icon>
@@ -492,7 +500,12 @@ interface UsdaTaskItem {
 const usdaTasks = ref<UsdaTaskItem[]>([])
 const usdaPollingMap = new Map<number, ReturnType<typeof setInterval>>()
 
-const localPath = ref('')
+// 本地导入路径配置（从后端 GET /import/data/local-path-config 读取，只读展示）
+const localPathConfig = reactive({
+  loaded: false,
+  configured: false,
+  path: '',
+})
 const uploadFile = ref<File | null>(null)
 const aiForce = ref(false)
 
@@ -531,6 +544,20 @@ const enabledTranslateProviders = computed<string[]>(() => [...enabledIn('ai'), 
 onMounted(async () => {
   // 加载近期任务列表，恢复对运行中任务的轮询
   fetchTasks(10)
+
+  // 加载本地导入路径配置（只读展示用，失败降级为「未配置」）
+  api
+    .get('/import/data/local-path-config')
+    .then((cfg: any) => {
+      localPathConfig.configured = !!cfg?.configured
+      localPathConfig.path = cfg?.path || ''
+    })
+    .catch(() => {
+      localPathConfig.configured = false
+    })
+    .finally(() => {
+      localPathConfig.loaded = true
+    })
 
   // 加载翻译配置
   try {
@@ -637,11 +664,9 @@ async function importFromRepo() {
 
 async function importFromLocalPath() {
   submitting.local = true
-  const taskId = await startTask('/import/data/import-from-local', {
-    params: { local_path: localPath.value.trim() },
-  })
+  const taskId = await startTask('/import/data/import-from-local')
   if (!taskId) {
-    errorMessage.value = '本地导入任务启动失败，请检查路径和后端状态'
+    errorMessage.value = '本地导入任务启动失败，请检查后端状态与 DATA_LOCAL_PATH 配置'
   }
   submitting.local = false
 }
