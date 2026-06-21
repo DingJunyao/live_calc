@@ -23,6 +23,14 @@ _INFER_QUANTITIES_TASK_TYPE = "infer_quantities"
 # infer_densities 对应的 task_template 键。
 _INFER_DENSITIES_TASK_TYPE = "infer_densities"
 
+# safe SQL 运行时 rowcount 护栏阈值（覆盖 run_agent_loop 默认的 100）。
+# 模糊量/密度任务的 UPDATE/INSERT 都带守卫（WHERE id IN / IS NULL / NOT EXISTS），
+# 是预期内的批量维护写。实测 ingredients 638、recipe_ingredients 3470、
+# entity_densities 682，合理批量均 < 5000；此处覆盖为 5000 放行批量，同时兜底
+# 「WHERE 过宽」的偏离更新（>5000 转 dangerous → unattended 跳过）。sql_guard 的
+# 「无 WHERE 判 dangerous」已挡裸全表更新，本阈值补 WHERE 过宽场景。
+_SAFE_ROW_THRESHOLD = 5000
+
 
 class AIInferrer:
     """用 AI 推测原料的模糊用量和密度。
@@ -189,6 +197,7 @@ class AIInferrer:
                     main_loop,
                     db_session_factory=_session_local_factory(),
                     unattended=True,
+                    safe_row_threshold=_SAFE_ROW_THRESHOLD,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(
@@ -521,6 +530,7 @@ class AIInferrer:
                     main_loop,
                     db_session_factory=_session_local_factory(),
                     unattended=True,
+                    safe_row_threshold=_SAFE_ROW_THRESHOLD,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(

@@ -545,7 +545,17 @@ _UNMAPPED_NUTRIENT_TRANSLATE_PROMPT = """你是「生计」应用 USDA 营养素
    下为进程内 @tool。）
 
 **2. 写操作（统一方式）：**
-   **在你的回复正文里用 ```sql``` 代码块输出 SQL**。
+   **在你的回复正文里用 ```sql``` 代码块输出 SQL**——系统的 sql_extractor 会自动
+   提取，sql_guard 判定：
+   - 安全 SQL（INSERT / 带 WHERE 的 UPDATE）**自动执行**，无需人工审批；
+   - 危险 SQL（DELETE / 无 WHERE 的 UPDATE / DROP 等）才会生成审批记录交给管理员。
+
+   你输出的 UPDATE 都带 `WHERE name=? AND name_zh IS NULL` 守卫，属安全 SQL，会被
+   系统自动执行。**不要在正文里说「请审批后执行」「待审批后执行」之类的话**——
+   那会误导用户以为还要手动操作。直接输出 SQL，系统自会执行，你只需在最后简述
+   「已输出 N 条 UPDATE，系统自动执行」即可。
+
+   不要调用不存在的工具，也不要把 SQL 写在普通段落里（必须用 ```sql``` 围栏）。
 
 # 工作流程
 

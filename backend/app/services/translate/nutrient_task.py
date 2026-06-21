@@ -36,6 +36,16 @@ _TASK_TYPE = "unmapped_nutrient_translate"
 # UsdaTask 进度载体用到的 task_type（保留老值，前端 USDA 维护页已轮询）。
 _USDA_TASK_TYPE = "translate_nutrients"
 
+# safe SQL 运行时 rowcount 护栏阈值（覆盖 run_agent_loop 默认的 100）。
+# 营养素翻译的 UPDATE 按 distinct name 批量写回 name_zh（WHERE name=? AND
+# name_zh IS NULL），单个营养素名跨 fdc_id 重复可达上万行（实测全表最大
+# 15600，当前未译单名 SFA 16:0 达 6398 行）。默认阈值 100 会把这些正常的
+# 批量更新误伤——rowcount>100 回滚转 dangerous，unattended 模式直接跳过，
+# Agent 被迫 LIMIT 100 分批甚至卡死。此处放行到 50000：足以覆盖最大单名
+# 全量更新，同时仍能拦住无 WHERE 的全表误更新（usda_food_nutrients 共约
+# 65 万行 > 50000 → 转 dangerous 跳过），保留兜底。
+_SAFE_ROW_THRESHOLD = 50000
+
 
 class TranslateNutrientsTask:
     """未映射营养素 AI 翻译任务。
@@ -160,6 +170,7 @@ class TranslateNutrientsTask:
                     main_loop,
                     db_session_factory=_session_runner_db_factory(),
                     unattended=True,
+                    safe_row_threshold=_SAFE_ROW_THRESHOLD,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(

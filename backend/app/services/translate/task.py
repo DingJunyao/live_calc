@@ -33,6 +33,13 @@ logger = logging.getLogger(__name__)
 # USDA 食材翻译对应的 task_template 键（见 services/agent/task_templates.py）。
 _TASK_TYPE = "usda_translate"
 
+# safe SQL 运行时 rowcount 护栏阈值（覆盖 run_agent_loop 默认的 100）。
+# 食材翻译的 UPDATE 按 fdc_id（主键）单行更新，正常不触发护栏；此处覆盖为 5000
+# 用于兜底「WHERE 过宽」的批量（如误用 translate_status='pending' 一次命中 8068
+# 行）——sql_guard 的「无 WHERE 判 dangerous」已挡住裸全表更新，本阈值补 WHERE
+# 过宽场景，偏离时转 dangerous → unattended 跳过，提示 Agent 回到按 fdc_id 的正轨。
+_SAFE_ROW_THRESHOLD = 5000
+
 
 class TranslateTask:
     """USDA 食材翻译任务。
@@ -150,6 +157,7 @@ class TranslateTask:
                     main_loop,
                     db_session_factory=session_runner_db_factory(),
                     unattended=True,
+                    safe_row_threshold=_SAFE_ROW_THRESHOLD,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(
