@@ -729,6 +729,11 @@ const loadData = async () => {
   loading.value = true
   error.value = null
 
+  // 重置成本历史累积池（导航到其他菜谱时避免残留旧数据）
+  costHistoryRecords.value = []
+  maxDaysLoaded.value = 0
+  attemptedRanges.clear()
+
   try {
     const response = await api.get(`/recipes/${recipeId.value}`)
     recipe.value = response
@@ -777,13 +782,19 @@ const loadNutritionData = async () => {
 // 已尝试过的加载范围（避免空结果重复请求）
 const attemptedRanges = new Set<string>()
 
+// 成本历史分批加载的每批最大天数（规避单批超过 10s 超时）
+const COST_HISTORY_BATCH_DAYS = 90
+
 // 串行队列：确保同时只有一个成本历史加载请求在跑
 let costHistoryQueue = Promise.resolve()
 
 // 加载成本历史数据（纯数据加载，不控制 loadingCostHistory）
 const loadCostHistory = async (days = 90, offsetDays = 0) => {
+  // 后端 days 参数要求 ge=7；分批循环末尾 remaining 可能不足 7，此处兜底钳制
+  days = Math.max(7, days)
   const response = await api.get(`/recipes/${recipeId.value}/cost-history-range`, {
-    params: { days, offset_days: offsetDays }
+    params: { days, offset_days: offsetDays },
+    timeout: 30000,  // 菜谱成本计算较重，放宽到 30s 规避默认 10s 超时
   })
   // 转换数据格式
   const records = (response || []).map((record: any) => ({
@@ -815,12 +826,18 @@ const enqueueCostHistory = async (targetDays: number, showLoading: boolean) => {
   attemptedRanges.add(rangeKey)
 
   const promise = costHistoryQueue.then(async () => {
-    // 动态计算还需要加载多少天
-    const remaining = targetDays - maxDaysLoaded.value
-    if (remaining <= 0) return
+    if (maxDaysLoaded.value >= targetDays) return
     if (showLoading) loadingCostHistory.value = true
     try {
-      await loadCostHistory(remaining, maxDaysLoaded.value)
+      // 循环分批加载到 targetDays，每批不超过 COST_HISTORY_BATCH_DAYS 天，规避单批超过 10s 超时
+      while (maxDaysLoaded.value < targetDays) {
+        const before = costHistoryRecords.value.length
+        const remaining = targetDays - maxDaysLoaded.value
+        const days = Math.min(remaining, COST_HISTORY_BATCH_DAYS)
+        await loadCostHistory(days, maxDaysLoaded.value)
+        // 本批未带来新数据 → 已到最早记录，提前终止
+        if (costHistoryRecords.value.length === before) break
+      }
     } catch (e) {
       console.error('加载成本历史失败', e)
     } finally {
@@ -838,7 +855,13 @@ const loadCostHistoryInBatches = async () => {
 }
 
 // 成本趋势筛选切换时，按需加载更多数据
-const onCostTrendFilterChange = async (filter: 'week' | 'month' | 'quarter' | 'year') => {
+const onCostTrendFilterChange = async (filter: 'week' | 'month' | 'quarter' | 'year' | 'all') => {
+  // 「全部」：分批加载所有历史，规避单次请求超过 10s 超时
+  if (filter === 'all') {
+    await loadAllCostHistory()
+    return
+  }
+
   const targetDays: Record<string, number> = {
     week: 7,
     month: 30,
@@ -852,6 +875,30 @@ const onCostTrendFilterChange = async (filter: 'week' | 'month' | 'quarter' | 'y
   }
   // 请求完成或已在队列中等候完成，停止转圈
   loadingCostHistory.value = false
+}
+
+// 「全部」区间：循环分批加载所有历史成本数据
+// 每批 COST_HISTORY_BATCH_DAYS 天（90，规避单批超过 10s 超时），offset_days 随 maxDaysLoaded 自然递增；
+// 菜谱成本按天前向填充（每日有值），某批未带来新数据即表示已早于最早记录，终止。
+const loadAllCostHistory = async () => {
+  // 纳入 costHistoryQueue 串行队列，与其他区间切换的加载互斥，避免并发竞态
+  const promise = costHistoryQueue.then(async () => {
+    loadingCostHistory.value = true
+    try {
+      while (true) {
+        const before = costHistoryRecords.value.length
+        await loadCostHistory(COST_HISTORY_BATCH_DAYS, maxDaysLoaded.value)
+        // 本批未带来新数据 → 已加载到最早记录之前，终止
+        if (costHistoryRecords.value.length === before) break
+      }
+    } catch (e) {
+      console.error('加载全部成本历史失败', e)
+    } finally {
+      loadingCostHistory.value = false
+    }
+  })
+  costHistoryQueue = promise
+  return promise
 }
 
 // 转换为图表数据格式（按当前显示份数折算，与成本估算保持一致）

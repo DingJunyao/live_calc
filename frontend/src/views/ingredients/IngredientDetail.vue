@@ -286,9 +286,10 @@
         :unit="chartUnit"
         empty-text="暂无价格历史数据"
         :data="chartData"
-        :loading="loadingPrices"
+        :loading="loadingChartPrices"
         color="#ff9800"
         class="grid-item item-price-trend"
+        @filter-change="onPriceTrendFilterChange"
       />
 
       <!-- 关联商品 -->
@@ -1776,6 +1777,12 @@ const pricePageSize = ref(10)
 const priceTotal = ref(0)
 const priceTotalPages = computed(() => Math.ceil(priceTotal.value / pricePageSize.value))
 
+// 图表专用数据源（按时间区间累积加载，独立于下方分页列表的 priceRecords）
+const chartPriceRecords = ref<PriceRecord[]>([])
+// 已请求覆盖到的最早日期：undefined=未请求, null=已全量, Date=已覆盖到该日
+const chartEarliestDate = ref<Date | null | undefined>(undefined)
+const loadingChartPrices = ref(false)
+
 // 营养数据
 const nutritionData = ref<any>(null)
 const loadingNutrition = ref(false)
@@ -2581,12 +2588,12 @@ const hasRelations = computed(() => {
 
 // 聚合价格数据用于图表（按日期分组，转换到原料的默认单位）
 const chartData = computed(() => {
-  if (!priceRecords.value || priceRecords.value.length === 0) return []
+  if (!chartPriceRecords.value || chartPriceRecords.value.length === 0) return []
 
   const defaultUnit = ingredient.value?.default_unit_name || '斤'
   const dailyMap = new Map<string, number[]>()
 
-  for (const record of priceRecords.value) {
+  for (const record of chartPriceRecords.value) {
     if (!record.recorded_at) continue
     const date = new Date(record.recorded_at)
     if (isNaN(date.getTime())) continue
@@ -2672,6 +2679,10 @@ const loadData = async () => {
   loading.value = true
   error.value = null
 
+  // 重置图表累积池（导航到其他原料时避免残留旧数据）
+  chartPriceRecords.value = []
+  chartEarliestDate.value = undefined
+
   try {
     // 只加载原料基本信息（名称、别名、默认单位等）
     const response = await api.get(`/nutrition/ingredients/${ingredientId.value}`)
@@ -2685,6 +2696,7 @@ const loadData = async () => {
     loadMerchantPrices()
     loadProducts()
     loadPriceRecords()
+    loadChartPriceRecords(daysAgo(30))  // 图表默认加载近 30 天（月）
     loadNutritionData()
     loadRecipes()
     loadHierarchy()
@@ -2764,6 +2776,79 @@ const loadPriceRecords = async () => {
   } finally {
     loadingPrices.value = false
   }
+}
+
+// 今天往前 n 天的日期
+const daysAgo = (n: number): Date => {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d
+}
+
+// 加载图表价格记录（按时间区间累积）
+// startDate 为空表示「全部」；「全部」请求放宽超时到 30s，规避前端 10s 上限
+const loadChartPriceRecords = async (startDate?: Date) => {
+  // 判断是否需要发请求（已覆盖则跳过）
+  let needFetch = false
+  if (startDate) {
+    if (chartEarliestDate.value === undefined) {
+      needFetch = true
+    } else if (chartEarliestDate.value === null) {
+      needFetch = false  // 已全量，已覆盖
+    } else {
+      needFetch = startDate < chartEarliestDate.value
+    }
+  } else {
+    needFetch = chartEarliestDate.value !== null
+  }
+  if (!needFetch) return
+
+  loadingChartPrices.value = true
+  try {
+    const params: Record<string, any> = {
+      ingredient_id: ingredientId.value,
+      limit: 1000,
+    }
+    if (startDate) {
+      params.start_date = startDate.toISOString().split('T')[0]
+    }
+    const response = await api.get('/products', {
+      params,
+      timeout: startDate ? 10000 : 30000,  // 「全部」放宽到 30s
+    })
+    const items = response.items || []
+    // 按 id 去重合并
+    const existing = new Set(chartPriceRecords.value.map(r => r.id))
+    for (const r of items) {
+      if (!existing.has(r.id)) {
+        chartPriceRecords.value.push(r)
+      }
+    }
+    // 更新已覆盖范围（取更早）
+    if (startDate) {
+      chartEarliestDate.value = (chartEarliestDate.value instanceof Date && chartEarliestDate.value < startDate)
+        ? chartEarliestDate.value
+        : startDate
+    } else {
+      chartEarliestDate.value = null
+    }
+  } catch (e) {
+    console.error('加载图表价格记录失败', e)
+  } finally {
+    loadingChartPrices.value = false
+  }
+}
+
+// 图表区间切换：按时间区间发起请求
+const onPriceTrendFilterChange = (filter: 'week' | 'month' | 'quarter' | 'year' | 'all') => {
+  const startDateMap: Record<string, Date | undefined> = {
+    week: daysAgo(7),
+    month: daysAgo(30),
+    quarter: daysAgo(90),
+    year: daysAgo(365),
+    all: undefined,
+  }
+  loadChartPriceRecords(startDateMap[filter])
 }
 
 // 加载营养数据

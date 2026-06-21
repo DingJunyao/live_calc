@@ -127,7 +127,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  'filter-change': [filter: 'week' | 'month' | 'quarter' | 'year']
+  'filter-change': [filter: 'week' | 'month' | 'quarter' | 'year' | 'all']
 }>()
 
 const chartRef = ref<HTMLElement>()
@@ -136,13 +136,14 @@ let chart: echarts.ECharts | null = null
 // 是否曾经有过数据（一旦为 true，图表 DOM 不再销毁）
 const hasEverHadData = ref(false)
 
-const selectedFilter = ref<'week' | 'month' | 'quarter' | 'year'>('month')
+const selectedFilter = ref<'week' | 'month' | 'quarter' | 'year' | 'all'>('month')
 
 const filters = [
   { label: '周', value: 'week' as const },
   { label: '月', value: 'month' as const },
   { label: '季', value: 'quarter' as const },
-  { label: '年', value: 'year' as const }
+  { label: '年', value: 'year' as const },
+  { label: '全部', value: 'all' as const }
 ]
 
 // 单位后缀
@@ -151,6 +152,11 @@ const unitSuffix = computed(() => props.unit ? `/${props.unit}` : '')
 // 过滤数据
 const chartData = computed(() => {
   if (!props.data || props.data.length === 0) return []
+
+  // 「全部」区间：不按时间窗口切片，返回全部数据（仅排序）
+  if (selectedFilter.value === 'all') {
+    return [...props.data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  }
 
   const now = new Date()
   const startDate = new Date(now.getTime())
@@ -396,18 +402,6 @@ watch(() => props.loading, () => {
       updateChart()
     })
   }
-})
-
-// 筛选变化时更新图表
-watch(selectedFilter, (newFilter) => {
-  emit('filter-change', newFilter)
-  nextTick(() => {
-    if (chartData.value.length > 0 && !chart) {
-      initChart()
-    } else {
-      updateChart()
-    }
-  })
 })
 
 // 生命周期
