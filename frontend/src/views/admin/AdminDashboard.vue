@@ -15,14 +15,22 @@
     <!-- 统计卡片 -->
     <v-row class="ma-2 mb-4">
       <v-col cols="12" sm="6" lg="3">
-        <v-card elevation="0">
+        <v-card
+          elevation="0"
+          class="user-stats-card"
+          hover
+          :to="'/admin/users'"
+        >
           <v-card-text class="text-center pa-4">
             <v-avatar color="primary" variant="tonal" size="48" class="mb-2">
               <v-icon size="28">mdi-account-group</v-icon>
             </v-avatar>
             <div v-if="loading" class="text-h5 font-weight-bold text-primary">--</div>
             <div v-else class="text-h5 font-weight-bold text-primary">{{ stats?.users || 0 }}</div>
-            <div class="text-caption text-medium-emphasis mt-1">用户总数</div>
+            <div class="text-caption text-medium-emphasis mt-1">
+              用户总数
+              <v-icon size="14" class="ms-1">mdi-arrow-right-thin</v-icon>
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -70,6 +78,17 @@
     <!-- 管理功能 -->
     <v-card class="ma-4" elevation="0">
       <v-list>
+        <v-list-item
+          prepend-icon="mdi-account-cog"
+          title="用户管理"
+          subtitle="管理用户账户、权限和状态"
+          to="/admin/users"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
         <v-list-item
           prepend-icon="mdi-ticket-outline"
           title="邀请码管理"
@@ -172,3 +191,13 @@ onMounted(() => {
   fetchStats()
 })
 </script>
+
+<style scoped>
+.user-stats-card {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.user-stats-card:hover {
+  transform: translateY(-2px);
+}
+</style>

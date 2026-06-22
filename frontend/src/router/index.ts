@@ -140,6 +140,12 @@ const router = createRouter({
           redirect: '/admin/ai-config',
         },
         {
+          path: 'admin/users',
+          name: 'admin-users',
+          meta: { adminOnly: true, title: '用户管理' },
+          component: () => import('@/views/admin/UserManagementView.vue'),
+        },
+        {
           path: 'admin/recipe-import',
           redirect: '/admin/data-maintenance',
         },

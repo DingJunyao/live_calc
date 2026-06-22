@@ -7,6 +7,7 @@ from app.models.nutrition import Ingredient, IngredientNutritionMapping  # nutri
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.expense import Expense, ExpenseType
 from app.models.invite_code import InviteCode
+from app.models.system_config import SystemConfig
 from app.models.ingredient_category import IngredientCategory
 from app.models.unit import Unit, UnitConversion
 from app.models.region_unit_setting import RegionUnitSetting, UserUnitPreference
@@ -43,4 +44,5 @@ __all__ = [
     "EntityDensity",
     "UsdaFood", "UsdaFoodNutrient", "TranslationConfig", "UsdaTask",
     "AgentSession", "AgentMessage", "AgentApproval",
+    "SystemConfig",
 ]

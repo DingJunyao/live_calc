@@ -10,12 +10,29 @@ class InviteCode(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(50), unique=True, nullable=False, index=True)
     created_by = Column(Integer, ForeignKey("users.id"))  # 由谁创建
-    used = Column(Boolean, default=False)  # 是否已被使用
+    used_count = Column(Integer, default=0)  # 已使用次数
+    max_uses = Column(Integer, nullable=True)  # 最大使用次数（NULL = 不限）
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    expires_at = Column(DateTime(timezone=True))  # 过期时间
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # 过期时间
 
     # 关系
     creator = relationship("User", back_populates="created_invite_codes")
+
+    @property
+    def is_exhausted(self) -> bool:
+        """是否已用完（次数限制）。"""
+        return self.max_uses is not None and self.used_count >= self.max_uses
+
+    @property
+    def is_expired(self) -> bool:
+        """是否已过期。"""
+        import datetime
+        return self.expires_at is not None and self.expires_at < datetime.datetime.now(datetime.timezone.utc)
+
+    @property
+    def is_valid(self) -> bool:
+        """邀请码是否仍然有效（未过期且未用完）。"""
+        return not self.is_expired and not self.is_exhausted
 
 
 def generate_invite_code(length: int = 8) -> str:

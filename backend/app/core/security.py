@@ -70,7 +70,7 @@ def resolve_user_from_token(token: "Optional[str]"):
 
     供 ``get_current_user``（HTTPBearer 依赖注入）与 SSE 端点的 query token
     鉴权（``_auth_user_from_token``）共享同一套校验逻辑：空 token / 解码失败 /
-    非 access 类型 / sub 缺失 → 401；用户不存在 → 404。
+    非 access 类型 / sub 缺失 → 401；用户不存在 → 404；账户已禁用 → 403。
 
     Args:
         token: JWT 字符串，可为 None（视为未授权）。
@@ -79,7 +79,7 @@ def resolve_user_from_token(token: "Optional[str]"):
         User 对象。
 
     Raises:
-        HTTPException: 401 / 404。
+        HTTPException: 401 / 403 / 404。
     """
     if not token:
         raise HTTPException(
@@ -121,9 +121,31 @@ def resolve_user_from_token(token: "Optional[str]"):
             detail="用户不存在"
         )
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用"
+        )
+
     return user
 
 
 async def get_current_user(credentials: HTTPBearer = Depends(security)):
     """获取当前登录用户（依赖注入）"""
     return resolve_user_from_token(credentials.credentials)
+
+
+async def get_current_admin_user(
+    current_user: "User" = Depends(get_current_user),
+):
+    """获取当前管理员用户（依赖注入）。
+
+    在 ``get_current_user`` 基础上追加管理员权限检查，
+    非管理员直接返回 403。
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="仅限管理员访问"
+        )
+    return current_user

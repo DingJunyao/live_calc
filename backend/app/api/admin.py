@@ -1,15 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin_user
 from app.core.database import get_db
 from app.models.user import User
 from app.models.product import ProductRecord
 from app.models.recipe import Recipe
 from app.models.merchant import Merchant
 from app.models.map_config import MapConfiguration
-from app.schemas.auth import UserResponse
+from app.models.system_config import SystemConfig
+from app.schemas.auth import UserResponse, AdminConfigUpdate, ConfigResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 from app.services.recipe_import_service import RecipeImportService
 
 
@@ -109,15 +110,9 @@ def update_stored_map_config(db: Session, config_data: dict) -> MapConfiguration
 @router.get("/map-config", response_model=MapConfig)
 async def get_map_config(
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """获取地图配置 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="仅限管理员访问"
-        )
-
     stored_config = get_stored_map_config(db)
     return MapConfig(**stored_config.to_dict())
 
@@ -126,16 +121,9 @@ async def get_map_config(
 async def update_map_config(
     config: MapConfig,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """更新地图配置 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="仅限管理员访问"
-        )
-
-    # 将 Pydantic 模型转换为字典并适配数据库字段
     config_data = {
         "available_maps": config.available_maps,
         "default_map": config.default_map,
@@ -150,16 +138,9 @@ async def update_map_config(
 @router.get("/stats", response_model=AdminStatsResponse)
 async def get_admin_stats(
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """获取管理员统计信息 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="仅限管理员访问"
-        )
-
-    # 获取各种统计数据
     users_count = db.query(User).count()
     products_count = db.query(ProductRecord).count()
     recipes_count = db.query(Recipe).count()
@@ -177,15 +158,9 @@ async def get_admin_stats(
 async def import_recipes_from_url(
     url: str,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """从URL导入菜谱 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="仅限管理员访问"
-        )
-
     try:
         import_service = RecipeImportService(db)
         result = import_service.import_recipes_from_cook_repo(repo_url=url)
@@ -197,15 +172,9 @@ async def import_recipes_from_url(
 @router.post("/import-recipes-initial")
 async def import_initial_recipes(
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """导入初始菜谱 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="仅限管理员访问"
-        )
-
     try:
         from app.services.enhanced_recipe_import_service import check_and_import_initial_recipes
         result = check_and_import_initial_recipes(db, user_id=current_user.id)
@@ -218,15 +187,9 @@ async def import_initial_recipes(
 async def import_from_local_path(
     request: LocalImportRequest,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """从本地路径导入菜谱数据 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="仅限管理员访问"
-        )
-
     try:
         from app.services.enhanced_recipe_import_service import EnhancedRecipeImportService
         service = EnhancedRecipeImportService(db, user_id=current_user.id)
@@ -234,3 +197,40 @@ async def import_from_local_path(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"从本地路径导入失败: {str(e)}")
+
+
+# ==================== 动态配置 ====================
+
+@router.get("/config")
+async def get_admin_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """获取所有动态配置项 - 仅限管理员"""
+    rows = db.query(SystemConfig).all()
+    config: Dict[str, str] = {r.key: r.value for r in rows}
+    return config
+
+
+@router.put("/config", response_model=ConfigResponse)
+async def update_admin_config(
+    body: AdminConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """批量更新动态配置 - 仅限管理员"""
+    if body.registration_require_invite_code is not None:
+        row = db.query(SystemConfig).filter(
+            SystemConfig.key == "registration_require_invite_code"
+        ).first()
+        val = "true" if body.registration_require_invite_code else "false"
+        if row:
+            row.value = val
+        else:
+            db.add(SystemConfig(key="registration_require_invite_code", value=val))
+    db.commit()
+    return ConfigResponse(
+        registration_require_invite_code=body.registration_require_invite_code
+        if body.registration_require_invite_code is not None
+        else False
+    )

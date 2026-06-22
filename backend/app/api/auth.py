@@ -8,10 +8,13 @@ from app.core.security import (
     decode_token,
     get_password_hash,
     validate_token_type,
-    verify_password
+    verify_password,
+    get_current_user,
+    get_current_admin_user,
 )
 from app.models.user import User
 from app.models.invite_code import InviteCode
+from app.models.system_config import SystemConfig
 from app.schemas.auth import (
     UserRegister,
     UserLogin,
@@ -19,36 +22,49 @@ from app.schemas.auth import (
     UserResponse,
     ConfigResponse,
     UserUpdate,
-    ConfigUpdate
+    ConfigUpdate,
+    UserAdminCreate,
+    UserAdminUpdate,
+    UserAdminStatusUpdate,
 )
 from app.schemas.common import PaginatedResponse
 from app.config import settings
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 import datetime
 from app.utils.datetime_utils import serialize_datetime
 
 
-def validate_invite_code(code: str, db: Session) -> bool:
-    """验证邀请码是否有效"""
+def _get_dynamic_config(db: Session, key: str, default: str = "") -> str:
+    """从数据库读取动态配置，无记录时返回默认值。"""
+    row = db.query(SystemConfig).filter(SystemConfig.key == key).first()
+    return row.value if row else default
+
+
+def _get_bool_config(db: Session, key: str, default: bool = False) -> bool:
+    """从数据库读取布尔型动态配置。"""
+    val = _get_dynamic_config(db, key, "true" if default else "false")
+    return val.lower() in ("true", "1", "yes")
+
+
+def validate_invite_code(code: str, db: Session) -> InviteCode:
+    """验证邀请码是否有效。返回 InviteCode 对象，无效则返回 None。
+
+    使用次数上限（max_uses）和过期时间（expires_at）为可选限制条件。
+    """
     invite_code = db.query(InviteCode).filter(InviteCode.code == code).first()
 
     if not invite_code:
-        return False
+        return None
 
-    # 检查是否已使用
-    if invite_code.used:
-        return False
+    if not invite_code.is_valid:
+        return None
 
-    # 检查是否已过期
-    if invite_code.expires_at and invite_code.expires_at < datetime.datetime.now(datetime.timezone.utc):
-        return False
-
-    # 标记为已使用
-    invite_code.used = True
+    # 标记使用次数 +1
+    invite_code.used_count += 1
     db.commit()
 
-    return True
+    return invite_code
 
 
 class UserStatsResponse(BaseModel):
@@ -60,10 +76,14 @@ security = HTTPBearer()
 
 
 @router.get("/config", response_model=ConfigResponse)
-async def get_config():
-    """获取注册配置"""
+async def get_config(db: Session = Depends(get_db)):
+    """获取注册配置（动态读取数据库，fallback .env 默认值）。"""
+    require_invite = _get_bool_config(
+        db, "registration_require_invite_code",
+        settings.registration_require_invite_code
+    )
     return ConfigResponse(
-        registration_require_invite_code=settings.registration_require_invite_code
+        registration_require_invite_code=require_invite
     )
 
 
@@ -84,11 +104,15 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
             detail="邮箱已被注册"
         )
 
-    # 检查邀请码（如需要）
+    # 检查邀请码（如需要）——动态读取配置
     is_first_user = db.query(User).count() == 0
+    require_invite = _get_bool_config(
+        db, "registration_require_invite_code",
+        settings.registration_require_invite_code
+    )
 
     # 对于第一个用户，不需要邀请码，直接成为管理员
-    if not is_first_user and settings.registration_require_invite_code:
+    if not is_first_user and require_invite:
         if not user_data.invite_code:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -107,7 +131,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         username=user_data.username,
         email=user_data.email,
         phone=user_data.phone,
-        password_hash=get_password_hash(user_data.password_hash),  # 密码长度已在 get_password_hash 中处理
+        password_hash=get_password_hash(user_data.password_hash),
         is_admin=is_first_user  # 第一个用户自动成为管理员
     )
     db.add(user)
@@ -133,6 +157,13 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误"
+        )
+
+    # 检查账户是否被禁用
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用"
         )
 
     # 验证密码（前端已 SHA256，这里再 bcrypt）
@@ -186,6 +217,12 @@ async def refresh_token(
             detail="用户不存在"
         )
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用"
+        )
+
     # 创建新的访问令牌
     access_token = create_access_token(data={"sub": str(user.id)})
     return TokenResponse(
@@ -195,78 +232,38 @@ async def refresh_token(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user(
-    credentials: HTTPBearer = Depends(security),
-    db: Session = Depends(get_db)
+async def get_me(
+    current_user: User = Depends(get_current_user),
 ):
     """获取当前用户信息"""
-    # 获取 token
-    token = credentials.credentials
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未授权"
-        )
-
-    # 验证令牌类型必须是 access
-    if not validate_token_type(token, "access"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的令牌类型"
-        )
-
-    # 解码 token
-    payload = decode_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的令牌"
-        )
-
-    # 获取用户 ID
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的令牌"
-        )
-
-    # 查询用户
-    user = db.query(User).filter(User.id == int(user_id)).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
-
-    # 返回用户信息
     return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        phone=user.phone,
-        is_admin=user.is_admin,
-        email_verified=user.email_verified,
-        created_at=serialize_datetime(user.created_at) if user.created_at else None
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        phone=current_user.phone,
+        is_admin=current_user.is_admin,
+        is_active=current_user.is_active,
+        email_verified=current_user.email_verified,
+        created_at=serialize_datetime(current_user.created_at) if current_user.created_at else None
     )
 
 
 @router.post("/config", response_model=ConfigResponse)
 async def update_config(
     config_update: ConfigUpdate,
-    current_user=Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
 ):
-    """更新注册配置 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅限管理员访问"
-        )
-
-    # 这里实际上不能动态更新应用配置
-    # 通常，这类配置是通过环境变量或配置文件设置的
-    # 为演示目的，我们只是简单返回更新后的值
+    """更新注册配置 - 仅限管理员，写入数据库动态配置。"""
+    row = db.query(SystemConfig).filter(
+        SystemConfig.key == "registration_require_invite_code"
+    ).first()
+    new_val = "true" if config_update.require_invite_code else "false"
+    if row:
+        row.value = new_val
+    else:
+        db.add(SystemConfig(key="registration_require_invite_code", value=new_val))
+    db.commit()
 
     return ConfigResponse(
         registration_require_invite_code=config_update.require_invite_code
@@ -277,18 +274,19 @@ async def update_config(
 async def get_all_users(
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="每页记录数"),
+    search: Optional[str] = Query(None, description="搜索用户名或邮箱"),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
-    """获取所有用户信息（分页）- 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅限管理员访问"
+    """获取所有用户信息（分页 + 搜索）- 仅限管理员"""
+    query = db.query(User)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            (User.username.ilike(like)) | (User.email.ilike(like))
         )
-
-    total = db.query(User).count()
-    users = db.query(User).offset(skip).limit(limit).all()
+    total = query.count()
+    users = query.order_by(User.id).offset(skip).limit(limit).all()
     page = skip // limit + 1
 
     return PaginatedResponse.create(
@@ -299,6 +297,7 @@ async def get_all_users(
                 email=user.email,
                 phone=user.phone,
                 is_admin=user.is_admin,
+                is_active=user.is_active,
                 email_verified=user.email_verified,
                 created_at=serialize_datetime(user.created_at) if user.created_at else None
             ) for user in users
@@ -309,126 +308,197 @@ async def get_all_users(
     )
 
 
+# ==================== 用户管理安全规则 ====================
+
+def _check_user_safety(current_user: User, target_user: User, action: str) -> None:
+    """检查用户操作安全规则。
+
+    - 不能操作自己
+    - 不能操作系统首个用户（id=1）
+    """
+    if target_user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"不能{action}自己的账户"
+        )
+    if target_user.id == 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"不能{action}系统初始管理员"
+        )
+
+
 @router.get("/users/stats", response_model=UserStatsResponse)
 async def get_user_stats(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """获取用户统计 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅限管理员访问"
-        )
-
     total_users = db.query(User).count()
     return UserStatsResponse(total=total_users)
+
+
+@router.get("/users/{user_id}", response_model=UserResponse)
+async def get_user_detail(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """获取单个用户详情 - 仅限管理员"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        phone=user.phone,
+        is_admin=user.is_admin,
+        email_verified=user.email_verified,
+        created_at=serialize_datetime(user.created_at) if user.created_at else None
+    )
+
+
+@router.post("/users", response_model=UserResponse)
+async def admin_create_user(
+    user_data: UserAdminCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """管理员创建用户（跳过邀请码校验）"""
+    if db.query(User).filter(User.username == user_data.username).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在")
+    if db.query(User).filter(User.email == user_data.email).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱已被注册")
+
+    user = User(
+        username=user_data.username,
+        email=user_data.email,
+        phone=user_data.phone,
+        password_hash=get_password_hash(user_data.password_hash),
+        is_admin=user_data.is_admin,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        phone=user.phone,
+        is_admin=user.is_admin,
+        email_verified=user.email_verified,
+        created_at=serialize_datetime(user.created_at) if user.created_at else None
+    )
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: int,
-    user_update: UserUpdate,
+    user_update: UserAdminUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
-    """更新用户信息 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅限管理员访问"
-        )
+    """修改用户信息 - 仅限管理员"""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
-
-    # 更新用户信息
-    user.username = user_update.username
-    user.email = user_update.email
-    user.phone = user_update.phone
-    user.is_admin = user_update.is_admin
-    user.email_verified = user_update.email_verified
+    if user_update.username and user_update.username != target.username:
+        if db.query(User).filter(User.username == user_update.username).first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在")
+        target.username = user_update.username
+    if user_update.email and user_update.email != target.email:
+        if db.query(User).filter(User.email == user_update.email).first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱已被注册")
+        target.email = user_update.email
+    if user_update.phone is not None:
+        target.phone = user_update.phone
+    if user_update.email_verified is not None:
+        target.email_verified = user_update.email_verified
+    if user_update.password_hash is not None:
+        target.password_hash = get_password_hash(user_update.password_hash)
 
     db.commit()
-    db.refresh(user)
-
+    db.refresh(target)
     return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        phone=user.phone,
-        is_admin=user.is_admin,
-        email_verified=user.email_verified,
-        created_at=serialize_datetime(user.created_at) if user.created_at else None
+        id=target.id,
+        username=target.username,
+        email=target.email,
+        phone=target.phone,
+        is_admin=target.is_admin,
+        is_active=target.is_active,
+        email_verified=target.email_verified,
+        created_at=serialize_datetime(target.created_at) if target.created_at else None
     )
 
 
 @router.put("/users/{user_id}/admin", response_model=UserResponse)
-async def update_user_admin_status(
+async def toggle_user_admin(
     user_id: int,
-    user_update: UserUpdate,
+    body: UserAdminStatusUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
-    """更新用户管理员权限 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅限管理员访问"
-        )
+    """切换用户管理员身份 - 仅限管理员"""
+    if body.is_admin is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 is_admin 字段")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
-    # 只更新管理员权限
-    user.is_admin = user_update.is_admin
+    # 取消管理员时必须检查安全规则
+    if not body.is_admin:
+        _check_user_safety(current_user, target, "取消")
 
+    target.is_admin = body.is_admin
     db.commit()
-    db.refresh(user)
-
+    db.refresh(target)
     return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        phone=user.phone,
-        is_admin=user.is_admin,
-        email_verified=user.email_verified,
-        created_at=serialize_datetime(user.created_at) if user.created_at else None
+        id=target.id,
+        username=target.username,
+        email=target.email,
+        phone=target.phone,
+        is_admin=target.is_admin,
+        is_active=target.is_active,
+        email_verified=target.email_verified,
+        created_at=serialize_datetime(target.created_at) if target.created_at else None
     )
 
 
-@router.delete("/users/{user_id}")
-async def delete_user(
+@router.put("/users/{user_id}/active", response_model=UserResponse)
+async def toggle_user_active(
     user_id: int,
+    body: UserAdminStatusUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
-    """删除用户 - 仅限管理员"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="仅限管理员访问"
-        )
+    """切换用户激活状态 - 仅限管理员"""
+    if body.is_active is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 is_active 字段")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
-    db.delete(user)
+    # 失效用户时必须检查安全规则
+    if not body.is_active:
+        _check_user_safety(current_user, target, "失效")
+
+    target.is_active = body.is_active
     db.commit()
-
-    return {"detail": "用户删除成功"}
+    db.refresh(target)
+    return UserResponse(
+        id=target.id,
+        username=target.username,
+        email=target.email,
+        phone=target.phone,
+        is_admin=target.is_admin,
+        is_active=target.is_active,
+        email_verified=target.email_verified,
+        created_at=serialize_datetime(target.created_at) if target.created_at else None
+    )
 
 
 # 为用户添加个人统计信息端点
