@@ -661,7 +661,9 @@ async def update_product_record(
             if key not in ['original_unit', 'original_quantity']:  # 单位需要特殊处理
                 setattr(db_record, key, value)
 
-        # 更新单位相关字段
+        # 更新数量和单位相关字段（original_quantity 被 exclude 跳过，需单独赋值）
+        if record.original_quantity is not None:
+            db_record.original_quantity = record.original_quantity
         if record.original_unit:
             db_record.original_unit_id = original_unit_obj.id if original_unit_obj else None
         if standard_unit_obj:

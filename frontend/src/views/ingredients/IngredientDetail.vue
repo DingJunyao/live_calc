@@ -390,8 +390,26 @@
             </v-list-item-subtitle>
 
             <template #append>
-              <div class="text-caption text-medium-emphasis">
-                {{ formatToLocalDate(record.recorded_at) }}
+              <div class="d-flex flex-column align-end ga-1">
+                <div class="text-caption text-medium-emphasis">
+                  {{ formatToLocalDate(record.recorded_at) }}
+                </div>
+                <div class="d-flex ga-1">
+                  <v-btn
+                    icon="mdi-pencil"
+                    size="small"
+                    variant="text"
+                    color="primary"
+                    @click="openEditPriceDialog(record)"
+                  />
+                  <v-btn
+                    icon="mdi-delete"
+                    size="small"
+                    variant="text"
+                    color="error"
+                    @click="deletePriceRecord(record.id)"
+                  />
+                </div>
               </div>
             </template>
           </v-list-item>
@@ -1202,6 +1220,64 @@
       </v-card>
     </v-dialog>
 
+    <!-- 编辑价格记录对话框 -->
+    <v-dialog v-model="showEditPriceDialog" max-width="500">
+      <v-card>
+        <v-card-title>编辑价格记录</v-card-title>
+        <v-card-text>
+          <div class="text-body-2 text-medium-emphasis mb-3">
+            商品：{{ editingPriceRecord?.product_name }}
+          </div>
+          <v-form @submit.prevent="saveEditPriceRecord">
+            <v-text-field
+              v-model.number="editPriceForm.price"
+              label="价格（元）"
+              variant="outlined"
+              type="number"
+              step="0.01"
+              required
+              class="mb-4"
+            />
+            <v-row dense>
+              <v-col cols="6">
+                <v-text-field
+                  v-model.number="editPriceForm.quantity"
+                  label="数量"
+                  variant="outlined"
+                  type="number"
+                  required
+                />
+              </v-col>
+              <v-col cols="6">
+                <v-select
+                  v-model="editPriceForm.unit"
+                  :items="unitOptions"
+                  label="单位"
+                  variant="outlined"
+                  required
+                />
+              </v-col>
+            </v-row>
+            <v-autocomplete
+              v-model="editPriceForm.merchant_id"
+              :items="merchants"
+              item-title="name"
+              item-value="id"
+              label="商家（可选）"
+              variant="outlined"
+              clearable
+              class="mt-4"
+            />
+          </v-form>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="showEditPriceDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingPrice" @click="saveEditPriceRecord">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- 合并对话框 -->
     <v-dialog v-model="showMergeDialog" max-width="500">
       <v-card>
@@ -1818,6 +1894,15 @@ const showAddRelationDialog = ref(false)
 const showEditRelationDialog = ref(false)
 const showDeleteRelationDialog = ref(false)
 const showAddPriceDialog = ref(false)
+const showEditPriceDialog = ref(false)
+const editingPriceRecord = ref<PriceRecord | null>(null)
+const savingPrice = ref(false)
+const editPriceForm = ref({
+  price: 0,
+  quantity: 1,
+  unit: '斤',
+  merchant_id: null as number | null
+})
 const showMergeDialog = ref(false)
 const showMergeConfirmDialog = ref(false)
 const showDeleteDialog = ref(false)
@@ -2839,8 +2924,12 @@ const loadChartPriceRecords = async (startDate?: Date) => {
   }
 }
 
+// 当前图表区间（用于编辑/删除后刷新）
+const currentChartFilter = ref<'week' | 'month' | 'quarter' | 'year' | 'all'>('month')
+
 // 图表区间切换：按时间区间发起请求
 const onPriceTrendFilterChange = (filter: 'week' | 'month' | 'quarter' | 'year' | 'all') => {
+  currentChartFilter.value = filter
   const startDateMap: Record<string, Date | undefined> = {
     week: daysAgo(7),
     month: daysAgo(30),
@@ -2849,6 +2938,20 @@ const onPriceTrendFilterChange = (filter: 'week' | 'month' | 'quarter' | 'year' 
     all: undefined,
   }
   loadChartPriceRecords(startDateMap[filter])
+}
+
+// 重置图表缓存并重新加载当前区间（用于价格记录变更后刷新）
+const refreshChart = () => {
+  chartPriceRecords.value = []
+  chartEarliestDate.value = undefined
+  const startDateMap: Record<string, Date | undefined> = {
+    week: daysAgo(7),
+    month: daysAgo(30),
+    quarter: daysAgo(90),
+    year: daysAgo(365),
+    all: undefined,
+  }
+  loadChartPriceRecords(startDateMap[currentChartFilter.value])
 }
 
 // 加载营养数据
@@ -3488,6 +3591,92 @@ const saveNutritionEdit = async () => {
 const goToAddPrice = () => {
   if (priceForm.value.product_id) {
     router.push(`/data/products/${priceForm.value.product_id}`)
+  }
+}
+
+// 价格记录单位选项
+const unitOptions = ['g', 'kg', '斤', '两', 'ml', 'L', '个', '包', '袋', '盒', '瓶', '罐']
+
+// 商家列表
+interface Merchant {
+  id: number
+  name: string
+}
+const merchants = ref<Merchant[]>([])
+
+const loadMerchants = async () => {
+  try {
+    const response = await api.get('/merchants', { params: { skip: 0, limit: 100 } })
+    merchants.value = response.items || response || []
+  } catch {
+    merchants.value = []
+  }
+}
+
+// 打开编辑价格记录对话框
+const openEditPriceDialog = async (record: PriceRecord) => {
+  editingPriceRecord.value = record
+  // 查找该记录的 merchant_id
+  let merchantId: number | null = null
+  try {
+    const resp = await api.get('/merchants', { params: { skip: 0, limit: 100 } })
+    const allMerchants = resp.items || resp || []
+    // 从记录中没有 merchant_id 字段，用 merchant_name 反查
+    if (record.merchant_name) {
+      const m = allMerchants.find((x: Merchant) => x.name === record.merchant_name)
+      if (m) merchantId = m.id
+    }
+  } catch { /* ignore */ }
+
+  editPriceForm.value = {
+    price: Number(record.price),
+    quantity: Number(record.original_quantity),
+    unit: record.original_unit || '斤',
+    merchant_id: merchantId
+  }
+  // 确保商家列表已加载
+  if (merchants.value.length === 0) {
+    await loadMerchants()
+  }
+  showEditPriceDialog.value = true
+}
+
+// 保存编辑的价格记录
+const saveEditPriceRecord = async () => {
+  if (!editingPriceRecord.value) return
+  if (!editPriceForm.value.price || !editPriceForm.value.quantity) return
+
+  savingPrice.value = true
+  try {
+    await api.put(`/products/${editingPriceRecord.value.id}`, {
+      price: editPriceForm.value.price,
+      original_quantity: editPriceForm.value.quantity,
+      original_unit: editPriceForm.value.unit,
+      merchant_id: editPriceForm.value.merchant_id
+    })
+    showEditPriceDialog.value = false
+    editingPriceRecord.value = null
+    await loadPriceRecords()
+    refreshChart()
+    showMessage('更新成功', 'success')
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '更新失败', 'error')
+  } finally {
+    savingPrice.value = false
+  }
+}
+
+// 删除价格记录
+const deletePriceRecord = async (id: number) => {
+  if (!confirm('确定删除此价格记录？')) return
+
+  try {
+    await api.delete(`/products/${id}`)
+    await loadPriceRecords()
+    refreshChart()
+    showMessage('删除成功', 'success')
+  } catch (e: any) {
+    showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
 }
 

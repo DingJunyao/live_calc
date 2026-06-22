@@ -489,13 +489,22 @@
             </v-list-item-subtitle>
 
             <template #append>
-              <v-btn
-                icon="mdi-delete"
-                size="small"
-                variant="text"
-                color="error"
-                @click="deletePriceRecord(record.id)"
-              />
+              <div class="d-flex ga-1">
+                <v-btn
+                  icon="mdi-pencil"
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  @click="openEditPriceDialog(record)"
+                />
+                <v-btn
+                  icon="mdi-delete"
+                  size="small"
+                  variant="text"
+                  color="error"
+                  @click="deletePriceRecord(record.id)"
+                />
+              </div>
             </template>
           </v-list-item>
         </v-list>
@@ -911,10 +920,10 @@
     </template>
 
 
-    <!-- 添加价格记录对话框 -->
+    <!-- 添加/编辑价格记录对话框 -->
     <v-dialog v-model="showAddPriceDialog" max-width="500">
       <v-card>
-        <v-card-title>添加价格记录</v-card-title>
+        <v-card-title>{{ editingPriceRecord ? '编辑价格记录' : '添加价格记录' }}</v-card-title>
         <v-card-text>
           <v-form @submit.prevent="savePriceRecord">
             <v-text-field
@@ -1408,13 +1417,29 @@ const priceForm = ref({
   merchant_id: null as number | null
 })
 
+// 正在编辑的价格记录
+const editingPriceRecord = ref<PriceRecord | null>(null)
+
 // 打开添加价格记录对话框时，自动填充默认单位
 const openAddPriceDialog = () => {
+  editingPriceRecord.value = null
   // 如果原料有默认单位，使用默认单位；否则使用 'g'
   priceForm.value = {
     price: 0,
     quantity: 1,
     unit: currentIngredientDefaultUnit.value || '斤',
+    merchant_id: null
+  }
+  showAddPriceDialog.value = true
+}
+
+// 打开编辑价格记录对话框
+const openEditPriceDialog = (record: PriceRecord) => {
+  editingPriceRecord.value = record
+  priceForm.value = {
+    price: Number(record.price),
+    quantity: Number(record.original_quantity),
+    unit: record.original_unit || '斤',
     merchant_id: null
   }
   showAddPriceDialog.value = true
@@ -2102,8 +2127,12 @@ const loadChartPriceRecords = async (startDate?: Date) => {
   }
 }
 
+// 当前图表区间（用于编辑/删除后刷新）
+const currentChartFilter = ref<'week' | 'month' | 'quarter' | 'year' | 'all'>('month')
+
 // 图表区间切换：按时间区间发起请求
 const onPriceTrendFilterChange = (filter: 'week' | 'month' | 'quarter' | 'year' | 'all') => {
+  currentChartFilter.value = filter
   const startDateMap: Record<string, Date | undefined> = {
     week: daysAgo(7),
     month: daysAgo(30),
@@ -2112,6 +2141,20 @@ const onPriceTrendFilterChange = (filter: 'week' | 'month' | 'quarter' | 'year' 
     all: undefined,
   }
   loadChartPriceRecords(startDateMap[filter])
+}
+
+// 重置图表缓存并重新加载当前区间（用于价格记录变更后刷新）
+const refreshChart = () => {
+  chartPriceRecords.value = []
+  chartEarliestDate.value = undefined
+  const startDateMap: Record<string, Date | undefined> = {
+    week: daysAgo(7),
+    month: daysAgo(30),
+    quarter: daysAgo(90),
+    year: daysAgo(365),
+    all: undefined,
+  }
+  loadChartPriceRecords(startDateMap[currentChartFilter.value])
 }
 
 // 加载营养数据
@@ -2395,28 +2438,45 @@ const saveNutritionEdit = async () => {
   }
 }
 
-// 保存价格记录
+// 保存价格记录（新增或编辑）
 const savePriceRecord = async () => {
   if (!priceForm.value.price || !priceForm.value.quantity) return
 
   savingPrice.value = true
   try {
-    await api.post('/products', {
-      product_id: productId.value,
-      product_name: product.value?.name,
-      price: priceForm.value.price,
-      original_quantity: priceForm.value.quantity,
-      original_unit: priceForm.value.unit,
-      merchant_id: priceForm.value.merchant_id
-    })
-    showAddPriceDialog.value = false
-    // 重置表单
-    priceForm.value = { price: 0, quantity: 1, unit: '斤', merchant_id: null }
-    // 重新加载数据
-    await loadData()
-    showMessage('添加成功', 'success')
+    if (editingPriceRecord.value) {
+      // 编辑模式
+      await api.put(`/products/${editingPriceRecord.value.id}`, {
+        price: priceForm.value.price,
+        original_quantity: priceForm.value.quantity,
+        original_unit: priceForm.value.unit,
+        merchant_id: priceForm.value.merchant_id
+      })
+      showAddPriceDialog.value = false
+      editingPriceRecord.value = null
+      await loadData()
+      refreshChart()
+      showMessage('更新成功', 'success')
+    } else {
+      // 新增模式
+      await api.post('/products', {
+        product_id: productId.value,
+        product_name: product.value?.name,
+        price: priceForm.value.price,
+        original_quantity: priceForm.value.quantity,
+        original_unit: priceForm.value.unit,
+        merchant_id: priceForm.value.merchant_id
+      })
+      showAddPriceDialog.value = false
+      // 重置表单
+      priceForm.value = { price: 0, quantity: 1, unit: '斤', merchant_id: null }
+      // 重新加载数据
+      await loadData()
+      refreshChart()
+      showMessage('添加成功', 'success')
+    }
   } catch (e: any) {
-    showMessage(e.response?.data?.detail || e.message || '添加失败', 'error')
+    showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
     savingPrice.value = false
   }
@@ -2429,6 +2489,7 @@ const deletePriceRecord = async (id: number) => {
   try {
     await api.delete(`/products/${id}`)
     await loadPriceRecords()
+    refreshChart()
     showMessage('删除成功', 'success')
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
