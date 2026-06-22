@@ -33,34 +33,10 @@ class MerchantResponse(TimeZoneAwareModel):
         from_attributes = True
 
 
-class FavoriteMerchantCreate(BaseModel):
-    name: str = Field(..., max_length=200)
-    type: str = "other"
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
+class MerchantCoordinateResponse(BaseModel):
+    """商家坐标轻量响应（供地图 fitBounds 用，不分页）。"""
 
-
-class FavoriteMerchantResponse(TimeZoneAwareModel):
     id: int
-    name: str
-    type: str
     latitude: float
     longitude: float
-    created_at: datetime  # 修改为 datetime 类型
-
-    class Config:
-        from_attributes = True
-
-
-class RouteCalculateRequest(BaseModel):
-    from_location_id: int
-    to_location_id: int
-    travel_mode: str = "driving"  # driving, walking, cycling, transit
-    map_provider: str = "amap"
-
-
-class RouteCalculateResponse(BaseModel):
-    distance: float  # 公里
-    duration: int  # 分钟
-    cost: float  # 成本
-    currency: str
+    is_open: bool

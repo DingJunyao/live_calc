@@ -5,19 +5,15 @@ from sqlalchemy import or_, text
 from typing import List, Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.merchant import Merchant, FavoriteMerchant
+from app.models.merchant import Merchant
 from app.models.map_config import MapConfiguration
 from app.schemas.merchant import (
     MerchantCreate,
     MerchantUpdate,
     MerchantResponse,
-    FavoriteMerchantCreate,
-    FavoriteMerchantResponse,
-    RouteCalculateRequest,
-    RouteCalculateResponse
+    MerchantCoordinateResponse,
 )
 from app.schemas.common import PaginatedResponse
-from app.services.map_service import calculate_route
 from app.models.product import ProductRecord
 from app.models.product_entity import Product
 from app.models.unit import Unit
@@ -122,6 +118,47 @@ async def create_merchant(
         raise HTTPException(
             status_code=500,
             detail="创建商家时发生未知错误"
+        )
+
+
+@router.get("/coordinates", response_model=List[MerchantCoordinateResponse])
+async def get_merchant_coordinates(
+    search: Optional[str] = Query(None, description="搜索关键词（与列表同语义）"),
+    include_closed: bool = Query(False, description="是否包含已关闭的商家"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取商家的坐标全集（不分页，供地图 fitBounds 用）。
+
+    支持与列表同语义的 search / include_closed，保证 fitAll 与列表筛选一致。
+    只返回有坐标的商家。
+    """
+    try:
+        query = db.query(Merchant).filter(
+            Merchant.user_id == current_user.id,
+            Merchant.latitude.isnot(None),
+            Merchant.longitude.isnot(None),
+        )
+        if not include_closed:
+            query = query.filter(Merchant.is_open == True)  # noqa: E712
+        if search:
+            pattern = f"%{search}%"
+            query = query.filter(
+                or_(Merchant.name.like(pattern), Merchant.address.like(pattern))
+            )
+        return [
+            {
+                "id": m.id,
+                "latitude": float(m.latitude),
+                "longitude": float(m.longitude),
+                "is_open": bool(m.is_open),
+            }
+            for m in query.all()
+        ]
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=500,
+            detail="获取商家坐标时发生错误，请稍后重试"
         )
 
 
@@ -509,100 +546,3 @@ async def get_merchants(
         )
 
 
-@router.get("/favorites", response_model=List[FavoriteMerchantResponse])
-async def get_favorite_merchants(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """获取常用商家"""
-    try:
-        favorites = db.query(FavoriteMerchant).filter(
-            FavoriteMerchant.user_id == current_user.id
-        ).order_by(FavoriteMerchant.created_at.desc()).all()
-        return favorites
-    except SQLAlchemyError:
-        raise HTTPException(
-            status_code=500,
-            detail="获取常用商家时发生错误，请稍后重试"
-        )
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="获取常用商家时发生未知错误"
-        )
-
-
-@router.post("/favorites", response_model=FavoriteMerchantResponse)
-async def create_favorite_merchant(
-    merchant: FavoriteMerchantCreate,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """创建常用商家"""
-    try:
-        db_merchant = FavoriteMerchant(
-            user_id=current_user.id,
-            name=merchant.name,
-            type=merchant.type,
-            latitude=merchant.latitude,
-            longitude=merchant.longitude
-        )
-        db.add(db_merchant)
-        db.commit()
-        db.refresh(db_merchant)
-        return db_merchant
-    except SQLAlchemyError as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="创建常用商家时发生错误，请稍后重试"
-        )
-    except Exception:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="创建常用商家时发生未知错误"
-        )
-
-
-@router.post("/route", response_model=RouteCalculateResponse)
-async def calculate_merchant_route(
-    request: RouteCalculateRequest,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """计算路线"""
-    from_merchant = db.query(FavoriteMerchant).filter(
-        FavoriteMerchant.id == request.from_location_id,
-        FavoriteMerchant.user_id == current_user.id
-    ).first()
-    if not from_merchant:
-        raise HTTPException(status_code=404, detail="起点商家不存在")
-
-    to_merchant = db.query(Merchant).filter(
-        Merchant.id == request.to_location_id,
-        Merchant.user_id == current_user.id
-    ).first()
-    if not to_merchant:
-        raise HTTPException(status_code=404, detail="终点商家不存在")
-
-    try:
-        # 计算路线
-        result = calculate_route(
-            (float(from_merchant.latitude), float(from_merchant.longitude)),
-            (float(to_merchant.latitude), float(to_merchant.longitude)),
-            request.travel_mode,
-            request.map_provider
-        )
-
-        return RouteCalculateResponse(**result)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="无效的坐标数据"
-        )
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="计算路线时发生错误，请稍后重试"
-        )

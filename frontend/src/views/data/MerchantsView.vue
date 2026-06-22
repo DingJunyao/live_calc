@@ -87,6 +87,15 @@
               <template #append>
                 <div class="d-flex ga-1">
                   <v-btn
+                    icon="mdi-crosshairs-gps"
+                    size="small"
+                    variant="text"
+                    color="secondary"
+                    :disabled="!isValidCoordinate(item.latitude, item.longitude)"
+                    :title="isValidCoordinate(item.latitude, item.longitude) ? '在地图上定位' : '未设置位置'"
+                    @click.stop="locateMerchant(item)"
+                  />
+                  <v-btn
                     icon="mdi-pencil"
                     size="small"
                     variant="text"
@@ -154,11 +163,15 @@
       </div>
 
       <!-- 右边：地图 -->
-      <div class="right-panel">
+      <div class="right-panel" ref="rightPanelRef">
         <MerchantMapView
           :merchants="items"
           :selected-merchant="selectedMerchant"
           :is-desktop="isDesktop"
+          :places="places"
+          :current-place-id="currentPlaceId"
+          :all-coordinates="allCoordinates"
+          @update:current-place-id="onPlaceChange"
         />
       </div>
     </div>
@@ -212,7 +225,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
@@ -244,6 +257,21 @@ const search = ref((route.query.search as string) || '')
 const addDialog = ref(false)
 const editingItem = ref<Merchant | null>(null)
 const selectedMerchant = ref<Merchant | null>(null)
+
+// 用户常用地点 + 全部商家坐标（地图默认范围用）
+interface PlaceOption {
+  id: number
+  name: string
+  kind: string
+  latitude: number
+  longitude: number
+  is_default?: boolean
+  view_radius_km?: number
+}
+const places = ref<PlaceOption[]>([])
+const allCoordinates = ref<{ latitude: number; longitude: number }[]>([])
+const currentPlaceId = ref<number | null>(null)
+const PLACES_STORAGE_KEY = 'merchants_map_current_place_id'
 const saving = ref(false)
 const form = ref({
   name: '',
@@ -284,6 +312,7 @@ const debouncedSearch = () => {
     currentPage.value = 1
     syncToUrl()
     loadMerchants()
+    loadAllCoordinates()
   }, 300)
 }
 
@@ -312,6 +341,51 @@ const loadMerchants = async () => {
   }
 }
 
+// 加载用户常用地点，并初始化 currentPlaceId（localStorage 上次选择 → is_default → null）
+const loadPlaces = async () => {
+  try {
+    const data = await api.get('/places')
+    places.value = Array.isArray(data) ? data : []
+    if (currentPlaceId.value === null && places.value.length > 0) {
+      const saved = localStorage.getItem(PLACES_STORAGE_KEY)
+      const savedId = saved != null && saved !== '' ? Number(saved) : null
+      if (savedId != null && places.value.some(p => p.id === savedId)) {
+        currentPlaceId.value = savedId
+      } else {
+        const def = places.value.find(p => p.is_default)
+        currentPlaceId.value = def ? def.id : null
+      }
+    }
+  } catch (e: any) {
+    console.error('加载常用地点失败', e)
+  }
+}
+
+// 加载全部商家坐标（不分页，供地图 fitAll 用；跟随 search/include_closed）
+const loadAllCoordinates = async () => {
+  try {
+    const data = await api.get('/merchants/coordinates', {
+      params: {
+        search: search.value || undefined,
+        include_closed: showAllMerchants.value
+      }
+    })
+    allCoordinates.value = Array.isArray(data) ? data : []
+  } catch (e: any) {
+    console.error('加载商家坐标失败', e)
+  }
+}
+
+// 切换地点中心，持久化到 localStorage
+const onPlaceChange = (val: number | null) => {
+  currentPlaceId.value = val
+  if (val == null) {
+    localStorage.removeItem(PLACES_STORAGE_KEY)
+  } else {
+    localStorage.setItem(PLACES_STORAGE_KEY, String(val))
+  }
+}
+
 const handlePageSizeChange = () => {
   currentPage.value = 1
   syncToUrl()
@@ -328,7 +402,11 @@ const toggleShowAll = () => {
   showAllMerchants.value = !showAllMerchants.value
   currentPage.value = 1
   loadMerchants()
+  loadAllCoordinates()
 }
+
+// 右侧地图面板引用（移动端定位后滚动到地图）
+const rightPanelRef = ref<HTMLElement | null>(null)
 
 /**
  * 选择商家
@@ -336,6 +414,29 @@ const toggleShowAll = () => {
 const selectMerchant = (item: Merchant) => {
   // 点击商家进入详情页
   router.push(`/data/merchants/${item.id}`)
+}
+
+/**
+ * 检查坐标是否有效（与 MerchantMapView 判定保持一致）
+ */
+const isValidCoordinate = (lat: any, lng: any): boolean => {
+  return typeof lat === 'number' && typeof lng === 'number' &&
+         !isNaN(lat) && !isNaN(lng) &&
+         lat !== 0 && lng !== 0
+}
+
+/**
+ * 在地图上定位商家：设置为选中（地图会自动居中 + 特殊标记），
+ * 移动端额外滚动到地图区域。
+ */
+const locateMerchant = (item: Merchant) => {
+  if (!isValidCoordinate(item.latitude, item.longitude)) return
+  selectedMerchant.value = item
+  if (!isDesktop.value) {
+    nextTick(() => {
+      rightPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
 }
 
 /**
@@ -439,6 +540,8 @@ const deleteItem = async (id: number) => {
 
 onMounted(() => {
   loadMerchants()
+  loadPlaces()
+  loadAllCoordinates()
   window.addEventListener('app-refresh', loadMerchants)
 })
 

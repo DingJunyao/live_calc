@@ -18,7 +18,8 @@ from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
 from app.models.product_ingredient_link import ProductIngredientLink
 from app.models.product import ProductRecord
-from app.models.merchant import Merchant, FavoriteMerchant
+from app.models.merchant import Merchant
+from app.models.user_place import UserPlace
 
 
 @dataclass
@@ -38,7 +39,7 @@ class ExportSet:
     product_link_ids: set = field(default_factory=set)
     price_record_ids: set = field(default_factory=set)
     merchant_ids: set = field(default_factory=set)
-    favorite_merchant_ids: set = field(default_factory=set)
+    user_place_ids: set = field(default_factory=set)
 
 
 def collect_full_set(db: Session) -> ExportSet:
@@ -79,7 +80,7 @@ def collect_full_set(db: Session) -> ExportSet:
     # 价格记录 / 商家 / 收藏全量
     es.price_record_ids = {r.id for r in db.query(ProductRecord).all()}
     es.merchant_ids = {m.id for m in db.query(Merchant).all()}
-    es.favorite_merchant_ids = {f.id for f in db.query(FavoriteMerchant).all()}
+    es.user_place_ids = {f.id for f in db.query(UserPlace).all()}
     return es
 
 
@@ -206,8 +207,8 @@ def collect_mine_set(db: Session, user_id: int) -> ExportSet:
     # 即使未为其记录过价格。
     my_merchant_ids = {m.id for m in db.query(Merchant).filter(Merchant.user_id == user_id).all()}
     es.merchant_ids = merchant_ids | my_merchant_ids
-    es.favorite_merchant_ids = {
-        f.id for f in db.query(FavoriteMerchant).filter(FavoriteMerchant.user_id == user_id).all()
+    es.user_place_ids = {
+        f.id for f in db.query(UserPlace).filter(UserPlace.user_id == user_id).all()
     }
 
     # 7) 由 ingredient_ids / unit_ids 派生：密度、层级、换算、分类（闭包已含 category）

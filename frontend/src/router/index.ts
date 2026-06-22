@@ -100,6 +100,12 @@ const router = createRouter({
           meta: { title: '个人中心' },
         },
         {
+          path: 'profile/places',
+          name: 'profile-places',
+          component: () => import('@/views/profile/UserPlacesView.vue'),
+          meta: { title: '我的常用地点' },
+        },
+        {
           path: 'admin',
           name: 'admin',
           meta: { adminOnly: true, title: '后台管理' },

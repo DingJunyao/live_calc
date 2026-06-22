@@ -22,7 +22,8 @@ from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
 from app.models.product_ingredient_link import ProductIngredientLink
 from app.models.product import ProductRecord
-from app.models.merchant import Merchant, FavoriteMerchant
+from app.models.merchant import Merchant
+from app.models.user_place import UserPlace
 
 from .reachability import ExportSet, collect_full_set, collect_mine_set
 from . import serializers as S
@@ -115,7 +116,7 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
     links = _query(ProductIngredientLink, es.product_link_ids)
     records = _query(ProductRecord, es.price_record_ids)
     merchants = _query(Merchant, es.merchant_ids)
-    favs = _query(FavoriteMerchant, es.favorite_merchant_ids)
+    places = _query(UserPlace, es.user_place_ids)
 
     # ---- 名字映射 ----
     unit_names = _unit_name_map(db, es.unit_ids if not es.full_mode else None)
@@ -274,8 +275,8 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
     merchants_payload = _safe_build(
         "merchants", lambda: [S.serialize_merchant(m) for m in merchants]
     )
-    favs_payload = _safe_build(
-        "favorite_merchants", lambda: [S.serialize_favorite_merchant(f) for f in favs]
+    places_payload = _safe_build(
+        "user_places", lambda: [S.serialize_user_place(p) for p in places]
     )
 
     # ---- manifest ----
@@ -291,7 +292,7 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
             "extended": ["unit_conversions", "ingredient_categories", "ingredient_hierarchy",
                          "entity_densities", "products", "product_barcodes",
                          "product_ingredient_links", "price_records", "merchants",
-                         "favorite_merchants"],
+                         "user_places"],
         },
         "counts": {
             "recipes": len(recipes_payload),
@@ -307,7 +308,7 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
             "product_ingredient_links": len(links_payload),
             "price_records": len(records_payload),
             "merchants": len(merchants_payload),
-            "favorite_merchants": len(favs_payload),
+            "user_places": len(places_payload),
         },
         "image_summary": {},
         "errors": errors,
@@ -335,7 +336,7 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
         zf.writestr("product_ingredient_links.json", json.dumps(links_payload, ensure_ascii=False, indent=2))
         zf.writestr("price_records.json", json.dumps(records_payload, ensure_ascii=False, indent=2))
         zf.writestr("merchants.json", json.dumps(merchants_payload, ensure_ascii=False, indent=2))
-        zf.writestr("favorite_merchants.json", json.dumps(favs_payload, ensure_ascii=False, indent=2))
+        zf.writestr("user_places.json", json.dumps(places_payload, ensure_ascii=False, indent=2))
         for rel, phys in image_files:
             zf.write(phys, rel)
 

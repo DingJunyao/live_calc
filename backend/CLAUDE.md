@@ -83,7 +83,7 @@ backend/
 ### 数据库模型关系
 - `User` ↔ `ProductRecord` (一对多)
 - `User` ↔ `Location` (一对多)
-- `User` ↔ `FavoriteLocation` (一对多)
+- `User` ↔ `UserPlace` (一对多，常用地点)
 - `User` ↔ `Recipe` (一对多)
 - `Ingredient` ↔ `NutritionData` (多对一)
 

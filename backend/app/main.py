@@ -29,6 +29,7 @@ from app.api import usda  # USDA 食材搜索/详情 API
 from app.api import usda_admin  # USDA 管理 API（下载/上传/任务/统计，admin only）
 from app.api import import_api  # 导入 API
 from app.api import agent_api  # Agent 维护任务台 API
+from app.api import places  # 用户常用地点 API
 from app.core.database import Base, engine, get_db
 from app.core.exceptions import AppException
 from app.core.logging_config import setup_logging
@@ -540,6 +541,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
 app.include_router(merchants.router, prefix="/api/v1/merchants", tags=["商家"])
+app.include_router(places.router, prefix="/api/v1/places", tags=["常用地点"])
 app.include_router(nutrition.router, prefix="/api/v1/nutrition", tags=["营养"])
 app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["菜谱"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["报告"])

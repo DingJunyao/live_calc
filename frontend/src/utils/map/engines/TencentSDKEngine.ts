@@ -4,7 +4,6 @@
  */
 
 import type { MapEngine, MarkerOptions, MapConfig } from '../../map/mapTypes';
-import { convertCoordinate } from '../../coordinateTransform';
 import { sdkLoader } from '../../SDKLoader';
 
 declare global {
@@ -92,25 +91,15 @@ export class TencentSDKEngine implements MapEngine {
       console.log('[TencentSDKEngine] Container size set to:', { width, height });
     }
 
-    // WGS84 转 GCJ-02（腾讯使用 GCJ-02）
+    // 坐标系契约：调用方传入的 center 已是 GCJ-02（与 Leaflet 引擎一致，传啥用啥）
     // 注意：center 格式为 [lat, lng]
-    const gcj02Coord = convertCoordinate(center[0], center[1], 'wgs84', 'gcj02');
-
-    console.log('[TencentSDKEngine] Coordinate conversion:', {
-      original: center,
-      gcj02: gcj02Coord
-    });
+    const lat = Math.max(-90, Math.min(90, center[0]));
+    const lng = Math.max(-180, Math.min(180, center[1]));
 
     // 验证坐标值的有效性
-    if (!gcj02Coord ||
-        !Number.isFinite(gcj02Coord.lat) ||
-        !Number.isFinite(gcj02Coord.lng)) {
-      throw new Error(`[TencentSDKEngine] Invalid coordinates after conversion: ${JSON.stringify(gcj02Coord)}`);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new Error(`[TencentSDKEngine] Invalid coordinates: ${JSON.stringify(center)}`);
     }
-
-    // 确保坐标在有效范围内
-    const lat = Math.max(-90, Math.min(90, gcj02Coord.lat));
-    const lng = Math.max(-180, Math.min(180, gcj02Coord.lng));
 
     console.log('[TencentSDKEngine] Validated coordinates:', { lat, lng });
 
@@ -144,11 +133,10 @@ export class TencentSDKEngine implements MapEngine {
         // 腾讯地图点击事件返回的坐标格式为 e.latLng
         const latLng = e.latLng;
         if (latLng && typeof latLng.lat === 'function' && typeof latLng.lng === 'function') {
-          // GCJ-02 转 WGS84
-          const wgs84Coord = convertCoordinate(latLng.lat(), latLng.lng(), 'gcj02', 'wgs84');
+          // 契约：click 原样返回当前地图坐标系（GCJ-02）坐标，由调用方自行转 WGS84
           this.emit('click', {
-            lat: wgs84Coord.lat,
-            lng: wgs84Coord.lng
+            lat: latLng.lat(),
+            lng: latLng.lng()
           });
         }
       });
@@ -230,12 +218,8 @@ export class TencentSDKEngine implements MapEngine {
         // 腾讯地图的 position 可能是 TMap.LatLng 对象或普通对象
         const lat = typeof position.lat === 'function' ? position.lat() : position.lat;
         const lng = typeof position.lng === 'function' ? position.lng() : position.lng;
-        // GCJ-02 转 WGS84（返回给调用方）
-        const wgs84Coord = convertCoordinate(lat, lng, 'gcj02', 'wgs84');
-        this.emit('markerDragend', {
-          lat: wgs84Coord.lat,
-          lng: wgs84Coord.lng
-        });
+        // 契约：原样返回 GCJ-02 坐标，由调用方自行转 WGS84
+        this.emit('markerDragend', { lat, lng });
       });
     }
 
@@ -300,9 +284,8 @@ export class TencentSDKEngine implements MapEngine {
         // 腾讯地图点击事件返回的坐标格式为 e.latLng
         const latLng = e.latLng;
         if (latLng && typeof latLng.lat === 'function' && typeof latLng.lng === 'function') {
-          // GCJ-02 转 WGS84
-          const wgs84Coord = convertCoordinate(latLng.lat(), latLng.lng(), 'gcj02', 'wgs84');
-          handler({ lat: wgs84Coord.lat, lng: wgs84Coord.lng });
+          // 契约：原样返回 GCJ-02 坐标，由调用方自行转 WGS84
+          handler({ lat: latLng.lat(), lng: latLng.lng() });
         }
       });
     }

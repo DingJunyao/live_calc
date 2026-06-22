@@ -405,15 +405,15 @@ def serialize_merchant(m: Any) -> dict:
     }
 
 
-def serialize_favorite_merchant(fm: Any) -> dict:
-    """FavoriteLocation → favorite_merchants.json 元素。
-
-    收藏的常用地点（家/公司/常用商家等）。
-    """
+def serialize_user_place(up: Any) -> dict:
+    """UserPlace → user_places.json 元素。用户常用地点（家/公司等）。"""
     return {
-        "id": fm.id,
-        "name": fm.name,
-        "type": fm.type,
-        "latitude": to_float(fm.latitude),
-        "longitude": to_float(fm.longitude),
+        "id": up.id,
+        "name": up.name,
+        "kind": up.kind,
+        "latitude": to_float(up.latitude),
+        "longitude": to_float(up.longitude),
+        "address": up.address,
+        "is_default": bool(up.is_default),
+        "sort_order": up.sort_order,
     }

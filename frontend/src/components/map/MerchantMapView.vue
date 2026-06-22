@@ -48,13 +48,27 @@
           style="max-width: 120px"
         />
 
+        <!-- 地点切换器（仅在有地点时显示） -->
+        <v-select
+          v-if="placeOptions.length > 1"
+          :model-value="props.currentPlaceId"
+          :items="placeOptions"
+          item-title="label"
+          item-value="id"
+          density="compact"
+          variant="solo"
+          hide-details
+          :style="{ maxWidth: isDesktop ? '150px' : '110px' }"
+          @update:model-value="onPlaceChange"
+        />
+
         <!-- 当前位置按钮 -->
         <v-btn
           :icon="isLocating ? 'mdi-crosshairs-gps' : 'mdi-crosshairs-gps'"
           size="small"
           :color="hasCurrentLocation ? 'primary' : 'surface'"
           variant="elevated"
-          :title="'显示当前位置（1km 范围）'"
+          :title="'显示当前位置（5km 范围）'"
           @click="showCurrentLocation"
           class="control-btn"
         />
@@ -106,12 +120,25 @@ interface Merchant {
   is_open?: boolean
 }
 
+interface PlaceOption {
+  id: number
+  name: string
+  kind: string
+  latitude: number
+  longitude: number
+  is_default?: boolean
+  view_radius_km?: number
+}
+
 interface Props {
   merchants: Merchant[]
   selectedMerchant?: Merchant | null
   engine?: MapEngineType
   apiKey?: string
   isDesktop?: boolean
+  places?: PlaceOption[]
+  currentPlaceId?: number | null
+  allCoordinates?: { latitude: number; longitude: number }[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -119,8 +146,48 @@ const props = withDefaults(defineProps<Props>(), {
   selectedMerchant: null,
   engine: 'osm',
   apiKey: '',
-  isDesktop: true
+  isDesktop: true,
+  places: () => [],
+  currentPlaceId: null,
+  allCoordinates: () => []
 })
+
+const emit = defineEmits<{
+  (e: 'update:currentPlaceId', value: number | null): void
+}>()
+
+// 当前地点中心：currentPlaceId 命中 places 则取其坐标 + 视野半径；null 表示「全部商家」走 fitAll
+const initialCenter = computed<{ lat: number; lng: number; radiusKm: number } | null>(() => {
+  if (props.currentPlaceId == null) return null
+  const p = props.places.find(pl => pl.id === props.currentPlaceId)
+  if (!p || !isValidCoordinate(p.latitude, p.longitude)) return null
+  return { lat: p.latitude, lng: p.longitude, radiusKm: p.view_radius_km ?? 5 }
+})
+
+// 视野半径（km）→ zoom 近似映射（中纬度）
+function radiusKmToZoom(km: number): number {
+  if (km <= 1) return 14
+  if (km <= 2) return 13
+  if (km <= 5) return 12
+  if (km <= 10) return 11
+  if (km <= 20) return 10
+  if (km <= 50) return 9
+  return 8
+}
+
+// 切换器选项：用户地点 + 「全部商家」（places 为空时 length=1，不显示切换器）
+const placeOptions = computed(() => {
+  const opts: { id: number | null; label: string }[] = props.places.map(p => ({
+    id: p.id,
+    label: p.name
+  }))
+  opts.push({ id: null, label: '全部商家' })
+  return opts
+})
+
+function onPlaceChange(val: any) {
+  emit('update:currentPlaceId', (val as number | null) ?? null)
+}
 
 // 地图相关
 const mapContainer = ref<HTMLElement | null>(null)
@@ -244,9 +311,9 @@ async function initMap() {
     // 更新商家标记
     updateMerchantsMarkers()
 
-    // 延迟后缩放到商家范围
+    // 延迟后应用初始视角（有地点中心则居中约 5km，否则 fitAll）
     setTimeout(() => {
-      fitAllMerchants()
+      applyInitialView()
       // 再次确保尺寸正确（只对 Leaflet 地图）
       if (currentEngine && isLeafletMap.value) {
         const leafletMap = currentEngine.getMap()
@@ -429,46 +496,89 @@ function updateMerchantsMarkers() {
   })
 }
 
-// 居中显示所有商家
-function fitAllMerchants() {
-  if (!currentEngine || validMerchants.value.length === 0) return
+// WGS84 → 当前地图坐标系（与标记绘制保持一致）
+function toDisplayCoord(lat: number, lng: number): Coordinate {
+  const coordSystem = getCoordinateSystem(currentMapLayer.value)
+  if (coordSystem === 'wgs84') return { lat, lng }
+  if (coordSystem === 'gcj02') return convertCoordinate(lat, lng, 'wgs84', 'gcj02')
+  return convertCoordinate(lat, lng, 'wgs84', 'bd09')
+}
 
-  // 对 Leaflet 地图使用 fitBounds
+// 应用初始视角：有地点中心则居中 zoom 12（约 5km），否则 fitAllMerchants
+function applyInitialView() {
+  if (!currentEngine) return
+  const c = initialCenter.value
+  if (c) {
+    const d = toDisplayCoord(c.lat, c.lng)
+    currentEngine.setCenter(d.lat, d.lng)
+    currentEngine.setZoom(radiusKmToZoom(c.radiusKm))
+  } else {
+    fitAllMerchants()
+  }
+}
+
+// SDK 引擎：真正框住所有点（高德 setBounds / 百度 setViewport / 腾讯 fitBounds）
+function fitSDKBounds(points: Coordinate[]) {
+  if (!currentEngine || points.length === 0) return
+  if (points.length === 1) {
+    currentEngine.setCenter(points[0].lat, points[0].lng)
+    currentEngine.setZoom(13)
+    return
+  }
+  const engineName = currentEngine.name
+  const nativeMap = currentEngine.getMap()
+  try {
+    if (engineName === 'amap-sdk' && window.AMap?.Bounds) {
+      const lats = points.map(p => p.lat)
+      const lngs = points.map(p => p.lng)
+      const sw = new window.AMap.LngLat(Math.min(...lngs), Math.min(...lats))
+      const ne = new window.AMap.LngLat(Math.max(...lngs), Math.max(...lats))
+      nativeMap.setBounds(new window.AMap.Bounds(sw, ne))
+    } else if (engineName === 'baidu-sdk') {
+      const BMap = window.BMapGL || window.BMap
+      if (BMap) {
+        nativeMap.setViewport(points.map((p: Coordinate) => new BMap.Point(p.lng, p.lat)))
+      }
+    } else if (engineName === 'tencent-sdk' && window.TMap) {
+      const latLngs = points.map((p: Coordinate) => new window.TMap.LatLng(p.lat, p.lng))
+      const bounds = new window.TMap.LatLngBounds(latLngs[0], latLngs[1])
+      for (let i = 2; i < latLngs.length; i++) bounds.extend(latLngs[i])
+      nativeMap.fitBounds(bounds, { zoom: 13 })
+    } else {
+      currentEngine.setCenter(points[0].lat, points[0].lng)
+      currentEngine.setZoom(13)
+    }
+  } catch (e) {
+    currentEngine.setCenter(points[0].lat, points[0].lng)
+    currentEngine.setZoom(13)
+  }
+}
+
+// 缩放到全部商家：用父组件传入的 allCoordinates（全集，非当前页）算 bounds
+function fitAllMerchants() {
+  if (!currentEngine) return
+
+  const source = props.allCoordinates.length > 0
+    ? props.allCoordinates
+    : validMerchants.value.map(m => ({ latitude: m.latitude!, longitude: m.longitude! }))
+
+  const points = source
+    .filter((c: { latitude: number; longitude: number }) => isValidCoordinate(c.latitude, c.longitude))
+    .map((c: { latitude: number; longitude: number }) => toDisplayCoord(c.latitude, c.longitude))
+
+  if (points.length === 0) return
+
   if (isLeafletMap.value) {
     const leafletMap = currentEngine.getMap()
     if (!leafletMap || !leafletMap.fitBounds) return
-
-    const bounds: L.LatLngBoundsExpression = []
-
-    validMerchants.value.forEach(merchant => {
-      const coordSystem = getCoordinateSystem(currentMapLayer.value)
-      let displayCoord: Coordinate
-
-      if (coordSystem === 'wgs84') {
-        displayCoord = { lat: merchant.latitude!, lng: merchant.longitude! }
-      } else if (coordSystem === 'gcj02') {
-        displayCoord = convertCoordinate(merchant.latitude!, merchant.longitude!, 'wgs84', 'gcj02')
-      } else {
-        displayCoord = convertCoordinate(merchant.latitude!, merchant.longitude!, 'wgs84', 'bd09')
-      }
-
-      bounds.push([displayCoord.lat, displayCoord.lng])
-    })
-
-    if (bounds.length > 0) {
-      if (bounds.length === 1) {
-        leafletMap.setView(bounds[0] as L.LatLngExpression, 15)
-      } else {
-        leafletMap.fitBounds(bounds as L.LatLngBoundsExpression, { padding: [50, 50] })
-      }
+    if (points.length === 1) {
+      leafletMap.setView([points[0].lat, points[0].lng] as L.LatLngExpression, 15)
+    } else {
+      const bounds = points.map(p => [p.lat, p.lng]) as L.LatLngBoundsExpression
+      leafletMap.fitBounds(bounds, { padding: [50, 50] })
     }
   } else {
-    // SDK 地图：简单地缩放到第一个商家的位置
-    const firstMerchant = validMerchants.value[0]
-    if (firstMerchant) {
-      currentEngine.setCenter(firstMerchant.latitude!, firstMerchant.longitude!)
-      currentEngine.setZoom(13)
-    }
+    fitSDKBounds(points)
   }
 }
 
@@ -661,7 +771,7 @@ async function showCurrentLocation() {
                 iconAnchor: [9, 9]
               })
               layer.setIcon(icon)
-              layer.bindPopup('<strong>当前位置</strong><br>半径 1 km')
+              layer.bindPopup('<strong>当前位置</strong><br>半径 5 km')
             }
           }
         })
@@ -725,7 +835,7 @@ async function showCurrentLocation() {
       const leafletMap = currentEngine.getMap()
       if (leafletMap) {
         currentLocationCircle = L.circle([displayCoord.lat, displayCoord.lng], {
-          radius: 1000,
+          radius: 5000,
           color: '#1976d2',
           fillColor: '#1976d2',
           fillOpacity: 0.1,
@@ -741,7 +851,7 @@ async function showCurrentLocation() {
       if (engineName === 'amap-sdk' && window.AMap) {
         currentLocationCircle = new window.AMap.Circle({
           center: [displayCoord.lng, displayCoord.lat],
-          radius: 1000,
+          radius: 5000,
           strokeColor: '#1976d2',
           strokeStyle: 'dashed',
           strokeDasharray: [5, 5],
@@ -755,7 +865,7 @@ async function showCurrentLocation() {
         const BMap = window.BMapGL || window.BMap
         if (BMap) {
           const centerPoint = new BMap.Point(displayCoord.lng, displayCoord.lat)
-          currentLocationCircle = new BMap.Circle(centerPoint, 1000, {
+          currentLocationCircle = new BMap.Circle(centerPoint, 5000, {
             strokeColor: '#1976d2',
             strokeWeight: 2,
             strokeOpacity: 0.8,
@@ -779,7 +889,7 @@ async function showCurrentLocation() {
           geometries: [{
             styleId: 'current-location',
             center: new window.TMap.LatLng(displayCoord.lat, displayCoord.lng),
-            radius: 1000
+            radius: 5000
           }]
         })
       }
@@ -823,8 +933,18 @@ function toggleFullscreen() {
 // 监听商家数据变化
 watch(() => props.merchants, () => {
   updateMerchantsMarkers()
-  setTimeout(() => fitAllMerchants(), 100)
+  // 仅在「全部商家」模式重新 fit；有地点中心时保持视角，避免翻页飞回全国
+  if (!initialCenter.value) {
+    setTimeout(() => fitAllMerchants(), 100)
+  }
 }, { deep: true })
+
+// 切换地点中心时重新应用视角
+watch(initialCenter, () => {
+  if (currentEngine) {
+    nextTick(() => applyInitialView())
+  }
+})
 
 // 监听选中商家变化
 watch(() => props.selectedMerchant, () => {

@@ -8,7 +8,8 @@ from typing import Optional
 from app.models.entity_density import EntityDensity
 from app.models.ingredient_category import IngredientCategory
 from app.models.ingredient_hierarchy import IngredientHierarchy
-from app.models.merchant import Merchant, FavoriteMerchant
+from app.models.merchant import Merchant
+from app.models.user_place import UserPlace
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
 from app.models.product import ProductRecord
@@ -60,7 +61,7 @@ class ExportImporter(Importer):
             self._import_product_barcodes(collection)
             self._import_product_links(collection)
             self._import_merchants(collection)
-            self._import_favorite_merchants(collection)
+            self._import_user_places(collection)
             self._import_price_records(collection)
             self._import_images(collection)
 
@@ -479,12 +480,9 @@ class ExportImporter(Importer):
                 self.mapping.merchants[old_id] = merchant.id
         self.result.stats["merchants"] = imported
 
-    def _import_favorite_merchants(self, collection):
-        """导入收藏商家（常用地点）。
-
-        FavoriteMerchant 模型无 merchant_id 外键，独立存储名称/类型/坐标。
-        """
-        data = self._load_json(collection, "favorite_merchants.json")
+    def _import_user_places(self, collection):
+        """导入用户常用地点（家/公司等）。"""
+        data = self._load_json(collection, "user_places.json")
         if not data:
             return
         imported = 0
@@ -492,21 +490,24 @@ class ExportImporter(Importer):
             name = item.get("name", "").strip()
             if not name:
                 continue
-            existing = self.db.query(FavoriteMerchant).filter(
-                FavoriteMerchant.name == name,
-                FavoriteMerchant.user_id == self.user_id,
+            existing = self.db.query(UserPlace).filter(
+                UserPlace.name == name,
+                UserPlace.user_id == self.user_id,
             ).first()
             if existing:
                 continue
-            self.db.add(FavoriteMerchant(
+            self.db.add(UserPlace(
                 user_id=self.user_id,
                 name=name,
-                type=item.get("type", "other"),
+                kind=item.get("kind", "custom"),
                 latitude=item.get("latitude", 0),
                 longitude=item.get("longitude", 0),
+                address=item.get("address"),
+                is_default=item.get("is_default", False),
+                sort_order=item.get("sort_order", 0),
             ))
             imported += 1
-        self.result.stats["favorite_merchants"] = imported
+        self.result.stats["user_places"] = imported
 
     def _import_price_records(self, collection):
         data = self._load_json(collection, "price_records.json")

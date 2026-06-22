@@ -4,7 +4,6 @@
  */
 
 import type { MapEngine, MarkerOptions, MapConfig } from '../../map/mapTypes';
-import { convertCoordinate, getCoordinateSystem } from '../../coordinateTransform';
 import { sdkLoader } from '../../SDKLoader';
 
 declare global {
@@ -65,9 +64,10 @@ export class AMapSDKEngine implements MapEngine {
     }
 
     // 创建地图实例（高德使用 [lng, lat] 格式）
+    // 坐标系契约：调用方传入的 center 已是 GCJ-02（与 Leaflet 引擎一致，传啥用啥），直接使用
     this.map = new AMap.Map(container, {
       zoom: zoom,
-      center: [center[1], center[0]], // WGS84 转 GCJ-02
+      center: [center[1], center[0]],
       viewMode: '2D',
       rotateEnable: false,
       pitchEnable: false
@@ -76,11 +76,10 @@ export class AMapSDKEngine implements MapEngine {
     // 添加点击事件
     if (options.enableClick !== false) {
       this.map.on('click', (e: any) => {
-        // GCJ-02 转 WGS84
-        const wgs84Coord = convertCoordinate(e.lnglat.lat, e.lnglat.lng, 'gcj02', 'wgs84');
+        // 契约：click 原样返回当前地图坐标系（GCJ-02）坐标，由调用方自行转 WGS84
         this.emit('click', {
-          lat: wgs84Coord.lat,
-          lng: wgs84Coord.lng
+          lat: e.lnglat.lat,
+          lng: e.lnglat.lng
         });
       });
     }
@@ -131,11 +130,10 @@ export class AMapSDKEngine implements MapEngine {
     if (options?.draggable !== false) {
       marker.on('dragend', (e: any) => {
         const position = marker.getPosition();
-        // GCJ-02 转 WGS84（返回给调用方）
-        const wgs84Coord = convertCoordinate(position.lat, position.lng, 'gcj02', 'wgs84');
+        // 契约：原样返回 GCJ-02 坐标，由调用方自行转 WGS84
         this.emit('markerDragend', {
-          lat: wgs84Coord.lat,
-          lng: wgs84Coord.lng
+          lat: position.lat,
+          lng: position.lng
         });
       });
     }
@@ -191,8 +189,8 @@ export class AMapSDKEngine implements MapEngine {
     // 绑定到地图
     if (this.map && event === 'click') {
       this.map.on('click', (e: any) => {
-        const wgs84Coord = convertCoordinate(e.lnglat.lat, e.lnglat.lng, 'gcj02', 'wgs84');
-        handler({ lat: wgs84Coord.lat, lng: wgs84Coord.lng });
+        // 契约：原样返回 GCJ-02 坐标，由调用方自行转 WGS84
+        handler({ lat: e.lnglat.lat, lng: e.lnglat.lng });
       });
     }
   }

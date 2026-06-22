@@ -4,7 +4,6 @@
  */
 
 import type { MapEngine, MarkerOptions, MapConfig } from '../../map/mapTypes';
-import { convertCoordinate } from '../../coordinateTransform';
 import { sdkLoader } from '../../SDKLoader';
 
 declare global {
@@ -57,24 +56,21 @@ export class BaiduSDKEngine implements MapEngine {
     }
 
     // 创建地图实例（百度使用 [lng, lat] 格式）
-    // WGS84 转 BD-09
-    const bd09Coord = convertCoordinate(center[0], center[1], 'wgs84', 'bd09');
-
+    // 坐标系契约：调用方传入的 center 已是 BD-09（与 Leaflet 引擎一致，传啥用啥），直接使用
     this.map = new BMap.Map(container, {
       enableMapClick: options.enableClick !== false
     });
 
-    const point = new BMap.Point(bd09Coord.lng, bd09Coord.lat);
+    const point = new BMap.Point(center[1], center[0]);
     this.map.centerAndZoom(point, zoom);
 
     // 添加点击事件
     if (options.enableClick !== false) {
       this.map.addEventListener('click', (e: any) => {
-        // BD-09 转 WGS84
-        const wgs84Coord = convertCoordinate(e.latlng.lat, e.latlng.lng, 'bd09', 'wgs84');
+        // 契约：click 原样返回当前地图坐标系（BD-09）坐标，由调用方自行转 WGS84
         this.emit('click', {
-          lat: wgs84Coord.lat,
-          lng: wgs84Coord.lng
+          lat: e.latlng.lat,
+          lng: e.latlng.lng
         });
       });
     }
@@ -135,11 +131,10 @@ export class BaiduSDKEngine implements MapEngine {
     if (options?.draggable !== false) {
       marker.addEventListener('dragend', (e: any) => {
         const position = marker.getPosition();
-        // BD-09 转 WGS84（返回给调用方）
-        const wgs84Coord = convertCoordinate(position.lat, position.lng, 'bd09', 'wgs84');
+        // 契约：原样返回 BD-09 坐标，由调用方自行转 WGS84
         this.emit('markerDragend', {
-          lat: wgs84Coord.lat,
-          lng: wgs84Coord.lng
+          lat: position.lat,
+          lng: position.lng
         });
       });
     }
@@ -208,8 +203,8 @@ export class BaiduSDKEngine implements MapEngine {
     // 绑定到地图
     if (this.map && event === 'click') {
       this.map.addEventListener('click', (e: any) => {
-        const wgs84Coord = convertCoordinate(e.latlng.lat, e.latlng.lng, 'bd09', 'wgs84');
-        handler({ lat: wgs84Coord.lat, lng: wgs84Coord.lng });
+        // 契约：原样返回 BD-09 坐标，由调用方自行转 WGS84
+        handler({ lat: e.latlng.lat, lng: e.latlng.lng });
       });
     }
   }

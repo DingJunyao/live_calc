@@ -19,7 +19,7 @@ from app.services.export.serializers import (
     serialize_product_link,
     serialize_price_record,
     serialize_merchant,
-    serialize_favorite_merchant,
+    serialize_user_place,
 )
 
 
@@ -331,9 +331,11 @@ def test_serialize_merchant():
     assert out["is_open"] is True
 
 
-def test_serialize_favorite_merchant():
-    fm = SimpleNamespace(id=1, name="家", type="home",
-                         latitude=Decimal("30.1"), longitude=Decimal("120.2"))
-    out = serialize_favorite_merchant(fm)
-    assert out["type"] == "home"
+def test_serialize_user_place():
+    up = SimpleNamespace(id=1, name="家", kind="home",
+                         latitude=Decimal("30.1"), longitude=Decimal("120.2"),
+                         address=None, is_default=True, sort_order=0)
+    out = serialize_user_place(up)
+    assert out["kind"] == "home"
     assert out["longitude"] == 120.2
+    assert out["is_default"] is True

@@ -1,5 +1,6 @@
 from app.models.user import User
-from app.models.merchant import Merchant, FavoriteMerchant
+from app.models.user_place import UserPlace
+from app.models.merchant import Merchant
 from app.models.product import ProductRecord, RecordType
 from app.models.nutrition_data import NutritionData  # 从 nutrition_data 导入，避免重复定义
 from app.models.nutrition import Ingredient, IngredientNutritionMapping  # nutrition.py 中的其他模型
@@ -24,7 +25,7 @@ from app.models.agent_message import AgentMessage
 from app.models.agent_approval import AgentApproval
 
 __all__ = [
-    "User", "Merchant", "FavoriteMerchant", "ProductRecord", "RecordType",
+    "User", "UserPlace", "Merchant", "ProductRecord", "RecordType",
     "NutritionData", "Ingredient", "IngredientNutritionMapping",
     "Recipe", "RecipeIngredient",
     "Expense", "ExpenseType", "InviteCode",

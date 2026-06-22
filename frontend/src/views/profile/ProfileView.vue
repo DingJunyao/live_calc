@@ -66,6 +66,17 @@
           </template>
         </v-list-item>
 
+        <v-list-item @click="router.push('/profile/places')">
+          <template #prepend>
+            <v-icon>mdi-map-marker-multiple</v-icon>
+          </template>
+          <v-list-item-title>我的常用地点</v-list-item-title>
+          <v-list-item-subtitle>家、公司等，地图默认聚焦</v-list-item-subtitle>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
         <v-list-item @click="exportDialog = true">
           <template #prepend>
             <v-icon>mdi-export</v-icon>
