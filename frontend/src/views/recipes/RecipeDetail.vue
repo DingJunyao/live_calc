@@ -788,30 +788,54 @@ const COST_HISTORY_BATCH_DAYS = 90
 // 串行队列：确保同时只有一个成本历史加载请求在跑
 let costHistoryQueue = Promise.resolve()
 
-// 加载成本历史数据（纯数据加载，不控制 loadingCostHistory）
-const loadCostHistory = async (days = 90, offsetDays = 0) => {
-  // 后端 days 参数要求 ge=7；分批循环末尾 remaining 可能不足 7，此处兜底钳制
+// 「全部」区间分波次并行时，每波并发的批数（每批 90 天 → 一波约 360 天）
+const COST_HISTORY_ALL_WAVE_BATCHES = 4
+
+// 纯请求：获取 [offset_days, offset_days+days) 区间的成本历史，无副作用
+const fetchCostHistoryBatch = async (days: number, offsetDays: number) => {
+  // 后端 days 参数要求 ge=7；末批 remaining 可能不足 7，此处兜底钳制
   days = Math.max(7, days)
   const response = await api.get(`/recipes/${recipeId.value}/cost-history-range`, {
     params: { days, offset_days: offsetDays },
     timeout: 30000,  // 菜谱成本计算较重，放宽到 30s 规避默认 10s 超时
   })
-  // 转换数据格式
-  const records = (response || []).map((record: any) => ({
+  return (response || []).map((record: any) => ({
     date: record.date,
     min_cost: record.min_cost,
     max_cost: record.max_cost,
     avg_cost: record.avg_cost
   }))
-  if (records.length === 0) return  // 无数据时只标记已尝试，不更新 maxDaysLoaded
-  // 合并到已有的历史数据中
-  if (offsetDays > 0) {
-    costHistoryRecords.value = [...records, ...costHistoryRecords.value]
-  } else {
-    costHistoryRecords.value = records
+}
+
+// 并行分批加载 [fromDays, targetDays) 区间：各批 offset 互不重叠，可同时请求
+// 返回 hitEmpty：末批（offset 最大、日期最早）是否为空，供「全部」模式判断是否越过最早记录
+const loadCostHistoryParallel = async (targetDays: number, fromDays: number) => {
+  const batches: { days: number; offsetDays: number }[] = []
+  let offset = fromDays
+  while (offset < targetDays) {
+    const days = Math.min(targetDays - offset, COST_HISTORY_BATCH_DAYS)
+    batches.push({ days, offsetDays: offset })
+    offset += days
   }
-  // 更新已加载天数范围（仅在获取到数据后更新）
-  maxDaysLoaded.value = Math.max(maxDaysLoaded.value, offsetDays + days)
+  if (batches.length === 0) return { maxOffset: fromDays, hitEmpty: false }
+  // 各批并发请求（offset 不同彼此独立，后端纯读计算无竞态）
+  const results = await Promise.all(
+    batches.map(b => fetchCostHistoryBatch(b.days, b.offsetDays).then(records => ({ ...b, records })))
+  )
+  // 合并：按 offsetDays 降序（越早越靠前）前置到已有数据
+  const nonEmpty = results
+    .filter(b => b.records.length > 0)
+    .sort((a, b) => b.offsetDays - a.offsetDays)
+  if (nonEmpty.length > 0) {
+    const merged: CostHistoryRecord[] = []
+    for (const b of nonEmpty) merged.push(...b.records)
+    costHistoryRecords.value = [...merged, ...costHistoryRecords.value]
+  }
+  // 已请求过的最远边界（无论是否空都标记探过，避免重复请求）
+  const maxOffset = Math.max(...batches.map(b => b.offsetDays + b.days))
+  // batches 按 offset 升序构造，末批 offset 最大（日期最早）；空即表示已越过最早记录
+  const hitEmpty = results[results.length - 1].records.length === 0
+  return { maxOffset, hitEmpty }
 }
 
 // 通过串行队列执行加载（参数为目标总天数，运行时会动态算还差多少）
@@ -829,15 +853,9 @@ const enqueueCostHistory = async (targetDays: number, showLoading: boolean) => {
     if (maxDaysLoaded.value >= targetDays) return
     if (showLoading) loadingCostHistory.value = true
     try {
-      // 循环分批加载到 targetDays，每批不超过 COST_HISTORY_BATCH_DAYS 天，规避单批超过 10s 超时
-      while (maxDaysLoaded.value < targetDays) {
-        const before = costHistoryRecords.value.length
-        const remaining = targetDays - maxDaysLoaded.value
-        const days = Math.min(remaining, COST_HISTORY_BATCH_DAYS)
-        await loadCostHistory(days, maxDaysLoaded.value)
-        // 本批未带来新数据 → 已到最早记录，提前终止
-        if (costHistoryRecords.value.length === before) break
-      }
+      // 并行分批加载到 targetDays：一次性并发各段，墙钟时间 ≈ 最慢一批而非各批之和
+      const { maxOffset } = await loadCostHistoryParallel(targetDays, maxDaysLoaded.value)
+      maxDaysLoaded.value = Math.max(maxDaysLoaded.value, maxOffset)
     } catch (e) {
       console.error('加载成本历史失败', e)
     } finally {
@@ -877,19 +895,20 @@ const onCostTrendFilterChange = async (filter: 'week' | 'month' | 'quarter' | 'y
   loadingCostHistory.value = false
 }
 
-// 「全部」区间：循环分批加载所有历史成本数据
-// 每批 COST_HISTORY_BATCH_DAYS 天（90，规避单批超过 10s 超时），offset_days 随 maxDaysLoaded 自然递增；
-// 菜谱成本按天前向填充（每日有值），某批未带来新数据即表示已早于最早记录，终止。
+// 「全部」区间：分波次并行加载所有历史成本数据
+// 每波 COST_HISTORY_ALL_WAVE_BATCHES 批（≈360 天）并发，offset_days 随 maxDaysLoaded 自然递增；
+// 菜谱成本按天前向填充（每日有值），末批（offset 最大）为空即表示已早于最早记录，终止。
 const loadAllCostHistory = async () => {
   // 纳入 costHistoryQueue 串行队列，与其他区间切换的加载互斥，避免并发竞态
   const promise = costHistoryQueue.then(async () => {
     loadingCostHistory.value = true
     try {
       while (true) {
-        const before = costHistoryRecords.value.length
-        await loadCostHistory(COST_HISTORY_BATCH_DAYS, maxDaysLoaded.value)
-        // 本批未带来新数据 → 已加载到最早记录之前，终止
-        if (costHistoryRecords.value.length === before) break
+        const waveTarget = maxDaysLoaded.value + COST_HISTORY_ALL_WAVE_BATCHES * COST_HISTORY_BATCH_DAYS
+        const { maxOffset, hitEmpty } = await loadCostHistoryParallel(waveTarget, maxDaysLoaded.value)
+        maxDaysLoaded.value = Math.max(maxDaysLoaded.value, maxOffset)
+        // 末批为空 → 已越过最早记录，终止
+        if (hitEmpty) break
       }
     } catch (e) {
       console.error('加载全部成本历史失败', e)
