@@ -1,7 +1,22 @@
+import datetime
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+
+
+def ensure_utc(dt: datetime.datetime) -> datetime.datetime:
+    """把 datetime 统一成 UTC aware（naive 视作 UTC）。
+
+    SQLite 读回的 DateTime(timezone=True) 实际是 naive（无 tzinfo），
+    PostgreSQL/MySQL 读回 aware；统一成 UTC aware，避免 naive/aware 比较 TypeError，
+    也让序列化输出带明确时区。
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc)
 
 
 class InviteCode(Base):
@@ -26,8 +41,9 @@ class InviteCode(Base):
     @property
     def is_expired(self) -> bool:
         """是否已过期。"""
-        import datetime
-        return self.expires_at is not None and self.expires_at < datetime.datetime.now(datetime.timezone.utc)
+        if self.expires_at is None:
+            return False
+        return ensure_utc(self.expires_at) < datetime.datetime.now(datetime.timezone.utc)
 
     @property
     def is_valid(self) -> bool:

@@ -139,8 +139,8 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
     db.refresh(user)
 
     # 创建令牌
-    access_token = create_access_token(data={"sub": str(user.id)})
-    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    access_token = create_access_token(data={"sub": str(user.id), "ver": user.token_version})
+    refresh_token = create_refresh_token(data={"sub": str(user.id), "ver": user.token_version})
 
     return TokenResponse(
         access_token=access_token,
@@ -175,8 +175,8 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
         )
 
     # 创建令牌
-    access_token = create_access_token(data={"sub": str(user.id)})
-    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    access_token = create_access_token(data={"sub": str(user.id), "ver": user.token_version})
+    refresh_token = create_refresh_token(data={"sub": str(user.id), "ver": user.token_version})
 
     return TokenResponse(
         access_token=access_token,
@@ -223,8 +223,15 @@ async def refresh_token(
             detail="账户已被禁用"
         )
 
+    # refresh token 版本比对：旧 refresh token 在密码被重置后立即失效
+    if payload.get("ver", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="凭证已失效，请重新登录"
+        )
+
     # 创建新的访问令牌
-    access_token = create_access_token(data={"sub": str(user.id)})
+    access_token = create_access_token(data={"sub": str(user.id), "ver": user.token_version})
     return TokenResponse(
         access_token=access_token,
         refresh_token=token  # 返回同一个 refresh token
@@ -418,6 +425,7 @@ async def update_user(
         target.email_verified = user_update.email_verified
     if user_update.password_hash is not None:
         target.password_hash = get_password_hash(user_update.password_hash)
+        target.token_version += 1
 
     db.commit()
     db.refresh(target)

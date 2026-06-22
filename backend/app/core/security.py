@@ -127,6 +127,14 @@ def resolve_user_from_token(token: "Optional[str]"):
             detail="账户已被禁用"
         )
 
+    # token 版本比对：重置密码等场景 bump token_version 后，旧 token 立即失效。
+    # 老token无 ver claim 时取 0，存量用户 token_version 默认 0，不误伤。
+    if payload.get("ver", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="凭证已失效，请重新登录"
+        )
+
     return user
 
 

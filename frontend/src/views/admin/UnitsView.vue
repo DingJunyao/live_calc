@@ -149,14 +149,18 @@
             <v-icon class="mr-2" color="info">mdi-swap-horizontal</v-icon>
             <span>换算预览</span>
             <v-spacer />
-            <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" @click="openEditDialog(selectedUnit!)">
-              <v-icon>mdi-pencil</v-icon>
-              <v-tooltip activator="parent" location="top">编辑</v-tooltip>
-            </v-btn>
-            <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="confirmDelete(selectedUnit!)">
-              <v-icon>mdi-delete</v-icon>
-              <v-tooltip activator="parent" location="top">删除</v-tooltip>
-            </v-btn>
+            <v-tooltip location="top">
+              <template #activator="{ props }">
+                <v-btn v-bind="props" icon="mdi-pencil" size="small" variant="text" color="primary" @click="openEditDialog(selectedUnit!)" />
+              </template>
+              <span>编辑</span>
+            </v-tooltip>
+            <v-tooltip location="top">
+              <template #activator="{ props }">
+                <v-btn v-bind="props" icon="mdi-delete" size="small" variant="text" color="error" @click="confirmDelete(selectedUnit!)" />
+              </template>
+              <span>删除</span>
+            </v-tooltip>
             <v-btn icon="mdi-close" size="small" variant="text" @click="selectedUnit = null" />
           </v-card-title>
           <v-divider />

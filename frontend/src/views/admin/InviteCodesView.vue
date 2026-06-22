@@ -107,33 +107,24 @@
         <!-- 操作列 -->
         <template #item.actions="{ item }">
           <div class="d-flex ga-1 justify-end">
-            <v-btn
-              icon="mdi-content-copy"
-              size="small"
-              variant="text"
-              color="primary"
-              @click="copyToClipboard(item.code)"
-            >
-              <v-tooltip activator="parent" location="top">复制邀请码</v-tooltip>
-            </v-btn>
-            <v-btn
-              icon="mdi-pencil"
-              size="small"
-              variant="text"
-              color="primary"
-              @click="openEditDialog(item)"
-            >
-              <v-tooltip activator="parent" location="top">编辑</v-tooltip>
-            </v-btn>
-            <v-btn
-              icon="mdi-delete"
-              size="small"
-              variant="text"
-              color="error"
-              @click="confirmDelete(item)"
-            >
-              <v-tooltip activator="parent" location="top">删除</v-tooltip>
-            </v-btn>
+            <v-tooltip location="top">
+              <template #activator="{ props }">
+                <v-btn v-bind="props" icon="mdi-content-copy" size="small" variant="text" color="primary" @click="copyToClipboard(item.code)" />
+              </template>
+              <span>复制邀请码</span>
+            </v-tooltip>
+            <v-tooltip location="top">
+              <template #activator="{ props }">
+                <v-btn v-bind="props" icon="mdi-pencil" size="small" variant="text" color="primary" @click="openEditDialog(item)" />
+              </template>
+              <span>编辑</span>
+            </v-tooltip>
+            <v-tooltip location="top">
+              <template #activator="{ props }">
+                <v-btn v-bind="props" icon="mdi-delete" size="small" variant="text" color="error" @click="confirmDelete(item)" />
+              </template>
+              <span>删除</span>
+            </v-tooltip>
           </div>
         </template>
       </v-data-table-server>
@@ -181,13 +172,16 @@
               hint="留空表示不限次数"
               persistent-hint
             />
-            <v-date-input
+            <v-text-field
               v-model="newInviteCode.expiresAt"
               label="过期时间"
-              placeholder="留空表示永不过期"
-              prepend-icon="mdi-calendar"
-              clearable
-              :min="new Date().toISOString()"
+              prepend-icon="mdi-calendar-clock"
+              variant="outlined"
+              density="comfortable"
+              type="datetime-local"
+              hint="留空表示永不过期"
+              persistent-hint
+              :min="getLocalDateTimeString()"
             />
           </v-form>
         </v-card-text>
@@ -230,12 +224,15 @@
               hint="留空表示不限次数"
               persistent-hint
             />
-            <v-date-input
+            <v-text-field
               v-model="editData.expiresAt"
               label="过期时间"
-              placeholder="留空表示永不过期"
-              prepend-icon="mdi-calendar"
-              clearable
+              prepend-icon="mdi-calendar-clock"
+              variant="outlined"
+              density="comfortable"
+              type="datetime-local"
+              hint="留空表示永不过期"
+              persistent-hint
             />
           </v-form>
         </v-card-text>
@@ -276,7 +273,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import api from '@/api/client'
-import { formatToLocalDateTimeShort } from '@/utils/timezone'
+import { formatToLocalDateTimeShort, getLocalDateTimeString } from '@/utils/timezone'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
@@ -319,7 +316,7 @@ const creating = ref(false)
 const newInviteCode = reactive({
   code: '',
   maxUses: null as number | null,
-  expiresAt: null as Date | null,
+  expiresAt: null as string | null,
 })
 
 // 编辑
@@ -328,7 +325,7 @@ const updating = ref(false)
 const editTarget = ref<InviteCode | null>(null)
 const editData = reactive({
   maxUses: null as number | null,
-  expiresAt: null as Date | null,
+  expiresAt: null as string | null,
 })
 
 // 删除
@@ -414,7 +411,7 @@ const createInviteCode = async () => {
   creating.value = true
   try {
     const data: Record<string, any> = {
-      expires_at: newInviteCode.expiresAt?.toISOString() || null,
+      expires_at: newInviteCode.expiresAt ? new Date(newInviteCode.expiresAt).toISOString() : null,
       max_uses: newInviteCode.maxUses || null,
     }
     if (newInviteCode.code.trim()) {
@@ -436,7 +433,7 @@ const createInviteCode = async () => {
 const openEditDialog = (item: InviteCode) => {
   editTarget.value = item
   editData.maxUses = item.maxUses
-  editData.expiresAt = item.expiresAt ? new Date(item.expiresAt) : null
+  editData.expiresAt = item.expiresAt ? toDatetimeLocalValue(item.expiresAt) : null
   editDialog.value = true
 }
 
@@ -446,7 +443,7 @@ const updateInviteCode = async () => {
   try {
     await api.put(`/invite-codes/${editTarget.value.id}`, {
       max_uses: editData.maxUses || null,
-      expires_at: editData.expiresAt?.toISOString() || null,
+      expires_at: editData.expiresAt ? new Date(editData.expiresAt).toISOString() : null,
     })
     editDialog.value = false
     showSnackbar('邀请码已更新')
@@ -493,6 +490,13 @@ const copyToClipboard = async (code: string) => {
 const isExpired = (dateString: string | null) => {
   if (!dateString) return false
   return new Date(dateString) < new Date()
+}
+
+// UTC ISO → datetime-local 所需的本地时间字符串（YYYY-MM-DDTHH:mm）
+const toDatetimeLocalValue = (isoStr: string) => {
+  const d = new Date(isoStr)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 const isExhausted = (item: InviteCode) => {

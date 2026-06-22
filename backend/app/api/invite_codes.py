@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_admin_user
 from app.models.user import User
-from app.models.invite_code import InviteCode, generate_invite_code
+from app.models.invite_code import InviteCode, generate_invite_code, ensure_utc
 from app.schemas.invite_code import (
     InviteCodeCreate,
     InviteCodeUpdate,
@@ -19,15 +19,18 @@ router = APIRouter()
 
 
 def _serialize_invite_code(code: InviteCode) -> dict:
-    """序列化 InviteCode 为字典。"""
+    """序列化 InviteCode 为字典。
+
+    时间字段统一以 UTC aware ISO 输出（带时区），前端按本地时区渲染。
+    """
     return {
         "id": code.id,
         "code": code.code,
         "createdBy": code.created_by,
         "usedCount": code.used_count,
         "maxUses": code.max_uses,
-        "createdAt": code.created_at.strftime('%Y-%m-%dT%H:%M:%S'),
-        "expiresAt": code.expires_at.strftime('%Y-%m-%dT%H:%M:%S') if code.expires_at else None,
+        "createdAt": ensure_utc(code.created_at).isoformat() if code.created_at else None,
+        "expiresAt": ensure_utc(code.expires_at).isoformat() if code.expires_at else None,
     }
 
 

@@ -145,9 +145,15 @@ const handleRegister = async () => {
   if (!form.username) {
     errors.username = '请输入用户名'
     hasError = true
+  } else if (form.username.length < 3 || form.username.length > 50) {
+    errors.username = '用户名需 3-50 个字符'
+    hasError = true
   }
   if (!form.email) {
     errors.email = '请输入邮箱'
+    hasError = true
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+    errors.email = '邮箱格式不正确'
     hasError = true
   }
   if (!form.password) {
@@ -180,7 +186,7 @@ const handleRegister = async () => {
     )
     router.push('/')
   } catch (error: any) {
-    errorMessage.value = error.response?.data?.detail || '注册失败，请稍后重试'
+    errorMessage.value = error.userMessage || error.response?.data?.detail || '注册失败，请稍后重试'
   } finally {
     loading.value = false
   }
