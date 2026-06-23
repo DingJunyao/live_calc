@@ -18,7 +18,9 @@ from app.schemas.recipe import (
     RecipeNutritionResponse,
     RecipeIngredientDetail,
     RecipeCostHistoryResponse,
-    RecipeCostRangeResponse
+    RecipeCostRangeResponse,
+    RecipeMerchantCostResponse,
+    MerchantCostItem
 )
 from app.schemas.common import PaginatedResponse
 from app.services.recipe_service import (
@@ -677,6 +679,149 @@ async def get_recipe_nutrition(
         return RecipeNutritionResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"计算营养失败: {str(e)}")
+
+
+@router.get("/{recipe_id}/merchant-costs", response_model=RecipeMerchantCostResponse)
+async def get_recipe_merchant_costs(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """计算菜谱按商家购买的总成本估算"""
+    try:
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+
+        recipe_ingredients = db.query(RecipeIngredient).filter(
+            RecipeIngredient.recipe_id == recipe_id
+        ).all()
+
+        if not recipe_ingredients:
+            return RecipeMerchantCostResponse(merchants=[])
+
+        from app.models.product_entity import Product
+        from app.models.product import ProductRecord
+        from app.models.merchant import Merchant
+        from app.services.unit_conversion_service import UnitConversionService
+        from sqlalchemy.orm import joinedload
+        from decimal import Decimal
+
+        unit_service = UnitConversionService(db)
+        total_ingredients = len(recipe_ingredients)
+
+        merchant_data: dict = {}
+
+        for ri in recipe_ingredients:
+            ingredient = ri.ingredient
+            if not ingredient or not ingredient.is_active:
+                continue
+
+            target_unit = ingredient.default_unit.abbreviation if ingredient.default_unit else None
+
+            products = db.query(Product).filter(
+                Product.ingredient_id == ingredient.id,
+                Product.is_active == True
+            ).all()
+
+            product_ids = [p.id for p in products if p.id]
+            if not product_ids:
+                continue
+
+            records = db.query(ProductRecord).options(
+                joinedload(ProductRecord.original_unit),
+                joinedload(ProductRecord.merchant)
+            ).join(
+                Merchant, ProductRecord.merchant_id == Merchant.id
+            ).filter(
+                ProductRecord.product_id.in_(product_ids),
+                ProductRecord.merchant_id.isnot(None),
+                ProductRecord.is_active == True,
+                Merchant.is_open == True
+            ).order_by(ProductRecord.recorded_at.desc()).all()
+
+            merchant_latest: dict = {}
+            for record in records:
+                mid = record.merchant_id
+                if mid not in merchant_latest:
+                    merchant_latest[mid] = record
+
+            for mid, record in merchant_latest.items():
+                if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
+                    continue
+
+                unit_price = None
+                total_price = float(record.price)
+                orig_qty = float(record.original_quantity)
+                orig_unit_abbr = record.original_unit.abbreviation
+
+                if target_unit and orig_unit_abbr != target_unit:
+                    conv = unit_service.convert(
+                        orig_qty, orig_unit_abbr, target_unit,
+                        entity_type="ingredient",
+                        entity_id=ingredient.id
+                    )
+                    if conv and conv.get("converted_quantity") and conv["converted_quantity"] > 0:
+                        unit_price = total_price / conv["converted_quantity"]
+                else:
+                    unit_price = total_price / orig_qty if orig_qty > 0 else None
+
+                if unit_price is None or unit_price <= 0:
+                    continue
+
+                ingredient_qty = 0
+                if ri.quantity:
+                    try:
+                        ingredient_qty = float(ri.quantity)
+                    except (ValueError, TypeError):
+                        pass
+                elif ri.quantity_range:
+                    qr = ri.quantity_range
+                    if isinstance(qr, dict):
+                        q_min = float(qr.get("min", 0) or 0)
+                        q_max = float(qr.get("max", 0) or 0)
+                        ingredient_qty = (q_min + q_max) / 2
+
+                ingredient_cost = unit_price * ingredient_qty
+
+                merchant_name = record.merchant.name if record.merchant else f"商家{mid}"
+                if mid not in merchant_data:
+                    merchant_data[mid] = {
+                        "merchant_name": merchant_name,
+                        "total_cost": 0.0,
+                        "covered_set": set(),
+                    }
+                merchant_data[mid]["total_cost"] += ingredient_cost
+                merchant_data[mid]["covered_set"].add(ri.id)
+
+        merchants_list = []
+        for mid, data in merchant_data.items():
+            missing_names = []
+            for ri in recipe_ingredients:
+                if ri.id not in data["covered_set"]:
+                    missing_names.append(ri.ingredient.name if ri.ingredient else "未知食材")
+
+            merchants_list.append(MerchantCostItem(
+                merchant_id=mid,
+                merchant_name=data["merchant_name"],
+                total_cost=round(data["total_cost"], 2),
+                covered_count=len(data["covered_set"]),
+                total_ingredients=total_ingredients,
+                missing_ingredients=missing_names,
+                is_recommended=False,
+            ))
+
+        if merchants_list:
+            merchants_list.sort(key=lambda m: (-m.covered_count, m.total_cost))
+            if merchants_list:
+                merchants_list[0].is_recommended = True
+
+        return RecipeMerchantCostResponse(merchants=merchants_list)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"计算商家成本失败: {str(e)}")
 
 
 @router.post("/import-from-url")

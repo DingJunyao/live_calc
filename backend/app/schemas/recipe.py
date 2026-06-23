@@ -146,3 +146,20 @@ class RecipeCostRangeResponse(BaseModel):
     max_cost: float  # 最大成本（元）
     avg_cost: float  # 平均成本（元）
     recorded_at: int  # Unix 时间戳（秒）
+
+
+class MerchantCostItem(BaseModel):
+    """按商家维度计算的菜谱成本项"""
+    merchant_id: int
+    merchant_name: str
+    total_cost: float
+    covered_count: int
+    total_ingredients: int
+    missing_ingredients: List[str] = []
+    is_recommended: bool = False
+
+
+class RecipeMerchantCostResponse(BaseModel):
+    """菜谱按商家成本估算响应"""
+    currency: str = "CNY"
+    merchants: List[MerchantCostItem]
