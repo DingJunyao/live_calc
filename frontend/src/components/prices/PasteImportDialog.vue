@@ -173,7 +173,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'imported'): void
+  (e: 'imported', productIds?: number[]): void
 }>()
 
 const dateTime = ref(getLocalDateTimeString())
@@ -402,6 +402,7 @@ async function doImport() {
   importing.value = true
   result.value = null
   const targets = importableRows.value
+  const savedProductIds: (number | null)[] = new Array(targets.length).fill(null)
   progress.value = { current: 0, total: targets.length }
 
   const recordedAt = dateTime.value ? new Date(dateTime.value).toISOString() : undefined
@@ -449,11 +450,22 @@ async function doImport() {
             console.error('[paste-import] 添加别名失败:', e?.response?.status, e?.response?.data || e?.message || e)
           }
         }
+        return res
       })
     )
     settled.forEach((s, j) => {
+      const idx = i + j
       if (s.status === 'fulfilled') {
         success++
+        const rowData = batch[j]
+        if (rowData.row.mode === 'existing' && rowData.row.productId) {
+          savedProductIds[idx] = rowData.row.productId
+        } else if (rowData.row.mode === 'new_attach') {
+          const res = (s as PromiseFulfilledResult<any>).value
+          if (res?.data?.product_id) {
+            savedProductIds[idx] = res.data.product_id
+          }
+        }
       } else {
         const reason = getErrorMessage((s as PromiseRejectedResult).reason, '导入失败')
         failures.push({ name: batch[j].row.name, reason })
@@ -462,12 +474,14 @@ async function doImport() {
     })
   }
 
+  const validIds = savedProductIds.filter((id): id is number => id != null)
+  emit('imported', validIds.length > 0 ? validIds : undefined)
+
   importing.value = false
   progress.value = { current: 0, total: 0 }
   result.value = { success, fail: failures.length, failures }
 
   if (failures.length === 0) {
-    emit('imported')
     emit('update:modelValue', false)
   }
 }

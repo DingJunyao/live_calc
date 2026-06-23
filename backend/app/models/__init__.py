@@ -24,6 +24,7 @@ from app.models.usda import UsdaFood, UsdaFoodNutrient, TranslationConfig, UsdaT
 from app.models.agent_session import AgentSession
 from app.models.agent_message import AgentMessage
 from app.models.agent_approval import AgentApproval
+from app.models.user_merchant_product_order import UserMerchantProductOrder
 
 __all__ = [
     "User", "UserPlace", "Merchant", "ProductRecord", "RecordType",
@@ -44,5 +45,6 @@ __all__ = [
     "EntityDensity",
     "UsdaFood", "UsdaFoodNutrient", "TranslationConfig", "UsdaTask",
     "AgentSession", "AgentMessage", "AgentApproval",
+    "UserMerchantProductOrder",
     "SystemConfig",
 ]

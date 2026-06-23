@@ -40,3 +40,10 @@ class MerchantCoordinateResponse(BaseModel):
     latitude: float
     longitude: float
     is_open: bool
+
+
+class ProductOrderCreate(BaseModel):
+    """保存每日排序记录的请求体。"""
+
+    product_ids: list[int] = Field(..., min_length=1, description="本次保存的商品 ID 列表（按页面显示顺序）")
+    session_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="按用户时区的会话日期 YYYY-MM-DD")

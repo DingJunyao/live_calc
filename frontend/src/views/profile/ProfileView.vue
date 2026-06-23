@@ -7,7 +7,7 @@
 
   <v-container fluid>
     <!-- 搜索栏 -->
-    <v-text-field
+    <!-- <v-text-field
       v-model="search"
       label="搜索..."
       prepend-inner-icon="mdi-magnify"
@@ -15,7 +15,7 @@
       hide-details
       clearable
       class="mb-4"
-    />
+    /> -->
 
     <!-- 统计卡片 -->
     <v-row class="ma-2">

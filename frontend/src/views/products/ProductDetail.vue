@@ -208,9 +208,24 @@
           最新价格
         </v-card-title>
         <v-divider />
-        <v-card-text class="text-center py-6">
-          <div class="text-h3 font-weight-bold text-tertiary">
-            ¥{{ formatPrice(product.latest_price) }}<span v-if="product.latest_price_unit" class="text-h6 font-weight-regular">/{{ product.latest_price_unit }}</span>
+        <v-card-text class="py-6">
+          <div class="d-flex align-center ga-4 flex-wrap">
+            <div class="text-h3 font-weight-bold text-tertiary">
+              ¥{{ formatPrice(product.latest_price) }}<span v-if="product.latest_price_unit" class="text-h6 font-weight-regular">/{{ product.latest_price_unit }}</span>
+            </div>
+            <template v-if="latestChartTrend">
+              <v-divider vertical class="d-none d-sm-flex" />
+              <div class="text-center">
+                <div class="text-caption text-medium-emphasis">区间</div>
+                <div class="text-subtitle-1 font-weight-bold">
+                  ¥{{ latestChartTrend.min.toFixed(2) }} - ¥{{ latestChartTrend.max.toFixed(2) }}/{{ chartUnit }}
+                </div>
+              </div>
+              <div v-if="latestChartTrend.count" class="text-center">
+                <div class="text-caption text-medium-emphasis">记录</div>
+                <div class="text-subtitle-1 font-weight-bold">{{ latestChartTrend.count }}</div>
+              </div>
+            </template>
           </div>
           <div class="text-caption text-medium-emphasis mt-2">
             {{ formatToLocalDate(product.latest_price_date) }}
@@ -1914,6 +1929,13 @@ const chartData = computed(() => {
       }
     })
     .sort((a, b) => a.date.localeCompare(b.date))
+})
+
+// 最新趋势数据点（用于最新价格卡片右侧展示）
+const latestChartTrend = computed(() => {
+  const data = chartData.value
+  if (!data || data.length === 0) return null
+  return data[data.length - 1]
 })
 
 // 图表使用归一化后的统一单位（斤），确保跨单位数据可比较

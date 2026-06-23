@@ -45,34 +45,6 @@
 
       <!-- 图表（一旦有数据就始终渲染，DOM 不被销毁） -->
       <template v-if="hasEverHadData || (chartData && chartData.length > 0)">
-        <div v-if="latestData" class="px-4 py-3">
-          <v-card variant="outlined" class="pa-3">
-            <div class="d-flex align-center justify-space-between flex-wrap ga-2">
-              <div class="text-body-2 text-medium-emphasis">
-                {{ latestData.dateFormatted }}
-              </div>
-              <div class="d-flex align-center ga-4 flex-wrap">
-                <div class="text-center">
-                  <div class="text-caption text-medium-emphasis">平均</div>
-                  <div class="text-subtitle-1 font-weight-bold" :style="{ color: color }">
-                    ¥{{ latestData.avg.toFixed(2) }}{{ unitSuffix }}
-                  </div>
-                </div>
-                <v-divider vertical class="d-none d-sm-flex" />
-                <div class="text-center">
-                  <div class="text-caption text-medium-emphasis">区间</div>
-                  <div class="text-subtitle-1 font-weight-bold">
-                    ¥{{ latestData.min.toFixed(2) }} - ¥{{ latestData.max.toFixed(2) }}{{ unitSuffix }}
-                  </div>
-                </div>
-                <div v-if="latestData.count" class="text-center">
-                  <div class="text-caption text-medium-emphasis">记录</div>
-                  <div class="text-subtitle-1 font-weight-bold">{{ latestData.count }}</div>
-                </div>
-              </div>
-            </div>
-          </v-card>
-        </div>
 
         <div ref="chartRef" class="chart-container"></div>
       </template>
@@ -179,20 +151,6 @@ const chartData = computed(() => {
   return props.data
     .filter(d => new Date(d.date) >= startDate)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-})
-
-// 最新一天的数据
-const latestData = computed(() => {
-  if (!chartData.value || chartData.value.length === 0) return null
-
-  const latest = chartData.value[chartData.value.length - 1]
-  const dateObj = new Date(latest.date)
-  const dateFormatted = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`
-
-  return {
-    ...latest,
-    dateFormatted
-  }
 })
 
 // 监听筛选变化

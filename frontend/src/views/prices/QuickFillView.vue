@@ -406,11 +406,18 @@ const onMerchantChange = async (val: number | null) => {
   loading.value = true
   try {
     const res = await api.get(`/merchants/${val}/product-prices`, {
-      params: { skip: 0, limit: 100 },
+      params: { skip: 0, limit: 200 },
     })
     const items = (res as any).items || (res as any[]) || []
     // 后端已按 category sort_order 排序；前端在组内按拼音/字母顺序重排
     items.sort((a: any, b: any) => {
+      const aScore = a.custom_sort_score
+      const bScore = b.custom_sort_score
+      // 有分数的排前面，没分数的排后面
+      if (aScore != null && bScore == null) return -1
+      if (aScore == null && bScore != null) return 1
+      if (aScore != null && bScore != null) return aScore - bScore
+      // 都没分数 → 默认分类 > 拼音
       const catCmp = (a.category_sort_order ?? 999999) - (b.category_sort_order ?? 999999)
       if (catCmp !== 0) return catCmp
       return zhCollator.compare(String(a.product_name ?? ''), String(b.product_name ?? ''))
@@ -611,6 +618,20 @@ const saveAll = async () => {
     addHiddenItems(selectedMerchantId.value, savedProductIds)
   }
 
+  // 保存排序记录（仅记录有 product_id 的历史商品）
+  if (savedProductIds.length > 0 && selectedMerchantId.value) {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const sessionDate = new Date().toLocaleDateString('en-CA', { timeZone })
+    try {
+      await api.post(`/merchants/${selectedMerchantId.value}/product-orders`, {
+        product_ids: savedProductIds,
+        session_date: sessionDate,
+      })
+    } catch (e: any) {
+      console.warn('[quick-fill] 记录排序失败:', e?.response?.data || e?.message || e)
+    }
+  }
+
   if (successCount > 0) {
     await onMerchantChange(selectedMerchantId.value)
   }
@@ -625,10 +646,20 @@ const saveAll = async () => {
   }
 }
 
-async function onPasteImported() {
-  if (selectedMerchantId.value) {
-    await onMerchantChange(selectedMerchantId.value)
+async function onPasteImported(savedProductIds?: number[]) {
+  if (selectedMerchantId.value && savedProductIds && savedProductIds.length > 0) {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const sessionDate = new Date().toLocaleDateString('en-CA', { timeZone })
+    try {
+      await api.post(`/merchants/${selectedMerchantId.value}/product-orders`, {
+        product_ids: savedProductIds,
+        session_date: sessionDate,
+      })
+    } catch (e: any) {
+      console.warn('[quick-fill] 记录粘贴导入排序失败:', e?.response?.data || e?.message || e)
+    }
   }
+  await onMerchantChange(selectedMerchantId.value)
 }
 
 onMounted(() => {

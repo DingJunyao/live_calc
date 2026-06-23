@@ -224,9 +224,24 @@
           最新价格
         </v-card-title>
         <v-divider />
-        <v-card-text class="text-center py-6">
-          <div class="text-h3 font-weight-bold text-tertiary">
-            ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ ingredient.default_unit_name || '斤' }}</span>
+        <v-card-text class="py-6">
+          <div class="d-flex align-center ga-4 flex-wrap">
+            <div class="text-h3 font-weight-bold text-tertiary">
+              ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ ingredient.default_unit_name || '斤' }}</span>
+            </div>
+            <template v-if="latestChartTrend">
+              <v-divider vertical class="d-none d-sm-flex" />
+              <div class="text-center">
+                <div class="text-caption text-medium-emphasis">区间</div>
+                <div class="text-subtitle-1 font-weight-bold">
+                  ¥{{ latestChartTrend.min.toFixed(2) }} - ¥{{ latestChartTrend.max.toFixed(2) }}/{{ chartUnit }}
+                </div>
+              </div>
+              <div v-if="latestChartTrend.count" class="text-center">
+                <div class="text-caption text-medium-emphasis">记录</div>
+                <div class="text-subtitle-1 font-weight-bold">{{ latestChartTrend.count }}</div>
+              </div>
+            </template>
           </div>
           <div v-if="latestPriceDate" class="text-caption text-medium-emphasis mt-2">
             {{ formatToLocalDate(latestPriceDate) }}
@@ -308,38 +323,75 @@
         </v-card-title>
         <v-divider />
 
-        <v-list v-if="products.length > 0" lines="one">
+        <v-list v-if="products.length > 0">
           <v-list-item
             v-for="product in products"
             :key="product.id"
             @click="goToProduct(product.id)"
+            class="product-list-item"
           >
             <template #prepend>
               <v-avatar color="primary" size="36">
                 <span class="text-white text-caption">{{ product.name?.charAt(0) }}</span>
               </v-avatar>
             </template>
-            <v-list-item-title>{{ product.name }}</v-list-item-title>
-            <v-list-item-subtitle v-if="product.brand">{{ product.brand }}</v-list-item-subtitle>
-            <template #append>
-              <v-btn
-                icon="mdi-pencil"
-                size="small"
-                variant="text"
-                density="compact"
-                @click.stop="openEditProductDialog(product)"
-              />
-              <v-btn
-                icon="mdi-delete"
-                size="small"
-                variant="text"
-                density="compact"
-                color="error"
-                :disabled="products.length <= 1"
-                @click.stop="openDeleteProductDialog(product)"
-              />
-              <v-icon>mdi-chevron-right</v-icon>
-            </template>
+
+            <div class="d-flex align-center w-100 ga-2 py-1">
+              <!-- 左侧：名称 + 品牌 -->
+              <div class="flex-grow-1" style="min-width: 0">
+                <div class="text-body-2 text-truncate">{{ product.name }}</div>
+                <div v-if="product.brand" class="text-caption text-medium-emphasis text-truncate">{{ product.brand }}</div>
+              </div>
+
+              <!-- 右侧：加载中/价格 + 迷你图 + 操作按钮 -->
+              <div class="d-flex align-center ga-1 flex-shrink-0">
+                <!-- 价格区域 -->
+                <div v-if="productPrices[product.id]" class="text-right" style="min-width: 68px">
+                  <div v-if="productPrices[product.id].loading" class="text-center">
+                    <v-progress-circular indeterminate size="14" width="2" />
+                  </div>
+                  <template v-else-if="productPrices[product.id].latestPrice !== null">
+                    <div class="text-body-2 font-weight-bold text-tertiary text-no-wrap" style="line-height: 1.2">
+                      ¥{{ Number(productPrices[product.id].latestPrice).toFixed(2) }}
+                      <span v-if="productPrices[product.id].latestPriceUnit" class="text-caption font-weight-regular">{{ productPrices[product.id].latestPriceUnit }}</span>
+                    </div>
+                    <div v-if="productPrices[product.id].latestPriceDate" class="text-caption text-medium-emphasis" style="font-size: 0.6rem; line-height: 1">
+                      {{ formatToLocalDate(productPrices[product.id].latestPriceDate) }}
+                    </div>
+                  </template>
+                </div>
+
+                <!-- 迷你图 -->
+                <div
+                  v-if="productPrices[product.id]?.sparklineData?.length >= 2"
+                  style="width: 44px; height: 26px; position: relative"
+                >
+                  <SparklineBackground
+                    :data="productPrices[product.id].sparklineData"
+                    color="tertiary"
+                    :height="26"
+                  />
+                </div>
+
+                <v-btn
+                  icon="mdi-pencil"
+                  size="x-small"
+                  variant="text"
+                  density="compact"
+                  @click.stop="openEditProductDialog(product)"
+                />
+                <v-btn
+                  icon="mdi-delete"
+                  size="x-small"
+                  variant="text"
+                  density="compact"
+                  color="error"
+                  :disabled="products.length <= 1"
+                  @click.stop="openDeleteProductDialog(product)"
+                />
+                <v-icon size="small">mdi-chevron-right</v-icon>
+              </div>
+            </div>
           </v-list-item>
         </v-list>
 
@@ -1666,6 +1718,14 @@ interface Product {
   ingredient_id?: number
 }
 
+interface ProductPriceInfo {
+  loading: boolean
+  latestPrice: number | null
+  latestPriceUnit: string | null
+  latestPriceDate: string | null
+  sparklineData: number[]
+}
+
 interface PriceRecord {
   id: number
   product_id: number
@@ -1735,6 +1795,9 @@ const loadingMerchantPrices = ref(false)
 
 // 关联商品
 const products = ref<Product[]>([])
+
+// 商品价格懒加载数据（按 product.id 索引）
+const productPrices = ref<Record<number, ProductPriceInfo>>({})
 
 // 商品管理对话框
 const showProductDialog = ref(false)
@@ -2752,6 +2815,13 @@ const chartData = computed(() => {
     .sort((a, b) => a.date.localeCompare(b.date))
 })
 
+// 最新趋势数据点（用于最新价格卡片右侧展示）
+const latestChartTrend = computed(() => {
+  const data = chartData.value
+  if (!data || data.length === 0) return null
+  return data[data.length - 1]
+})
+
 // 获取图表使用的单位（始终使用原料的默认单位）
 const chartUnit = computed(() => {
   return ingredient.value?.default_unit_name || '斤'
@@ -2833,8 +2903,58 @@ const loadProducts = async () => {
       }
     })
     products.value = response.items || []
+    // 懒加载每个商品的最新价格和迷你图数据
+    products.value.forEach(p => loadProductPrice(p))
   } catch (e) {
     products.value = []
+  }
+}
+
+// 懒加载单个商品的最新价格和迷你图数据
+const loadProductPrice = async (product: Product) => {
+  const pid = product.id
+  // 初始化 / 跳过已加载或加载中的
+  const existing = productPrices.value[pid]
+  if (existing) {
+    if (existing.loading) return
+    if (existing.latestPrice !== null) return
+  }
+  productPrices.value[pid] = {
+    loading: true,
+    latestPrice: null,
+    latestPriceUnit: null,
+    latestPriceDate: null,
+    sparklineData: [],
+  }
+  try {
+    // 获取最新价格
+    const detail: any = await api.get(`/products/entity/${pid}`)
+    const info = productPrices.value[pid]
+    if (!info) return
+    info.latestPrice = detail.latest_price ?? null
+    info.latestPriceUnit = detail.latest_price_unit ?? null
+    info.latestPriceDate = detail.latest_price_date ?? null
+
+    // 获取近期价格记录用于迷你图
+    const records: any = await api.get('/products', {
+      params: { product_id: pid, limit: 20 },
+    })
+    const items: any[] = records.items || []
+    // 按日期排序，算单价
+    const pricePoints = items
+      .filter((r: any) => r.price && Number(r.original_quantity) > 0)
+      .sort((a: any, b: any) => (a.recorded_at || '').localeCompare(b.recorded_at || ''))
+      .map((r: any) => {
+        const qty = Number(r.original_quantity) || 1
+        return Number(r.price) / qty
+      })
+    info.sparklineData = pricePoints
+  } catch (e) {
+    console.error(`加载商品 ${product.name} 价格数据失败`, e)
+  } finally {
+    if (productPrices.value[pid]) {
+      productPrices.value[pid].loading = false
+    }
   }
 }
 

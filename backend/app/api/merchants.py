@@ -12,14 +12,16 @@ from app.schemas.merchant import (
     MerchantUpdate,
     MerchantResponse,
     MerchantCoordinateResponse,
+    ProductOrderCreate,
 )
+from app.models.user_merchant_product_order import UserMerchantProductOrder
 from app.schemas.common import PaginatedResponse
 from app.models.product import ProductRecord
 from app.models.product_entity import Product
 from app.models.unit import Unit
 from app.schemas.product import ProductRecordResponse
 
-from datetime import datetime as _dt
+from datetime import date as date_type, datetime as _dt
 from app.utils.datetime_utils import serialize_datetime
 
 # SQLite 时间字符串格式（UTC naive）：'2026-06-11 03:38:00.000000'
@@ -262,7 +264,7 @@ async def get_merchant_prices(
 async def get_merchant_product_prices(
     merchant_id: int,
     skip: int = Query(0, ge=0, description="跳过的记录数"),
-    limit: int = Query(20, ge=1, le=100, description="每页记录数"),
+    limit: int = Query(20, ge=1, le=500, description="每页记录数"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -328,6 +330,36 @@ async def get_merchant_product_prices(
         """)
         total = db.execute(count_sql, {"uid": current_user.id, "mid": merchant_id}).scalar() or 0
 
+        # 计算自定义排序分（最近 3 天加权）
+        from datetime import timedelta, date as date_type
+        custom_scores: dict[int, float] = {}
+        score_records = db.query(UserMerchantProductOrder).filter(
+            UserMerchantProductOrder.user_id == current_user.id,
+            UserMerchantProductOrder.merchant_id == merchant_id,
+            UserMerchantProductOrder.session_date >= date_type.today() - timedelta(days=2),
+        ).all()
+
+        if score_records:
+            # 按 session_date 分组加权（今天×3，昨天×2，前天×1）
+            today = date_type.today()
+            weights: dict[date_type, int] = {}
+            for offset, w in [(0, 3), (1, 2), (2, 1)]:
+                d = today - timedelta(days=offset)
+                weights[d] = w
+
+            product_weights: dict[int, float] = {}
+            product_counts: dict[int, float] = {}
+
+            for rec in score_records:
+                w = weights.get(rec.session_date, 0)
+                if w > 0:
+                    pid = rec.product_id
+                    product_weights[pid] = product_weights.get(pid, 0) + rec.sort_order * w
+                    product_counts[pid] = product_counts.get(pid, 0) + w
+
+            for pid in product_weights:
+                custom_scores[pid] = product_weights[pid] / product_counts[pid]
+
         unit_service = UnitConversionService(db)
         items = []
         for r in rows:
@@ -376,6 +408,7 @@ async def get_merchant_product_prices(
                 "category_id": r.category_id,
                 "category_display_name": r.category_display_name,
                 "category_sort_order": r.category_sort_order,
+                "custom_sort_score": custom_scores.get(r.product_id),
             })
 
         page = (skip // limit) + 1 if limit else 1
@@ -401,6 +434,68 @@ async def get_merchant_product_prices(
             status_code=500,
             detail="获取商家商品最新价格时发生未知错误"
         )
+
+
+@router.post("/{merchant_id}/product-orders")
+async def save_product_orders(
+    merchant_id: int,
+    body: ProductOrderCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """保存本次快速填写的商品顺序。
+
+    按 (user_id, merchant_id, product_id, session_date) upsert 每条记录。
+    sort_order 取 product_ids 数组的索引（从 0 开始）。
+    """
+    try:
+        # 校验商家存在且属于当前用户
+        merchant = db.query(Merchant).filter(
+            Merchant.id == merchant_id,
+            Merchant.user_id == current_user.id,
+        ).first()
+        if not merchant:
+            raise HTTPException(status_code=404, detail="商家不存在")
+
+        # 解析日期
+        try:
+            sess_date = date_type.fromisoformat(body.session_date)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="session_date 格式无效，应为 YYYY-MM-DD")
+
+        # 查询当天已有记录（用于 upsert）
+        existing = {}
+        existing_rows = db.query(UserMerchantProductOrder).filter(
+            UserMerchantProductOrder.user_id == current_user.id,
+            UserMerchantProductOrder.merchant_id == merchant_id,
+            UserMerchantProductOrder.session_date == sess_date,
+        ).all()
+        for row in existing_rows:
+            key = (current_user.id, merchant_id, row.product_id, sess_date)
+            existing[key] = row
+
+        for idx, pid in enumerate(body.product_ids):
+            key = (current_user.id, merchant_id, pid, sess_date)
+            if key in existing:
+                existing[key].sort_order = idx
+            else:
+                record = UserMerchantProductOrder(
+                    user_id=current_user.id,
+                    merchant_id=merchant_id,
+                    product_id=pid,
+                    session_date=sess_date,
+                    sort_order=idx,
+                )
+                db.add(record)
+
+        db.commit()
+        return {"message": f"已保存 {len(body.product_ids)} 条排序记录"}
+
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"数据库错误: {str(e)}")
 
 
 @router.put("/{merchant_id}", response_model=MerchantResponse)

@@ -286,55 +286,70 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     else:
         product.tags = []
 
-    # 获取最新价格记录（含单位信息）
-    latest_price_record = db.query(ProductRecord).options(
-        joinedload(ProductRecord.original_unit)
+    from sqlalchemy import func
+
+    # 获取最近有记录的日期
+    latest_date = db.query(
+        func.max(func.date(ProductRecord.recorded_at))
     ).filter(
-        ProductRecord.product_id == product_id
-    ).order_by(desc(ProductRecord.recorded_at)).first()
+        ProductRecord.product_id == product_id,
+        ProductRecord.is_active == True
+    ).scalar()
 
     latest_price = None
     latest_price_unit = None
-    latest_price_date = latest_price_record.recorded_at if latest_price_record else None
+    latest_price_date = None
 
-    if latest_price_record and latest_price_record.original_quantity and latest_price_record.original_quantity > 0:
-        from decimal import Decimal
-        from app.services.unit_conversion_service import UnitConversionService
-        unit_service = UnitConversionService(db)
+    if latest_date:
+        # 取最近一天的所有记录
+        day_records = db.query(ProductRecord).options(
+            joinedload(ProductRecord.original_unit)
+        ).filter(
+            ProductRecord.product_id == product_id,
+            func.date(ProductRecord.recorded_at) == latest_date,
+            ProductRecord.is_active == True
+        ).all()
 
-        total_price = float(latest_price_record.price)
-        original_quantity = float(latest_price_record.original_quantity)
-        original_unit_abbr = latest_price_record.original_unit.abbreviation if latest_price_record.original_unit else None
+        if day_records:
+            from decimal import Decimal
+            from app.services.unit_conversion_service import UnitConversionService
+            unit_service = UnitConversionService(db)
 
-        # 获取原料默认单位作为目标
-        target_unit_abbr = None
-        if product.ingredient and product.ingredient.default_unit:
-            target_unit_abbr = product.ingredient.default_unit.abbreviation
+            # 获取原料默认单位作为目标
+            target_unit_abbr = None
+            if product.ingredient and product.ingredient.default_unit:
+                target_unit_abbr = product.ingredient.default_unit.abbreviation
 
-        # 计算每单位价格
-        if original_unit_abbr:
-            if target_unit_abbr and original_unit_abbr != target_unit_abbr:
-                convert_result = unit_service.convert(
-                    Decimal(str(original_quantity)),
-                    original_unit_abbr,
-                    target_unit_abbr,
-                    entity_type="product",
-                    entity_id=product_id,
-                )
-                if convert_result is not None:
-                    converted_quantity, _ = convert_result
-                    if converted_quantity and float(converted_quantity) > 0:
-                        latest_price = float(total_price) / float(converted_quantity)
-                        latest_price_unit = target_unit_abbr
+            unit_prices = []
+            for record in day_records:
+                if record.price and record.original_quantity and record.original_quantity > 0:
+                    total_price = float(record.price)
+                    original_quantity = float(record.original_quantity)
+                    original_unit_abbr = record.original_unit.abbreviation if record.original_unit else None
+
+                    if original_unit_abbr:
+                        if target_unit_abbr and original_unit_abbr != target_unit_abbr:
+                            convert_result = unit_service.convert(
+                                Decimal(str(original_quantity)),
+                                original_unit_abbr,
+                                target_unit_abbr,
+                                entity_type="product",
+                                entity_id=product_id,
+                            )
+                            if convert_result is not None:
+                                converted_quantity, _ = convert_result
+                                if converted_quantity and float(converted_quantity) > 0:
+                                    unit_prices.append(total_price / float(converted_quantity))
+                                    continue
+                        # 单位相同或转换失败，直接算单价
+                        unit_prices.append(total_price / original_quantity)
                     else:
-                        latest_price = total_price / original_quantity
-                        latest_price_unit = original_unit_abbr
-                else:
-                    latest_price = total_price / original_quantity
-                    latest_price_unit = original_unit_abbr
-            else:
-                latest_price = total_price / original_quantity
-                latest_price_unit = original_unit_abbr
+                        unit_prices.append(total_price / original_quantity)
+
+            if unit_prices:
+                latest_price = sum(unit_prices) / len(unit_prices)
+                latest_price_unit = target_unit_abbr
+                latest_price_date = datetime.strptime(latest_date, '%Y-%m-%d') if isinstance(latest_date, str) else latest_date
 
     # 构建详细响应
     ingredient_name = product.ingredient.name if product.ingredient else None
