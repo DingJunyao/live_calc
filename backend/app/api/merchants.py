@@ -494,6 +494,7 @@ async def get_merchants(
     limit: int = Query(10, ge=1, le=100, description="每页记录数"),
     search: Optional[str] = Query(None, description="搜索关键词（商家名称或地址）"),
     include_closed: bool = Query(False, description="是否包含已关闭的商家"),
+    no_price: bool = Query(False, description="筛选未维护过价格的商家"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -516,6 +517,13 @@ async def get_merchants(
                     Merchant.name.like(search_pattern),
                     Merchant.address.like(search_pattern)
                 )
+            )
+
+        # 特殊条件：未维护过价格
+        if no_price:
+            from sqlalchemy import exists
+            query = query.filter(
+                ~exists().where(ProductRecord.merchant_id == Merchant.id)
             )
 
         # 获取总数

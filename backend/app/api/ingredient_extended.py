@@ -1,6 +1,7 @@
 # 食材扩展 API - 支持别名搜索（最后修改: 2026-03-27 23:35）
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session, load_only, joinedload
+from sqlalchemy import func
 from typing import List, Optional
 from decimal import Decimal
 import json
@@ -25,6 +26,69 @@ def _make_alias_search_term(term: str) -> str:
     此函数将搜索词转换为相同的格式以便匹配。
     """
     return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
+
+
+def _apply_ingredient_special_conditions(query, no_nutrition, no_price, single_price, single_merchant, no_recipe, no_product):
+    """Apply special condition filters to an Ingredient query."""
+    from app.models.nutrition_data import NutritionData
+    from app.models.product_entity import Product
+    from app.models.product import ProductRecord
+    from app.models.recipe import RecipeIngredient
+    from sqlalchemy import exists, select
+
+    if no_nutrition:
+        query = query.filter(
+            ~exists().where(
+                NutritionData.ingredient_id == Ingredient.id,
+                NutritionData.is_verified == True
+            )
+        )
+
+    if no_price:
+        query = query.filter(
+            ~exists().where(
+                Product.ingredient_id == Ingredient.id,
+                Product.is_active == True,
+                ProductRecord.product_id == Product.id
+            )
+        )
+
+    if single_price:
+        subq = (
+            select(func.count())
+            .select_from(ProductRecord)
+            .join(Product, Product.id == ProductRecord.product_id)
+            .where(Product.ingredient_id == Ingredient.id, Product.is_active == True)
+            .correlate(Ingredient)
+            .scalar_subquery()
+        )
+        query = query.filter(subq == 1)
+
+    if single_merchant:
+        subq = (
+            select(func.count(func.distinct(ProductRecord.merchant_id)))
+            .select_from(ProductRecord)
+            .join(Product, Product.id == ProductRecord.product_id)
+            .where(Product.ingredient_id == Ingredient.id, Product.is_active == True)
+            .correlate(Ingredient)
+            .scalar_subquery()
+        )
+        query = query.filter(subq == 1)
+
+    if no_recipe:
+        query = query.filter(
+            ~exists().where(RecipeIngredient.ingredient_id == Ingredient.id)
+        )
+
+    if no_product:
+        query = query.filter(
+            ~exists().where(
+                Product.ingredient_id == Ingredient.id,
+                Product.is_active == True
+            )
+        )
+
+    return query
 
 
 @router.get("/units", response_model=PaginatedResponse[dict])
@@ -681,6 +745,12 @@ async def get_ingredients(
     search: str = Query(None, alias="q"),
     category_id: Optional[int] = Query(None),
     sort_by: str = Query("created_at", enum=["name", "created_at", "price_records"], description="排序方式"),
+    no_nutrition: bool = Query(False, description="筛选未配置营养成分的原料"),
+    no_price: bool = Query(False, description="筛选没有维护过价格的原料"),
+    single_price: bool = Query(False, description="筛选仅有一条价格记录的原料"),
+    single_merchant: bool = Query(False, description="筛选仅有一家商家有其价格记录的原料"),
+    no_recipe: bool = Query(False, description="筛选无相关菜谱的原料"),
+    no_product: bool = Query(False, description="筛选无下属商品的原料"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -739,6 +809,11 @@ async def get_ingredients(
             if category_id:
                 query = query.filter(Ingredient.category_id == category_id)
 
+            # 应用特殊条件过滤
+            query = _apply_ingredient_special_conditions(
+                query, no_nutrition, no_price, single_price, single_merchant, no_recipe, no_product
+            )
+
             # 按价格记录数量降序排列
             ingredients = query.order_by(
                 subquery.c.record_count.desc(),  # 按记录数量降序排列
@@ -762,6 +837,11 @@ async def get_ingredients(
             if category_id:
                 total_query = total_query.filter(Ingredient.category_id == category_id)
 
+            # 应用特殊条件过滤
+            total_query = _apply_ingredient_special_conditions(
+                total_query, no_nutrition, no_price, single_price, single_merchant, no_recipe, no_product
+            )
+
             total = total_query.count()
         else:
             # 按名称或创建时间排序
@@ -781,6 +861,11 @@ async def get_ingredients(
 
             if category_id:
                 query = query.filter(Ingredient.category_id == category_id)
+
+            # 应用特殊条件过滤
+            query = _apply_ingredient_special_conditions(
+                query, no_nutrition, no_price, single_price, single_merchant, no_recipe, no_product
+            )
 
             # 按指定字段排序
             if sort_by == "name":

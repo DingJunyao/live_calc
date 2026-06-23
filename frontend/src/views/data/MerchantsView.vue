@@ -10,22 +10,22 @@
 
   <!-- 主内容容器：固定高度，flex 布局 -->
   <div class="merchants-page-container">
-    <!-- 加载中 -->
-    <div v-if="loading" class="fullpage-loading">
-      <v-progress-circular indeterminate color="primary" size="64" />
-      <div class="text-body-1 mt-4">加载中...</div>
-    </div>
-
     <!-- 错误提示 -->
-    <v-alert v-else-if="error" type="error" class="ma-4">
+    <v-alert v-if="error" type="error" class="ma-4">
       {{ error }}
       <template #append>
         <v-btn variant="text" @click="loadMerchants">重试</v-btn>
       </template>
     </v-alert>
 
-    <!-- 主内容区：列表 + 地图 -->
+    <!-- 主内容区：列表 + 地图（加载中用叠加层遮罩，避免 FilterBar 因 v-if 销毁丢失状态） -->
     <div v-else class="main-content">
+      <!-- 加载叠加层 -->
+      <div v-if="loading" class="fullpage-loading" style="position: absolute; inset: 0; z-index: 10; background: rgba(var(--v-theme-background), 0.7);">
+        <v-progress-circular indeterminate color="primary" size="64" />
+        <div class="text-body-1 mt-4">加载中...</div>
+      </div>
+
       <!-- 左边：搜索框 + 商家列表 -->
       <div class="left-panel">
         <div class="search-wrapper">
@@ -41,13 +41,10 @@
               class="flex-grow-1"
               @update:model-value="debouncedSearch"
             />
-            <v-btn
-              :icon="showAllMerchants ? 'mdi-eye' : 'mdi-eye-off'"
-              :color="showAllMerchants ? 'primary' : undefined"
-              variant="text"
-              size="small"
-              :title="showAllMerchants ? '显示全部商家' : '仅显示营业中商家'"
-              @click="toggleShowAll"
+            <FilterBar
+              :filters="merchantFilters"
+              mobile
+              @change="onFilterChange"
             />
           </div>
         </div>
@@ -231,6 +228,7 @@ import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import FilterBar, { type FilterConfig } from '@/components/common/FilterBar.vue'
 import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
 import type { Coordinate } from '@/utils/map/mapTypes'
@@ -286,7 +284,35 @@ const pickerCoords = ref<Coordinate | undefined>()
 const currentPage = ref(Number(route.query.page) || 1)
 const pageSize = ref(Number(route.query.pageSize) || 20)
 const total = ref(0)
-const showAllMerchants = ref(false)
+// 筛选器相关
+const requestFilters = ref<Record<string, any>>({})
+
+const merchantFilters: FilterConfig[] = [
+  {
+    key: 'include_closed',
+    label: '显示已关闭商家',
+    type: 'toggle',
+    minWidth: '160px',
+  },
+  {
+    key: 'special_conditions',
+    label: '特殊条件',
+    type: 'multicheck',
+    items: [
+      { value: 'no_price', title: '未维护过价格' },
+    ],
+    minWidth: '180px',
+  },
+]
+
+const onFilterChange = (filterState: Record<string, any>) => {
+  requestFilters.value = filterState
+  currentPage.value = 1
+  loadMerchants()
+  loadAllCoordinates()
+}
+
+const showAllMerchants = computed(() => requestFilters.value.include_closed === true)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 const { md, lgAndUp } = useDisplay()
@@ -328,6 +354,12 @@ const loadMerchants = async () => {
     }
     if (search.value) {
       params.search = search.value
+    }
+    // 特殊条件参数
+    if (requestFilters.value.special_conditions?.length) {
+      for (const cond of requestFilters.value.special_conditions) {
+        params[cond] = 'true'
+      }
     }
 
     const response = await api.get('/merchants', { params })
@@ -396,13 +428,6 @@ const onPageChange = (page: number) => {
   currentPage.value = page
   syncToUrl()
   loadMerchants()
-}
-
-const toggleShowAll = () => {
-  showAllMerchants.value = !showAllMerchants.value
-  currentPage.value = 1
-  loadMerchants()
-  loadAllCoordinates()
 }
 
 // 右侧地图面板引用（移动端定位后滚动到地图）

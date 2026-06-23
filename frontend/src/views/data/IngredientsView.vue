@@ -346,6 +346,20 @@ const ingredientFilters = computed<FilterConfig[]>(() => [
     minWidth: '160px',
     maxWidth: '240px',
   },
+  {
+    key: 'special_conditions',
+    label: '特殊条件',
+    type: 'multicheck',
+    items: [
+      { value: 'no_nutrition', title: '未配置营养成分' },
+      { value: 'no_price', title: '没有维护过价格' },
+      { value: 'single_price', title: '仅有一条价格记录' },
+      { value: 'single_merchant', title: '仅有一家商家有其价格' },
+      { value: 'no_recipe', title: '无相关菜谱' },
+      { value: 'no_product', title: '无下属商品' },
+    ],
+    minWidth: '180px',
+  },
 ])
 
 const onFilterChange = (filterState: Record<string, any>) => {
@@ -458,6 +472,12 @@ const loadIngredients = async () => {
     // 筛选参数
     if (requestFilters.value.category_ids?.length) {
       params.category_ids = requestFilters.value.category_ids.join(',')
+    }
+    // 特殊条件参数
+    if (requestFilters.value.special_conditions?.length) {
+      for (const cond of requestFilters.value.special_conditions) {
+        params[cond] = 'true'
+      }
     }
 
     const response = await api.get('/ingredients', { params })

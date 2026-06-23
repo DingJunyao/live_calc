@@ -34,6 +34,49 @@ import tempfile
 router = APIRouter()
 
 
+def _apply_recipe_special_conditions(query, has_unpriced_ingredient, has_unnourished_ingredient):
+    """Apply special condition filters to a Recipe query."""
+    from app.models.product_entity import Product
+    from app.models.product import ProductRecord
+    from app.models.nutrition_data import NutritionData
+    from sqlalchemy import exists, and_
+
+    if has_unpriced_ingredient:
+        # EXISTS ingredient in recipe with active product but no price records
+        query = query.filter(
+            exists().where(
+                and_(
+                    RecipeIngredient.recipe_id == Recipe.id,
+                    exists().where(
+                        and_(
+                            Product.ingredient_id == RecipeIngredient.ingredient_id,
+                            Product.is_active == True,
+                            ~exists().where(ProductRecord.product_id == Product.id)
+                        )
+                    )
+                )
+            )
+        )
+
+    if has_unnourished_ingredient:
+        # EXISTS ingredient in recipe with no verified nutrition data
+        query = query.filter(
+            exists().where(
+                and_(
+                    RecipeIngredient.recipe_id == Recipe.id,
+                    ~exists().where(
+                        and_(
+                            NutritionData.ingredient_id == RecipeIngredient.ingredient_id,
+                            NutritionData.is_verified == True
+                        )
+                    )
+                )
+            )
+        )
+
+    return query
+
+
 @router.post("", response_model=RecipeResponse)
 async def create_recipe(
     recipe: RecipeCreate,
@@ -102,6 +145,8 @@ async def get_recipes(
     categories: Optional[str] = Query(None, description="菜谱分类列表，逗号分隔"),
     difficulties: Optional[str] = Query(None, description="难度列表，逗号分隔"),
     ingredient_ids: Optional[str] = Query(None, description="食材ID列表，逗号分隔（筛选包含任意该食材的菜谱，包括可选食材）"),
+    has_unpriced_ingredient: bool = Query(False, description="筛选存在原料没有维护价格的菜谱"),
+    has_unnourished_ingredient: bool = Query(False, description="筛选存在原料没有维护营养成分的菜谱"),
     include_cost: bool = Query(False, description="是否包含成本和营养信息（列表页默认不计算，通过 batch-cost 懒加载）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -153,6 +198,11 @@ async def get_recipes(
                     RecipeIngredient.ingredient_id.in_(ing_id_list)
                 ).distinct().subquery()
                 all_recipes_query = all_recipes_query.filter(Recipe.id.in_(recipe_ids_subq))
+
+        # 应用特殊条件过滤
+        all_recipes_query = _apply_recipe_special_conditions(
+            all_recipes_query, has_unpriced_ingredient, has_unnourished_ingredient
+        )
 
         total = all_recipes_query.count()
         recipes = all_recipes_query.order_by(Recipe.created_at.desc()).offset(skip).limit(limit).all()

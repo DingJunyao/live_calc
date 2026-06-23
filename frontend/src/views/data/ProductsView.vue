@@ -389,6 +389,17 @@ const productFilters = computed<FilterConfig[]>(() => [
     minWidth: '140px',
     maxWidth: '200px',
   },
+  {
+    key: 'special_conditions',
+    label: '特殊条件',
+    type: 'multicheck',
+    items: [
+      { value: 'no_price', title: '没有维护过价格' },
+      { value: 'single_price', title: '仅有一条价格记录' },
+      { value: 'single_merchant', title: '仅有一家商家有其价格' },
+    ],
+    minWidth: '180px',
+  },
 ])
 
 const onFilterChange = (filterState: Record<string, any>) => {
@@ -484,6 +495,12 @@ const loadProducts = async () => {
     }
     if (requestFilters.value.brands?.length) {
       params.brands = requestFilters.value.brands.join(',')
+    }
+    // 特殊条件参数
+    if (requestFilters.value.special_conditions?.length) {
+      for (const cond of requestFilters.value.special_conditions) {
+        params[cond] = 'true'
+      }
     }
 
     const response = await api.get('/products/entity', { params })

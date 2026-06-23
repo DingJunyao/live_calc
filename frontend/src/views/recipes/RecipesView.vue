@@ -334,6 +334,16 @@ const recipeFilters: FilterConfig[] = reactive([
     minWidth: '160px',
     maxWidth: '280px',
   },
+  {
+    key: 'special_conditions',
+    label: '特殊条件',
+    type: 'multicheck',
+    items: [
+      { value: 'has_unpriced_ingredient', title: '存在原料没有维护价格' },
+      { value: 'has_unnourished_ingredient', title: '存在原料没有维护营养成分' },
+    ],
+    minWidth: '220px',
+  },
 ])
 
 const requestFilters = ref<Record<string, any>>({})
@@ -436,6 +446,12 @@ const loadRecipes = async () => {
     }
     if (requestFilters.value.ingredient_ids?.length) {
       params.ingredient_ids = requestFilters.value.ingredient_ids.join(',')
+    }
+    // 特殊条件参数
+    if (requestFilters.value.special_conditions?.length) {
+      for (const cond of requestFilters.value.special_conditions) {
+        params[cond] = 'true'
+      }
     }
 
     const response = await api.get('/recipes', { params })

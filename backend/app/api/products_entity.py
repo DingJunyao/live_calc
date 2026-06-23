@@ -1,7 +1,7 @@
 """商品实体 API 路由"""
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, and_, or_
+from sqlalchemy import desc, and_, or_, func
 from typing import List, Optional
 from datetime import datetime
 import json
@@ -33,6 +33,39 @@ def _make_alias_search_term(term: str) -> str:
     此函数将搜索词转换为相同的格式以便匹配。
     """
     return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
+
+
+def _apply_product_special_conditions(query, no_price, single_price, single_merchant):
+    """Apply special condition filters to a Product query."""
+    from app.models.product import ProductRecord
+    from sqlalchemy import exists, select
+
+    if no_price:
+        query = query.filter(
+            ~exists().where(ProductRecord.product_id == Product.id)
+        )
+
+    if single_price:
+        subq = (
+            select(func.count())
+            .select_from(ProductRecord)
+            .where(ProductRecord.product_id == Product.id)
+            .correlate(Product)
+            .scalar_subquery()
+        )
+        query = query.filter(subq == 1)
+
+    if single_merchant:
+        subq = (
+            select(func.count(func.distinct(ProductRecord.merchant_id)))
+            .select_from(ProductRecord)
+            .where(ProductRecord.product_id == Product.id)
+            .correlate(Product)
+            .scalar_subquery()
+        )
+        query = query.filter(subq == 1)
+
+    return query
 
 
 @router.post("/products/entity", response_model=ProductResponse)
@@ -83,6 +116,9 @@ def list_products(
     ingredient_ids: Optional[str] = Query(None, description="原料ID列表，逗号分隔"),
     ingredient_category_ids: Optional[str] = Query(None, description="原料分类ID列表，逗号分隔"),
     brands: Optional[str] = Query(None, description="品牌列表，逗号分隔"),
+    no_price: bool = Query(False, description="筛选没有维护过价格的商品"),
+    single_price: bool = Query(False, description="筛选仅有一条价格记录的商品"),
+    single_merchant: bool = Query(False, description="筛选仅有一家商家有其价格记录的商品"),
     db: Session = Depends(get_db)
 ):
     """获取商品列表（分页）
@@ -142,6 +178,9 @@ def list_products(
             if brand_list:
                 query = query.filter(Product.brand.in_(brand_list))
 
+        # 应用特殊条件过滤
+        query = _apply_product_special_conditions(query, no_price, single_price, single_merchant)
+
         total = query.count()
 
         # 按价格记录数量排序，然后按商品创建时间排序以确保一致性
@@ -184,6 +223,9 @@ def list_products(
             brand_list = [b.strip() for b in brands.split(',') if b.strip()]
             if brand_list:
                 query = query.filter(Product.brand.in_(brand_list))
+
+        # 应用特殊条件过滤
+        query = _apply_product_special_conditions(query, no_price, single_price, single_merchant)
 
         total = query.count()
 

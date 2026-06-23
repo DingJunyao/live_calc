@@ -2,7 +2,8 @@
   <!-- ============ 移动端：筛选按钮 + 模态框 ============ -->
   <template v-if="mobile">
     <v-btn
-      variant="outlined"
+      :variant="hasActiveFilters ? 'tonal' : 'outlined'"
+      :color="hasActiveFilters ? 'primary' : undefined"
       density="compact"
       class="filter-toggle-btn"
       @click="dialogOpen = true"
@@ -126,6 +127,47 @@
                   />
                 </div>
               </div>
+
+              <!-- 开关 -->
+              <v-switch
+                v-if="f.type === 'toggle'"
+                :model-value="getValue(f.key) === true"
+                :label="f.label"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="onToggleChange(f.key, $event)"
+              />
+
+              <!-- 多选下拉（静态选项） -->
+              <v-select
+                v-if="f.type === 'multicheck'"
+                :model-value="getValue(f.key)"
+                :items="f.items || []"
+                :label="f.label"
+                multiple
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+                @update:model-value="onSelectChange(f.key, $event)"
+              >
+                <template #selection="{ item, index }">
+                  <v-chip v-if="index < 3" size="small" closable @click:close="onRemoveChip(f.key, item.value)">
+                    <span class="text-truncate" style="max-width: 100px">{{ item.title }}</span>
+                  </v-chip>
+                  <v-tooltip v-if="index === 3" location="top" open-on-click>
+                    <template #activator="{ props: tp }">
+                      <span v-bind="tp" class="text-caption text-medium-emphasis ml-1" style="cursor: pointer">
+                        +{{ getValue(f.key).length - 3 }}
+                      </span>
+                    </template>
+                    <div class="d-flex flex-column ga-1" style="max-width: 260px; max-height: 240px; overflow-y: auto">
+                      <div v-for="(title, i) in getSelectedTitles(f.key)" :key="i" class="text-caption text-no-wrap">{{ title }}</div>
+                    </div>
+                  </v-tooltip>
+                </template>
+              </v-select>
             </template>
           </div>
         </v-card-text>
@@ -240,6 +282,51 @@
           @click="triggerDatePicker"
         />
       </div>
+
+      <!-- 开关 -->
+      <v-switch
+        v-if="f.type === 'toggle'"
+        :model-value="getValue(f.key) === true"
+        :label="f.label"
+        color="primary"
+        density="compact"
+        hide-details
+        :style="{ minWidth: f.minWidth || '160px' }"
+        @update:model-value="onToggleChange(f.key, $event)"
+      />
+
+      <!-- 多选下拉（静态选项） -->
+      <v-select
+        v-if="f.type === 'multicheck'"
+        :model-value="getValue(f.key)"
+        :items="f.items || []"
+        :label="f.label"
+        multiple
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        :style="{ minWidth: f.minWidth || '180px', maxWidth: f.maxWidth || '280px' }"
+        @update:model-value="onSelectChange(f.key, $event)"
+      >
+        <template #selection="{ item, index }">
+          <div v-if="index === 0" class="d-inline-flex align-center ga-1" style="min-width: 0;">
+            <v-chip size="small" closable @click:close="onRemoveChip(f.key, item.value)">
+              <span class="text-truncate" style="max-width: 80px">{{ item.title }}</span>
+            </v-chip>
+            <v-tooltip v-if="getValue(f.key).length > 1" location="bottom" :open-on-click="mobile">
+              <template #activator="{ props: tp }">
+                <span v-bind="tp" class="text-caption text-medium-emphasis text-no-wrap" style="cursor: default">
+                  等{{ getValue(f.key).length }}项
+                </span>
+              </template>
+              <div class="d-flex flex-column ga-1" style="max-width: 260px; max-height: 240px; overflow-y: auto">
+                <div v-for="(title, i) in getSelectedTitles(f.key)" :key="i" class="text-caption text-no-wrap">{{ title }}</div>
+              </div>
+            </v-tooltip>
+          </div>
+        </template>
+      </v-select>
     </template>
 
     <!-- 有激活的筛选时显示清除按钮 -->
@@ -264,7 +351,7 @@ import { computed, reactive, ref } from 'vue'
 export interface FilterConfig {
   key: string
   label: string
-  type: 'select' | 'autocomplete' | 'date-range'
+  type: 'select' | 'autocomplete' | 'date-range' | 'toggle' | 'multicheck'
   items?: { value: any; title: string }[]
   multiple?: boolean
   loading?: boolean
@@ -277,7 +364,7 @@ interface DateRangeValue {
   end: string | null
 }
 
-type FilterValue = any[] | DateRangeValue | null
+type FilterValue = any[] | DateRangeValue | boolean | null
 
 const props = defineProps<{
   filters: FilterConfig[]
@@ -330,6 +417,8 @@ const getValue = (key: string): FilterValue => {
     const cfg = props.filters.find(f => f.key === key)
     if (cfg?.type === 'date-range') {
       state[key] = { start: null, end: null } as DateRangeValue
+    } else if (cfg?.type === 'toggle') {
+      state[key] = false
     } else {
       state[key] = []
     }
@@ -340,7 +429,8 @@ const getValue = (key: string): FilterValue => {
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
   return Object.entries(state).some(([key, val]) => {
-    if (!val) return false
+    if (!val && typeof val !== 'boolean') return false
+    if (typeof val === 'boolean') return val === true
     if (Array.isArray(val)) return val.length > 0
     if (typeof val === 'object') return !!(val as DateRangeValue).start || !!(val as DateRangeValue).end
     return false
@@ -351,8 +441,9 @@ const hasActiveFilters = computed(() => {
 const activeFilterCount = computed(() => {
   let count = 0
   for (const [, val] of Object.entries(state)) {
-    if (!val) continue
-    if (Array.isArray(val) && val.length > 0) count++
+    if (!val && typeof val !== 'boolean') continue
+    if (typeof val === 'boolean' && val) count++
+    else if (Array.isArray(val) && val.length > 0) count++
     else if (typeof val === 'object') {
       const dr = val as DateRangeValue
       if (dr.start || dr.end) count++
@@ -369,6 +460,8 @@ const emitChange = () => {
     const payload: Record<string, any> = {}
     for (const [key, val] of Object.entries(state)) {
       if (Array.isArray(val)) {
+        payload[key] = val
+      } else if (typeof val === 'boolean') {
         payload[key] = val
       } else if (val && typeof val === 'object') {
         const dr = val as DateRangeValue
@@ -403,6 +496,11 @@ const onAutocompleteSelect = (key: string, val: any) => {
 const onDateChange = (key: string, field: 'start' | 'end', val: string) => {
   const current = getValue(key) as DateRangeValue
   current[field] = val || null
+  emitChange()
+}
+
+const onToggleChange = (key: string, val: boolean) => {
+  state[key] = val
   emitChange()
 }
 
