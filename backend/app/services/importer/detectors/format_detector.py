@@ -38,7 +38,7 @@ class FormatDetector:
         try:
             with open(manifest.absolute_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return "version" in data
+            return "format_version" in data
         except (json.JSONDecodeError, IOError):
             return False
 

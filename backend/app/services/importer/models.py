@@ -41,7 +41,11 @@ class FileCollection:
 
     def find(self, pattern: str) -> list[DataFile]:
         """按相对路径前缀匹配文件（如 'recipes/'）"""
-        return [f for f in self.files if f.relative_path.startswith(pattern)]
+        pattern = pattern.replace("\\", "/")
+        return [
+            f for f in self.files
+            if f.relative_path.replace("\\", "/").startswith(pattern)
+        ]
 
     def find_one(self, name: str) -> Optional[DataFile]:
         """按文件名查找唯一文件（如 'ingredients.json'）"""

@@ -45,7 +45,7 @@ def upload_import(
 
     suffix = os.path.splitext(file.filename or "upload.zip")[1] or ".zip"
     tmp = _tmpfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    content = file.read()
+    content = file.file.read()
     tmp.write(content)
     tmp.close()
 

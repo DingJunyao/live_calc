@@ -43,7 +43,7 @@ logger = logging.getLogger("app.importer.howtocook")
 class HowToCookImporter(Importer):
     """HowToCook_json 格式导入器。"""
 
-    IMAGES_DIR = Path(__file__).parent.parent.parent.parent / "static" / "images" / "recipes"
+    IMAGES_DIR = Path(__file__).parent.parent.parent.parent.parent / "static" / "images" / "recipes"
 
     def __init__(self, db, user_id: int = 1):
         super().__init__(db, user_id)
@@ -179,6 +179,9 @@ class HowToCookImporter(Importer):
                 self.result.warnings.append(
                     f"跳过无效 JSON 文件 {rf.relative_path}: {e}"
                 )
+                continue
+
+            if not isinstance(data, dict):
                 continue
 
             name = data.get("name", "").strip()

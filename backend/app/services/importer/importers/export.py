@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -36,7 +37,7 @@ class ReferenceMapping:
 class ExportImporter(Importer):
     """从系统导出 ZIP 导入数据。"""
 
-    IMAGES_DIR = Path(__file__).parent.parent.parent.parent / "static" / "images" / "recipes"
+    IMAGES_DIR = Path(__file__).parent.parent.parent.parent.parent / "static" / "images" / "recipes"
 
     def __init__(self, db, user_id: int):
         super().__init__(db, user_id)
@@ -68,6 +69,7 @@ class ExportImporter(Importer):
             self.db.commit()
         except Exception as e:
             self.db.rollback()
+            self.result.stats = {}  # 回滚后统计无意义，清空
             self.result.errors.append(f"导入过程出错: {str(e)}")
 
         return self.result
@@ -95,7 +97,7 @@ class ExportImporter(Importer):
     def _match_merchant_by_name(self, name: str) -> Optional[Merchant]:
         return self.db.query(Merchant).filter(
             Merchant.name == name,
-            Merchant.is_active == True,
+            Merchant.is_open == True,
         ).first()
 
     def _import_units(self, collection):
@@ -155,7 +157,12 @@ class ExportImporter(Importer):
         cats = {c.name: c for c in self.db.query(IngredientCategory).all()}
         for item in data:
             name = item.get("name", "").strip()
-            if not name or name in cats:
+            if not name:
+                continue
+            if name in cats:
+                old_id = item.get("id")
+                if old_id:
+                    self.mapping.categories[old_id] = cats[name].id
                 continue
             c = IngredientCategory(
                 name=name,
@@ -328,7 +335,7 @@ class ExportImporter(Importer):
                 servings=data.get("servings", 1),
                 tips=data.get("tips", []),
                 description=data.get("description", ""),
-                images=data.get("images", []),
+                images=self._restore_image_paths(data.get("images", [])),
             )
             self.db.add(recipe)
             self.db.flush()
@@ -371,6 +378,23 @@ class ExportImporter(Importer):
             if not name:
                 continue
             ing_id = self.mapping.ingredients.get(item.get("ingredient_id"))
+            # 映射表未命中时，尝试按名字查找原料
+            if not ing_id:
+                ing_name = item.get("ingredient_name", "").strip()
+                if ing_name:
+                    matched = self._match_ingredient_by_name(ing_name)
+                    if matched:
+                        ing_id = matched.id
+                # 退而求其次：用商品名找同名原料
+                if not ing_id:
+                    matched = self._match_ingredient_by_name(name)
+                    if matched:
+                        ing_id = matched.id
+            if not ing_id:
+                self.result.warnings.append(
+                    f"商品「{name}」缺少关联原料，已跳过"
+                )
+                continue
             existing = self.db.query(Product).filter(
                 Product.name == name,
                 Product.is_active == True,
@@ -464,6 +488,9 @@ class ExportImporter(Importer):
                 old_id = item.get("id")
                 if old_id:
                     self.mapping.merchants[old_id] = existing.id
+                # 同步更新营业状态
+                if "is_open" in item:
+                    existing.is_open = item["is_open"]
                 continue
             merchant = Merchant(
                 name=name,
@@ -471,6 +498,7 @@ class ExportImporter(Importer):
                 address=item.get("address"),
                 latitude=item.get("latitude"),
                 longitude=item.get("longitude"),
+                is_open=item.get("is_open", True),
             )
             self.db.add(merchant)
             self.db.flush()
@@ -509,6 +537,35 @@ class ExportImporter(Importer):
             imported += 1
         self.result.stats["user_places"] = imported
 
+    @staticmethod
+    def _restore_image_paths(images: list) -> list:
+        """将导出时的相对图片路径还原为本地 /static/... 路径。
+
+        导出时 convert_image_path 把 /static/ 前缀去掉 → images/recipes/xxx.jpg。
+        导入时反向：images/xxx → /static/images/xxx；外链 http(s):// 原样保留。
+        """
+        result = []
+        for img in images:
+            if not isinstance(img, str):
+                result.append(img)
+            elif img.startswith(("http://", "https://")):
+                result.append(img)
+            else:
+                result.append("/static/" + img)
+        return result
+
+    @staticmethod
+    def _parse_iso_datetime(value):
+        """将 ISO 8601 字符串解析为 timezone-aware datetime。"""
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        dt = datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
     def _import_price_records(self, collection):
         data = self._load_json(collection, "price_records.json")
         if not data:
@@ -539,7 +596,7 @@ class ExportImporter(Importer):
                 standard_quantity=item.get("standard_quantity", 1),
                 standard_unit_id=new_std_unit_id,
                 record_type=item.get("record_type", "price"),
-                recorded_at=item.get("recorded_at"),
+                recorded_at=self._parse_iso_datetime(item.get("recorded_at")),
                 notes=item.get("notes"),
             )
             self.db.add(rec)

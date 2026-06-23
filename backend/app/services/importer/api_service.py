@@ -90,14 +90,13 @@ def _run_import_task(task_id: int, import_func, *args):
 
         task = db.query(ImportTask).get(task_id)
         if task:
-            task.status = "success"
+            has_errors = (
+                hasattr(result, 'errors') and result.errors
+            )
+            task.status = "failed" if has_errors else "success"
             task.progress = {"stage": "完成", "current": 1, "total": 1, "message": "导入完成"}
             task.stats = result.stats if hasattr(result, 'stats') else {}
-            task.error = (
-                "\n".join(result.errors)
-                if hasattr(result, 'errors') and result.errors
-                else None
-            )
+            task.error = "\n".join(result.errors) if has_errors else None
             db.commit()
     except Exception as e:
         try:

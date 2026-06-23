@@ -32,7 +32,17 @@
 
         <div v-if="uploading" class="text-center py-4">
           <v-progress-circular indeterminate color="primary" />
-          <div class="mt-2">正在导入，请稍候…</div>
+          <div class="mt-2">
+            {{ currentTask?.progress?.message || '正在导入，请稍候…' }}
+          </div>
+          <div
+            v-if="currentTask?.progress?.total"
+            class="text-caption text-medium-emphasis mt-1"
+          >
+            {{ currentTask.progress.stage }}：{{ currentTask.progress.current }}/{{
+              currentTask.progress.total
+            }}
+          </div>
         </div>
 
         <v-btn block color="primary" :loading="uploading" :disabled="!file"
@@ -51,8 +61,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import axios from 'axios'
+import { ref, watch, computed } from 'vue'
+import { useImportTask } from '@/composables/useImportTask'
+import type { ImportTask } from '@/composables/useImportTask'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
@@ -60,29 +71,64 @@ const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 const visible = ref(props.modelValue)
 watch(() => props.modelValue, (v) => { visible.value = v })
 
+const { tasks, startUploadTask } = useImportTask()
+
 const file = ref<File | null>(null)
 const uploading = ref(false)
 const result = ref<any>(null)
+const currentTaskId = ref<number | null>(null)
+
+const currentTask = computed<ImportTask | undefined>(() => {
+  if (!currentTaskId.value) return undefined
+  return tasks.value.find((t) => t.id === currentTaskId.value)
+})
+
+// 监听任务状态变化，终态时展示结果
+watch(
+  () => {
+    const t = currentTask.value
+    return t ? { status: t.status, stats: t.stats, error: t.error } : null
+  },
+  (snapshot) => {
+    if (!snapshot) return
+    if (snapshot.status === 'success') {
+      result.value = {
+        success: true,
+        stats: snapshot.stats,
+        warnings: snapshot.error ? [snapshot.error] : [],
+      }
+      uploading.value = false
+      currentTaskId.value = null
+    } else if (snapshot.status === 'failed') {
+      result.value = {
+        success: false,
+        errors: [snapshot.error || '导入失败'],
+      }
+      uploading.value = false
+      currentTaskId.value = null
+    } else if (snapshot.status === 'cancelled') {
+      result.value = {
+        success: false,
+        errors: ['导入任务已取消'],
+      }
+      uploading.value = false
+      currentTaskId.value = null
+    }
+  },
+)
 
 async function handleUpload() {
   if (!file.value) return
   uploading.value = true
   result.value = null
-  try {
-    const form = new FormData()
-    form.append('file', file.value)
-    const token = localStorage.getItem('access_token')
-    const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
-    const resp = await axios.post(`${baseURL}/import/data/upload`, form, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    result.value = resp.data
-  } catch (e: any) {
+  const taskId = await startUploadTask(file.value)
+  if (taskId) {
+    currentTaskId.value = taskId
+  } else {
     result.value = {
       success: false,
-      errors: [e.response?.data?.detail || e.message],
+      errors: ['上传失败，请检查网络后重试'],
     }
-  } finally {
     uploading.value = false
   }
 }

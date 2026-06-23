@@ -81,6 +81,7 @@ export function useImportTask() {
       form.append('file', file)
       const data: any = await api.post('/import/data/upload', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 0, // 文件上传不设超时
       })
       const taskId = data?.task_id
       if (taskId) {
