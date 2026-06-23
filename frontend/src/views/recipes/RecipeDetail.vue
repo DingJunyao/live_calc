@@ -17,6 +17,12 @@
         :disabled="!recipe || deleting"
         @click="showDeleteDialog = true"
       />
+      <v-btn
+        icon="mdi-chart-box-outline"
+        variant="text"
+        color="tertiary"
+        @click="$router.push(`/recipes/${recipe?.id}/analysis`)"
+      />
       <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
     </template>
   </v-app-bar>

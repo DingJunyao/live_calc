@@ -53,6 +53,12 @@ const router = createRouter({
           meta: { detailType: '菜谱' },
         },
         {
+          path: 'recipes/:id/analysis',
+          name: 'recipe-analysis',
+          component: () => import('@/views/recipes/RecipeAnalysisView.vue'),
+          meta: { detailType: '菜谱', title: '菜谱分析' },
+        },
+        {
           path: 'data',
           name: 'data',
           redirect: '/data/products',
