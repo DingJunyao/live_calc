@@ -758,13 +758,15 @@ async def get_recipe_merchant_costs(
                 orig_unit_abbr = record.original_unit.abbreviation
 
                 if target_unit and orig_unit_abbr != target_unit:
-                    conv = unit_service.convert(
+                    convert_result = unit_service.convert(
                         orig_qty, orig_unit_abbr, target_unit,
                         entity_type="ingredient",
                         entity_id=ingredient.id
                     )
-                    if conv and conv.get("converted_quantity") and conv["converted_quantity"] > 0:
-                        unit_price = total_price / Decimal(str(conv["converted_quantity"]))
+                    if convert_result is not None:
+                        converted_qty, _ = convert_result
+                        if converted_qty and float(converted_qty) > 0:
+                            unit_price = total_price / Decimal(str(converted_qty))
                 else:
                     unit_price = total_price / Decimal(str(orig_qty)) if orig_qty > 0 else None
 

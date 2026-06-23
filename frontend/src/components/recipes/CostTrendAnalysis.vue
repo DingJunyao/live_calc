@@ -52,6 +52,9 @@
           <div v-if="loadingIngredientTrend" class="text-center py-4">
             <v-progress-circular indeterminate size="20" />
           </div>
+          <div v-else-if="!ingredientTrendData.length" class="text-center py-4 text-medium-emphasis text-caption">
+            暂无价格数据
+          </div>
           <div v-else ref="ingredientChartRef" class="ingredient-trend-chart" style="height:100px" />
         </div>
       </template>
