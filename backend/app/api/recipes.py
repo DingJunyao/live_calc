@@ -689,7 +689,10 @@ async def get_recipe_merchant_costs(
 ):
     """计算菜谱按商家购买的总成本估算"""
     try:
-        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            or_(Recipe.user_id == current_user.id, Recipe.source != None)
+        ).first()
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
@@ -705,7 +708,6 @@ async def get_recipe_merchant_costs(
         from app.models.merchant import Merchant
         from app.services.unit_conversion_service import UnitConversionService
         from sqlalchemy.orm import joinedload
-        from decimal import Decimal
 
         unit_service = UnitConversionService(db)
         total_ingredients = len(recipe_ingredients)
@@ -751,7 +753,7 @@ async def get_recipe_merchant_costs(
                     continue
 
                 unit_price = None
-                total_price = float(record.price)
+                total_price = Decimal(str(record.price))
                 orig_qty = float(record.original_quantity)
                 orig_unit_abbr = record.original_unit.abbreviation
 
@@ -762,9 +764,9 @@ async def get_recipe_merchant_costs(
                         entity_id=ingredient.id
                     )
                     if conv and conv.get("converted_quantity") and conv["converted_quantity"] > 0:
-                        unit_price = total_price / conv["converted_quantity"]
+                        unit_price = total_price / Decimal(str(conv["converted_quantity"]))
                 else:
-                    unit_price = total_price / orig_qty if orig_qty > 0 else None
+                    unit_price = total_price / Decimal(str(orig_qty)) if orig_qty > 0 else None
 
                 if unit_price is None or unit_price <= 0:
                     continue
@@ -782,13 +784,13 @@ async def get_recipe_merchant_costs(
                         q_max = float(qr.get("max", 0) or 0)
                         ingredient_qty = (q_min + q_max) / 2
 
-                ingredient_cost = unit_price * ingredient_qty
+                ingredient_cost = unit_price * Decimal(str(ingredient_qty))
 
                 merchant_name = record.merchant.name if record.merchant else f"商家{mid}"
                 if mid not in merchant_data:
                     merchant_data[mid] = {
                         "merchant_name": merchant_name,
-                        "total_cost": 0.0,
+                        "total_cost": Decimal("0"),
                         "covered_set": set(),
                     }
                 merchant_data[mid]["total_cost"] += ingredient_cost
@@ -804,7 +806,7 @@ async def get_recipe_merchant_costs(
             merchants_list.append(MerchantCostItem(
                 merchant_id=mid,
                 merchant_name=data["merchant_name"],
-                total_cost=round(data["total_cost"], 2),
+                total_cost=float(round(data["total_cost"], 2)),
                 covered_count=len(data["covered_set"]),
                 total_ingredients=total_ingredients,
                 missing_ingredients=missing_names,

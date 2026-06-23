@@ -152,7 +152,7 @@ class MerchantCostItem(BaseModel):
     """按商家维度计算的菜谱成本项"""
     merchant_id: int
     merchant_name: str
-    total_cost: float
+    total_cost: Decimal
     covered_count: int
     total_ingredients: int
     missing_ingredients: List[str] = []
