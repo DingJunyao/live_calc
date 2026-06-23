@@ -1,0 +1,177 @@
+<template>
+  <div>
+    <div class="d-flex align-center mb-3">
+      <v-icon start color="info">mdi-table-compare</v-icon>
+      <span class="text-h6 font-weight-regular">商家比价推荐</span>
+    </div>
+
+    <v-card elevation="0" variant="outlined">
+      <v-card-text class="pa-0">
+        <div v-if="loading" class="text-center py-8">
+          <v-progress-circular indeterminate size="24" />
+        </div>
+        <div v-else-if="!merchantNames.length" class="text-center py-6 text-medium-emphasis">
+          <v-icon size="40" color="medium-emphasis">mdi-table-off</v-icon>
+          <div class="text-body-2 mt-2">暂无比价数据</div>
+        </div>
+        <div v-else class="price-table-wrapper">
+          <table class="price-matrix">
+            <thead>
+              <tr>
+                <th class="sticky-col">食材</th>
+                <th class="sticky-col" style="left:120px">用量</th>
+                <th v-for="m in merchantNames" :key="m" class="text-right">
+                  <span class="text-truncate d-inline-block" style="max-width:80px">{{ m }}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in tableRows" :key="row.recipeIngredientId">
+                <td class="sticky-col font-weight-medium">{{ row.name }}</td>
+                <td class="sticky-col" style="left:120px;color:#888;font-size:12px">
+                  {{ row.quantityDisplay }}
+                </td>
+                <td
+                  v-for="(cell, mName) in row.merchantPrices"
+                  :key="mName"
+                  class="text-right"
+                  :class="{ 'price-lowest': cell.isLowest, 'price-missing': !cell.hasPrice }"
+                >
+                  {{ cell.hasPrice ? `¥${cell.displayValue}` : '—' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </v-card-text>
+    </v-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+
+const props = defineProps<{
+  recipeIngredients?: any[] | null
+  merchantPrices?: any[] | null
+  loading?: boolean
+}>()
+
+const merchantNames = computed(() => {
+  if (!props.merchantPrices?.length) return []
+  const names = new Set<string>()
+  for (const item of props.merchantPrices) {
+    for (const p of (item.prices || [])) {
+      names.add(p.merchant_name || `商家${p.merchant_id}`)
+    }
+  }
+  return Array.from(names)
+})
+
+interface CellData {
+  hasPrice: boolean
+  displayValue: string
+  rawValue: number
+  isLowest: boolean
+}
+
+interface TableRow {
+  recipeIngredientId: number
+  name: string
+  quantityDisplay: string
+  merchantPrices: Record<string, CellData>
+}
+
+const tableRows = computed<TableRow[]>(() => {
+  const ingredients = props.recipeIngredients || []
+  const priceItems = props.merchantPrices || []
+
+  return ingredients
+    .filter((ing: any) => ing.ingredient_id)
+    .map((ing: any) => {
+      const priceItem = priceItems.find(
+        (p: any) => p.recipeIngredientId === ing.id
+      )
+
+      const merchantPrices: Record<string, CellData> = {}
+      const merchantPriceList = priceItem?.prices || []
+      for (const mName of merchantNames.value) {
+        const match = merchantPriceList.find(
+          (p: any) => (p.merchant_name || `商家${p.merchant_id}`) === mName
+        )
+        if (match) {
+          merchantPrices[mName] = {
+            hasPrice: true,
+            displayValue: (match.price || 0).toFixed(2),
+            rawValue: match.price || 0,
+            isLowest: match.is_lowest || false,
+          }
+        } else {
+          merchantPrices[mName] = {
+            hasPrice: false,
+            displayValue: '',
+            rawValue: 0,
+            isLowest: false,
+          }
+        }
+      }
+
+      let qtyDisplay = ''
+      if (ing.quantity) {
+        qtyDisplay = `${ing.quantity}${ing.unit || ''}`
+      }
+
+      return {
+        recipeIngredientId: ing.id,
+        name: ing.name,
+        quantityDisplay: qtyDisplay,
+        merchantPrices,
+      }
+    })
+})
+</script>
+
+<style scoped>
+.price-table-wrapper {
+  overflow-x: auto;
+}
+.price-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.price-matrix th,
+.price-matrix td {
+  padding: 8px 12px;
+  white-space: nowrap;
+  border-bottom: 1px solid #e0e0e0;
+}
+.price-matrix th {
+  background: #f5f5f5;
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.sticky-col {
+  position: sticky;
+  left: 0;
+  background: white;
+  z-index: 1;
+  min-width: 100px;
+}
+.price-matrix th.sticky-col {
+  background: #f5f5f5;
+  z-index: 3;
+}
+.price-lowest {
+  font-weight: 700;
+  color: #e65100;
+}
+.price-missing {
+  color: #ccc;
+}
+.text-right {
+  text-align: right;
+}
+</style>
