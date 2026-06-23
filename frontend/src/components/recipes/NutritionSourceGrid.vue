@@ -184,7 +184,7 @@ function renderDonuts() {
         left: 'center',
         top: '48%',
         style: {
-          text: `${total.toFixed(1)}${unit === 'kcal' ? '' : unit}`,
+          text: `${total.toFixed(1)}${nutrient.unit === 'kcal' ? '' : nutrient.unit}`,
           textAlign: 'center' as const,
           fill: '#666',
           fontSize: 11,

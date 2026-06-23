@@ -124,6 +124,7 @@ class RecipeNutritionResponse(BaseModel):
     # 添加完整的营养数据结构
     per_serving_nutrition: Optional[dict] = None  # core_nutrients, all_nutrients, nutrient_details
     total_nutrition: Optional[dict] = None  # 核心营养素的总量
+    ingredient_details: Optional[list] = None  # 各食材的营养贡献详情（用于营养溯源模块）
 
 
 class RecipeCostHistoryResponse(BaseModel):

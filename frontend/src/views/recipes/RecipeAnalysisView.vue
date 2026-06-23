@@ -155,35 +155,40 @@ async function loadCostHistory(filter: string) {
 async function loadMerchantCosts() {
   loadingMerchantCosts.value = true
   try {
-    const res = await api.get(`/recipes/${recipeId}/merchant-costs`)
+    const res = await api.get(`/recipes/${recipeId}/merchant-costs`, { timeout: 30000 })
     merchantCosts.value = res
   } catch { /* 忽略 */ }
   loadingMerchantCosts.value = false
 }
 
+function fetchMerchantPrice(ingredient: any): Promise<any> {
+  return api.get(`/nutrition/ingredients/${ingredient.ingredient_id}/latest-price-by-merchant`, { timeout: 30000 })
+    .then((res: any) => ({
+      recipeIngredientId: ingredient.id,
+      ingredientId: ingredient.ingredient_id,
+      ingredientName: ingredient.name,
+      prices: res?.prices || [],
+      unit: res?.unit || null,
+    }))
+    .catch(() => null)
+}
+
+// 并发控制：同时最多 3 个比价请求
 async function loadMerchantPrices() {
   const ingredients = recipe.value?.ingredients
   if (!ingredients?.length) return
 
   loadingMerchantPrices.value = true
   try {
-    const results = await Promise.allSettled(
-      ingredients
-        .filter((i: any) => i.ingredient_id)
-        .map((i: any) =>
-          api.get(`/nutrition/ingredients/${i.ingredient_id}/latest-price-by-merchant`)
-            .then((res: any) => ({
-              recipeIngredientId: i.id,
-              ingredientId: i.ingredient_id,
-              ingredientName: i.name,
-              prices: res?.prices || [],
-              unit: res?.unit || null,
-            }))
-        )
-    )
-    merchantPriceData.value = results
-      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-      .map(r => r.value)
+    const validIngredients = ingredients.filter((i: any) => i.ingredient_id)
+    const results: any[] = []
+    const CONCURRENCY = 3
+    for (let i = 0; i < validIngredients.length; i += CONCURRENCY) {
+      const batch = validIngredients.slice(i, i + CONCURRENCY)
+      const batchResults = await Promise.allSettled(batch.map(fetchMerchantPrice))
+      results.push(...batchResults.map(r => r.status === 'fulfilled' ? r.value : null))
+    }
+    merchantPriceData.value = results.filter(Boolean)
   } catch { /* 忽略 */ }
   loadingMerchantPrices.value = false
 }
