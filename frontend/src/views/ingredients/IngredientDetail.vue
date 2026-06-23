@@ -385,31 +385,29 @@
               {{ record.product_name }}
             </v-list-item-title>
             <v-list-item-subtitle>
-              ¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
-              <template v-if="record.merchant_name"> · {{ record.merchant_name }}</template>
+              <div>¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
+              <template v-if="record.merchant_name"> · {{ record.merchant_name }}</template></div>
+              <div class="text-caption text-medium-emphasis mt-1">
+                {{ formatToLocalDate(record.recorded_at) }}
+              </div>
             </v-list-item-subtitle>
 
             <template #append>
-              <div class="d-flex flex-column align-end ga-1">
-                <div class="text-caption text-medium-emphasis">
-                  {{ formatToLocalDate(record.recorded_at) }}
-                </div>
-                <div class="d-flex ga-1">
-                  <v-btn
-                    icon="mdi-pencil"
-                    size="small"
-                    variant="text"
-                    color="primary"
-                    @click="openEditPriceDialog(record)"
-                  />
-                  <v-btn
-                    icon="mdi-delete"
-                    size="small"
-                    variant="text"
-                    color="error"
-                    @click="deletePriceRecord(record.id)"
-                  />
-                </div>
+              <div class="d-flex ga-1">
+                <v-btn
+                  icon="mdi-pencil"
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  @click="openEditPriceDialog(record)"
+                />
+                <v-btn
+                  icon="mdi-delete"
+                  size="small"
+                  variant="text"
+                  color="error"
+                  @click="deletePriceRecord(record.id)"
+                />
               </div>
             </template>
           </v-list-item>
