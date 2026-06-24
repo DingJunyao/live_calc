@@ -1796,6 +1796,8 @@ async def calculate_recipe_nutrition(
             ratio = standard_quantity / reference_amount
         elif recipe_ingredient.unit and recipe_ingredient.unit.unit_type == "count":
             # 如果是计数单位（如"个"），尝试使用 piece_weight 转换
+            from app.models.unit import Unit
+            from app.models.entity_unit_override import EntityUnitOverride
             if ingredient.piece_weight and ingredient.piece_weight_unit_id:
                 # 使用食材的标准重量转换（如：1个鸡蛋=50g）
                 piece_weight = Decimal(str(ingredient.piece_weight))
@@ -1811,7 +1813,6 @@ async def calculate_recipe_nutrition(
                     ratio = total_weight / reference_amount
                 else:
                     # 单位不一致，尝试转换
-                    from app.models.unit import Unit
                     weight_unit_obj = db.query(Unit).filter(Unit.abbreviation == converted_unit).first()
                     if weight_unit_obj and weight_unit_obj.unit_type == "mass":
                         ratio = total_weight / reference_amount
@@ -1819,8 +1820,38 @@ async def calculate_recipe_nutrition(
                         # 无法转换，使用默认值
                         ratio = Decimal("1.0")
             else:
-                # 没有设置标准重量，假设比例是1:1
-                ratio = Decimal("1.0")
+                # 没有设置 piece_weight，尝试查询 entity_unit_overrides 自定义单位表
+                entity_override = db.query(EntityUnitOverride).filter(
+                    EntityUnitOverride.entity_type == "ingredient",
+                    EntityUnitOverride.entity_id == ingredient.id,
+                    EntityUnitOverride.unit_name == recipe_ingredient.unit.abbreviation,
+                    EntityUnitOverride.weight_per_unit.isnot(None),
+                    EntityUnitOverride.weight_unit_id.isnot(None)
+                ).first()
+                if entity_override and entity_override.weight_per_unit:
+                    # 使用自定义单位中维护的每件标准重量（如 1 颗=0.2g）
+                    weight_unit = db.query(Unit).filter(Unit.id == entity_override.weight_unit_id).first()
+                    if weight_unit:
+                        converted_weight, converted_unit = convert_to_standard(
+                            Decimal(str(entity_override.weight_per_unit)),
+                            weight_unit.abbreviation
+                        )
+                        total_weight = quantity * converted_weight
+                        if converted_unit.lower() == reference_unit.lower():
+                            ratio = total_weight / reference_amount
+                        else:
+                            # 单位不一致，尝试通过 Unit 类型判断
+                            weight_unit_obj = db.query(Unit).filter(Unit.abbreviation == converted_unit).first()
+                            if weight_unit_obj and weight_unit_obj.unit_type == "mass":
+                                ratio = total_weight / reference_amount
+                            else:
+                                ratio = Decimal("0")
+                    else:
+                        ratio = Decimal("0")
+                else:
+                    # 没有维护每件标准重量，无法将计数单位换算为质量
+                    # 设为 0 避免错误高估（原 ratio=1.0 会将 20 颗按 100g 计算）
+                    ratio = Decimal("0")
         else:
             # 单位不一致，假设比例是1:1（使用参考值）
             ratio = Decimal("1.0")
