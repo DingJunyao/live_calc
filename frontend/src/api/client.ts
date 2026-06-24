@@ -1,9 +1,13 @@
 // api/client.ts
 import axios from 'axios'
 
+// 请求超时（毫秒），可从 .env 配置
+export const REQUEST_TIMEOUT = parseInt(import.meta.env.VITE_REQUEST_TIMEOUT || '10000', 10)
+export const LONG_REQUEST_TIMEOUT = parseInt(import.meta.env.VITE_LONG_REQUEST_TIMEOUT || '30000', 10)
+
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api/v1',
-  timeout: 10000,
+  timeout: REQUEST_TIMEOUT,
   headers: {
     'Content-Type': 'application/json',
   },

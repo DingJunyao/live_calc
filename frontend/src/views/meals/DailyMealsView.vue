@@ -1,10 +1,9 @@
 <template>
   <div class="daily-meals-view">
     <!-- 顶部栏 -->
-    <v-app-bar flat density="comfortable" class="meals-app-bar">
+    <v-app-bar flat density="comfortable" color="background">
       <v-app-bar-nav-icon
-        v-if="!isDesktop"
-        @click="openDrawer"
+        @click="toggleSidebar(isDesktop)"
         icon="mdi-menu"
       />
       <v-app-bar-title>
@@ -69,6 +68,7 @@ import { computed, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useMealsStore } from '@/stores/meals'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import DailySummaryBar from '@/components/meals/DailySummaryBar.vue'
 import MealTimeline from '@/components/meals/MealTimeline.vue'
 
@@ -76,6 +76,7 @@ const router = useRouter()
 const store = useMealsStore()
 const { mdAndUp } = useDisplay()
 const isDesktop = computed(() => mdAndUp.value)
+const { toggleSidebar } = useMobileDrawerControl()
 
 const snackbar = reactive({
   show: false,
@@ -89,11 +90,6 @@ const formattedDate = computed(() => {
   const weekdays = ['日', '一', '二', '三', '四', '五', '六']
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${weekdays[d.getDay()]}`
 })
-
-function openDrawer() {
-  // 触发 AppLayout 的移动端抽屉
-  window.dispatchEvent(new CustomEvent('open-mobile-drawer'))
-}
 
 function goToProfile() {
   router.push('/profile')
@@ -120,11 +116,13 @@ onMounted(() => {
 <style scoped>
 .daily-meals-view {
   min-height: 100vh;
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
-.meals-app-bar {
-  background: transparent !important;
+@media (max-width: 959px) {
+  .daily-meals-view {
+    max-width: 100%;
+  }
 }
 </style>

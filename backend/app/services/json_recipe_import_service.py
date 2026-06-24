@@ -147,7 +147,8 @@ class JsonRecipeImportService:
 
         try:
             # 从 GitHub 下载 ingredients.json
-            response = requests.get(f"{self.REPO_RAW_BASE}/ingredients.json", timeout=30)
+            from app.config import get_settings
+            response = requests.get(f"{self.REPO_RAW_BASE}/ingredients.json", timeout=get_settings().import_http_timeout)
             response.raise_for_status()
 
             ingredients_data = response.json()
@@ -260,7 +261,8 @@ class JsonRecipeImportService:
 
             # 下载仓库 ZIP
             print("正在下载仓库...")
-            response = requests.get(self.REPO_ZIP_URL, timeout=60)
+            from app.config import get_settings
+            response = requests.get(self.REPO_ZIP_URL, timeout=get_settings().import_http_timeout)
             response.raise_for_status()
 
             zip_path = os.path.join(temp_dir, "repo.zip")

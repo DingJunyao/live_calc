@@ -141,6 +141,22 @@ const displayNutrients = computed<NutrientDisplay[]>(() => {
     })
   }
 
+  // 与菜谱详情页营养素成分排序保持一致
+  const nutrientSortOrder = [
+    '能量', '蛋白质', '脂肪', '碳水化合物', '钠',
+    '膳食纤维', '钙', '铁', '钾',
+    '维生素A', '维生素B1', '维生素B2', '维生素B12', '维生素C',
+    '维生素D', '维生素E', '维生素K'
+  ]
+  result.sort((a, b) => {
+    const idxA = nutrientSortOrder.indexOf(a.label)
+    const idxB = nutrientSortOrder.indexOf(b.label)
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB
+    if (idxA !== -1) return -1
+    if (idxB !== -1) return 1
+    return (a.label || '').localeCompare(b.label || '')
+  })
+
   return result
 })
 

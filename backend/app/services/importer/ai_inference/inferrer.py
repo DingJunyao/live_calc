@@ -188,7 +188,9 @@ class AIInferrer:
 
             try:
                 runner = runner_factory.build_runner(
-                    _INFER_QUANTITIES_TASK_TYPE, db_url, provider=self.provider
+                    _INFER_QUANTITIES_TASK_TYPE, db_url, provider=self.provider,
+                    idle_timeout=settings.agent_idle_timeout,
+                    total_timeout=settings.agent_total_timeout,
                 )
                 session_runner.run_agent_loop(
                     session_id,
@@ -197,6 +199,7 @@ class AIInferrer:
                     main_loop,
                     db_session_factory=_session_local_factory(),
                     unattended=True,
+                    approval_timeout=settings.agent_approval_timeout,
                     safe_row_threshold=_SAFE_ROW_THRESHOLD,
                 )
             except Exception:  # noqa: BLE001
@@ -521,7 +524,9 @@ class AIInferrer:
 
             try:
                 runner = runner_factory.build_runner(
-                    _INFER_DENSITIES_TASK_TYPE, db_url, provider=self.provider
+                    _INFER_DENSITIES_TASK_TYPE, db_url, provider=self.provider,
+                    idle_timeout=settings.agent_idle_timeout,
+                    total_timeout=settings.agent_total_timeout,
                 )
                 session_runner.run_agent_loop(
                     session_id,
@@ -530,6 +535,7 @@ class AIInferrer:
                     main_loop,
                     db_session_factory=_session_local_factory(),
                     unattended=True,
+                    approval_timeout=settings.agent_approval_timeout,
                     safe_row_threshold=_SAFE_ROW_THRESHOLD,
                 )
             except Exception:  # noqa: BLE001

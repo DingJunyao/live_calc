@@ -414,7 +414,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
@@ -803,7 +803,7 @@ const fetchCostHistoryBatch = async (days: number, offsetDays: number) => {
   days = Math.max(7, days)
   const response = await api.get(`/recipes/${recipeId.value}/cost-history-range`, {
     params: { days, offset_days: offsetDays },
-    timeout: 30000,  // 菜谱成本计算较重，放宽到 30s 规避默认 10s 超时
+    timeout: LONG_REQUEST_TIMEOUT,
   })
   return (response || []).map((record: any) => ({
     date: record.date,

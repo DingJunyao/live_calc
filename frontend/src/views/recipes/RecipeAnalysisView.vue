@@ -74,7 +74,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import { api } from '@/api/client'
+import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
 import CostProportionChart from '@/components/recipes/CostProportionChart.vue'
 import CostTrendAnalysis from '@/components/recipes/CostTrendAnalysis.vue'
 import NutritionSourceGrid from '@/components/recipes/NutritionSourceGrid.vue'
@@ -148,7 +148,7 @@ async function loadCostHistory(filter: string) {
     const days = daysMap[filter] || 90
     const res = await api.get(`/recipes/${recipeId}/cost-history-range`, {
       params: { days, offset_days: 0 },
-      timeout: 30000,
+      timeout: LONG_REQUEST_TIMEOUT,
     })
     costHistoryRecords.value = Array.isArray(res) ? res : []
   } catch { /* 忽略 */ }
@@ -160,7 +160,7 @@ async function loadCostHistory(filter: string) {
 async function loadMerchantCosts() {
   loadingMerchantCosts.value = true
   try {
-    const res = await api.get(`/recipes/${recipeId}/merchant-costs`, { timeout: 30000 })
+    const res = await api.get(`/recipes/${recipeId}/merchant-costs`, { timeout: LONG_REQUEST_TIMEOUT })
     merchantCosts.value = res
   } catch { /* 忽略 */ }
   finally {
@@ -221,7 +221,6 @@ function fetchMerchantPrice(ingredient: any): Promise<any> {
   }
   return api.get(`/nutrition/ingredients/${ingredient.ingredient_id}/latest-price-by-merchant`, {
     params,
-    timeout: 10000,
   })
     .then((res: any) => ({
       recipeIngredientId: ingredient.id,

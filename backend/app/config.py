@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # 翻译/AI HTTP 超时（秒）——批量翻译与 CLI 子进程耗时长，独立于通用 API 的短超时
     translate_http_timeout: int = 3600
 
+    # Agent 子进程超时（秒）——运行 Agent CLI 或 LangChain 任务
+    agent_idle_timeout: int = 120       # 两行输出之间最大间隔
+    agent_total_timeout: int = 600      # Agent 整个任务墙钟上限
+    agent_approval_timeout: int = 3600  # 危险 SQL 审批等待超时
+
+    # 导入下载超时（秒）——数据仓库 git clone / ZIP 下载及普通 HTTP 导入
+    import_download_timeout: int = 300  # git clone / ZIP 下载
+    import_http_timeout: int = 60       # 普通 HTTP 数据导入（USDA 除外）
+
     # 日志配置
     log_level: str = "INFO"
     log_dir: str = "./logs"

@@ -1672,7 +1672,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import HierarchyGraph from '@/components/charts/HierarchyGraph.vue'
@@ -3017,7 +3017,7 @@ const loadChartPriceRecords = async (startDate?: Date) => {
     }
     const response = await api.get('/products', {
       params,
-      timeout: startDate ? 10000 : 30000,  // 「全部」放宽到 30s
+      timeout: startDate ? undefined : LONG_REQUEST_TIMEOUT,  // 「全部」用长超时
     })
     const items = response.items || []
     // 按 id 去重合并

@@ -148,7 +148,9 @@ class TranslateTask:
         def _run_in_thread() -> None:
             try:
                 runner = runner_factory.build_runner(
-                    _TASK_TYPE, db_url, provider=provider
+                    _TASK_TYPE, db_url, provider=provider,
+                    idle_timeout=settings.agent_idle_timeout,
+                    total_timeout=settings.agent_total_timeout,
                 )
                 session_runner.run_agent_loop(
                     session_id,
@@ -157,6 +159,7 @@ class TranslateTask:
                     main_loop,
                     db_session_factory=session_runner_db_factory(),
                     unattended=True,
+                    approval_timeout=settings.agent_approval_timeout,
                     safe_row_threshold=_SAFE_ROW_THRESHOLD,
                 )
             except Exception:  # noqa: BLE001

@@ -978,11 +978,15 @@ async def get_recipe_merchant_costs(
                     if not child_pids:
                         continue
                     child_records = db.query(ProductRecord).options(
-                        joinedload(ProductRecord.original_unit)
+                        joinedload(ProductRecord.original_unit),
+                        joinedload(ProductRecord.merchant)
+                    ).join(
+                        Merchant, ProductRecord.merchant_id == Merchant.id
                     ).filter(
                         ProductRecord.product_id.in_(child_pids),
                         ProductRecord.merchant_id.isnot(None),
-                        ProductRecord.is_active == True
+                        ProductRecord.is_active == True,
+                        Merchant.is_open == True
                     ).order_by(ProductRecord.recorded_at.desc()).all()
                     child_latest: dict[int, ProductRecord] = {}
                     for cr in child_records:
@@ -1012,7 +1016,10 @@ async def get_recipe_merchant_costs(
                         if total_strength > 0:
                             weighted_ppg = sum(p * s for p, s in child_prices) / total_strength
                             agg_cost = weighted_ppg * qty_grams
-                            merchant_names.setdefault(mid, f"商家{mid}")
+                            # 尝试从记录中获取商家名（防止因 is_open 过滤等导致 merchant_names 中没有）
+                            if mid not in merchant_names:
+                                cr = child_latest.get(mid)
+                                merchant_names[mid] = cr.merchant.name if cr and cr.merchant else f"商家{mid}"
                             cost_matrix[mid][ri.id] = agg_cost
                     # 记录 CONTAINS 聚合链
                     child_names = [all_ingredients_map.get(h.child_id) for h in children]

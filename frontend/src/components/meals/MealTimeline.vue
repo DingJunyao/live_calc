@@ -83,7 +83,7 @@ function mealIcon(type: string) {
 .meal-timeline:not(.meal-timeline--mobile) {
   display: flex;
   justify-content: center;
-  gap: 0;
+  gap: 16px;
   padding: 24px 16px;
   overflow-x: auto;
 }
@@ -92,9 +92,9 @@ function mealIcon(type: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 0 0 auto;
-  min-width: 240px;
-  max-width: 380px;
+  flex: 1 1 0;
+  min-width: 260px;
+  max-width: 420px;
 }
 
 .meal-timeline:not(.meal-timeline--mobile) .timeline-marker {
@@ -133,6 +133,7 @@ function mealIcon(type: string) {
   position: relative;
   padding-left: 40px;
   min-height: 100px;
+  margin-bottom: 16px;
 }
 
 .meal-timeline--mobile .timeline-marker {
@@ -160,6 +161,7 @@ function mealIcon(type: string) {
 .meal-timeline--mobile .timeline-card {
   flex: 1;
   width: 100%;
+  padding-right: 16px;
 }
 
 /* 通用样式 */

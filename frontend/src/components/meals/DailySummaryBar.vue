@@ -18,7 +18,10 @@
         <div class="d-flex align-center justify-space-between flex-wrap">
           <div class="d-flex align-center ga-4 flex-wrap">
             <div class="summary-item">
-              <span class="text-caption text-medium-emphasis">💰 今日预估</span>
+              <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+                <v-icon size="small">mdi-currency-cny</v-icon>
+                今日预估
+              </span>
               <span class="text-h6 font-weight-bold ml-1">
                 {{ totals.cost != null ? `¥${totals.cost.toFixed(2)}` : '--' }}
               </span>
@@ -26,7 +29,10 @@
 
             <!-- 营养汇总 -->
             <div class="summary-item">
-              <span class="text-caption text-medium-emphasis">🔥 热量</span>
+              <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+                <v-icon size="small">mdi-fire</v-icon>
+                热量
+              </span>
               <span class="font-weight-medium ml-1">
                 {{ totals.calories != null ? `${totals.calories} kcal` : '--' }}
               </span>
@@ -34,19 +40,28 @@
 
             <div class="d-flex ga-2 flex-wrap">
               <div class="summary-item">
-                <span class="text-caption text-medium-emphasis">🥩 蛋白</span>
+                <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+                  <v-icon size="small">mdi-food-drumstick-outline</v-icon>
+                  蛋白
+                </span>
                 <span class="font-weight-medium ml-1">
                   {{ totals.protein_g != null ? `${totals.protein_g}g` : '--' }}
                 </span>
               </div>
               <div class="summary-item">
-                <span class="text-caption text-medium-emphasis">🍚 碳水</span>
+                <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+                  <v-icon size="small">mdi-grain</v-icon>
+                  碳水
+                </span>
                 <span class="font-weight-medium ml-1">
                   {{ totals.carbs_g != null ? `${totals.carbs_g}g` : '--' }}
                 </span>
               </div>
               <div class="summary-item">
-                <span class="text-caption text-medium-emphasis">🥑 脂肪</span>
+                <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+                  <v-icon size="small">mdi-oil</v-icon>
+                  脂肪
+                </span>
                 <span class="font-weight-medium ml-1">
                   {{ totals.fat_g != null ? `${totals.fat_g}g` : '--' }}
                 </span>

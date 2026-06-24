@@ -32,10 +32,13 @@ from sqlalchemy.exc import IntegrityError
 
 def _get_repo_config():
     """从环境变量读取数据仓库配置"""
+    from app.config import get_settings
+    s = get_settings()
     return {
-        "url": os.getenv("DATA_REPO_URL", "https://github.com/DingJunyao/HowToCook_json.git"),
-        "branch": os.getenv("DATA_REPO_BRANCH", "corr"),
-        "data_dir": os.getenv("DATA_REPO_DIR", "out"),
+        "url": s.data_repo_url,
+        "branch": s.data_repo_branch,
+        "data_dir": s.data_repo_dir,
+        "timeout": s.import_download_timeout,
     }
 
 
@@ -46,8 +49,7 @@ class EnhancedRecipeImportService:
     STATIC_DIR = Path(__file__).parent.parent.parent / "static"
     IMAGES_DIR = STATIC_DIR / "images" / "recipes"
 
-    # 超时和重试配置
-    DOWNLOAD_TIMEOUT = 300  # 5分钟超时
+    # 重试配置
     MAX_RETRIES = 3
     RETRY_DELAY = 2
 
@@ -249,7 +251,7 @@ class EnhancedRecipeImportService:
 
             # 等待进程结束（带超时）
             try:
-                returncode = process.wait(timeout=self.DOWNLOAD_TIMEOUT)
+                returncode = process.wait(timeout=self._repo_config["timeout"])
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
@@ -315,7 +317,7 @@ class EnhancedRecipeImportService:
                 self._report_progress("下载仓库", 0, 1, "")
                 zip_content = self._download_with_retry(
                     self._get_zip_url(),
-                    self.DOWNLOAD_TIMEOUT,
+                    self._repo_config["timeout"],
                     "菜谱仓库 ZIP"
                 )
                 if not zip_content:

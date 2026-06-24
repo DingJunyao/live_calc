@@ -64,14 +64,17 @@
 
       <v-card-text class="pb-2">
         <div class="d-flex align-center ga-3 flex-wrap">
-          <span class="text-caption text-medium-emphasis">
-            💰 {{ costText }}
+          <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+            <v-icon size="small">mdi-currency-cny</v-icon>
+            {{ costText }}
           </span>
-          <span class="text-caption text-medium-emphasis">
-            🔥 {{ calorieText }}
+          <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+            <v-icon size="small">mdi-fire</v-icon>
+            {{ calorieText }}
           </span>
-          <span class="text-caption text-medium-emphasis">
-            🥩 {{ proteinText }}
+          <span class="text-caption text-medium-emphasis d-flex align-center ga-1">
+            <v-icon size="small">mdi-food-drumstick-outline</v-icon>
+            {{ proteinText }}
           </span>
         </div>
         <div

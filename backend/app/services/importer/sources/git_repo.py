@@ -21,13 +21,13 @@ def _get_repo_config():
         "url": settings.data_repo_url,
         "branch": settings.data_repo_branch,
         "data_dir": settings.data_repo_dir,
+        "timeout": settings.import_download_timeout,
     }
 
 
 class GitRepoSource(DataSource):
     """从 git 仓库拉取数据文件。优先 git clone，失败退回到 ZIP 下载。"""
 
-    DOWNLOAD_TIMEOUT = 300
     MAX_RETRIES = 3
     RETRY_DELAY = 2
 
@@ -76,9 +76,9 @@ class GitRepoSource(DataSource):
                 text=True,
             )
             try:
-                returncode = process.wait(timeout=self.DOWNLOAD_TIMEOUT)
+                returncode = process.wait(timeout=self.config["timeout"])
             except subprocess.TimeoutExpired:
-                logger.error("git clone 超时（%ds）", self.DOWNLOAD_TIMEOUT)
+                logger.error("git clone 超时（%ds）", self.config["timeout"])
                 process.kill()
                 process.wait()
                 return None
@@ -105,7 +105,7 @@ class GitRepoSource(DataSource):
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
                 logger.info("ZIP 下载 (第 %d/%d 次)", attempt, self.MAX_RETRIES)
-                resp = requests.get(zip_url, timeout=self.DOWNLOAD_TIMEOUT)
+                resp = requests.get(zip_url, timeout=self.config["timeout"])
                 resp.raise_for_status()
                 zip_path = os.path.join(parent_dir, "repo.zip")
                 with open(zip_path, "wb") as f:

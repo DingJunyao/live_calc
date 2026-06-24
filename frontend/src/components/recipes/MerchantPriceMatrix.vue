@@ -18,8 +18,7 @@
           <table class="price-matrix">
             <thead>
               <tr>
-                <th class="sticky-col">食材</th>
-                <th class="sticky-col" style="left:120px">用量</th>
+                <th class="sticky-col" style="min-width:160px">食材 / 用量</th>
                 <th v-for="m in merchantNames" :key="m" class="text-right">
                   <span class="text-truncate d-inline-block" style="max-width:80px">{{ m }}</span>
                 </th>
@@ -27,8 +26,9 @@
             </thead>
             <tbody>
               <tr v-for="row in tableRows" :key="row.recipeIngredientId">
-                <td class="sticky-col font-weight-medium">
-                  {{ row.name }}
+                <td class="sticky-col" style="min-width:160px">
+                  <span class="font-weight-medium">{{ row.name }}</span>
+                  <span class="qty-badge">{{ row.quantityDisplay }}</span>
                   <v-tooltip v-if="row.fallbackChain" location="top">
                     <template #activator="{ props }">
                       <v-icon v-bind="props" size="x-small" color="info" class="ml-1">mdi-information</v-icon>
@@ -36,9 +36,6 @@
                     <div class="text-caption">根据以下食材计算价格：</div>
                     <div class="text-body-2 font-weight-bold">{{ row.fallbackChain }}</div>
                   </v-tooltip>
-                </td>
-                <td class="sticky-col" style="left:120px;color:#888;font-size:12px">
-                  {{ row.quantityDisplay }}
                 </td>
                 <td
                   v-for="(cell, mName) in row.merchantPrices"
@@ -156,6 +153,7 @@ const tableRows = computed<TableRow[]>(() => {
 <style scoped>
 .price-table-wrapper {
   overflow-x: auto;
+  overflow-y: clip;
 }
 .price-matrix {
   width: 100%;
@@ -180,11 +178,21 @@ const tableRows = computed<TableRow[]>(() => {
   left: 0;
   background: white;
   z-index: 1;
-  min-width: 100px;
+  min-width: 120px;
+  /* 防止滚动时背景透出 */
+  box-shadow: 2px 0 6px rgba(0,0,0,0.06);
 }
 .price-matrix th.sticky-col {
   background: #f5f5f5;
   z-index: 3;
+  box-shadow: 2px 0 6px rgba(0,0,0,0.08);
+}
+.qty-badge {
+  display: inline-block;
+  color: #888;
+  font-size: 12px;
+  margin-left: 6px;
+  white-space: nowrap;
 }
 .price-lowest {
   font-weight: 700;

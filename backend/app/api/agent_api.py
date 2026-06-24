@@ -178,11 +178,14 @@ async def create_session(
     # 捕获主事件循环（async 端点运行在主 loop），传给后台线程跨线程推送。
     main_loop = asyncio.get_running_loop()
     db_url = _settings_db_url()
+    settings = _settings()
 
     def _launch() -> None:
         try:
             runner = runner_factory.build_runner(
-                body.task_type, db_url, provider=body.provider
+                body.task_type, db_url, provider=body.provider,
+                idle_timeout=settings.agent_idle_timeout,
+                total_timeout=settings.agent_total_timeout,
             )
             session_runner.run_agent_loop(
                 session_id,
@@ -190,6 +193,7 @@ async def create_session(
                 initial_prompt,
                 main_loop,
                 db_session_factory=SessionLocal,
+                approval_timeout=settings.agent_approval_timeout,
             )
         except Exception:  # noqa: BLE001 - 后台线程异常兜底
             logger.exception("agent 后台线程异常 session_id=%s", session_id)
@@ -440,7 +444,11 @@ async def post_message(
 
     def _launch() -> None:
         try:
-            runner = runner_factory.build_runner(task_type, db_url, provider=provider)
+            runner = runner_factory.build_runner(
+                task_type, db_url, provider=provider,
+                idle_timeout=settings.agent_idle_timeout,
+                total_timeout=settings.agent_total_timeout,
+            )
             session_runner.run_agent_loop(
                 sid,
                 runner,
@@ -448,6 +456,7 @@ async def post_message(
                 main_loop,
                 db_session_factory=SessionLocal,
                 resume_session_id=resume_sid,
+                approval_timeout=settings.agent_approval_timeout,
             )
         except Exception:  # noqa: BLE001
             logger.exception("agent 插话线程异常 session_id=%s", sid)
@@ -563,6 +572,12 @@ def _settings_db_url() -> str:
     from app.config import settings
 
     return settings.database_url
+
+
+def _settings():
+    from app.config import get_settings
+
+    return get_settings()
 
 
 def _get_session_or_404(db: Session, sid: int, current_user) -> AgentSession:

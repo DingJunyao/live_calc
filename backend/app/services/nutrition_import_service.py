@@ -409,7 +409,8 @@ class NutritionImportService:
                 return json.load(f)
 
         print(f"正在下载 {self.NUTRITION_FILE_URL}...")
-        response = requests.get(self.NUTRITION_FILE_URL, timeout=60)
+        from app.config import get_settings
+        response = requests.get(self.NUTRITION_FILE_URL, timeout=get_settings().import_http_timeout)
         response.raise_for_status()
         return response.json()
 
