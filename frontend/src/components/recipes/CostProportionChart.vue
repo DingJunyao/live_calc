@@ -21,6 +21,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
+import { getIngredientColor } from '@/utils/ingredientColors'
 
 const props = defineProps<{
   costBreakdown?: any[] | null
@@ -30,11 +31,6 @@ const props = defineProps<{
 
 const chartRef = ref<HTMLElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
-
-const COLOR_PALETTE = [
-  '#ff9800', '#4caf50', '#2196f3', '#9c27b0',
-  '#f44336', '#00bcd4', '#ff5722', '#607d8b',
-]
 
 interface ChartItem {
   name: string
@@ -46,11 +42,14 @@ const chartData = computed<ChartItem[]>(() => {
   const breakdown = props.costBreakdown
   if (!breakdown?.length) return []
 
-  const items: ChartItem[] = breakdown.map((b: any, i: number) => ({
-    name: b.ingredient_name || `食材${i + 1}`,
-    value: parseFloat(b.cost) || 0,
-    itemStyle: { color: COLOR_PALETTE[i % COLOR_PALETTE.length] },
-  }))
+  const items: ChartItem[] = breakdown
+    .map((b: any) => ({
+      name: b.ingredient_name || '未知食材',
+      value: parseFloat(b.cost) || 0,
+      itemStyle: { color: getIngredientColor(b.ingredient_id) },
+    }))
+    // 按成本降序排列，确保高成本食材始终在前
+    .sort((a, b) => b.value - a.value)
 
   if (items.length > 6) {
     const top5 = items.slice(0, 5)

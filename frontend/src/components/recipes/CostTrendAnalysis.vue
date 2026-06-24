@@ -51,6 +51,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
+import { getIngredientColor } from '@/utils/ingredientColors'
 
 const props = defineProps<{
   recipeId: number
@@ -64,12 +65,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'filter-change': [filter: string]
 }>()
-
-const COLOR_PALETTE = [
-  '#ff9800', '#4caf50', '#2196f3', '#9c27b0',
-  '#f44336', '#00bcd4', '#ff5722', '#607d8b',
-  '#e91e63', '#3f51b5', '#009688', '#795548',
-]
 
 const chartRef = ref<HTMLElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
@@ -101,20 +96,21 @@ const breakdownIngredients = computed(() => {
   }
 
   if (seen.size > 0) {
-    return Array.from(seen.entries()).map(([id, info], i) => ({
-      name: info.name,
-      color: COLOR_PALETTE[i % COLOR_PALETTE.length],
+    return Array.from(seen.entries()).map(([id]) => ({
+      name: seen.get(id)!.name,
+      color: getIngredientColor(id),
       ingredientId: id,
       percent: '',
     }))
   }
 
-  // 如果没有 breakdown 数据，回退到 costBreakdown
+  // 如果没有 breakdown 数据，回退到 costBreakdown（按成本降序排列后取前 12）
   if (!props.costBreakdown?.length) return []
   const total = props.costBreakdown.reduce((s: number, b: any) => s + (parseFloat(b.cost) || 0), 0)
-  return props.costBreakdown.slice(0, 12).map((b: any, i: number) => ({
-    name: b.ingredient_name || `食材${i + 1}`,
-    color: COLOR_PALETTE[i % COLOR_PALETTE.length],
+  const sorted = [...props.costBreakdown].sort((a, b) => (parseFloat(b.cost) || 0) - (parseFloat(a.cost) || 0))
+  return sorted.slice(0, 12).map((b: any) => ({
+    name: b.ingredient_name || '未知食材',
+    color: getIngredientColor(b.ingredient_id),
     ingredientId: b.ingredient_id,
     percent: total > 0 ? `${Math.round((parseFloat(b.cost) || 0) / total * 100)}%` : '',
   }))

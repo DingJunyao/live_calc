@@ -38,16 +38,12 @@
 import { ref, computed, watch, onMounted, nextTick, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
 import { ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
+import { getIngredientColor } from '@/utils/ingredientColors'
 
 const props = defineProps<{
   nutritionData?: any | null
   loading?: boolean
 }>()
-
-const COLOR_PALETTE = [
-  '#ff9800', '#4caf50', '#2196f3', '#9c27b0',
-  '#f44336', '#00bcd4', '#ff5722', '#607d8b',
-]
 
 const showAll = ref(false)
 const chartRefs = new Map<string, HTMLElement>()
@@ -91,7 +87,18 @@ const displayNutrients = computed<NutrientDisplay[]>(() => {
   if (!perServing) return []
 
   const allNutrients = perServing.all_nutrients || perServing.core_nutrients || {}
+  // core_nutrients 的条目有 key 字段（英文名）和 nrp_pct 值，构建查找映射
+  const nrpPctMap: Record<string, number> = {}
+  if (perServing.core_nutrients) {
+    for (const [, cnData] of Object.entries(perServing.core_nutrients)) {
+      const entry = cnData as any
+      if (entry.key && entry.nrp_pct != null) {
+        nrpPctMap[entry.key] = Math.round(entry.nrp_pct)
+      }
+    }
+  }
   const result: NutrientDisplay[] = []
+  const usedLabels = new Set<string>()  // 同名营养素去重（vitamin_a_rae 和 vitamin_a_iu 都标"维生素A"）
 
   for (const [key, data] of Object.entries(allNutrients)) {
     const nData = data as any
@@ -101,22 +108,24 @@ const displayNutrients = computed<NutrientDisplay[]>(() => {
     if (!showAll.value && !isNrv) continue
 
     const label = NRV_LABELS[key] || nData.name_zh || ENGLISH_TO_CHINESE_MAP[key] || key
+    // "全部"模式下同名营养素只显示第一个（优先保留有 NRV 的）
+    if (showAll.value && usedLabels.has(label)) continue
+    usedLabels.add(label)
     const totalValue = typeof nData.value === 'number' ? nData.value : parseFloat(nData.value) || 0
     const unit = nData.unit || ''
-    const nrpPct = nData.nrp_pct != null ? Math.round(nData.nrp_pct) : null
-    const totalText = nrpPct !== null ? `${totalValue}${unit} · NRV ${nrpPct}%` : `${totalValue}${unit}`
+    // all_nutrients 的 nrp_pct 为 null，从 core_nutrients 的 key 映射中查找
+    const nrpPct = nData.nrp_pct != null ? Math.round(nData.nrp_pct) : (nrpPctMap[key] ?? null)
+    const totalText = `${totalValue}${unit}`
 
     const ingredientItems: { name: string; value: number; color: string }[] = []
-    let colorIndex = 0
     for (const detail of nutrition.ingredient_details) {
       const contrib = detail.nutrition_contribution?.[label] || detail.nutrition_contribution?.[key]
       if (contrib && contrib.value != null && Number(contrib.value) > 0) {
         ingredientItems.push({
-          name: detail.ingredient_name || `食材${colorIndex + 1}`,
+          name: detail.ingredient_name || '未知食材',
           value: Number(contrib.value) || 0,
-          color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
+          color: getIngredientColor(detail.ingredient_id),
         })
-        colorIndex++
       }
     }
 
@@ -171,8 +180,6 @@ function renderDonuts() {
       chartInstances.set(nutrient.key, instance)
     }
 
-    const total = nutrient.items.reduce((s, i) => s + i.value, 0)
-
     instance.setOption({
       tooltip: {
         trigger: 'item',
@@ -203,7 +210,7 @@ function renderDonuts() {
         left: 'center',
         top: '48%',
         style: {
-          text: `${total.toFixed(1)}${nutrient.unit === 'kcal' ? '' : nutrient.unit}`,
+          text: nutrient.nrpPct != null ? `${nutrient.nrpPct}%` : '',
           textAlign: 'center' as const,
           fill: '#666',
           fontSize: 11,

@@ -880,7 +880,7 @@
                     <v-chip size="x-small" :color="getRelationTypeColor(rel.relation_type)">
                       {{ getRelationTypeLabel(rel.relation_type) }}
                     </v-chip>
-                    <span class="ml-2">强度: {{ rel.strength }}%</span>
+                    <span class="ml-2">强度: {{ Math.round(rel.strength) }}%</span>
                   </div>
                 </div>
                 <v-btn
@@ -922,7 +922,7 @@
                     <v-chip size="x-small" :color="getRelationTypeColor(rel.relation_type)">
                       {{ getRelationTypeLabel(rel.relation_type) }}
                     </v-chip>
-                    <span class="ml-2">强度: {{ rel.strength }}%</span>
+                    <span class="ml-2">强度: {{ Math.round(rel.strength) }}%</span>
                   </div>
                 </div>
                 <v-btn
@@ -1443,14 +1443,18 @@
             <v-slider
               v-model="relationForm.strength"
               label="关系强度"
-              min="1"
-              max="100"
+              :min="1"
+              :max="100"
+              :step="1"
               thumb-label
               :hints="true"
               class="mb-4"
             >
+              <template #thumb-label="{ modelValue }">
+                {{ Math.round(modelValue) }}%
+              </template>
               <template #append>
-                <v-chip size="small">{{ relationForm.strength }}%</v-chip>
+                <v-chip size="small">{{ Math.round(relationForm.strength) }}%</v-chip>
               </template>
             </v-slider>
 
@@ -1534,13 +1538,17 @@
             <v-slider
               v-model="editRelationForm.strength"
               label="关系强度"
-              min="1"
-              max="100"
+              :min="1"
+              :max="100"
+              :step="1"
               thumb-label
               :hints="true"
             >
+              <template #thumb-label="{ modelValue }">
+                {{ Math.round(modelValue) }}%
+              </template>
               <template #append>
-                <v-chip size="small">{{ editRelationForm.strength }}%</v-chip>
+                <v-chip size="small">{{ Math.round(editRelationForm.strength) }}%</v-chip>
               </template>
             </v-slider>
           </v-form>
@@ -3197,7 +3205,7 @@ const openEditRelationDialog = (relation: HierarchyRelation) => {
   editRelationRelation.value = relation
   editRelationForm.value = {
     relation_type: relation.relation_type,
-    strength: relation.strength
+    strength: Math.round(relation.strength)
   }
   showEditRelationDialog.value = true
 }

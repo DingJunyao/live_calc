@@ -313,7 +313,7 @@ const updateChart = () => {
           return `<strong>${params.data.name}</strong><br/>${levelLabel}`
         } else if (params.dataType === 'edge') {
           const levelLabel = params.data.level === 2 ? '（二级）' : ''
-          return `<strong>${params.data.sourceName}</strong> ${params.data.name} <strong>${params.data.targetName}</strong>${levelLabel}<br/>类型: ${params.data.relationType}<br/>强度: ${params.data.strength}%`
+          return `<strong>${params.data.sourceName}</strong> ${params.data.name} <strong>${params.data.targetName}</strong>${levelLabel}<br/>类型: ${params.data.relationType}<br/>强度: ${Math.round(params.data.strength)}%`
         }
         return ''
       }
