@@ -932,6 +932,12 @@ function toggleFullscreen() {
 
 // 监听商家数据变化
 watch(() => props.merchants, () => {
+  // 若地图尚未初始化（首次加载时数据晚于组件挂载到达），补初始化
+  if (!currentEngine && validMerchants.value.length > 0 && !isLoading.value) {
+    initMap()
+    return
+  }
+  if (!currentEngine) return
   updateMerchantsMarkers()
   // 仅在「全部商家」模式重新 fit；有地点中心时保持视角，避免翻页飞回全国
   if (!initialCenter.value) {
