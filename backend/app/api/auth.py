@@ -29,7 +29,6 @@ from app.schemas.auth import (
     UserProfileUpdate,
 )
 from app.schemas.common import PaginatedResponse
-from app.config import settings
 from typing import List, Optional
 from pydantic import BaseModel
 import datetime
@@ -80,8 +79,7 @@ security = HTTPBearer()
 async def get_config(db: Session = Depends(get_db)):
     """获取注册配置（动态读取数据库，fallback .env 默认值）。"""
     require_invite = _get_bool_config(
-        db, "registration_require_invite_code",
-        settings.registration_require_invite_code
+        db, "registration_require_invite_code", False
     )
     return ConfigResponse(
         registration_require_invite_code=require_invite
@@ -108,8 +106,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
     # 检查邀请码（如需要）——动态读取配置
     is_first_user = db.query(User).count() == 0
     require_invite = _get_bool_config(
-        db, "registration_require_invite_code",
-        settings.registration_require_invite_code
+        db, "registration_require_invite_code", False
     )
 
     # 对于第一个用户，不需要邀请码，直接成为管理员
