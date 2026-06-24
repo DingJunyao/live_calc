@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -16,6 +16,12 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     email_verified = Column(Boolean, default=False)
     token_version = Column(Integer, default=0, nullable=False)
+    # 营养目标与预算
+    daily_calorie_target = Column(Float, default=2000)
+    daily_protein_target = Column(Float, default=60)
+    daily_carb_target = Column(Float, default=300)
+    daily_fat_target = Column(Float, default=65)
+    daily_budget = Column(Float, nullable=True, default=None)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -27,3 +33,4 @@ class User(Base):
     expenses = relationship("Expense", back_populates="user")
     created_invite_codes = relationship("InviteCode", back_populates="creator")
     ingredient_preferences = relationship("UserIngredientPreference", back_populates="user", foreign_keys="UserIngredientPreference.user_id")
+    daily_recommendations = relationship("DailyRecommendation", back_populates="user")

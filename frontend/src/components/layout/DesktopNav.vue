@@ -63,7 +63,8 @@ const rail = ref(false)
 const isDark = computed(() => theme.global.current.value.dark)
 
 const menuItems = [
-  { title: '价格记录', icon: 'mdi-currency-cny', value: 'prices', to: '/' },
+  { title: '今日推荐', icon: 'mdi-silverware-fork-knife', value: 'meals', to: '/' },
+  { title: '价格记录', icon: 'mdi-currency-cny', value: 'prices', to: '/prices' },
   { title: '菜谱管理', icon: 'mdi-book-open-variant', value: 'recipes', to: '/recipes' },
   { title: '商品管理', icon: 'mdi-package-variant', value: 'products', to: '/data/products' },
   { title: '原料管理', icon: 'mdi-leaf', value: 'ingredients', to: '/data/ingredients' },

@@ -26,7 +26,9 @@ const router = createRouter({
       children: [
         {
           path: '',
-          redirect: '/prices',
+          name: 'daily-meals',
+          component: () => import('@/views/meals/DailyMealsView.vue'),
+          meta: { title: '今日推荐' },
         },
         {
           path: 'prices',

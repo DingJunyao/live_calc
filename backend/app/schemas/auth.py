@@ -52,6 +52,8 @@ class UserResponse(BaseModel):
     is_active: bool = True
     email_verified: bool
     created_at: Optional[str] = None
+    nutrition_goals: Optional[dict] = None
+    daily_budget: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -101,3 +103,12 @@ class UserAdminStatusUpdate(BaseModel):
     """切换管理员或激活状态。"""
     is_admin: Optional[bool] = None
     is_active: Optional[bool] = None
+
+
+class UserProfileUpdate(BaseModel):
+    """用户自行更新个人设置（仅允许修改营养目标和预算）。"""
+    daily_calorie_target: Optional[float] = None
+    daily_protein_target: Optional[float] = None
+    daily_carb_target: Optional[float] = None
+    daily_fat_target: Optional[float] = None
+    daily_budget: Optional[float] = None

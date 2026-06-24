@@ -26,6 +26,7 @@ from app.schemas.auth import (
     UserAdminCreate,
     UserAdminUpdate,
     UserAdminStatusUpdate,
+    UserProfileUpdate,
 )
 from app.schemas.common import PaginatedResponse
 from app.config import settings
@@ -242,7 +243,7 @@ async def refresh_token(
 async def get_me(
     current_user: User = Depends(get_current_user),
 ):
-    """获取当前用户信息"""
+    """获取当前用户信息（含营养目标和预算）。"""
     return UserResponse(
         id=current_user.id,
         username=current_user.username,
@@ -251,7 +252,53 @@ async def get_me(
         is_admin=current_user.is_admin,
         is_active=current_user.is_active,
         email_verified=current_user.email_verified,
-        created_at=serialize_datetime(current_user.created_at) if current_user.created_at else None
+        created_at=serialize_datetime(current_user.created_at) if current_user.created_at else None,
+        nutrition_goals={
+            "daily_calorie_target": current_user.daily_calorie_target,
+            "daily_protein_target": current_user.daily_protein_target,
+            "daily_carb_target": current_user.daily_carb_target,
+            "daily_fat_target": current_user.daily_fat_target,
+        },
+        daily_budget=current_user.daily_budget,
+    )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def patch_me(
+    profile_update: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """用户更新自己的营养目标和预算设置。"""
+    update_data = profile_update.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="没有需要更新的字段",
+        )
+
+    for field, value in update_data.items():
+        setattr(current_user, field, value)
+
+    db.commit()
+    db.refresh(current_user)
+
+    return UserResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        phone=current_user.phone,
+        is_admin=current_user.is_admin,
+        is_active=current_user.is_active,
+        email_verified=current_user.email_verified,
+        created_at=serialize_datetime(current_user.created_at) if current_user.created_at else None,
+        nutrition_goals={
+            "daily_calorie_target": current_user.daily_calorie_target,
+            "daily_protein_target": current_user.daily_protein_target,
+            "daily_carb_target": current_user.daily_carb_target,
+            "daily_fat_target": current_user.daily_fat_target,
+        },
+        daily_budget=current_user.daily_budget,
     )
 
 

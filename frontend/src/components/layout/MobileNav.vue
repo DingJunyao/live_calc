@@ -5,9 +5,9 @@
     grow
     class="mobile-nav"
   >
-    <v-btn value="prices" to="/">
-      <v-icon>mdi-currency-cny</v-icon>
-      <span>记录</span>
+    <v-btn value="meals" to="/">
+      <v-icon>mdi-silverware-fork-knife</v-icon>
+      <span>今日</span>
     </v-btn>
 
     <v-btn value="recipes" to="/recipes">

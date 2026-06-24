@@ -77,6 +77,17 @@
           </template>
         </v-list-item>
 
+        <v-list-item @click="openNutritionDialog">
+          <template #prepend>
+            <v-icon>mdi-food-apple-outline</v-icon>
+          </template>
+          <v-list-item-title>饮食偏好</v-list-item-title>
+          <v-list-item-subtitle>每日营养目标与预算</v-list-item-subtitle>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
         <v-list-item @click="exportDialog = true">
           <template #prepend>
             <v-icon>mdi-export</v-icon>
@@ -120,6 +131,98 @@
 
     <!-- 数据导入对话框 -->
     <ImportUploadDialog v-model="importDialog" />
+
+    <!-- 饮食偏好对话框 -->
+    <v-dialog v-model="nutritionDialog" max-width="480">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          饮食偏好
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="nutritionDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <p class="text-caption text-medium-emphasis mb-4">
+            设置每日营养目标和预算上限，用于饮食推荐。
+          </p>
+
+          <v-row dense>
+            <v-col cols="6">
+              <v-text-field
+                v-model.number="nutritionForm.daily_calorie_target"
+                label="每日热量 (kcal)"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hide-details="auto"
+                min="500"
+                max="5000"
+                step="50"
+              />
+            </v-col>
+            <v-col cols="6">
+              <v-text-field
+                v-model.number="nutritionForm.daily_protein_target"
+                label="蛋白质 (g)"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hide-details="auto"
+                min="10"
+                max="300"
+                step="5"
+              />
+            </v-col>
+            <v-col cols="6">
+              <v-text-field
+                v-model.number="nutritionForm.daily_carb_target"
+                label="碳水 (g)"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hide-details="auto"
+                min="50"
+                max="600"
+                step="10"
+              />
+            </v-col>
+            <v-col cols="6">
+              <v-text-field
+                v-model.number="nutritionForm.daily_fat_target"
+                label="脂肪 (g)"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hide-details="auto"
+                min="10"
+                max="200"
+                step="5"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field
+                v-model.number="nutritionForm.daily_budget"
+                label="每日预算 (元，留空不限)"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hide-details="auto"
+                min="0"
+                step="5"
+                clearable
+                placeholder="不限"
+              />
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="nutritionDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingNutrition" @click="saveNutrition">
+            保存
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 数据导出对话框 -->
     <v-dialog v-model="exportDialog" max-width="420">
@@ -237,6 +340,50 @@ const totalRecipes = ref(0)
 const loadingStats = ref(false)
 
 const isDark = computed(() => theme.global.current.value.dark)
+
+// 饮食偏好
+const nutritionDialog = ref(false)
+const savingNutrition = ref(false)
+const nutritionForm = ref({
+  daily_calorie_target: 2000,
+  daily_protein_target: 60,
+  daily_carb_target: 300,
+  daily_fat_target: 65,
+  daily_budget: null as number | null,
+})
+
+function openNutritionDialog() {
+  // 从 userStore 读取当前值
+  const u = userStore.user as any
+  nutritionForm.value = {
+    daily_calorie_target: u?.nutrition_goals?.daily_calorie_target ?? 2000,
+    daily_protein_target: u?.nutrition_goals?.daily_protein_target ?? 60,
+    daily_carb_target: u?.nutrition_goals?.daily_carb_target ?? 300,
+    daily_fat_target: u?.nutrition_goals?.daily_fat_target ?? 65,
+    daily_budget: u?.daily_budget ?? null,
+  }
+  nutritionDialog.value = true
+}
+
+async function saveNutrition() {
+  savingNutrition.value = true
+  try {
+    await api.patch('/auth/me', {
+      daily_calorie_target: nutritionForm.value.daily_calorie_target || null,
+      daily_protein_target: nutritionForm.value.daily_protein_target || null,
+      daily_carb_target: nutritionForm.value.daily_carb_target || null,
+      daily_fat_target: nutritionForm.value.daily_fat_target || null,
+      daily_budget: nutritionForm.value.daily_budget || null,
+    })
+    // 刷新 userStore 以同步最新值
+    await userStore.fetchUser()
+    nutritionDialog.value = false
+  } catch (e: any) {
+    alert('保存失败：' + (e?.userMessage || e?.message || '未知错误'))
+  } finally {
+    savingNutrition.value = false
+  }
+}
 
 const toggleTheme = () => {
   theme.global.name.value = isDark.value ? 'light' : 'dark'

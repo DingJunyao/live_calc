@@ -15,6 +15,7 @@
       <v-divider />
 
       <v-list density="compact" nav>
+        <v-list-item prepend-icon="mdi-silverware-fork-knife" title="今日推荐" to="/" />
         <v-list-item prepend-icon="mdi-currency-cny" title="价格记录" to="/prices" />
         <v-list-item prepend-icon="mdi-book-open-variant" title="菜谱管理" to="/recipes" />
         <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" />
@@ -71,6 +72,7 @@
       <v-divider />
 
       <v-list density="compact" nav>
+        <v-list-item prepend-icon="mdi-silverware-fork-knife" title="今日推荐" to="/" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-currency-cny" title="价格记录" to="/prices" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-book-open-variant" title="菜谱管理" to="/recipes" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" @click="closeDrawer" />
