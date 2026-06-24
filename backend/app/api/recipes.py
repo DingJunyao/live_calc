@@ -27,7 +27,9 @@ from app.services.recipe_service import (
     calculate_recipe_cost,
     calculate_recipe_nutrition,
     calculate_recipe_cost_trend,
-    calculate_recipe_cost_range_trend
+    calculate_recipe_cost_range_trend,
+    _get_effective_quantity,
+    _convert_record_to_price_per_gram,
 )
 from app.services.recipe_import_service import RecipeImportService
 import shutil
@@ -696,29 +698,45 @@ async def get_recipe_merchant_costs(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
-        recipe_ingredients = db.query(RecipeIngredient).filter(
+        from datetime import datetime
+        from typing import Optional
+        from app.models.product_entity import Product
+        from app.models.product import ProductRecord
+        from app.models.merchant import Merchant
+        from app.models.nutrition import Ingredient
+        from app.services.unit_conversion_service import UnitConversionService
+        from sqlalchemy.orm import joinedload
+
+        recipe_ingredients = db.query(RecipeIngredient).options(
+            joinedload(RecipeIngredient.unit),
+            joinedload(RecipeIngredient.ingredient),
+        ).filter(
             RecipeIngredient.recipe_id == recipe_id
         ).all()
 
         if not recipe_ingredients:
             return RecipeMerchantCostResponse(merchants=[])
 
-        from app.models.product_entity import Product
-        from app.models.product import ProductRecord
-        from app.models.merchant import Merchant
-        from app.services.unit_conversion_service import UnitConversionService
-        from sqlalchemy.orm import joinedload
-
         unit_service = UnitConversionService(db)
         total_ingredients = len(recipe_ingredients)
 
-        merchant_data: dict = {}
+        # ===== 阶段一：建立食材×商家成本矩阵 =====
+        # cost_matrix: {merchant_id: {ri_id: cost}}
+        from collections import defaultdict
+        cost_matrix: dict[int, dict[int, float]] = defaultdict(dict)
+        merchant_names: dict[int, str] = {}
+        # 记录使用了回退链的食材：ri_id → chain 描述
+        fallback_chain_map: dict[int, str] = {}
+        # 收集每个 ri 的有效 ID（有活跃 ingredient 的）
+        active_ri_ids: set[int] = set()
 
-        for ri in recipe_ingredients:
-            ingredient = ri.ingredient
-            if not ingredient or not ingredient.is_active:
-                continue
+        def _add_merchant_prices_for(ingredient, ri, eff_qty_override=None, eff_unit_id_override=None):
+            """为指定食材查找各商家最新价格并写入 cost_matrix。
 
+            eff_qty_override/eff_unit_id_override 用于回退链：当回退食材的价格需要用
+            原始菜谱食材的用量来计算时传入。
+            返回是否至少有一个商家有价格。
+            """
             target_unit = ingredient.default_unit.abbreviation if ingredient.default_unit else None
 
             products = db.query(Product).filter(
@@ -728,7 +746,7 @@ async def get_recipe_merchant_costs(
 
             product_ids = [p.id for p in products if p.id]
             if not product_ids:
-                continue
+                return False
 
             records = db.query(ProductRecord).options(
                 joinedload(ProductRecord.original_unit),
@@ -748,6 +766,7 @@ async def get_recipe_merchant_costs(
                 if mid not in merchant_latest:
                     merchant_latest[mid] = record
 
+            any_added = False
             for mid, record in merchant_latest.items():
                 if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
                     continue
@@ -773,50 +792,281 @@ async def get_recipe_merchant_costs(
                 if unit_price is None or unit_price <= 0:
                     continue
 
-                ingredient_qty = 0
-                if ri.quantity:
-                    try:
-                        ingredient_qty = float(ri.quantity)
-                    except (ValueError, TypeError):
-                        pass
-                elif ri.quantity_range:
-                    qr = ri.quantity_range
-                    if isinstance(qr, dict):
-                        q_min = float(qr.get("min", 0) or 0)
-                        q_max = float(qr.get("max", 0) or 0)
-                        ingredient_qty = (q_min + q_max) / 2
+                eff_qty = eff_qty_override
+                eff_unit_id = eff_unit_id_override
+                if eff_qty is None:
+                    eff_qty_dec, eff_unit_id = _get_effective_quantity(ri)
+                    eff_qty = float(eff_qty_dec)
 
-                ingredient_cost = unit_price * Decimal(str(ingredient_qty))
+                ingredient_qty = eff_qty
+                if ingredient_qty <= 0:
+                    continue
 
+                price_unit_abbr = target_unit if target_unit else orig_unit_abbr
+                if price_unit_abbr:
+                    ri_unit = db.query(Unit).filter(Unit.id == eff_unit_id).first() if eff_unit_id else None
+                    if not ri_unit:
+                        ri_unit = ri.unit
+                    if ri_unit:
+                        ri_unit_abbr = ri_unit.abbreviation
+                        if ri_unit_abbr != price_unit_abbr:
+                            qty_converted = unit_service.convert(
+                                ingredient_qty, ri_unit_abbr, price_unit_abbr,
+                                entity_type="ingredient",
+                                entity_id=ingredient.id
+                            )
+                            if qty_converted is not None:
+                                converted_val, _ = qty_converted
+                                if converted_val and float(converted_val) > 0:
+                                    ingredient_qty = float(converted_val)
+                            else:
+                                continue
+
+                ingredient_cost = float(unit_price * Decimal(str(ingredient_qty)))
                 merchant_name = record.merchant.name if record.merchant else f"商家{mid}"
-                if mid not in merchant_data:
-                    merchant_data[mid] = {
-                        "merchant_name": merchant_name,
-                        "total_cost": Decimal("0"),
-                        "covered_set": set(),
-                    }
-                merchant_data[mid]["total_cost"] += ingredient_cost
-                merchant_data[mid]["covered_set"].add(ri.id)
+                merchant_names[mid] = merchant_name
+                cost_matrix[mid][ri.id] = ingredient_cost
+                any_added = True
 
+            return any_added
+
+        for ri in recipe_ingredients:
+            ingredient = ri.ingredient
+            if not ingredient or not ingredient.is_active:
+                continue
+
+            active_ri_ids.add(ri.id)
+            _add_merchant_prices_for(ingredient, ri)
+
+        # ===== 阶段 1.5：回退链——对没有商家覆盖的食材，尝试 FALLBACK / SUBSTITUTABLE / CONTAINS =====
+        from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelationType
+
+        # 预加载所有层级关系（不限 user_id，与直接查价一致）
+        all_hierarchies = db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.relation_type.in_([
+                HierarchyRelationType.FALLBACK.value,
+                HierarchyRelationType.SUBSTITUTABLE.value,
+                HierarchyRelationType.CONTAINS.value,
+            ])
+        ).all()
+
+        # 按 child_id 索引 FALLBACK/SUBSTITUTABLE（谁可以作为谁的替代）
+        fallback_parents: dict[int, list[IngredientHierarchy]] = defaultdict(list)
+        contains_children: dict[int, list[IngredientHierarchy]] = defaultdict(list)
+        for h in all_hierarchies:
+            if h.relation_type in (HierarchyRelationType.FALLBACK.value, HierarchyRelationType.SUBSTITUTABLE.value):
+                fallback_parents[h.child_id].append(h)  # child → [parent 可回退]
+                # SUBSTITUTABLE 双向：parent 也可回退到 child
+                if h.relation_type == HierarchyRelationType.SUBSTITUTABLE.value:
+                    fallback_parents[h.parent_id].append(h)  # parent → [child 可替代]
+            elif h.relation_type == HierarchyRelationType.CONTAINS.value:
+                contains_children[h.parent_id].append(h)  # parent → [child 被包含]
+
+        # 预加载所有 ingredient 以便快速查找
+        all_ingredient_ids: set[int] = set()
+        for ri in recipe_ingredients:
+            if ri.ingredient:
+                all_ingredient_ids.add(ri.ingredient.id)
+        # 也加入回退链上的食材
+        for hierarchies in fallback_parents.values():
+            for h in hierarchies:
+                all_ingredient_ids.add(h.parent_id)
+                all_ingredient_ids.add(h.child_id)
+        for hierarchies in contains_children.values():
+            for h in hierarchies:
+                all_ingredient_ids.add(h.parent_id)
+                all_ingredient_ids.add(h.child_id)
+
+        all_ingredients_map: dict[int, Ingredient] = {}
+        if all_ingredient_ids:
+            ingredients_batch = db.query(Ingredient).filter(Ingredient.id.in_(list(all_ingredient_ids))).all()
+            all_ingredients_map = {i.id: i for i in ingredients_batch}
+
+        # 已尝试过回退的食材，避免递归
+        tried_fallback: set[int] = set()
+
+        def _find_fallback_ingredient(ing_id: int) -> Optional[tuple[Ingredient, str]]:
+            """在预加载的层级关系中查找有价食材（不限 user_id），返回 (ingredient, chain)"""
+            if ing_id in tried_fallback:
+                return None
+            tried_fallback.add(ing_id)
+
+            parents = fallback_parents.get(ing_id, [])
+            # 按 strength 降序
+            parents.sort(key=lambda h: h.strength or 0, reverse=True)
+
+            for h in parents:
+                # 确定回退方向
+                if h.child_id == ing_id:
+                    fb_id = h.parent_id
+                else:
+                    fb_id = h.child_id
+
+                fb_ing = all_ingredients_map.get(fb_id)
+                if not fb_ing or not fb_ing.is_active:
+                    continue
+
+                # 检查是否有商品 + 商家价格（不限 user_id）
+                fb_products = db.query(Product).filter(
+                    Product.ingredient_id == fb_id,
+                    Product.is_active == True
+                ).all()
+                fb_product_ids = [p.id for p in fb_products if p.id]
+                if not fb_product_ids:
+                    continue
+
+                has_merchant_price = db.query(ProductRecord).filter(
+                    ProductRecord.product_id.in_(fb_product_ids),
+                    ProductRecord.merchant_id.isnot(None),
+                    ProductRecord.is_active == True
+                ).first()
+                if has_merchant_price:
+                    ing = all_ingredients_map.get(ing_id)
+                    chain = f"{ing.name if ing else ing_id} → {fb_ing.name}"
+                    return fb_ing, chain
+
+                # 递归：回退食材也没有价，继续往上找
+                deeper = _find_fallback_ingredient(fb_id)
+                if deeper:
+                    return deeper
+
+            return None
+
+        for ri in recipe_ingredients:
+            if ri.id not in active_ri_ids:
+                continue
+            if any(ri.id in costs for costs in cost_matrix.values()):
+                continue
+
+            ingredient = ri.ingredient
+            if not ingredient:
+                continue
+
+            eff_qty_dec, eff_unit_id = _get_effective_quantity(ri)
+            if float(eff_qty_dec) <= 0:
+                continue
+
+            tried_fallback.clear()
+
+            # ① FALLBACK / SUBSTITUTABLE 回退（不限制 user_id）
+            fb_result = _find_fallback_ingredient(ingredient.id)
+            if fb_result:
+                fb_ingredient, fb_chain = fb_result
+                if fb_ingredient.id != ingredient.id:
+                    if _add_merchant_prices_for(fb_ingredient, ri,
+                                                eff_qty_override=float(eff_qty_dec),
+                                                eff_unit_id_override=eff_unit_id):
+                        fallback_chain_map[ri.id] = fb_chain
+                        continue
+
+            # ② CONTAINS 子食材聚合（不限制 user_id）
+            children = contains_children.get(ingredient.id, [])
+            if children:
+                children.sort(key=lambda h: h.strength or 0, reverse=True)
+                child_costs_by_merchant: dict[int, list[tuple[float, int]]] = defaultdict(list)
+                # 收集各商家的子食材价格（元/克）
+                for h in children:
+                    child_ing = all_ingredients_map.get(h.child_id)
+                    if not child_ing or not child_ing.is_active:
+                        continue
+                    # 直接查子食材在各商家的价格（与 _add_merchant_prices_for 同样逻辑但返回元/克）
+                    child_products = db.query(Product).filter(
+                        Product.ingredient_id == h.child_id,
+                        Product.is_active == True
+                    ).all()
+                    child_pids = [p.id for p in child_products if p.id]
+                    if not child_pids:
+                        continue
+                    child_records = db.query(ProductRecord).options(
+                        joinedload(ProductRecord.original_unit)
+                    ).filter(
+                        ProductRecord.product_id.in_(child_pids),
+                        ProductRecord.merchant_id.isnot(None),
+                        ProductRecord.is_active == True
+                    ).order_by(ProductRecord.recorded_at.desc()).all()
+                    child_latest: dict[int, ProductRecord] = {}
+                    for cr in child_records:
+                        if cr.merchant_id not in child_latest:
+                            child_latest[cr.merchant_id] = cr
+                    for mid, cr in child_latest.items():
+                        ppg = _convert_record_to_price_per_gram(db, cr, h.child_id)
+                        if ppg is not None and float(ppg) > 0:
+                            child_costs_by_merchant[mid].append((float(ppg), h.strength or 50))
+
+                # 对每个商家加权平均，乘以用量（转克）
+                if child_costs_by_merchant:
+                    qty_grams = float(eff_qty_dec)
+                    if eff_unit_id and eff_unit_id != 3:
+                        ri_unit_obj = db.query(Unit).filter(Unit.id == eff_unit_id).first()
+                        gram_unit = db.query(Unit).filter(Unit.id == 3).first()
+                        if ri_unit_obj and gram_unit:
+                            converted = unit_service.convert(
+                                Decimal(str(eff_qty_dec)), ri_unit_obj.abbreviation, gram_unit.abbreviation,
+                                entity_type="ingredient", entity_id=ingredient.id
+                            )
+                            if converted:
+                                qty_grams = float(converted[0])
+
+                    for mid, child_prices in child_costs_by_merchant.items():
+                        total_strength = sum(s for _, s in child_prices)
+                        if total_strength > 0:
+                            weighted_ppg = sum(p * s for p, s in child_prices) / total_strength
+                            agg_cost = weighted_ppg * qty_grams
+                            merchant_names.setdefault(mid, f"商家{mid}")
+                            cost_matrix[mid][ri.id] = agg_cost
+                    # 记录 CONTAINS 聚合链
+                    child_names = [all_ingredients_map.get(h.child_id) for h in children]
+                    child_name_str = ', '.join(c.name for c in child_names if c)
+                    fallback_chain_map[ri.id] = f"{ingredient.name} ← 子食材({child_name_str})"
+
+        # ===== 阶段二：计算每家商家的 covered + external =====
         merchants_list = []
-        for mid, data in merchant_data.items():
+        all_mids = list(cost_matrix.keys())
+
+        for mid in all_mids:
+            own_costs = cost_matrix[mid]
+            covered_ri_ids = set(own_costs.keys())
+            covered_cost = sum(own_costs.values())
+
+            # 缺失的食材：取其他商家中该食材的最低价格
+            external_cost = 0.0
             missing_names = []
             for ri in recipe_ingredients:
-                if ri.id not in data["covered_set"]:
+                if ri.id not in active_ri_ids:
+                    continue
+                if ri.id in covered_ri_ids:
+                    continue
+                # 找其他商家中该食材的最低价
+                best = None
+                for other_mid in all_mids:
+                    if other_mid == mid:
+                        continue
+                    other_cost = cost_matrix[other_mid].get(ri.id)
+                    if other_cost is not None and (best is None or other_cost < best):
+                        best = other_cost
+                if best is not None:
+                    external_cost += best
+                else:
                     missing_names.append(ri.ingredient.name if ri.ingredient else "未知食材")
 
+            total_cost = round(covered_cost + external_cost, 2)
+            # 收集该商家覆盖的食材中使用回退链的
+            chains = [fallback_chain_map[ri_id] for ri_id in covered_ri_ids if ri_id in fallback_chain_map]
             merchants_list.append(MerchantCostItem(
                 merchant_id=mid,
-                merchant_name=data["merchant_name"],
-                total_cost=float(round(data["total_cost"], 2)),
-                covered_count=len(data["covered_set"]),
-                total_ingredients=total_ingredients,
+                merchant_name=merchant_names.get(mid, f"商家{mid}"),
+                covered_cost=round(covered_cost, 2),
+                external_cost=round(external_cost, 2),
+                total_cost=total_cost,
+                covered_count=len(covered_ri_ids),
+                total_ingredients=len(active_ri_ids),
                 missing_ingredients=missing_names,
+                fallback_chains=chains,
                 is_recommended=False,
             ))
 
         if merchants_list:
-            merchants_list.sort(key=lambda m: (-m.covered_count, m.total_cost))
+            merchants_list.sort(key=lambda m: m.total_cost)
             if merchants_list:
                 merchants_list[0].is_recommended = True
 
@@ -1033,7 +1283,15 @@ async def get_recipe_cost_history_range(
                 max_cost=item["max_cost"],
                 avg_cost=item["avg_cost"],
                 date=item["date"],
-                recorded_at=item["recorded_at"]
+                recorded_at=item["recorded_at"],
+                breakdown=[
+                    {
+                        "ingredient_id": bi["ingredient_id"],
+                        "ingredient_name": bi["ingredient_name"],
+                        "cost": bi["cost"],
+                    }
+                    for bi in item.get("breakdown", [])
+                ] if item.get("breakdown") else None
             )
             for i, item in enumerate(cost_range_trend)
         ]

@@ -1,5 +1,6 @@
 <template>
   <v-app-bar elevation="0" color="background" density="comfortable" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
     <v-btn icon="mdi-arrow-left" variant="text" @click="$router.push('/prices')" />
     <v-app-bar-title class="text-h6">快速填写</v-app-bar-title>
     <template #append>
@@ -221,8 +222,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
 import PasteImportDialog from '@/components/prices/PasteImportDialog.vue'
+
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 interface Merchant {
   id: number

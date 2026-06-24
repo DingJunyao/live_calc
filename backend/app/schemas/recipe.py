@@ -137,6 +137,13 @@ class RecipeCostHistoryResponse(BaseModel):
     exchange_rate: int
 
 
+class IngredientCostBreakdown(BaseModel):
+    """单个食材在某天的成本贡献"""
+    ingredient_id: int
+    ingredient_name: str
+    cost: float  # 该食材当天平均成本（元）
+
+
 class RecipeCostRangeResponse(BaseModel):
     """菜谱成本区间响应模型"""
     id: int
@@ -146,6 +153,7 @@ class RecipeCostRangeResponse(BaseModel):
     min_cost: float  # 最小成本（元）
     max_cost: float  # 最大成本（元）
     avg_cost: float  # 平均成本（元）
+    breakdown: Optional[List[IngredientCostBreakdown]] = None  # 各食材成本明细（用于堆叠面积图）
     recorded_at: int  # Unix 时间戳（秒）
 
 
@@ -153,10 +161,13 @@ class MerchantCostItem(BaseModel):
     """按商家维度计算的菜谱成本项"""
     merchant_id: int
     merchant_name: str
-    total_cost: Decimal
+    covered_cost: float  # 在该商家能买到的食材总价
+    external_cost: float  # 需要到其他商家买的食材总价（取各食材最低价）
+    total_cost: float  # covered_cost + external_cost
     covered_count: int
     total_ingredients: int
     missing_ingredients: List[str] = []
+    fallback_chains: List[str] = []  # 使用了回退/替代/包含关系的食材链，如 ["酱油 → 生抽"]
     is_recommended: bool = False
 
 

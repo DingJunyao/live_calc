@@ -1018,19 +1018,25 @@ async def get_ingredient_latest_price(
 async def get_ingredient_latest_price_by_merchant(
     ingredient_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    quantity: Optional[float] = Query(None, description="菜谱中该食材的用量"),
+    quantity_unit: Optional[str] = Query(None, description="菜谱中用量单位（如 g、斤）"),
 ):
     """
     获取原料按商家分组的最新价格
 
     返回每个商家的最新一条价格记录（已转换为原料默认单位）。
     按价格从低到高排序，并标注最低价。
+    可选传入 quantity + quantity_unit 来计算该食材在该商家的预估总价。
     """
     try:
         from app.models.merchant import Merchant
+        from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelationType
         from app.services.unit_conversion_service import UnitConversionService
         from datetime import datetime, timedelta
         from decimal import Decimal
+        from typing import Optional as OptType
+        from collections import defaultdict
 
         ingredient = db.query(Ingredient).filter(
             Ingredient.id == ingredient_id
@@ -1039,76 +1045,170 @@ async def get_ingredient_latest_price_by_merchant(
         if not ingredient:
             return {"prices": [], "unit": None}
 
-        products = db.query(Product).filter(
-            Product.ingredient_id == ingredient_id
-        ).all()
-
-        if not products:
-            return {"prices": [], "unit": None}
-
-        product_ids = [p.id for p in products]
+        unit_service = UnitConversionService(db)
 
         # 获取原料的默认单位
         target_unit_abbr = None
         if ingredient.default_unit:
             target_unit_abbr = ingredient.default_unit.abbreviation
 
-        unit_service = UnitConversionService(db)
+        def _lookup_merchant_prices(ing: Ingredient) -> list[dict]:
+            """对单个食材查找各商家最新价格，返回结果列表。不限制 user_id。"""
+            products = db.query(Product).filter(
+                Product.ingredient_id == ing.id,
+                Product.is_active == True
+            ).all()
+            product_ids = [p.id for p in products if p.id]
+            if not product_ids:
+                return []
 
-        # 查询所有价格记录，按商家分组，每组取最新一条（仅营业中商家）
-        records = db.query(ProductRecord).options(
-            joinedload(ProductRecord.original_unit),
-            joinedload(ProductRecord.merchant)
-        ).join(
-            Merchant, ProductRecord.merchant_id == Merchant.id
-        ).filter(
-            ProductRecord.product_id.in_(product_ids),
-            ProductRecord.merchant_id.isnot(None),
-            Merchant.is_open == True
-        ).order_by(ProductRecord.recorded_at.desc()).all()
+            records = db.query(ProductRecord).options(
+                joinedload(ProductRecord.original_unit),
+                joinedload(ProductRecord.merchant)
+            ).join(
+                Merchant, ProductRecord.merchant_id == Merchant.id
+            ).filter(
+                ProductRecord.product_id.in_(product_ids),
+                ProductRecord.merchant_id.isnot(None),
+                Merchant.is_open == True
+            ).order_by(ProductRecord.recorded_at.desc()).all()
 
-        # 按商家分组，每组只保留最新一条
-        merchant_latest: dict = {}
-        for record in records:
-            mid = record.merchant_id
-            if mid not in merchant_latest:
-                merchant_latest[mid] = record
+            merchant_latest: dict = {}
+            for record in records:
+                mid = record.merchant_id
+                if mid not in merchant_latest:
+                    merchant_latest[mid] = record
 
-        # 计算每个商家的单价（转换为原料默认单位）
-        results = []
-        for mid, record in merchant_latest.items():
-            if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
-                continue
+            # 计算该食材自己的 target_unit
+            ing_target = ing.default_unit.abbreviation if ing.default_unit else None
 
-            total_price = float(record.price)
-            original_quantity = float(record.original_quantity)
-            original_unit_abbr = record.original_unit.abbreviation
+            results = []
+            for mid, record in merchant_latest.items():
+                if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
+                    continue
 
-            unit_price = None
-            if target_unit_abbr and original_unit_abbr != target_unit_abbr:
-                convert_result = unit_service.convert(
-                    original_quantity,
-                    original_unit_abbr,
-                    target_unit_abbr,
-                    entity_type="ingredient",
-                    entity_id=ingredient_id,
-                )
-                if convert_result is not None:
-                    converted_quantity, _ = convert_result
-                    if converted_quantity and float(converted_quantity) > 0:
-                        unit_price = total_price / float(converted_quantity)
+                total_price = float(record.price)
+                original_quantity = float(record.original_quantity)
+                original_unit_abbr = record.original_unit.abbreviation
 
-            if unit_price is None:
-                unit_price = total_price / original_quantity
+                unit_price = None
+                if ing_target and original_unit_abbr != ing_target:
+                    convert_result = unit_service.convert(
+                        original_quantity,
+                        original_unit_abbr,
+                        ing_target,
+                        entity_type="ingredient",
+                        entity_id=ing.id,
+                    )
+                    if convert_result is not None:
+                        converted_quantity, _ = convert_result
+                        if converted_quantity and float(converted_quantity) > 0:
+                            unit_price = total_price / float(converted_quantity)
 
-            results.append({
-                "merchant_id": mid,
-                "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
-                "price": round(unit_price, 2),
-                "unit": target_unit_abbr or original_unit_abbr,
-                "recorded_at": serialize_datetime(record.recorded_at) if record.recorded_at else None,
-                "product_name": record.product_name,
-            })
+                if unit_price is None:
+                    unit_price = total_price / original_quantity
+
+                # total_cost 用原始请求食材的单位来计算（如果传入了）
+                total_cost = None
+                if quantity is not None and quantity > 0 and quantity_unit:
+                    qty = quantity
+                    price_unit_abbr = ing_target or original_unit_abbr
+                    if quantity_unit != price_unit_abbr:
+                        qty_convert = unit_service.convert(
+                            quantity, quantity_unit, price_unit_abbr,
+                            entity_type="ingredient",
+                            entity_id=ing.id,
+                        )
+                        if qty_convert is not None:
+                            converted_val, _ = qty_convert
+                            if converted_val and float(converted_val) > 0:
+                                qty = float(converted_val)
+                        else:
+                            qty = None
+                    if qty is not None:
+                        total_cost = round(unit_price * qty, 2)
+
+                results.append({
+                    "merchant_id": mid,
+                    "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
+                    "price": round(unit_price, 2),
+                    "unit": ing_target or original_unit_abbr,
+                    "total_cost": total_cost,
+                    "recorded_at": serialize_datetime(record.recorded_at) if record.recorded_at else None,
+                    "product_name": record.product_name,
+                })
+
+            return results
+
+        # ① 直接查找
+        results = _lookup_merchant_prices(ingredient)
+        fallback_chain = None
+
+        # ② 无直接价格 → 走 FALLBACK / SUBSTITUTABLE 回退链（不限 user_id）
+        if not results:
+            hierarchies = db.query(IngredientHierarchy).filter(
+                IngredientHierarchy.relation_type.in_([
+                    HierarchyRelationType.FALLBACK.value,
+                    HierarchyRelationType.SUBSTITUTABLE.value,
+                ])
+            ).all()
+
+            fallback_parents: dict[int, list[IngredientHierarchy]] = defaultdict(list)
+            for h in hierarchies:
+                fallback_parents[h.child_id].append(h)
+                if h.relation_type == HierarchyRelationType.SUBSTITUTABLE.value:
+                    fallback_parents[h.parent_id].append(h)
+
+            # 预加载相关食材
+            fb_ingredient_ids: set[int] = {ingredient_id}
+            for h in hierarchies:
+                fb_ingredient_ids.add(h.parent_id)
+                fb_ingredient_ids.add(h.child_id)
+            fb_ingredients_map: dict[int, Ingredient] = {}
+            if fb_ingredient_ids:
+                batch = db.query(Ingredient).filter(Ingredient.id.in_(list(fb_ingredient_ids))).all()
+                fb_ingredients_map = {i.id: i for i in batch}
+
+            tried: set[int] = set()
+
+            def _find_fallback(ing_id: int) -> OptType[tuple[Ingredient, str]]:
+                if ing_id in tried:
+                    return None
+                tried.add(ing_id)
+                parents = fallback_parents.get(ing_id, [])
+                parents.sort(key=lambda h: h.strength or 0, reverse=True)
+                for h in parents:
+                    fb_id = h.parent_id if h.child_id == ing_id else h.child_id
+                    fb_ing = fb_ingredients_map.get(fb_id)
+                    if not fb_ing or not fb_ing.is_active:
+                        continue
+                    # 检查该回退食材是否有有价商品（不限 user_id）
+                    fb_prods = db.query(Product).filter(
+                        Product.ingredient_id == fb_id,
+                        Product.is_active == True
+                    ).all()
+                    fb_pids = [p.id for p in fb_prods if p.id]
+                    if not fb_pids:
+                        continue
+                    has_price = db.query(ProductRecord).filter(
+                        ProductRecord.product_id.in_(fb_pids),
+                        ProductRecord.merchant_id.isnot(None),
+                        ProductRecord.is_active == True
+                    ).first()
+                    if has_price:
+                        cur = fb_ingredients_map.get(ing_id)
+                        chain = f"{cur.name if cur else ing_id} → {fb_ing.name}"
+                        return fb_ing, chain
+                    deeper = _find_fallback(fb_id)
+                    if deeper:
+                        return deeper
+                return None
+
+            fb_result = _find_fallback(ingredient_id)
+            if fb_result:
+                fb_ingredient, fb_chain = fb_result
+                results = _lookup_merchant_prices(fb_ingredient)
+                fallback_chain = fb_chain
 
         # 按价格从低到高排序
         results.sort(key=lambda x: x["price"])
@@ -1119,10 +1219,15 @@ async def get_ingredient_latest_price_by_merchant(
             for r in results[1:]:
                 r["is_lowest"] = False
 
-            # 为每个商家注入近90天价格趋势迷你图数据
-            _inject_merchant_sparklines(results, product_ids, db)
+            # 迷你图注入已移除——在大数据量或 SQLite 并发场景下可能挂死
+            # 将来如需恢复，建议改为异步任务预计算 + 缓存
 
-        return {"prices": results, "unit": target_unit_abbr}
+        # 返回的 unit 优先取回退食材的（results 里每条已带 unit），整体用第一条的
+        display_unit = results[0]["unit"] if results else (target_unit_abbr)
+        response = {"prices": results, "unit": display_unit}
+        if fallback_chain:
+            response["fallback_chain"] = fallback_chain
+        return response
 
     except Exception as e:
         import traceback

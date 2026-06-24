@@ -1483,6 +1483,7 @@ def calculate_recipe_cost_range_trend(
         total_max_cost = Decimal("0.00")
         total_avg_cost = Decimal("0.00")
         valid_ingredients = 0
+        breakdown_items = []
 
         for ri in ri_list:
             ing = ri_ingredient_map.get(ri.id)
@@ -1587,9 +1588,15 @@ def calculate_recipe_cost_range_trend(
             try:
                 quantity_dec = Decimal(str(quantity))
                 costs = [up * quantity_dec for up in unit_prices]
+                ing_avg = sum(costs) / len(costs)
+                breakdown_items.append({
+                    "ingredient_id": ing.id,
+                    "ingredient_name": ing.name,
+                    "cost": float(round(ing_avg, 4))
+                })
                 total_min_cost += min(costs)
                 total_max_cost += max(costs)
-                total_avg_cost += sum(costs) / len(costs)
+                total_avg_cost += ing_avg
                 valid_ingredients += 1
             except Exception:
                 continue
@@ -1603,7 +1610,8 @@ def calculate_recipe_cost_range_trend(
                 "recorded_at": recorded_at,
                 "min_cost": float(total_min_cost),
                 "max_cost": float(total_max_cost),
-                "avg_cost": float(total_avg_cost)
+                "avg_cost": float(total_avg_cost),
+                "breakdown": breakdown_items
             })
 
     return cost_range_trend
@@ -1871,26 +1879,26 @@ async def calculate_recipe_nutrition(
                     total_all_nutrients[nutrient_name]["unit"] = source_unit
 
         # 添加食材贡献详情
-        # 收集每个营养素的贡献值（考虑回退）
+        # 收集每个营养素的贡献值（考虑回退）——先 core，再 all
         contribution_data = {}
-        for nutrient_name, nutrient_data in core_nutrients.items():
-            if nutrient_name in total_core_nutrients:
-                value = float(nutrient_data.get("value", 0) or 0)
-                used_fallback = False  # 标记是否使用了回退
+        for nutrient_name, nutrient_data in {**core_nutrients, **all_nutrients}.items():
+            value = float(nutrient_data.get("value", 0) or 0)
+            used_fallback = False
 
-                # 如果值为 0 且有回退食材，尝试从回退食材获取该营养素的值
-                if value == 0 and fallback_nutrients and nutrient_name in fallback_nutrients:
-                    fallback_value = float(fallback_nutrients[nutrient_name].get("value", 0) or 0)
-                    if fallback_value > 0:
-                        value = fallback_value
-                        used_fallback = True
+            # 如果值为 0 且有回退食材，尝试从回退食材获取该营养素的值
+            if value == 0 and fallback_nutrients and nutrient_name in fallback_nutrients:
+                fallback_value = float(fallback_nutrients[nutrient_name].get("value", 0) or 0)
+                if fallback_value > 0:
+                    value = fallback_value
+                    used_fallback = True
 
-                contribution_data[nutrient_name] = {
-                    "value": value * float(ratio),
-                    "unit": nutrient_data.get("unit", ""),
-                    "nrp_pct": round((value * float(ratio) / NRV_REFERENCE_VALUES.get(nutrient_name, 1)) * 100, 2) if NRV_REFERENCE_VALUES.get(nutrient_name, 0) > 0 else 0,
-                    "used_fallback": used_fallback  # 标记是否使用了回退
-                }
+            nrv_ref = NRV_REFERENCE_VALUES.get(nutrient_name, 0)
+            contribution_data[nutrient_name] = {
+                "value": value * float(ratio),
+                "unit": nutrient_data.get("unit", ""),
+                "nrp_pct": round((value * float(ratio) / nrv_ref) * 100, 2) if nrv_ref > 0 else 0,
+                "used_fallback": used_fallback,
+            }
 
         ingredient_details.append({
             "recipe_ingredient_id": recipe_ingredient.id,  # 添加recipe_ingredient的ID

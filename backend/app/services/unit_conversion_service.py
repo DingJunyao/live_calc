@@ -26,6 +26,34 @@ from app.models.region_unit_setting import RegionUnitSetting, UserUnitPreference
 WATER_DENSITY = Decimal("1000")
 
 
+def _get_piece_weight_kg(
+    service: "UnitConversionService",
+    entity_type: Optional[str],
+    entity_id: Optional[int],
+    count_unit_abbr: str,
+    default_kg: Decimal,
+) -> Decimal:
+    """获取计数单位的单件重量(kg)，优先查实体覆盖，否则用默认值"""
+    if not entity_type or not entity_id:
+        return default_kg
+    try:
+        override = service.get_entity_override(entity_type, entity_id, count_unit_abbr)
+        if override is None or override.weight_per_unit is None or override.weight_unit_id is None:
+            return default_kg
+        weight_unit = service.db.query(Unit).filter(Unit.id == override.weight_unit_id).first()
+        if weight_unit is None or weight_unit.si_factor is None:
+            return default_kg
+        kg_unit = service.get_unit_by_abbr("kg")
+        if kg_unit is None:
+            return default_kg
+        wp_kg = service.convert_si(override.weight_per_unit, weight_unit, kg_unit)
+        if wp_kg is not None and wp_kg > 0:
+            return wp_kg
+    except Exception:
+        pass
+    return default_kg
+
+
 class UnitConversionService:
     """单位换算服务，提供基于 SI 因子、实体覆盖和密度的换算能力"""
 
@@ -386,12 +414,14 @@ class UnitConversionService:
         if not from_unit or not to_unit:
             return None
 
-        # 2.5 计数→质量：使用默认单个重量回退（1个=100g=0.1kg）
-        #    仅在无实体覆盖时生效
+        # 2.5 计数→质量：优先用实体覆盖的 weight_per_unit，否则回退 1个=100g
+        #    注意：有 entity_override 的 from_unit 通常已在 §2 中处理，此处为兜底
         DEFAULT_PIECE_WEIGHT_KG = Decimal("0.1")  # 100g
         if from_unit.unit_type == "count" and to_unit.unit_type == "mass":
-            weight_kg = value * DEFAULT_PIECE_WEIGHT_KG
-            # kg -> to_unit
+            piece_weight_kg = _get_piece_weight_kg(
+                self, entity_type, entity_id, from_unit_abbr, DEFAULT_PIECE_WEIGHT_KG
+            )
+            weight_kg = value * piece_weight_kg
             kg_unit = self.get_unit_by_abbr("kg")
             if kg_unit:
                 final = self.convert_si(weight_kg, kg_unit, to_unit)
@@ -399,14 +429,16 @@ class UnitConversionService:
                     return (final, "default_piece_weight")
             return None
 
-        # 2.6 质量→计数：反向回退
+        # 2.6 质量→计数：优先用实体覆盖的 weight_per_unit，否则回退 1个=100g
         if from_unit.unit_type == "mass" and to_unit.unit_type == "count":
-            # to_unit 的目标质量值
+            piece_weight_kg = _get_piece_weight_kg(
+                self, entity_type, entity_id, to_unit_abbr, DEFAULT_PIECE_WEIGHT_KG
+            )
             kg_unit = self.get_unit_by_abbr("kg")
             if kg_unit:
                 value_kg = self.convert_si(value, from_unit, kg_unit)
                 if value_kg is not None:
-                    count = value_kg / DEFAULT_PIECE_WEIGHT_KG
+                    count = value_kg / piece_weight_kg
                     return (count.quantize(Decimal("0.001")), "default_piece_weight")
             return None
 

@@ -37,6 +37,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
+import { ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 
 const props = defineProps<{
   nutritionData?: any | null
@@ -99,7 +100,7 @@ const displayNutrients = computed<NutrientDisplay[]>(() => {
     const isNrv = NRV_KEYS.has(key)
     if (!showAll.value && !isNrv) continue
 
-    const label = NRV_LABELS[key] || nData.name_zh || key
+    const label = NRV_LABELS[key] || nData.name_zh || ENGLISH_TO_CHINESE_MAP[key] || key
     const totalValue = typeof nData.value === 'number' ? nData.value : parseFloat(nData.value) || 0
     const unit = nData.unit || ''
     const nrpPct = nData.nrp_pct != null ? Math.round(nData.nrp_pct) : null
@@ -159,13 +160,15 @@ function renderDonuts() {
     instance.setOption({
       tooltip: {
         trigger: 'item',
-        formatter: (p: any) => `${p.name}: ${p.value.toFixed(2)}${nutrient.unit} (${p.percent}%)`,
+        formatter: (p: any) => {
+          const pct = p.percent != null ? `${Math.round(p.percent)}%` : ''
+          return `<b>${p.name}</b><br/>${nutrient.label}: ${p.value.toFixed(2)}${nutrient.unit}${pct ? ' (' + pct + ')' : ''}`
+        },
       },
       series: [{
         type: 'pie',
         radius: ['50%', '75%'],
         center: ['50%', '50%'],
-        silent: true,
         label: { show: false },
         emphasis: { scale: false },
         itemStyle: {
@@ -228,7 +231,6 @@ onUnmounted(() => {
   gap: 16px;
 }
 .nutrition-donut-card {
-  background: #fafafa;
   border-radius: 8px;
   padding: 12px;
   display: flex;

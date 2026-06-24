@@ -16,9 +16,7 @@
       <v-card
         v-for="m in merchantList"
         :key="m.merchant_id"
-        :class="{ 'merchant-card-recommended': m.is_recommended }"
-        :color="m.is_recommended ? 'orange-lighten-5' : undefined"
-        class="merchant-card"
+        :class="['merchant-card', { 'merchant-card-recommended': m.is_recommended }]"
         elevation="0"
         variant="outlined"
       >
@@ -26,19 +24,32 @@
           <div class="d-flex align-center mb-1">
             <span class="text-body-1 font-weight-medium text-truncate">{{ m.merchant_name }}</span>
             <v-spacer />
-            <v-chip v-if="m.is_recommended" size="x-small" color="orange" class="font-weight-bold">
+            <v-chip v-if="m.is_recommended" size="x-small" color="orange-darken-2" variant="flat" class="font-weight-bold text-white">
               最实惠 ✓
             </v-chip>
           </div>
           <div class="text-caption text-medium-emphasis mb-2">
             覆盖 {{ m.covered_count }}/{{ m.total_ingredients }} 种食材
+            <v-tooltip v-if="m.fallback_chains?.length" location="top">
+              <template #activator="{ props }">
+                <v-icon v-bind="props" size="x-small" color="info" class="ml-1">mdi-information</v-icon>
+              </template>
+              <div class="text-caption">根据以下食材计算价格：</div>
+              <div v-for="chain in m.fallback_chains" :key="chain" class="text-body-2 font-weight-bold">{{ chain }}</div>
+            </v-tooltip>
           </div>
           <div class="text-h5 font-weight-bold mb-1">
-            ¥{{ (m.total_cost || 0).toFixed(2) }}
+            ¥{{ Number(m.total_cost || 0).toFixed(2) }}
+          </div>
+          <div class="text-caption mb-1">
+            <span class="text-green-darken-2">本店 ¥{{ Number(m.covered_cost || 0).toFixed(2) }}</span>
+            <span v-if="Number(m.external_cost || 0) > 0" class="ml-2 text-orange-darken-2">
+              外部 ¥{{ Number(m.external_cost || 0).toFixed(2) }}
+            </span>
           </div>
           <div v-if="m.missing_ingredients?.length" class="text-caption text-warning">
             <v-icon size="12" color="warning">mdi-alert-circle-outline</v-icon>
-            缺 {{ m.missing_ingredients.join('、') }}
+            需外购 {{ m.missing_ingredients.join('、') }}
           </div>
         </v-card-text>
       </v-card>
@@ -74,5 +85,6 @@ const merchantList = computed(() => {
 .merchant-card-recommended {
   border-color: #ff9800 !important;
   border-width: 2px !important;
+  background: #fff8e1;
 }
 </style>

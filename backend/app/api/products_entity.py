@@ -738,9 +738,8 @@ def get_product_latest_price_by_merchant(
             for r in results[1:]:
                 r["is_lowest"] = False
 
-            # 为每个商家注入近90天价格趋势迷你图数据
-            from app.api.nutrition import _inject_merchant_sparklines
-            _inject_merchant_sparklines(results, [product_id], db)
+            # 迷你图注入已移除——在大数据量或 SQLite 并发场景下可能挂死
+            # 将来如需恢复，建议改为异步任务预计算 + 缓存
 
         return {"prices": results, "unit": target_unit_abbr}
 

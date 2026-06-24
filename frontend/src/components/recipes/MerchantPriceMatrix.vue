@@ -27,7 +27,16 @@
             </thead>
             <tbody>
               <tr v-for="row in tableRows" :key="row.recipeIngredientId">
-                <td class="sticky-col font-weight-medium">{{ row.name }}</td>
+                <td class="sticky-col font-weight-medium">
+                  {{ row.name }}
+                  <v-tooltip v-if="row.fallbackChain" location="top">
+                    <template #activator="{ props }">
+                      <v-icon v-bind="props" size="x-small" color="info" class="ml-1">mdi-information</v-icon>
+                    </template>
+                    <div class="text-caption">根据以下食材计算价格：</div>
+                    <div class="text-body-2 font-weight-bold">{{ row.fallbackChain }}</div>
+                  </v-tooltip>
+                </td>
                 <td class="sticky-col" style="left:120px;color:#888;font-size:12px">
                   {{ row.quantityDisplay }}
                 </td>
@@ -100,10 +109,12 @@ const tableRows = computed<TableRow[]>(() => {
           (p: any) => (p.merchant_name || `商家${p.merchant_id}`) === mName
         )
         if (match) {
+          // 优先显示 total_cost（预估总价），回退到 price（单价）
+          const displayVal = match.total_cost != null ? match.total_cost : (match.price || 0)
           merchantPrices[mName] = {
             hasPrice: true,
-            displayValue: (match.price || 0).toFixed(2),
-            rawValue: match.price || 0,
+            displayValue: displayVal.toFixed(2),
+            rawValue: displayVal,
             isLowest: match.is_lowest || false,
           }
         } else {
@@ -116,9 +127,19 @@ const tableRows = computed<TableRow[]>(() => {
         }
       }
 
-      let qtyDisplay = ''
-      if (ing.quantity) {
-        qtyDisplay = `${ing.quantity}${ing.unit || ''}`
+      let qtyDisplay = priceItem?.qtyDisplay || ''
+      if (!qtyDisplay) {
+        if (ing.quantity) {
+          qtyDisplay = `${ing.quantity}${ing.unit || ''}`
+        } else if (ing.quantity_range) {
+          let qr = ing.quantity_range
+          if (typeof qr === 'string') {
+            try { qr = JSON.parse(qr) } catch { /* ignore */ }
+          }
+          if (qr && typeof qr === 'object' && qr.min != null && qr.max != null) {
+            qtyDisplay = `${qr.min}-${qr.max}${ing.unit || ''}`
+          }
+        }
       }
 
       return {
@@ -126,6 +147,7 @@ const tableRows = computed<TableRow[]>(() => {
         name: ing.name,
         quantityDisplay: qtyDisplay,
         merchantPrices,
+        fallbackChain: priceItem?.fallbackChain || null,
       }
     })
 })

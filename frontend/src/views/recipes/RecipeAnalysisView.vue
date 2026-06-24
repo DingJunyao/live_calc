@@ -1,5 +1,6 @@
 <template>
   <v-app-bar elevation="0" color="background" fixed>
+    <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
     <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
     <v-app-bar-title class="text-h6">
       <div class="d-flex align-center ga-2">
@@ -12,7 +13,7 @@
     </template>
   </v-app-bar>
 
-  <v-container fluid class="pa-0 pt-16">
+  <v-container fluid class="pa-0">
     <div v-if="!recipe && loading" class="text-center py-16">
       <v-progress-circular indeterminate color="primary" size="64" />
       <div class="text-body-1 mt-4">加载中...</div>
@@ -72,6 +73,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
 import CostProportionChart from '@/components/recipes/CostProportionChart.vue'
 import CostTrendAnalysis from '@/components/recipes/CostTrendAnalysis.vue'
@@ -81,6 +83,7 @@ import MerchantPriceMatrix from '@/components/recipes/MerchantPriceMatrix.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const recipeId = Number(route.params.id)
 
 const recipe = ref<any>(null)
@@ -149,7 +152,9 @@ async function loadCostHistory(filter: string) {
     })
     costHistoryRecords.value = Array.isArray(res) ? res : []
   } catch { /* 忽略 */ }
-  loadingCostHistory.value = false
+  finally {
+    loadingCostHistory.value = false
+  }
 }
 
 async function loadMerchantCosts() {
@@ -158,39 +163,112 @@ async function loadMerchantCosts() {
     const res = await api.get(`/recipes/${recipeId}/merchant-costs`, { timeout: 30000 })
     merchantCosts.value = res
   } catch { /* 忽略 */ }
-  loadingMerchantCosts.value = false
+  finally {
+    loadingMerchantCosts.value = false
+  }
+}
+
+// 模糊量 → 默认克数（与后端 VAGUE_QUANTITY_GRAM_MAP 对齐）
+const VAGUE_QUANTITY_GRAM: Record<string, number> = { '适量': 100, '少许': 5 }
+
+// 从 quantity / quantity_range / original_quantity 中提取有效数量
+function getEffectiveQuantity(ingredient: any): { qty: number | null; qtyDisplay: string; qtyUnit: string } {
+  let qty: number | null = null
+  let qtyDisplay = ''
+  let qtyUnit = ingredient.unit || ''
+
+  if (ingredient.quantity) {
+    qty = parseFloat(ingredient.quantity)
+    qtyDisplay = `${ingredient.quantity}${qtyUnit}`
+  } else if (ingredient.quantity_range) {
+    let qr = ingredient.quantity_range
+    if (typeof qr === 'string') {
+      try { qr = JSON.parse(qr) } catch { /* ignore */ }
+    }
+    if (qr && typeof qr === 'object') {
+      const min = parseFloat(qr.min) || 0
+      const max = parseFloat(qr.max) || 0
+      qty = (min + max) / 2
+      qtyDisplay = `${qr.min}-${qr.max}${qtyUnit}`
+    }
+  }
+
+  // 模糊量回退（original_quantity 中的「适量/少许」→ 克）
+  if (qty == null && ingredient.original_quantity) {
+    let orig = ingredient.original_quantity
+    if (typeof orig !== 'string') {
+      try { orig = JSON.stringify(orig) } catch { orig = '' }
+    }
+    for (const [keyword, gramQty] of Object.entries(VAGUE_QUANTITY_GRAM)) {
+      if (orig.includes(keyword)) {
+        qty = gramQty
+        qtyDisplay = `${keyword}(${gramQty}g)`
+        qtyUnit = 'g'
+        break
+      }
+    }
+  }
+
+  return { qty, qtyDisplay, qtyUnit }
 }
 
 function fetchMerchantPrice(ingredient: any): Promise<any> {
-  return api.get(`/nutrition/ingredients/${ingredient.ingredient_id}/latest-price-by-merchant`, { timeout: 30000 })
+  const { qty, qtyDisplay, qtyUnit } = getEffectiveQuantity(ingredient)
+  const params: Record<string, any> = {}
+  if (qty != null && !isNaN(qty) && qty > 0) {
+    params.quantity = qty
+    params.quantity_unit = qtyUnit
+  }
+  return api.get(`/nutrition/ingredients/${ingredient.ingredient_id}/latest-price-by-merchant`, {
+    params,
+    timeout: 10000,
+  })
     .then((res: any) => ({
       recipeIngredientId: ingredient.id,
       ingredientId: ingredient.ingredient_id,
       ingredientName: ingredient.name,
       prices: res?.prices || [],
       unit: res?.unit || null,
+      qtyDisplay,
+      fallbackChain: res?.fallback_chain || null,
     }))
     .catch(() => null)
 }
 
-// 并发控制：同时最多 3 个比价请求
+// 并发控制：同时最多 3 个比价请求，全局超时 50 秒
 async function loadMerchantPrices() {
   const ingredients = recipe.value?.ingredients
-  if (!ingredients?.length) return
+  if (!ingredients?.length) {
+    loadingMerchantPrices.value = false
+    return
+  }
 
   loadingMerchantPrices.value = true
+  const startTime = Date.now()
+  const GLOBAL_TIMEOUT = 35000
+  const CONCURRENCY = 3
+
   try {
     const validIngredients = ingredients.filter((i: any) => i.ingredient_id)
     const results: any[] = []
-    const CONCURRENCY = 3
+
     for (let i = 0; i < validIngredients.length; i += CONCURRENCY) {
+      // 全局超时检查，超时后至少保留已有结果
+      if (Date.now() - startTime > GLOBAL_TIMEOUT) {
+        console.warn('[分析页] 商家比价请求超时，显示部分结果')
+        break
+      }
+
       const batch = validIngredients.slice(i, i + CONCURRENCY)
       const batchResults = await Promise.allSettled(batch.map(fetchMerchantPrice))
       results.push(...batchResults.map(r => r.status === 'fulfilled' ? r.value : null))
     }
     merchantPriceData.value = results.filter(Boolean)
-  } catch { /* 忽略 */ }
-  loadingMerchantPrices.value = false
+  } catch {
+    /* 忽略 */
+  } finally {
+    loadingMerchantPrices.value = false
+  }
 }
 
 function onCostTrendFilterChange(filter: string) {
