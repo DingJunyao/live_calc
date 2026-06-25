@@ -1798,10 +1798,11 @@ async def calculate_recipe_nutrition(
             # 如果是计数单位（如"个"），尝试使用 piece_weight 转换
             from app.models.unit import Unit
             from app.models.entity_unit_override import EntityUnitOverride
-            if ingredient.piece_weight and ingredient.piece_weight_unit_id:
+            if ingredient.piece_weight:
                 # 使用食材的标准重量转换（如：1个鸡蛋=50g）
+                # piece_weight_unit_id 未设置时默认按克(g)处理
                 piece_weight = Decimal(str(ingredient.piece_weight))
-                piece_weight_unit = ingredient.piece_weight_unit.abbreviation
+                piece_weight_unit = ingredient.piece_weight_unit.abbreviation if ingredient.piece_weight_unit else "g"
 
                 # 转换为标准重量单位
                 converted_weight, converted_unit = convert_to_standard(piece_weight, piece_weight_unit)

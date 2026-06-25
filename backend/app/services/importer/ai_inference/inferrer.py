@@ -320,6 +320,11 @@ class AIInferrer:
                 if piece_weight is not None and ingredient.piece_weight is None:
                     ingredient.piece_weight = piece_weight
                     ingredient.ai_inferred = True
+                    # 确保 piece_weight_unit_id 指向"克"
+                    if ingredient.piece_weight_unit_id is None:
+                        g_unit = self.db.query(Unit).filter(Unit.abbreviation == "g").first()
+                        if g_unit:
+                            ingredient.piece_weight_unit_id = g_unit.id
                     self.db.flush()
 
                 # 如果有 default_quantity，更新各菜谱条目的 quantity_range

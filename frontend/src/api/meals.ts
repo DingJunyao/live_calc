@@ -34,14 +34,22 @@ export interface DailyTotals {
 }
 
 export interface DailyRecommendationsResponse {
+  status: 'ready' | 'not_generated' | 'generating'
   date: string
   recommendations: MealRecommendation[]
   totals?: DailyTotals
+  /** 当前正在后台刷新的餐类 */
+  refreshing_meals?: string[]
 }
 
-/** 获取今日三餐推荐 */
+/** 获取今日三餐推荐（轻量，不触发计算） */
 export async function getDailyRecommendations(): Promise<DailyRecommendationsResponse> {
   return api.get('/meals/recommendations') as any
+}
+
+/** 触发后台生成今日推荐 */
+export async function triggerRecommendationGeneration(): Promise<DailyRecommendationsResponse> {
+  return api.post('/meals/recommendations/generate') as any
 }
 
 /** 刷新某一餐推荐 */

@@ -4,9 +4,11 @@
 核心推荐算法：按用户营养目标和预算，从候选菜谱池中打分排序，
 为早/午/晚三餐各选最优菜谱。
 """
+import asyncio
 import datetime
 import logging
-from typing import Dict, List, Optional, Tuple
+import threading
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text
@@ -17,6 +19,14 @@ from app.models.daily_recommendation import DailyRecommendation
 from app.services.recipe_service import calculate_recipe_cost, calculate_recipe_nutrition
 
 logger = logging.getLogger("meal_recommender")
+
+# 后台生成追踪：记录哪些用户正在生成推荐
+_generating_users: Set[int] = set()
+_generation_lock = threading.Lock()
+
+# 后台刷新追踪：记录哪些用户正在刷新某一餐
+_refreshing_meals: Dict[int, Set[str]] = {}
+_refresh_lock = threading.Lock()
 
 # 三餐营养占比
 MEAL_RATIOS = {
@@ -95,7 +105,7 @@ def _calc_cost_score(cost_data: Optional[Dict], user: User, meal_type: str) -> f
 
 
 def _get_candidate_pool(
-    db: Session, meal_type: str, exclude_recipe_id: Optional[int] = None
+    db: Session, meal_type: str, exclude_recipe_ids: Optional[Set[int]] = None
 ) -> List[Recipe]:
     """
     获取某餐类的候选菜谱池。
@@ -104,6 +114,7 @@ def _get_candidate_pool(
     - breakfast: category == "早餐"
     - lunch/dinner: category != "早餐"（共享候选池）
     - is_active == True
+    - 排除 exclude_recipe_ids 中的菜谱（用于午/晚餐去重）
     """
     query = db.query(Recipe).filter(Recipe.is_active == True)
 
@@ -114,8 +125,8 @@ def _get_candidate_pool(
             (Recipe.category != "早餐") | (Recipe.category == None) | (Recipe.category == "")
         )
 
-    if exclude_recipe_id is not None:
-        query = query.filter(Recipe.id != exclude_recipe_id)
+    if exclude_recipe_ids:
+        query = query.filter(~Recipe.id.in_(exclude_recipe_ids))
 
     return query.all()
 
@@ -154,11 +165,11 @@ async def _score_recipe(
 async def _pick_best_recipe(
     user: User,
     meal_type: str,
-    exclude_recipe_id: Optional[int] = None,
+    exclude_recipe_ids: Optional[Set[int]] = None,
     db: Optional[Session] = None,
 ) -> Tuple[Optional[Recipe], Optional[Dict], Optional[Dict], float]:
     """从候选池中选取最优菜谱。"""
-    candidates = _get_candidate_pool(db, meal_type, exclude_recipe_id)
+    candidates = _get_candidate_pool(db, meal_type, exclude_recipe_ids)
     if not candidates:
         return (None, None, None, 0.0)
 
@@ -242,7 +253,8 @@ def _get_current_meal(hour: int) -> Optional[str]:
 
 
 async def _build_response_from_records(
-    db: Session, records: List[DailyRecommendation], user: User
+    db: Session, records: List[DailyRecommendation], user: User,
+    refreshing_meals: Optional[List[str]] = None,
 ) -> Dict:
     """从 daily_recommendations 记录构建完整响应。"""
     now = datetime.datetime.now()
@@ -315,9 +327,11 @@ async def _build_response_from_records(
     totals["refresh_counts"] = refresh_counts
 
     return {
+        "status": "ready",
         "date": today.isoformat(),
         "recommendations": recommendations,
         "totals": totals,
+        "refreshing_meals": refreshing_meals or [],
     }
 
 
@@ -347,13 +361,15 @@ async def generate_recommendations(db: Session, user: User) -> Dict:
         return await _build_response_from_records(db, existing, user)
 
     meal_types = ["breakfast", "lunch", "dinner"]
+    picked_ids: Set[int] = set()  # 午/晚餐共享候选池，防止重复
 
     for meal_type in meal_types:
         best_recipe, nutrition, cost, score = await _pick_best_recipe(
-            user, meal_type, db=db
+            user, meal_type, exclude_recipe_ids=picked_ids, db=db
         )
 
         if best_recipe:
+            picked_ids.add(best_recipe.id)
             record = DailyRecommendation(
                 user_id=user.id,
                 date=today,
@@ -407,10 +423,26 @@ async def refresh_meal_recommendation(
         .first()
     )
 
-    exclude_id = current_rec.recipe_id if current_rec else None
+    # 收集其他餐已选菜谱，确保刷新后不会与其他餐重复
+    exclude_ids: Set[int] = set()
+    all_today = (
+        db.query(DailyRecommendation)
+        .filter(
+            DailyRecommendation.user_id == user.id,
+            DailyRecommendation.date == today,
+            DailyRecommendation.meal_type != meal_type,
+        )
+        .all()
+    )
+    for rec in all_today:
+        exclude_ids.add(rec.recipe_id)
+
+    # 也排除当前餐已有的菜谱（如果存在），避免刷到同一个
+    if current_rec:
+        exclude_ids.add(current_rec.recipe_id)
 
     best_recipe, nutrition, cost, score = await _pick_best_recipe(
-        user, meal_type, exclude_recipe_id=exclude_id, db=db
+        user, meal_type, exclude_recipe_ids=exclude_ids, db=db
     )
 
     if not best_recipe:
@@ -443,3 +475,134 @@ async def refresh_meal_recommendation(
     )
 
     return (await _build_response_from_records(db, all_records, user), None)
+
+
+# ============ 后台生成与状态检查 ============
+
+def is_generating(user_id: int) -> bool:
+    """检查指定用户是否正在后台生成推荐。"""
+    with _generation_lock:
+        return user_id in _generating_users
+
+
+def check_today_status(db: Session, user_id: int) -> Dict:
+    """快速检查今日推荐状态，不触发耗时计算。
+
+    返回 {"status": ..., "existing_records": [...], "refreshing_meals": [...]}，
+    status 为 "ready"（已有）+ records、"not_generated"（无）、"generating"（生成中）。
+    refreshing_meals 为当前正在后台刷新的餐类列表（仅在 ready 时有意义）。
+    """
+    today = datetime.date.today()
+
+    existing = (
+        db.query(DailyRecommendation)
+        .options(joinedload(DailyRecommendation.recipe))
+        .filter(
+            DailyRecommendation.user_id == user_id,
+            DailyRecommendation.date == today,
+        )
+        .all()
+    )
+
+    with _refresh_lock:
+        refreshing = list(_refreshing_meals.get(user_id, set()))
+
+    if existing:
+        return {"status": "ready", "existing_records": existing, "refreshing_meals": refreshing}
+    if is_generating(user_id):
+        return {"status": "generating", "existing_records": [], "refreshing_meals": refreshing}
+    return {"status": "not_generated", "existing_records": [], "refreshing_meals": refreshing}
+
+
+def _generate_in_background(user_id: int):
+    """在独立线程中运行推荐生成，不阻塞 HTTP 响应。"""
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            logger.warning(f"后台生成：用户 {user_id} 不存在")
+            return
+        # 在新线程中跑独立的 event loop
+        asyncio.run(generate_recommendations(db, user))
+        logger.info(f"后台生成：用户 {user_id} 推荐已就绪")
+    except Exception:
+        logger.exception(f"后台生成：用户 {user_id} 推荐失败")
+    finally:
+        db.close()
+        with _generation_lock:
+            _generating_users.discard(user_id)
+
+
+def trigger_background_generation(user_id: int) -> bool:
+    """触发后台生成。如果已在生成中返回 False，否则启动线程并返回 True。"""
+    with _generation_lock:
+        if user_id in _generating_users:
+            return False
+        _generating_users.add(user_id)
+
+    thread = threading.Thread(
+        target=_generate_in_background,
+        args=(user_id,),
+        daemon=True,
+        name=f"meal-gen-{user_id}",
+    )
+    thread.start()
+    return True
+
+
+# ============ 后台刷新 ============
+
+def is_refreshing(user_id: int, meal_type: str) -> bool:
+    """检查指定用户的某餐是否正在后台刷新。"""
+    with _refresh_lock:
+        return meal_type in _refreshing_meals.get(user_id, set())
+
+
+def _refresh_in_background(user_id: int, meal_type: str):
+    """在独立线程中运行单餐刷新。"""
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            logger.warning(f"后台刷新：用户 {user_id} 不存在")
+            return
+        result, error = asyncio.run(refresh_meal_recommendation(db, user, meal_type))
+        if error:
+            logger.warning(f"后台刷新：用户 {user_id} {meal_type} 刷新失败: {error}")
+        else:
+            logger.info(f"后台刷新：用户 {user_id} {meal_type} 已更新")
+    except Exception:
+        logger.exception(f"后台刷新：用户 {user_id} {meal_type} 异常")
+    finally:
+        db.close()
+        with _refresh_lock:
+            meals = _refreshing_meals.get(user_id, set())
+            meals.discard(meal_type)
+            if not meals:
+                _refreshing_meals.pop(user_id, None)
+
+
+def trigger_background_refresh(user_id: int, meal_type: str) -> Tuple[bool, Optional[str]]:
+    """触发后台刷新某餐。返回 (started, error_message)。
+
+    - 已在刷新中 → (False, "该餐正在刷新中")
+    - 启动成功 → (True, None)
+    """
+    with _refresh_lock:
+        meals = _refreshing_meals.setdefault(user_id, set())
+        if meal_type in meals:
+            return (False, "该餐正在刷新中，请稍候～")
+        meals.add(meal_type)
+
+    thread = threading.Thread(
+        target=_refresh_in_background,
+        args=(user_id, meal_type),
+        daemon=True,
+        name=f"meal-refresh-{user_id}-{meal_type}",
+    )
+    thread.start()
+    return (True, None)

@@ -63,7 +63,8 @@ def _apply_recipe_special_conditions(query, has_unpriced_ingredient, has_unnouri
         )
 
     if has_unnourished_ingredient:
-        # EXISTS ingredient in recipe with no verified nutrition data
+        # EXISTS ingredient in recipe with no trusted nutrition data
+        from sqlalchemy import or_
         query = query.filter(
             exists().where(
                 and_(
@@ -71,7 +72,10 @@ def _apply_recipe_special_conditions(query, has_unpriced_ingredient, has_unnouri
                     ~exists().where(
                         and_(
                             NutritionData.ingredient_id == RecipeIngredient.ingredient_id,
-                            NutritionData.is_verified == True
+                            or_(
+                                NutritionData.source.in_(['custom', 'usda_import', 'usda_manual_match']),
+                                NutritionData.is_verified == True
+                            )
                         )
                     )
                 )

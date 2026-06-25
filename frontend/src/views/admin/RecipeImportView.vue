@@ -173,19 +173,6 @@
                   block
                   color="purple"
                   variant="tonal"
-                  :loading="submitting.aiQuantities"
-                  :disabled="!enabledProviders.length"
-                  @click="inferQuantities"
-                >
-                  <v-icon start>mdi-scale</v-icon>
-                  推测模糊量
-                </v-btn>
-              </v-col>
-              <v-col cols="6">
-                <v-btn
-                  block
-                  color="purple"
-                  variant="tonal"
                   :loading="submitting.aiDensities"
                   :disabled="!enabledProviders.length"
                   @click="inferDensities"
@@ -416,33 +403,6 @@ async function uploadImport() {
   submitting.upload = false
 }
 
-async function inferQuantities() {
-  submitting.aiQuantities = true
-  try {
-    const provider = aiProvider.value || 'claude_code'
-    if (provider === 'claude_code') {
-      // Agent 路径：使用 Claude Code CLI 批量推测
-      const { session_id } = await createSession('infer_quantities', aiForce.value)
-      agentTasks.value.unshift({
-        session_id,
-        task_type: 'infer_quantities',
-        label: 'Agent 模糊量推测',
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      })
-      startAgentPolling(session_id)
-    } else {
-      // 旧 AIInferrer 路径：串行逐组推测（适用于 OpenAI 等非 claude_code 提供方）
-      const taskId = await startTask('/import/ai-infer/quantities', {
-        params: { force: aiForce.value, provider },
-      })
-      if (!taskId) {
-        errorMessage.value = 'AI 模糊量推测任务启动失败，请检查后端状态'
-      }
-    }
-  } catch (e: any) {
-    errorMessage.value = e?.response?.data?.detail || '模糊量推测任务启动失败'
-  }
   submitting.aiQuantities = false
 }
 

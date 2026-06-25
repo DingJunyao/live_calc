@@ -172,8 +172,11 @@ def _has_toplevel_write(stmt: str) -> str | None:
     return None
 
 
-def _classify_single(stmt: str) -> SqlVerdict:
-    """判定单条 SQL（已 strip、去注释、大写化由调用方保证）。"""
+def _classify_single(stmt: str, lenient: bool = False) -> SqlVerdict:
+    """判定单条 SQL（已 strip、去注释、大写化由调用方保证）。
+
+    lenient=True 时，无法识别的语句片段会被视为安全（跳过），而非判危险。
+    """
     s = stmt.strip()
     if not s:
         return SqlVerdict(dangerous=True, reason="空语句")
@@ -216,19 +219,24 @@ def _classify_single(stmt: str) -> SqlVerdict:
     if first_word == "INSERT":
         return SqlVerdict(dangerous=False)
 
-    # 未知语句：保守判危险（conservative）。
+    # 未知语句：lenient 模式跳过，严格模式判危险。
     first_word = s.split()[0] if s.split() else ""
+    if lenient:
+        return SqlVerdict(dangerous=False)
     return SqlVerdict(
         dangerous=True,
         reason=f"未知/未识别的语句类型，保守判为危险 (conservative, 首词: {first_word})",
     )
 
 
-def classify_sql(sql: str) -> SqlVerdict:
+def classify_sql(sql: str, lenient: bool = False) -> SqlVerdict:
     """判定一条（可能含多条以 `;` 分隔的）SQL 的危险性。
 
     Args:
         sql: 原始 SQL 文本，可能含多条语句、注释、前后空白。
+        lenient: 宽松模式（默认 False）。为 True 时，非 SQL 语句片段（不以
+            SELECT/INSERT/UPDATE/DELETE/WITH/CREATE/ALTER/DROP/TRUNCATE 开头）
+            会被跳过而非判危险。适用于 Agent 提取的 SQL 中混入说明文字的场景。
 
     Returns:
         SqlVerdict：只要任一子语句危险则整体危险；全部安全才安全。
@@ -246,7 +254,7 @@ def classify_sql(sql: str) -> SqlVerdict:
         stmt = part.strip().upper()
         if not stmt:
             continue
-        verdict = _classify_single(stmt)
+        verdict = _classify_single(stmt, lenient=lenient)
         if verdict.dangerous:
             return verdict
     return SqlVerdict(dangerous=False)

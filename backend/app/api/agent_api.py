@@ -110,6 +110,39 @@ async def create_session(
             detail=f"未知任务类型: {body.task_type}（可用类型见 GET /api/v1/agent/task-types）",
         )
     initial_prompt = tpl["prompt"]
+
+    # 预查询兜底原料列表，直接注入 prompt，防止 Agent 跳过
+    if body.task_type in ("infer_quantities", "fill_piece_weight"):
+        try:
+            sdb = SessionLocal()
+            try:
+                from sqlalchemy import text as _text
+                orphans = sdb.execute(_text(
+                    "SELECT i.id, i.name FROM ingredients i"
+                    " WHERE i.is_active = 1 AND i.piece_weight IS NULL"
+                    " AND (i.name LIKE '%个' OR i.name LIKE '%只' OR i.name LIKE '%条'"
+                    " OR i.name LIKE '%根' OR i.name LIKE '%颗' OR i.name LIKE '%粒'"
+                    " OR i.name LIKE '%瓣' OR i.name LIKE '%片' OR i.name LIKE '%块'"
+                    " OR i.name LIKE '%段' OR i.name LIKE '%朵' OR i.name LIKE '%把'"
+                    " OR i.name LIKE '%头' OR i.name LIKE '%尾' OR i.name LIKE '%腿'"
+                    " OR i.name LIKE '%翅' OR i.name LIKE '%爪' OR i.name LIKE '%叶'"
+                    " OR i.name LIKE '%张' OR i.name LIKE '%串' OR i.name LIKE '%卷')"
+                    " ORDER BY i.name"
+                )).fetchall()
+                if orphans:
+                    lines = [f"  - id={row[0]}, name={row[1]}" for row in orphans]
+                    initial_prompt += (
+                        "\n\n# ⚠️ 强制任务：以下原料缺少 piece_weight，必须全部估值\n"
+                        "这些原料未出现在上述查询 1/2 中，但名称明确指示它们是计数型食材"
+                        "（个/只/条/根/腿/翅等），必须在本次会话中为**每一条**输出 UPDATE：\n"
+                        + "\n".join(lines)
+                        + "\n\n**不得跳过任何一条。每条都必须出现在 UPDATE 的 WHERE id IN (...) 中。**\n"
+                    )
+            finally:
+                sdb.close()
+        except Exception:
+            logger.warning("预查询兜底原料失败，使用模板默认提示", exc_info=True)
+
     if body.force:
         # 按任务类型生成具体的 SQL 修改规则（prepend 在模板之前，比 append 醒目）。
         _force_rules: dict[str, str] = {
@@ -194,6 +227,7 @@ async def create_session(
                 main_loop,
                 db_session_factory=SessionLocal,
                 approval_timeout=settings.agent_approval_timeout,
+                safe_row_threshold=50000,
             )
         except Exception:  # noqa: BLE001 - 后台线程异常兜底
             logger.exception("agent 后台线程异常 session_id=%s", session_id)
@@ -435,6 +469,7 @@ async def post_message(
 
     main_loop = asyncio.get_running_loop()
     db_url = _settings_db_url()
+    settings = _settings()
     resume_sid = sess.claude_session_id
     user_text = body.text
     task_type = sess.task_type or "followup"
@@ -457,6 +492,7 @@ async def post_message(
                 db_session_factory=SessionLocal,
                 resume_session_id=resume_sid,
                 approval_timeout=settings.agent_approval_timeout,
+                safe_row_threshold=50000,
             )
         except Exception:  # noqa: BLE001
             logger.exception("agent 插话线程异常 session_id=%s", sid)

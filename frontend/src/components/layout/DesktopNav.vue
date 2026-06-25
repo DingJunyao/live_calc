@@ -27,6 +27,7 @@
         :title="item.title"
         :value="item.value"
         :to="item.to"
+        :exact="item.exact"
         color="primary"
       />
     </v-list>
@@ -63,7 +64,7 @@ const rail = ref(false)
 const isDark = computed(() => theme.global.current.value.dark)
 
 const menuItems = [
-  { title: '今日推荐', icon: 'mdi-silverware-fork-knife', value: 'meals', to: '/' },
+  { title: '今日推荐', icon: 'mdi-silverware-fork-knife', value: 'meals', to: '/', exact: true },
   { title: '价格记录', icon: 'mdi-currency-cny', value: 'prices', to: '/prices' },
   { title: '菜谱管理', icon: 'mdi-book-open-variant', value: 'recipes', to: '/recipes' },
   { title: '商品管理', icon: 'mdi-package-variant', value: 'products', to: '/data/products' },

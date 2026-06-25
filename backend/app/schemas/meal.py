@@ -46,10 +46,20 @@ class DailyTotals(BaseModel):
 
 
 class MealRecommendationsResponse(BaseModel):
-    """完整推荐响应"""
+    """完整推荐响应
+
+    status 取值：
+    - "ready": 推荐已就绪，直接展示
+    - "not_generated": 尚未生成，需调用 POST /generate 触发后台计算
+    - "generating": 后台正在生成中，前端应轮询 GET 直到 ready
+
+    refreshing_meals: 当前正在后台刷新的餐类列表，仅在 status="ready" 时有意义。
+    """
+    status: str = "ready"
     date: str
-    recommendations: List[MealRecommendationItem]
+    recommendations: List[MealRecommendationItem] = []
     totals: Optional[DailyTotals] = None
+    refreshing_meals: List[str] = []
 
 
 class RefreshMealRequest(BaseModel):

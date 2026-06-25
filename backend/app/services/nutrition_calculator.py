@@ -315,18 +315,9 @@ class NutritionCalculator:
         Returns:
             计算后的营养数据
         """
-        # 优先获取自定义营养数据（用户编辑的数据优先级最高）
-        nutrition = self.db.query(NutritionData).filter(
-            NutritionData.ingredient_id == ingredient_id,
-            NutritionData.source == 'custom'
-        ).first()
-
-        # 如果没有自定义数据，则获取已验证的其他来源数据
-        if not nutrition:
-            nutrition = self.db.query(NutritionData).filter(
-                NutritionData.ingredient_id == ingredient_id,
-                NutritionData.is_verified == True
-            ).first()
+        # 优先级：custom > usda_import / usda_manual_match > 其他已验证
+        from app.models.mixins import NutritionMixin
+        nutrition = NutritionMixin.get_best_nutrition_data(self.db, ingredient_id)
 
         if not nutrition:
             return None

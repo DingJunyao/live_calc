@@ -326,7 +326,7 @@ async def get_merchant_product_prices(
                        ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY recorded_at DESC) AS rn
                 FROM product_records
                 WHERE user_id = :uid AND merchant_id = :mid
-            ) WHERE rn = 1
+            ) AS subq WHERE rn = 1
         """)
         total = db.execute(count_sql, {"uid": current_user.id, "mid": merchant_id}).scalar() or 0
 

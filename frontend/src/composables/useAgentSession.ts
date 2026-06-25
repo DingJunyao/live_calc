@@ -344,6 +344,9 @@ export function useAgentSession() {
   /** 插话（resume 新轮）。 */
   async function interject(sid: number, text: string): Promise<void> {
     await apiPostMessage(sid, text)
+    // 重新连接 SSE 以接收 Agent 的回复
+    status.value = 'running'
+    await connect(sid)
   }
 
   /** 审批决策；本地同步更新 approval 状态（最终态以 sql_* 事件为准）。 */

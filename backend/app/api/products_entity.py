@@ -315,10 +315,12 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
             from app.services.unit_conversion_service import UnitConversionService
             unit_service = UnitConversionService(db)
 
-            # 获取原料默认单位作为目标
+            # 获取原料默认单位作为目标（无默认单位时回退到「斤」）
             target_unit_abbr = None
             if product.ingredient and product.ingredient.default_unit:
                 target_unit_abbr = product.ingredient.default_unit.abbreviation
+            if not target_unit_abbr:
+                target_unit_abbr = "斤"
 
             unit_prices = []
             for record in day_records:
@@ -952,23 +954,11 @@ def _get_ingredient_nutrition_with_fallback(db: Session, ingredient) -> dict:
     """
     from app.models.nutrition_data import NutritionData
 
-    # 1. 检查原料的自定义营养数据
-    custom_nutrition = db.query(NutritionData).filter(
-        NutritionData.ingredient_id == ingredient.id,
-        NutritionData.source == 'custom'
-        ).first()
-
-    if custom_nutrition:
-        return custom_nutrition.nutrients
-
-    # 2. 检查已验证的营养数据（含 USDA 导入数据）
-    verified_nutrition = db.query(NutritionData).filter(
-        NutritionData.ingredient_id == ingredient.id,
-        NutritionData.is_verified == True
-    ).first()
-
-    if verified_nutrition:
-        return verified_nutrition.nutrients
+    # 1. 获取最佳可用营养数据（custom > usda_import/usda_manual_match > 其他已验证）
+    from app.models.mixins import NutritionMixin
+    nutrition = NutritionMixin.get_best_nutrition_data(db, ingredient.id)
+    if nutrition:
+        return nutrition.nutrients
 
     # 3. 通过 nutrition_id 外键查找（额外回退）
     if ingredient.nutrition_id:

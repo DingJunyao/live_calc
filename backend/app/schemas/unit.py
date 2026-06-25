@@ -58,7 +58,7 @@ class EntityUnitOverrideBase(BaseModel):
     conversion_factor: Optional[Decimal] = None
     weight_per_unit: Optional[Decimal] = None
     weight_unit_id: Optional[int] = None
-    is_default: bool = False
+    is_default: bool | None = False
 
 
 class EntityUnitOverrideCreate(EntityUnitOverrideBase):

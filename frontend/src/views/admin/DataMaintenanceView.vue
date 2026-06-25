@@ -259,12 +259,12 @@
                   block
                   color="purple"
                   variant="tonal"
-                  :loading="submitting.aiQuantities"
+                  :loading="submitting.aiPieceWeight"
                   :disabled="!enabledAiProviders.length"
-                  @click="inferQuantities"
+                  @click="fillPieceWeight"
                 >
-                  <v-icon start>mdi-scale</v-icon>
-                  推测模糊量
+                  <v-icon start>mdi-weight</v-icon>
+                  自定义单位校准
                 </v-btn>
               </v-col>
               <v-col cols="6">
@@ -462,7 +462,7 @@ const router = useRouter()
 const goBack = () => router.back()
 
 // 各卡片提交中状态
-const submitting = reactive({
+const submitting = reactive({ aiPieceWeight: false,
   repo: false,
   local: false,
   upload: false,
@@ -521,9 +521,9 @@ const showUnmapped = ref(false)
 const usdaDownloading = ref(false)
 const usdaUploading = ref(false)
 
-const AGENT_TASK_TYPES = ['infer_quantities', 'infer_densities', 'usda_translate', 'unmapped_nutrient_translate']
+const AGENT_TASK_TYPES = ['fill_piece_weight', 'infer_densities', 'usda_translate', 'unmapped_nutrient_translate']
 const TASK_LABELS: Record<string, string> = {
-  infer_quantities: 'Agent 模糊量推测',
+  fill_piece_weight: 'Agent 自定义单位校准',
   infer_densities: 'Agent 密度推测',
   usda_translate: 'Agent 食材名翻译',
   unmapped_nutrient_translate: 'Agent 营养素翻译',
@@ -683,33 +683,22 @@ async function uploadImport() {
   submitting.upload = false
 }
 
-async function inferQuantities() {
-  submitting.aiQuantities = true
-  try {
-    const provider = aiInferProvider.value || 'claude_code'
-    if (provider === 'claude_code') {
-      const { session_id } = await createSession('infer_quantities', aiForce.value)
+async function fillPieceWeight() {
+    submitting.aiPieceWeight = true
+    try {
+      const { session_id } = await createSession('fill_piece_weight', aiForce.value)
       agentTasks.value.unshift({
         session_id,
-        task_type: 'infer_quantities',
-        label: 'Agent 模糊量推测',
+        task_type: 'fill_piece_weight',
+        label: TASK_LABELS.fill_piece_weight + (aiForce.value ? ' (强制)' : ''),
         status: 'pending',
         created_at: new Date().toISOString(),
       })
-      startAgentPolling(session_id)
-    } else {
-      const taskId = await startTask('/import/ai-infer/quantities', {
-        params: { force: aiForce.value, provider },
-      })
-      if (!taskId) {
-        errorMessage.value = 'AI 模糊量推测任务启动失败，请检查后端状态'
-      }
+      await refreshSessions()
+    } finally {
+      submitting.aiPieceWeight = false
     }
-  } catch (e: any) {
-    errorMessage.value = e?.response?.data?.detail || '模糊量推测任务启动失败'
   }
-  submitting.aiQuantities = false
-}
 
 async function inferDensities() {
   submitting.aiDensities = true

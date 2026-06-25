@@ -776,10 +776,8 @@ async def get_ingredient_nutrition_base(
     try:
         from app.models.nutrition_data import NutritionData
 
-        nutrition = db.query(NutritionData).filter(
-            NutritionData.ingredient_id == ingredient_id,
-            NutritionData.is_verified == True
-        ).first()
+        from app.models.mixins import NutritionMixin
+        nutrition = NutritionMixin.get_best_nutrition_data(db, ingredient_id)
 
         if not nutrition:
             raise HTTPException(status_code=404, detail="食材营养数据不存在")
@@ -951,10 +949,12 @@ async def get_ingredient_latest_price(
         # 初始化单位转换服务
         unit_service = UnitConversionService(db)
 
-        # 获取原料的默认单位缩写
+        # 获取原料的默认单位缩写（无默认单位时回退到「斤」）
         target_unit_abbr = None
         if ingredient.default_unit:
             target_unit_abbr = ingredient.default_unit.abbreviation
+        if not target_unit_abbr:
+            target_unit_abbr = "斤"
 
 
         # 计算平均价格 - 转换到原料的默认单位
@@ -1047,10 +1047,12 @@ async def get_ingredient_latest_price_by_merchant(
 
         unit_service = UnitConversionService(db)
 
-        # 获取原料的默认单位
+        # 获取原料的默认单位（无默认单位时回退到「斤」）
         target_unit_abbr = None
         if ingredient.default_unit:
             target_unit_abbr = ingredient.default_unit.abbreviation
+        if not target_unit_abbr:
+            target_unit_abbr = "斤"
 
         def _lookup_merchant_prices(ing: Ingredient) -> list[dict]:
             """对单个食材查找各商家最新价格，返回结果列表。不限制 user_id。"""
@@ -1079,8 +1081,8 @@ async def get_ingredient_latest_price_by_merchant(
                 if mid not in merchant_latest:
                     merchant_latest[mid] = record
 
-            # 计算该食材自己的 target_unit
-            ing_target = ing.default_unit.abbreviation if ing.default_unit else None
+            # 计算该食材自己的 target_unit（无默认单位时回退到「斤」）
+            ing_target = ing.default_unit.abbreviation if ing.default_unit else "斤"
 
             results = []
             for mid, record in merchant_latest.items():

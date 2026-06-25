@@ -29,6 +29,22 @@
       <v-skeleton-loader type="card@3" />
     </div>
 
+    <!-- 后台生成中 -->
+    <v-container v-else-if="store.generating" class="text-center mt-12">
+      <v-progress-circular
+        indeterminate
+        color="primary"
+        size="64"
+        width="4"
+      />
+      <p class="text-body-1 text-medium-emphasis mt-4">
+        正在为你计算今日推荐…
+      </p>
+      <p class="text-caption text-disabled mt-1">
+        正在评估所有可用菜谱的营养搭配与成本，稍等一下～
+      </p>
+    </v-container>
+
     <!-- 错误状态 -->
     <v-container v-else-if="store.error" class="text-center mt-8">
       <v-icon size="64" color="grey-lighten-1">mdi-alert-circle-outline</v-icon>

@@ -15,6 +15,45 @@ from app.models.nutrition_data import NutritionData
 class NutritionMixin:
     """营养数据混合类，处理商品自定义营养值与食材营养值的优先级"""
 
+    # 可信营养数据源（优先级排序）
+    _TRUSTED_SOURCES = ['custom', 'usda_import', 'usda_manual_match']
+
+    @staticmethod
+    def get_best_nutrition_data(db: Session, ingredient_id: int):
+        """
+        获取指定食材的最佳可用营养数据
+
+        优先级：custom > usda_import / usda_manual_match > 其他已验证
+
+        Args:
+            db: 数据库会话
+            ingredient_id: 食材 ID
+
+        Returns:
+            NutritionData 或 None
+        """
+        # 1. 自定义数据（用户编辑，最高优先级）
+        nutrition = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == ingredient_id,
+            NutritionData.source == 'custom'
+        ).first()
+        if nutrition:
+            return nutrition
+
+        # 2. USDA 数据（usda_import / usda_manual_match）
+        nutrition = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == ingredient_id,
+            NutritionData.source.in_(['usda_import', 'usda_manual_match'])
+        ).order_by(NutritionData.match_confidence.desc()).first()
+        if nutrition:
+            return nutrition
+
+        # 3. 其他已验证数据（兜底）
+        return db.query(NutritionData).filter(
+            NutritionData.ingredient_id == ingredient_id,
+            NutritionData.is_verified == True
+        ).first()
+
     @staticmethod
     def get_nutrient_value(
         db: Session,
@@ -83,11 +122,7 @@ class NutritionMixin:
         visited = visited + [ingredient.id]
 
         # 2.1 检查当前食材的营养数据
-        # 直接通过 ingredient_id 查询，而不是依赖 nutrition_id 关系
-        nutrition_data = db.query(NutritionData).filter(
-            NutritionData.ingredient_id == ingredient.id,
-            NutritionData.is_verified == True
-        ).first()
+        nutrition_data = NutritionMixin.get_best_nutrition_data(db, ingredient.id)
 
         if nutrition_data and nutrition_data.nutrients:
             nutrition = nutrition_data.nutrients
@@ -167,10 +202,7 @@ class NutritionMixin:
         ingredient_name = ingredient.name if ingredient else "未知食材"
 
         if ingredient:
-            nutrition_data = db.query(NutritionData).filter(
-                NutritionData.ingredient_id == ingredient.id,
-                NutritionData.is_verified == True
-            ).first()
+            nutrition_data = NutritionMixin.get_best_nutrition_data(db, ingredient.id)
             if nutrition_data and nutrition_data.nutrients:
                 nuts = nutrition_data.nutrients
 

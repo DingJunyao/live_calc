@@ -1,6 +1,7 @@
 """
 每日饮食推荐 API
 """
+import datetime
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -10,8 +11,11 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.meal import MealRecommendationsResponse, RefreshMealRequest
 from app.services.meal_recommender import (
-    generate_recommendations,
-    refresh_meal_recommendation,
+    _build_response_from_records,
+    check_today_status,
+    is_refreshing,
+    trigger_background_generation,
+    trigger_background_refresh,
 )
 
 logger = logging.getLogger("meals")
@@ -24,20 +28,74 @@ async def get_daily_recommendations(
     current_user: User = Depends(get_current_user),
 ):
     """
-    获取今日三餐推荐。
+    获取今日三餐推荐（轻量，不触发计算）。
 
-    - 首次访问时执行推荐算法，写入 daily_recommendations 表
-    - 再次访问时从表中读取缓存结果
-    - is_current_meal 根据服务端当前时间判断（5-10→早餐, 10-14→午餐, 14-22→晚餐）
+    - 已有缓存 → 直接返回 status="ready"
+    - 未生成 → 返回 status="not_generated"，前端应调用 POST /generate 触发后台计算
+    - 生成中 → 返回 status="generating"，前端继续轮询
+
+    耗时计算通过 POST /recommendations/generate 在后台线程中完成。
     """
     try:
-        result = await generate_recommendations(db, current_user)
-        return result
+        status_info = check_today_status(db, current_user.id)
+
+        if status_info["status"] == "ready":
+            return await _build_response_from_records(
+                db, status_info["existing_records"], current_user,
+                refreshing_meals=status_info.get("refreshing_meals", []),
+            )
+
+        # not_generated 或 generating
+        return MealRecommendationsResponse(
+            status=status_info["status"],
+            date=datetime.date.today().isoformat(),
+            recommendations=[],
+            totals=None,
+            refreshing_meals=status_info.get("refreshing_meals", []),
+        )
     except Exception as e:
         logger.error(f"获取每日推荐失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取每日推荐失败",
+        )
+
+
+@router.post("/recommendations/generate", response_model=MealRecommendationsResponse)
+async def trigger_recommendation_generation(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    触发后台生成今日推荐。
+
+    - 已有缓存 → 直接返回（不重复生成）
+    - 已在生成中 → 返回 status="generating"
+    - 未生成 → 启动后台线程生成，返回 status="generating"
+    """
+    try:
+        status_info = check_today_status(db, current_user.id)
+
+        if status_info["status"] == "ready":
+            return await _build_response_from_records(
+                db, status_info["existing_records"], current_user,
+                refreshing_meals=status_info.get("refreshing_meals", []),
+            )
+
+        started = trigger_background_generation(current_user.id)
+
+        return MealRecommendationsResponse(
+            status="generating",
+            date=datetime.date.today().isoformat(),
+            recommendations=[],
+            totals=None,
+            refreshing_meals=[],
+        )
+    except Exception as e:
+        logger.error(f"触发推荐生成失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="触发推荐生成失败",
         )
 
 
@@ -48,22 +106,66 @@ async def refresh_recommendation(
     current_user: User = Depends(get_current_user),
 ):
     """
-    刷新某一餐的推荐。
+    刷新某一餐的推荐（后台异步模式）。
 
-    - 排除当前推荐的菜谱，重新打分选取最优
+    - 触发后台线程重新打分选取最优菜谱
+    - 立即返回当前推荐 + refreshing_meals 中含该餐标识
+    - 前端应轮询 GET /recommendations 直到 refreshing_meals 不含该餐
     - 每餐每天最多刷新 5 次，超出返回 429
+    - 该餐已在刷新中 → 返回 409
     """
+    from app.services.meal_recommender import _count_today_refreshes
+
     try:
-        result, error = await refresh_meal_recommendation(
-            db, current_user, request.meal_type
-        )
-        if error:
-            if "次了" in error and "刷新" in error:
-                raise HTTPException(status_code=429, detail=error)
+        # 先检查刷新次数
+        today = datetime.date.today()
+        counts = _count_today_refreshes(db, current_user.id, today)
+        current_count = counts.get(request.meal_type, 0)
+        if current_count >= 5:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=error
+                status_code=429,
+                detail=f"今天{request.meal_type}推荐已经刷新 5 次了，明天再来吧～",
             )
-        return result
+
+        # 检查是否已在刷新
+        if is_refreshing(current_user.id, request.meal_type):
+            # 返回当前推荐，frontend 可以继续轮询
+            status_info = check_today_status(db, current_user.id)
+            if status_info["status"] == "ready":
+                return await _build_response_from_records(
+                    db, status_info["existing_records"], current_user,
+                    refreshing_meals=status_info.get("refreshing_meals", []),
+                )
+            return MealRecommendationsResponse(
+                status="generating",
+                date=today.isoformat(),
+                recommendations=[],
+                totals=None,
+                refreshing_meals=status_info.get("refreshing_meals", []),
+            )
+
+        # 确保推荐已存在（否则应该先走 generate）
+        status_info = check_today_status(db, current_user.id)
+        if status_info["status"] != "ready":
+            return MealRecommendationsResponse(
+                status="not_generated",
+                date=today.isoformat(),
+                recommendations=[],
+                totals=None,
+            )
+
+        # 触发后台刷新
+        started, error = trigger_background_refresh(
+            current_user.id, request.meal_type
+        )
+        if not started:
+            raise HTTPException(status_code=409, detail=error)
+
+        # 返回当前推荐 + 刷新中标记
+        return await _build_response_from_records(
+            db, status_info["existing_records"], current_user,
+            refreshing_meals=[request.meal_type],
+        )
     except HTTPException:
         raise
     except Exception as e:

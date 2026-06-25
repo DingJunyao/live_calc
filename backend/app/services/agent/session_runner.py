@@ -625,7 +625,7 @@ def run_agent_loop(
             summary_items: list[str] = []
             session_failed = False
             for i, sql in enumerate(sqls, start=1):
-                verdict = classify_sql(sql)
+                verdict = classify_sql(sql, lenient=True)
                 if not verdict.dangerous:
                     item, escalated = _handle_safe_sql(
                         db,

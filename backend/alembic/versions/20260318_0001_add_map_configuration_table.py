@@ -23,7 +23,7 @@ def upgrade() -> None:
         'map_configurations',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('available_maps', sa.JSON(), nullable=False),
-        sa.Column('default_map', sa.String(), nullable=False),
+        sa.Column('default_map', sa.String(50), nullable=False),
         sa.Column('map_api_keys', sa.JSON(), nullable=False),
         sa.Column('geocoding', sa.JSON(), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=True),

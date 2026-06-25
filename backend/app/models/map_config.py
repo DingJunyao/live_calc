@@ -14,7 +14,7 @@ class MapConfiguration(Base):
     # 可用地图列表
     available_maps = Column(JSON, nullable=False, default=list)
     # 默认地图
-    default_map = Column(String, nullable=False, default='amap')
+    default_map = Column(String(50), nullable=False, default='amap')
     # 地图 API 密钥配置
     map_api_keys = Column(MutableDict.as_mutable(JSON), nullable=False, default=dict)
     # 地理编码配置

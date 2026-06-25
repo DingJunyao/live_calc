@@ -37,10 +37,14 @@ def _apply_ingredient_special_conditions(query, no_nutrition, no_price, single_p
     from sqlalchemy import exists, select
 
     if no_nutrition:
+        from sqlalchemy import or_
         query = query.filter(
             ~exists().where(
                 NutritionData.ingredient_id == Ingredient.id,
-                NutritionData.is_verified == True
+                or_(
+                    NutritionData.source.in_(['custom', 'usda_import', 'usda_manual_match']),
+                    NutritionData.is_verified == True
+                )
             )
         )
 
@@ -1071,10 +1075,8 @@ def _get_ingredient_nutrition_flat(db: Session, ingredient_id: int) -> dict:
     """获取原料的营养数据并返回扁平化格式"""
     from app.models.nutrition_data import NutritionData
 
-    nutrition_data = db.query(NutritionData).filter(
-        NutritionData.ingredient_id == ingredient_id,
-        NutritionData.is_verified == True
-    ).first()
+    from app.models.mixins import NutritionMixin
+    nutrition_data = NutritionMixin.get_best_nutrition_data(db, ingredient_id)
 
     if nutrition_data and nutrition_data.nutrients:
         return _flatten_nutrients(nutrition_data.nutrients)

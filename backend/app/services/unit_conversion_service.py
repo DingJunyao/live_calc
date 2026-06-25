@@ -33,22 +33,35 @@ def _get_piece_weight_kg(
     count_unit_abbr: str,
     default_kg: Decimal,
 ) -> Decimal:
-    """获取计数单位的单件重量(kg)，优先查实体覆盖，否则用默认值"""
+    """获取计数单位的单件重量(kg)，优先查实体覆盖，其次查原料 piece_weight，否则用默认值"""
     if not entity_type or not entity_id:
         return default_kg
     try:
+        # 1. 优先查 entity_unit_overrides
         override = service.get_entity_override(entity_type, entity_id, count_unit_abbr)
-        if override is None or override.weight_per_unit is None or override.weight_unit_id is None:
-            return default_kg
-        weight_unit = service.db.query(Unit).filter(Unit.id == override.weight_unit_id).first()
-        if weight_unit is None or weight_unit.si_factor is None:
-            return default_kg
-        kg_unit = service.get_unit_by_abbr("kg")
-        if kg_unit is None:
-            return default_kg
-        wp_kg = service.convert_si(override.weight_per_unit, weight_unit, kg_unit)
-        if wp_kg is not None and wp_kg > 0:
-            return wp_kg
+        if override is not None and override.weight_per_unit is not None and override.weight_unit_id is not None:
+            weight_unit = service.db.query(Unit).filter(Unit.id == override.weight_unit_id).first()
+            if weight_unit is not None and weight_unit.si_factor is not None:
+                kg_unit = service.get_unit_by_abbr("kg")
+                if kg_unit is not None:
+                    wp_kg = service.convert_si(override.weight_per_unit, weight_unit, kg_unit)
+                    if wp_kg is not None and wp_kg > 0:
+                        return wp_kg
+
+        # 2. 回退：查原料的 piece_weight（Agent 推断的每单位克重）
+        if entity_type == "ingredient":
+            from app.models.nutrition import Ingredient
+            ing = service.db.query(Ingredient).filter(Ingredient.id == entity_id).first()
+            if ing and ing.piece_weight is not None:
+                # piece_weight 默认按克(g)处理
+                pw = ing.piece_weight
+                pw_unit = service.db.query(Unit).filter(Unit.id == ing.piece_weight_unit_id).first() if ing.piece_weight_unit_id else service.get_unit_by_abbr("g")
+                if pw_unit is not None:
+                    kg_unit = service.get_unit_by_abbr("kg")
+                    if kg_unit is not None:
+                        wp_kg = service.convert_si(pw, pw_unit, kg_unit)
+                        if wp_kg is not None and wp_kg > 0:
+                            return wp_kg
     except Exception:
         pass
     return default_kg
