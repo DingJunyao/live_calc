@@ -84,7 +84,8 @@ import MerchantPriceMatrix from '@/components/recipes/MerchantPriceMatrix.vue'
 const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
-const recipeId = Number(route.params.id)
+const recipeIdRaw = Number(route.params.id)
+const recipeId = Number.isFinite(recipeIdRaw) ? recipeIdRaw : 0
 
 const recipe = ref<any>(null)
 const costData = ref<any>(null)
@@ -115,6 +116,12 @@ async function retry() {
 }
 
 async function loadAllData() {
+  if (!recipeId) {
+    error.value = '无效的菜谱ID'
+    loading.value = false
+    return
+  }
+
   loading.value = true
   error.value = null
 

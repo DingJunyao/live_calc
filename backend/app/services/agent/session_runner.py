@@ -6,7 +6,7 @@
   落成 ``AgentMessage``（独立 Session），同时通过 ``stream_bridge.publish_sync`` 推
   SSE 订阅者。
 - ``run_agent_loop``（4b）：多轮编排。每轮调 ``_consume_events``（与 ``run_session``
-  共用）→ 提取 ``\`\`\`sql\`\`\``` 块 → safe 自动执行 / dangerous 阻塞等审批 →
+  共用）→ 提取 ```sql``` 块 → safe 自动执行 / dangerous 阻塞等审批 →
   构造下一轮 prompt（执行结果摘要）→ ``runner.run(prompt, resume_session_id=...)``
   续跑。
 - ``wake_approval``（4b）：API 端点（Task 5）调用，写审批决策并唤醒阻塞在
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 import time
 from datetime import datetime
@@ -393,6 +394,165 @@ def _last_assistant_error(db, session_id: int) -> "str | None":
 # --------------------------------------------------------------------------- #
 # Task 4b：多轮 agent_loop + 写操作提取/执行/审批 + 回流
 # --------------------------------------------------------------------------- #
+
+# 数据库中的布尔列名列表，用于 normalize_booleans 将 Agent 生成的 = 1/= 0
+# 转换为 = true/= false（兼容 PostgreSQL）。
+_BOOLEAN_COLUMNS: set[str] = {
+    "is_active", "is_default", "is_verified", "ai_inferred",
+    "is_admin", "is_common", "is_si_base", "is_bidirectional",
+    "is_optional", "is_favorite", "is_primary", "is_imported",
+    "is_merged", "is_open", "email_verified", "is_primary",
+}
+
+
+def _find_matching_paren(text: str, start: int) -> int:
+    """找到从 start 开始的匹配括号位置（start 指向 '('），处理嵌套。"""
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == '(':
+            depth += 1
+        elif text[i] == ')':
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+def _normalize_booleans(sql: str) -> str:
+    """将 Agent 生成的 SQL 中布尔列比较从 ``= 1``/``= 0`` 转为 ``= true``/``= false``。
+
+    SQLite 把 BOOLEAN 存为 0/1 整数，PostgreSQL 需要真正的 BOOLEAN 语义。
+    Agent 按 SQLite 习惯生成 ``WHERE is_active = 1``，在 PostgreSQL 上会报
+    ``UndefinedFunction: 操作符不存在: boolean = integer``。
+
+    此函数作为**兜底安全网**（搭配模板中已添加的提示），在 SQL 执行前自动转换。
+    仅当列名匹配已知布尔列时替换，避免误伤普通整数列。
+    """
+    cols = "|".join(sorted(_BOOLEAN_COLUMNS, key=len, reverse=True))
+    # WHERE/AND/OR/ON/HAVING 等语境下的布尔比较
+    sql = re.sub(
+        rf"\b({cols})\s*=\s*1\b",
+        r"\1 = true",
+        sql,
+        flags=re.IGNORECASE,
+    )
+    sql = re.sub(
+        rf"\b({cols})\s*=\s*0\b",
+        r"\1 = false",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # INSERT 语句：用括号匹配解析（支持子查询等嵌套括号）
+    result_parts: list[str] = []
+    pos = 0
+    while pos < len(sql):
+        # 查找 INSERT INTO
+        insert_match = re.match(
+            r"INSERT\s+INTO\s+(\w+)\s*\(", sql[pos:], re.IGNORECASE,
+        )
+        if not insert_match:
+            result_parts.append(sql[pos:])
+            break
+
+        # 保留 INSERT INTO table 前缀
+        prefix_end = pos + insert_match.end() - 1  # 指向 '('
+        # 找列名列表的匹配括号
+        cols_end = _find_matching_paren(sql, prefix_end)
+        if cols_end < 0:
+            result_parts.append(sql[pos:])
+            break
+
+        cols_str = sql[prefix_end + 1:cols_end]
+        after_cols = sql[cols_end + 1:].lstrip()
+        # 检查是否以 VALUES 开头
+        vals_match = re.match(r"VALUES\s*\(", after_cols, re.IGNORECASE)
+        if not vals_match:
+            result_parts.append(sql[pos:cols_end + 1])
+            pos = cols_end + 1
+            continue
+
+        vals_start = cols_end + 1 + (len(after_cols) - len(after_cols.lstrip())) + vals_match.end() - 1
+        vals_end = _find_matching_paren(sql, vals_start)
+        if vals_end < 0:
+            result_parts.append(sql[pos:cols_end + 1])
+            pos = cols_end + 1
+            continue
+
+        vals_str = sql[vals_start + 1:vals_end]
+
+        # 检查列名中是否有布尔列
+        col_names = [c.strip() for c in cols_str.split(",")]
+        bool_indices = {i for i, c in enumerate(col_names)
+                        if c.strip().lower() in _BOOLEAN_COLUMNS}
+        if not bool_indices:
+            result_parts.append(sql[pos:vals_end + 1])
+            pos = vals_end + 1
+            continue
+
+        # 解析 VALUES，用逗号分割时考虑括号嵌套和引号
+        val_items = _split_values(vals_str)
+        changed = False
+        for i in bool_indices:
+            if i < len(val_items):
+                v = val_items[i].strip()
+                if v == "0":
+                    val_items[i] = " false"
+                    changed = True
+                elif v == "1":
+                    val_items[i] = " true"
+                    changed = True
+        if not changed:
+            result_parts.append(sql[pos:vals_end + 1])
+            pos = vals_end + 1
+            continue
+
+        # 拼回 INSERT（原语句的 ; 会在 pos 跳跃时被跳过，不重复追加）
+        result_parts.append(f"INSERT INTO {insert_match.group(1)} ({cols_str}) VALUES ({','.join(val_items)})")
+        # 跳过分号（如果有），避免在结尾追加剩余文本时重复
+        pos = vals_end + 1
+        if pos < len(sql) and sql[pos] == ";":
+            pos += 1
+
+    return "".join(result_parts)
+
+
+def _split_values(vals_str: str) -> list[str]:
+    """分割 VALUES 括号中的值列表，支持子查询嵌套和引号字符串。
+
+    例如 ``'ingredient', 2, (SELECT id FROM units WHERE abbreviation = 'g'), 'agent', 0``
+    """
+    result: list[str] = []
+    current: list[str] = []
+    in_quote = False
+    quote_char = ""
+    paren_depth = 0
+    for ch in vals_str:
+        if in_quote:
+            current.append(ch)
+            if ch == quote_char:
+                in_quote = False
+        elif ch in ("'", '"'):
+            current.append(ch)
+            in_quote = True
+            quote_char = ch
+        elif ch == '(':
+            current.append(ch)
+            paren_depth += 1
+        elif ch == ')':
+            current.append(ch)
+            paren_depth -= 1
+        elif ch == "," and paren_depth == 0:
+            # 只在顶层逗号处分割
+            result.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        result.append("".join(current))
+    return result
+
+
 def _execute_sql(db, sql: str) -> "tuple[int | None, str | None]":
     """在**独立 Session** 上执行一条 SQL（已通过审批或 safe 判定）。
 
@@ -412,6 +572,8 @@ def _execute_sql(db, sql: str) -> "tuple[int | None, str | None]":
     from app.core.database import SessionLocal
 
     del db  # 不再使用 loop 的 db Session，避免污染 + rollback 撤销已 commit 的写。
+    # 兼容 PostgreSQL：将 Agent 生成的 SQL 中布尔列比较从 = 1/= 0 转为 = true/= false
+    sql = _normalize_booleans(sql)
     sess = SessionLocal()
     try:
         result = sess.execute(text(sql))
@@ -512,7 +674,7 @@ def run_agent_loop(
     safe_row_threshold: int = 100,
     resume_session_id: "str | None" = None,
     unattended: bool = False,
-    max_crash_retries: int = 3,
+    max_crash_retries: int = 5,
 ) -> None:
     """后台线程入口：多轮 Runner + 写操作提取/执行/审批 + 回流。
 
@@ -544,7 +706,7 @@ def run_agent_loop(
             ``_handle_dangerous_sql``，改为记 warning + 推 ``sql_skipped`` SSE +
             摘要标注「已跳过」。safe SQL 行为不变（照常执行 + D15 护栏）。
             老路径（导入后处理等用户不在线的场景）应传 True，dangerous 兜底跳过。
-        max_crash_retries: CLI 自身崩溃（非逻辑/超时错误）的最大重试次数（默认 3）。
+        max_crash_retries: CLI 自身崩溃（非逻辑/超时错误）的最大重试次数（默认 5）。
             每次重试间有指数退避延迟（2s→4s→8s，上限 30s）。
             崩溃不消耗 ``max_turns`` 配额。
     """

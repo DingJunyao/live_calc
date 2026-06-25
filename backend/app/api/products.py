@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, or_, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
-import json
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.product import ProductRecord
@@ -19,20 +18,11 @@ from app.schemas.product import (
 )
 from app.schemas.common import PaginatedResponse
 from app.utils.unit_converter import convert_to_standard
+from app.utils.database_helpers import json_text_contains
 from app.services.unit_matcher import UnitMatcher
 from app.services.unit_conversion_service import UnitConversionService
 
 router = APIRouter()
-
-
-def _make_alias_search_term(term: str) -> str:
-    """生成用于搜索 JSON 别名数组的 Unicode 转义字符串
-
-    SQLite 存储 JSON 时会将中文字符转为 Unicode 转义序列，
-    如 "番茄" 会存储为 "\\u756a\\u8304"。
-    此函数将搜索词转换为相同的格式以便匹配。
-    """
-    return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
 
 
 def _get_or_create_ingredient(db: Session, product_name: str, current_user) -> Ingredient:
@@ -298,15 +288,14 @@ async def get_product_records(
             search_term = search or product_name
             if search_term:
                 # 搜索商品名称、商品别名或关联食材的别名
-                alias_search = _make_alias_search_term(search_term)
                 record_counts = record_counts.join(ProductRecord.product).join(
                     Product.ingredient
                 ).filter(
                     or_(
                         ProductRecord.product_name.contains(search_term),
-                        Product.aliases.contains(alias_search),
+                        json_text_contains(Product.aliases, search_term),
                         Ingredient.name.contains(search_term),
-                        Ingredient.aliases.contains(alias_search)
+                        json_text_contains(Ingredient.aliases, search_term)
                     )
                 )
 
@@ -367,15 +356,14 @@ async def get_product_records(
             search_term = search or product_name
             if search_term:
                 # 搜索商品名称、商品别名或关联食材的别名
-                alias_search = _make_alias_search_term(search_term)
                 query = query.join(ProductRecord.product).join(
                     Product.ingredient
                 ).filter(
                     or_(
                         ProductRecord.product_name.contains(search_term),
-                        Product.aliases.contains(alias_search),
+                        json_text_contains(Product.aliases, search_term),
                         Ingredient.name.contains(search_term),
-                        Ingredient.aliases.contains(alias_search)
+                        json_text_contains(Ingredient.aliases, search_term)
                     )
                 )
 
@@ -441,15 +429,14 @@ async def get_product_records(
             search_term = search or product_name
             if search_term:
                 # 搜索商品名称、商品别名或关联食材的别名
-                alias_search = _make_alias_search_term(search_term)
                 query = query.join(ProductRecord.product).join(
                     Product.ingredient
                 ).filter(
                     or_(
                         ProductRecord.product_name.contains(search_term),
-                        Product.aliases.contains(alias_search),
+                        json_text_contains(Product.aliases, search_term),
                         Ingredient.name.contains(search_term),
-                        Ingredient.aliases.contains(alias_search)
+                        json_text_contains(Ingredient.aliases, search_term)
                     )
                 )
 

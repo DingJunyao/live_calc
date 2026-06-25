@@ -119,7 +119,7 @@ async def create_session(
                 from sqlalchemy import text as _text
                 orphans = sdb.execute(_text(
                     "SELECT i.id, i.name FROM ingredients i"
-                    " WHERE i.is_active = 1 AND i.piece_weight IS NULL"
+                    " WHERE i.is_active = true AND i.piece_weight IS NULL"
                     " AND (i.name LIKE '%个' OR i.name LIKE '%只' OR i.name LIKE '%条'"
                     " OR i.name LIKE '%根' OR i.name LIKE '%颗' OR i.name LIKE '%粒'"
                     " OR i.name LIKE '%瓣' OR i.name LIKE '%片' OR i.name LIKE '%块'"

@@ -1452,7 +1452,12 @@ def calculate_recipe_cost_range_trend(
         """找出某天的所有记录（二分查找），如果没有则返回 None（由调用方做前向填充）"""
         day_start = datetime.combine(target_date, datetime.min.time())
         day_end = datetime.combine(target_date, datetime.max.time())
-        record_dates = [r.recorded_at for r in records_list]
+        # PostgreSQL 返回 aware datetime，统一转 naive 比较
+        record_dates = [
+            r.recorded_at.replace(tzinfo=None) if r.recorded_at and r.recorded_at.tzinfo
+            else r.recorded_at
+            for r in records_list if r.recorded_at is not None
+        ]
 
         left = bisect.bisect_left(record_dates, day_start)
         right = bisect.bisect_right(record_dates, day_end)
@@ -1467,16 +1472,26 @@ def calculate_recipe_cost_range_trend(
         同一天可能有多条价格记录（不同商店/品牌），返回所有以支持取平均值，
         与成本估算函数的 _get_price_records_with_fallback 行为保持一致。
         """
+        from itertools import filterfalse
+
         as_of_datetime = datetime.combine(target_date, datetime.max.time())
-        record_dates = [r.recorded_at for r in records_list]
+        # PostgreSQL 返回 aware datetime，统一转 naive 比较，过滤 None
+        valid_records = [r for r in records_list if r.recorded_at is not None]
+        if not valid_records:
+            return None
+        record_dates = [
+            r.recorded_at.replace(tzinfo=None) if r.recorded_at.tzinfo
+            else r.recorded_at
+            for r in valid_records
+        ]
         idx = bisect.bisect_right(record_dates, as_of_datetime) - 1
         if idx < 0:
             # 没有该日期之前的记录，使用最早记录所在日期的所有记录
-            fill_date = records_list[0].recorded_at.date()
+            fill_date = valid_records[0].recorded_at.date()
         else:
-            fill_date = records_list[idx].recorded_at.date()
+            fill_date = valid_records[idx].recorded_at.date()
         # 获取 fill_date 当天的所有记录
-        return _find_day_records(records_list, fill_date) or [records_list[idx] if idx >= 0 else records_list[0]]
+        return _find_day_records(valid_records, fill_date) or [valid_records[idx] if idx >= 0 else valid_records[0]]
 
     for date in date_list:
         total_min_cost = Decimal("0.00")
@@ -1504,8 +1519,12 @@ def calculate_recipe_cost_range_trend(
                         if not child_source:
                             continue
                         child_product_id, child_records = child_source
-                        # 二分查找截至该日期的最新记录
-                        child_record_dates = [r.recorded_at for r in child_records]
+                        # 二分查找截至该日期的最新记录（统一转 naive 比较）
+                        child_record_dates = [
+                            r.recorded_at.replace(tzinfo=None) if r.recorded_at and r.recorded_at.tzinfo
+                            else r.recorded_at
+                            for r in child_records if r.recorded_at is not None
+                        ]
                         child_idx = bisect.bisect_right(child_record_dates, datetime.combine(date, datetime.max.time())) - 1
                         if child_idx < 0:
                             child_latest = child_records[0]

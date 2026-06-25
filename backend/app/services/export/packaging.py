@@ -18,6 +18,7 @@ from app.models.unit import Unit, UnitConversion
 from app.models.ingredient_category import IngredientCategory
 from app.models.ingredient_hierarchy import IngredientHierarchy
 from app.models.entity_density import EntityDensity
+from app.models.entity_unit_override import EntityUnitOverride
 from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
 from app.models.product_ingredient_link import ProductIngredientLink
@@ -111,6 +112,7 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
     categories = _query(IngredientCategory, es.category_ids)
     hierarchies = _query(IngredientHierarchy, es.hierarchy_ids)
     densities = _query(EntityDensity, es.entity_density_ids)
+    unit_overrides = _query(EntityUnitOverride, es.entity_unit_override_ids)
     products = _query(Product, es.product_ids)
     barcodes = _query(ProductBarcode, es.barcode_ids)
     links = _query(ProductIngredientLink, es.product_link_ids)
@@ -199,8 +201,31 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
         ],
     )
 
-    # 商品/条码/关联
+    # 自定义单位→name 预取
     prod_id_to_name = {p.id: p.name for p in products}
+    unit_override_unit_ids = set()
+    for o in unit_overrides:
+        if o.base_unit_id:
+            unit_override_unit_ids.add(o.base_unit_id)
+        if o.weight_unit_id:
+            unit_override_unit_ids.add(o.weight_unit_id)
+    unit_override_unit_names = _unit_name_map(db, unit_override_unit_ids or None)
+
+    unit_overrides_payload = _safe_build(
+        "entity_unit_overrides",
+        lambda: [
+            S.serialize_entity_unit_override(
+                o,
+                entity_name=ing_names.get(o.entity_id) if o.entity_type == "ingredient"
+                else prod_id_to_name.get(o.entity_id),
+                base_unit_name=unit_override_unit_names.get(o.base_unit_id),
+                weight_unit_name=unit_override_unit_names.get(o.weight_unit_id),
+            )
+            for o in unit_overrides
+        ],
+    )
+
+    # 商品/条码/关联
     barcode_primary = {}
     for b in barcodes:
         if b.is_primary:
@@ -290,9 +315,9 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
         "schema": {
             "howto_cook_compatible": ["recipes", "ingredients", "nutritions", "units"],
             "extended": ["unit_conversions", "ingredient_categories", "ingredient_hierarchy",
-                         "entity_densities", "products", "product_barcodes",
-                         "product_ingredient_links", "price_records", "merchants",
-                         "user_places"],
+                         "entity_densities", "entity_unit_overrides", "products",
+                         "product_barcodes", "product_ingredient_links", "price_records",
+                         "merchants", "user_places"],
         },
         "counts": {
             "recipes": len(recipes_payload),
@@ -303,6 +328,7 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
             "ingredient_categories": len(categories_payload),
             "ingredient_hierarchy": len(hierarchy_payload),
             "entity_densities": len(densities_payload),
+            "entity_unit_overrides": len(unit_overrides_payload),
             "products": len(products_payload),
             "product_barcodes": len(barcodes_payload),
             "product_ingredient_links": len(links_payload),
@@ -331,6 +357,7 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
         zf.writestr("ingredient_categories.json", json.dumps(categories_payload, ensure_ascii=False, indent=2))
         zf.writestr("ingredient_hierarchy.json", json.dumps(hierarchy_payload, ensure_ascii=False, indent=2))
         zf.writestr("entity_densities.json", json.dumps(densities_payload, ensure_ascii=False, indent=2))
+        zf.writestr("entity_unit_overrides.json", json.dumps(unit_overrides_payload, ensure_ascii=False, indent=2))
         zf.writestr("products.json", json.dumps(products_payload, ensure_ascii=False, indent=2))
         zf.writestr("product_barcodes.json", json.dumps(barcodes_payload, ensure_ascii=False, indent=2))
         zf.writestr("product_ingredient_links.json", json.dumps(links_payload, ensure_ascii=False, indent=2))

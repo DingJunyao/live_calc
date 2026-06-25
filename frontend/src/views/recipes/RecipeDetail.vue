@@ -510,7 +510,10 @@ interface NutritionData {
 const route = useRoute()
 const router = useRouter()
 
-const recipeId = computed(() => Number(route.params.id))
+const recipeId = computed(() => {
+  const id = Number(route.params.id)
+  return Number.isFinite(id) ? id : 0
+})
 
 const recipe = ref<Recipe | null>(null)
 const loading = ref(true)
@@ -732,6 +735,12 @@ const getNutritionUnit = (item: any) => {
 }
 
 const loadData = async () => {
+  if (!recipeId.value) {
+    error.value = '无效的菜谱ID'
+    loading.value = false
+    return
+  }
+
   loading.value = true
   error.value = null
 

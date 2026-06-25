@@ -20,6 +20,7 @@ from app.services.export.serializers import (
     serialize_price_record,
     serialize_merchant,
     serialize_user_place,
+    serialize_entity_unit_override,
 )
 
 
@@ -329,6 +330,28 @@ def test_serialize_merchant():
     out = serialize_merchant(m)
     assert out["latitude"] == 30.1
     assert out["is_open"] is True
+
+
+def test_serialize_entity_unit_override():
+    euo = SimpleNamespace(
+        id=1, entity_type="ingredient", entity_id=5,
+        unit_name="盒(12个)", base_unit_id=10,
+        conversion_factor=Decimal("12"), weight_per_unit=Decimal("55"),
+        weight_unit_id=2, is_default=False, source="manual",
+        created_at=datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc),
+    )
+    out = serialize_entity_unit_override(
+        euo, entity_name="鸡蛋", base_unit_name="个", weight_unit_name="g",
+    )
+    assert out["unit_name"] == "盒(12个)"
+    assert out["conversion_factor"] == 12.0
+    assert out["weight_per_unit"] == 55.0
+    assert out["entity_name"] == "鸡蛋"
+    assert out["base_unit_name"] == "个"
+    assert out["weight_unit_name"] == "g"
+    assert out["is_default"] is False
+    assert out["source"] == "manual"
 
 
 def test_serialize_user_place():

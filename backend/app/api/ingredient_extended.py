@@ -4,28 +4,18 @@ from sqlalchemy.orm import Session, load_only, joinedload
 from sqlalchemy import func
 from typing import List, Optional
 from decimal import Decimal
-import json
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.unit_conversion_service import UnitConversionService
 from app.services.ingredient_matcher import IngredientMatcher
+from app.utils.database_helpers import json_text_contains
 from app.models.ingredient_category import IngredientCategory
 from app.models.unit import Unit
 from app.models.nutrition import Ingredient
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
-
-
-def _make_alias_search_term(term: str) -> str:
-    """生成用于搜索 JSON 别名数组的 Unicode 转义字符串
-
-    SQLite 存储 JSON 时会将中文字符转为 Unicode 转义序列，
-    如 "番茄" 会存储为 "\\\\u756a\\\\u8304"。
-    此函数将搜索词转换为相同的格式以便匹配。
-    """
-    return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
 
 
 def _apply_ingredient_special_conditions(query, no_nutrition, no_price, single_price, single_merchant, no_recipe, no_product):
@@ -748,6 +738,7 @@ async def get_ingredients(
     limit: int = Query(100, ge=1, le=1000),
     search: str = Query(None, alias="q"),
     category_id: Optional[int] = Query(None),
+    category_ids: Optional[str] = Query(None, description="逗号分隔的分类ID列表，与 category_id 互斥"),
     sort_by: str = Query("created_at", enum=["name", "created_at", "price_records"], description="排序方式"),
     no_nutrition: bool = Query(False, description="筛选未配置营养成分的原料"),
     no_price: bool = Query(False, description="筛选没有维护过价格的原料"),
@@ -764,8 +755,15 @@ async def get_ingredients(
         from app.models.product import ProductRecord
         from sqlalchemy import func
 
-        # 生成用于搜索别名的 Unicode 转义字符串
-        alias_search = _make_alias_search_term(search) if search else None
+        # 合并 category_id（单值）和 category_ids（逗号分隔多值）
+        _category_filter_ids: list[int] = []
+        if category_id is not None:
+            _category_filter_ids.append(category_id)
+        if category_ids:
+            for cid in category_ids.split(','):
+                cid = cid.strip()
+                if cid:
+                    _category_filter_ids.append(int(cid))
 
         # 根据排序方式进行查询
         if sort_by == "price_records":
@@ -783,13 +781,13 @@ async def get_ingredients(
                 # 搜索名称、原料别名或商品别名
                 subquery = subquery.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search)) |
+                    json_text_contains(Ingredient.aliases, search) |
                     (Ingredient.products.any(Product.name.contains(search))) |
-                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
+                    (Ingredient.products.any(json_text_contains(Product.aliases, search)))
                 )
 
-            if category_id:
-                subquery = subquery.filter(Ingredient.category_id == category_id)
+            if _category_filter_ids:
+                subquery = subquery.filter(Ingredient.category_id.in_(_category_filter_ids))
 
             subquery = subquery.group_by(Ingredient.id).subquery()
 
@@ -805,13 +803,13 @@ async def get_ingredients(
                 # 搜索名称、原料别名或商品别名
                 query = query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search)) |
+                    json_text_contains(Ingredient.aliases, search) |
                     (Ingredient.products.any(Product.name.contains(search))) |
-                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
+                    (Ingredient.products.any(json_text_contains(Product.aliases, search)))
                 )
 
-            if category_id:
-                query = query.filter(Ingredient.category_id == category_id)
+            if _category_filter_ids:
+                query = query.filter(Ingredient.category_id.in_(_category_filter_ids))
 
             # 应用特殊条件过滤
             query = _apply_ingredient_special_conditions(
@@ -833,13 +831,13 @@ async def get_ingredients(
                 # 搜索名称、原料别名或商品别名
                 total_query = total_query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search)) |
+                    json_text_contains(Ingredient.aliases, search) |
                     (Ingredient.products.any(Product.name.contains(search))) |
-                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
+                    (Ingredient.products.any(json_text_contains(Product.aliases, search)))
                 )
 
-            if category_id:
-                total_query = total_query.filter(Ingredient.category_id == category_id)
+            if _category_filter_ids:
+                total_query = total_query.filter(Ingredient.category_id.in_(_category_filter_ids))
 
             # 应用特殊条件过滤
             total_query = _apply_ingredient_special_conditions(
@@ -858,13 +856,13 @@ async def get_ingredients(
                 # 搜索名称、原料别名或商品别名
                 query = query.filter(
                     (Ingredient.name.contains(search)) |
-                    (Ingredient.aliases.contains(alias_search)) |
+                    json_text_contains(Ingredient.aliases, search) |
                     (Ingredient.products.any(Product.name.contains(search))) |
-                    (Ingredient.products.any(Product.aliases.contains(alias_search)))
+                    (Ingredient.products.any(json_text_contains(Product.aliases, search)))
                 )
 
-            if category_id:
-                query = query.filter(Ingredient.category_id == category_id)
+            if _category_filter_ids:
+                query = query.filter(Ingredient.category_id.in_(_category_filter_ids))
 
             # 应用特殊条件过滤
             query = _apply_ingredient_special_conditions(

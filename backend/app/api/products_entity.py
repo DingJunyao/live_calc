@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, and_, or_, func
 from typing import List, Optional
 from datetime import datetime
-import json
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -19,20 +18,10 @@ from app.schemas.product_entity import (
     ImportAliasRequest
 )
 from app.schemas.common import PaginatedResponse
-from app.utils.database_helpers import serialize_tags, deserialize_tags
+from app.utils.database_helpers import serialize_tags, deserialize_tags, json_text_contains
 from app.utils.datetime_utils import serialize_datetime
 
 router = APIRouter(tags=["products_entity"])
-
-
-def _make_alias_search_term(term: str) -> str:
-    """生成用于搜索 JSON 别名数组的 Unicode 转义字符串
-
-    SQLite 存储 JSON 时会将中文字符转为 Unicode 转义序列，
-    如 "番茄" 会存储为 "\\\\u756a\\\\u8304"。
-    此函数将搜索词转换为相同的格式以便匹配。
-    """
-    return json.dumps(term)[1:-1]  # 去掉 json.dumps 添加的引号
 
 
 def _apply_product_special_conditions(query, no_price, single_price, single_merchant):
@@ -150,14 +139,13 @@ def list_products(
 
         if search:
             # 搜索商品名称、商品别名或食材别名
-            alias_search = _make_alias_search_term(search)
             search_filter = or_(
                 Product.name.contains(search),
-                Product.aliases.contains(alias_search),
+                json_text_contains(Product.aliases, search),
                 Product.ingredient.has(
                     or_(
                         Ingredient.name.contains(search),
-                        Ingredient.aliases.contains(alias_search)
+                        json_text_contains(Ingredient.aliases, search)
                     )
                 )
             )
@@ -196,14 +184,13 @@ def list_products(
 
         if search:
             # 搜索商品名称、商品别名或食材别名
-            alias_search = _make_alias_search_term(search)
             search_filter = or_(
                 Product.name.contains(search),
-                Product.aliases.contains(alias_search),
+                json_text_contains(Product.aliases, search),
                 Product.ingredient.has(
                     or_(
                         Ingredient.name.contains(search),
-                        Ingredient.aliases.contains(alias_search)
+                        json_text_contains(Ingredient.aliases, search)
                     )
                 )
             )
@@ -589,6 +576,12 @@ def get_product_latest_price(
         from sqlalchemy import func
         from collections import Counter
 
+        # PostgreSQL 返回 aware datetime，统一转 naive 比较
+        def _naive(dt):
+            if dt is None:
+                return None
+            return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
         # 查询该商品的所有价格记录
         all_records = db.query(ProductRecord).filter(
             ProductRecord.product_id == product_id
@@ -604,13 +597,13 @@ def get_product_latest_price(
         now = datetime.utcnow()
         one_day_ago = now - timedelta(days=1)
 
-        recent_records = [r for r in all_records if r.recorded_at >= one_day_ago]
+        recent_records = [r for r in all_records if _naive(r.recorded_at) is not None and _naive(r.recorded_at) >= one_day_ago]
 
         # 如果最近24小时内没有记录，则查找最近一次记录的那一天的所有记录
         if not recent_records:
             # 最近一次记录的日期
-            latest_date = all_records[0].recorded_at.date()
-            recent_records = [r for r in all_records if r.recorded_at.date() == latest_date]
+            latest_date = _naive(all_records[0].recorded_at).date()
+            recent_records = [r for r in all_records if _naive(r.recorded_at).date() == latest_date]
 
         if not recent_records:
             return {

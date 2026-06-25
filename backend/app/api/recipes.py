@@ -199,14 +199,16 @@ async def get_recipes(
             if diff_list:
                 all_recipes_query = all_recipes_query.filter(Recipe.difficulty.in_(diff_list))
 
-        # 应用食材筛选（包含任意指定食材的菜谱，包括可选食材）
+        # 应用食材筛选（仅包含全部指定食材的菜谱——与的关系，包括可选食材）
         if ingredient_ids:
             ing_id_list = [int(i.strip()) for i in ingredient_ids.split(',') if i.strip()]
             if ing_id_list:
-                recipe_ids_subq = db.query(RecipeIngredient.recipe_id).filter(
-                    RecipeIngredient.ingredient_id.in_(ing_id_list)
-                ).distinct().subquery()
-                all_recipes_query = all_recipes_query.filter(Recipe.id.in_(recipe_ids_subq))
+                from sqlalchemy import select
+                for ing_id in ing_id_list:
+                    ing_subq = select(RecipeIngredient.recipe_id).where(
+                        RecipeIngredient.ingredient_id == ing_id
+                    )
+                    all_recipes_query = all_recipes_query.filter(Recipe.id.in_(ing_subq))
 
         # 应用特殊条件过滤
         all_recipes_query = _apply_recipe_special_conditions(

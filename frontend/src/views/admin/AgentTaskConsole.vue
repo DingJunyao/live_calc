@@ -372,7 +372,10 @@ function sessionStatusIcon(s: string): string {
 function formatRelative(s: string | null): string {
   if (!s) return ''
   try {
-    const d = new Date(s)
+    // 后端存储的是 UTC 时间但可能不带时区后缀，确保以 UTC 解析
+    const hasTz = /(Z|[+-]\d{2}:\d{2})$/.test(s)
+    const utcStr = hasTz ? s : s + 'Z'
+    const d = new Date(utcStr)
     const diff = Date.now() - d.getTime()
     if (diff < 60_000) return '刚刚'
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`

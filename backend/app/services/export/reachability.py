@@ -14,6 +14,7 @@ from app.models.unit import Unit, UnitConversion
 from app.models.ingredient_category import IngredientCategory
 from app.models.ingredient_hierarchy import IngredientHierarchy
 from app.models.entity_density import EntityDensity
+from app.models.entity_unit_override import EntityUnitOverride
 from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
 from app.models.product_ingredient_link import ProductIngredientLink
@@ -34,6 +35,7 @@ class ExportSet:
     category_ids: set = field(default_factory=set)
     hierarchy_ids: set = field(default_factory=set)
     entity_density_ids: set = field(default_factory=set)
+    entity_unit_override_ids: set = field(default_factory=set)
     product_ids: set = field(default_factory=set)
     barcode_ids: set = field(default_factory=set)
     product_link_ids: set = field(default_factory=set)
@@ -77,6 +79,8 @@ def collect_full_set(db: Session) -> ExportSet:
         }
     # 密度（ingredient + product 全量）
     es.entity_density_ids = {d.id for d in db.query(EntityDensity).all()}
+    # 自定义单位（ingredient + product 全量）
+    es.entity_unit_override_ids = {o.id for o in db.query(EntityUnitOverride).all()}
     # 价格记录 / 商家 / 收藏全量
     es.price_record_ids = {r.id for r in db.query(ProductRecord).all()}
     es.merchant_ids = {m.id for m in db.query(Merchant).all()}
@@ -219,6 +223,12 @@ def collect_mine_set(db: Session, user_id: int) -> ExportSet:
                 EntityDensity.entity_id.in_(es.ingredient_ids),
             ).all()
         }
+        es.entity_unit_override_ids = {
+            o.id for o in db.query(EntityUnitOverride).filter(
+                EntityUnitOverride.entity_type == "ingredient",
+                EntityUnitOverride.entity_id.in_(es.ingredient_ids),
+            ).all()
+        }
         es.hierarchy_ids = {
             h.id for h in db.query(IngredientHierarchy).filter(
                 IngredientHierarchy.parent_id.in_(es.ingredient_ids) |
@@ -230,6 +240,12 @@ def collect_mine_set(db: Session, user_id: int) -> ExportSet:
             d.id for d in db.query(EntityDensity).filter(
                 EntityDensity.entity_type == "product",
                 EntityDensity.entity_id.in_(es.product_ids),
+            ).all()
+        )
+        es.entity_unit_override_ids.update(
+            o.id for o in db.query(EntityUnitOverride).filter(
+                EntityUnitOverride.entity_type == "product",
+                EntityUnitOverride.entity_id.in_(es.product_ids),
             ).all()
         )
     if es.unit_ids:

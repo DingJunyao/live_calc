@@ -405,6 +405,35 @@ def serialize_merchant(m: Any) -> dict:
     }
 
 
+def serialize_entity_unit_override(
+    euo: Any,
+    entity_name: Optional[str],
+    base_unit_name: Optional[str],
+    weight_unit_name: Optional[str],
+) -> dict:
+    """EntityUnitOverride → entity_unit_overrides.json 元素。
+
+    entity_name/base_unit_name/weight_unit_name 由调用方按 id 解析冗余注入。
+    """
+    return {
+        "id": euo.id,
+        "entity_type": euo.entity_type,
+        "entity_id": euo.entity_id,
+        "entity_name": entity_name,
+        "unit_name": euo.unit_name,
+        "base_unit_id": euo.base_unit_id,
+        "base_unit_name": base_unit_name,
+        "conversion_factor": to_float(euo.conversion_factor),
+        "weight_per_unit": to_float(euo.weight_per_unit),
+        "weight_unit_id": euo.weight_unit_id,
+        "weight_unit_name": weight_unit_name,
+        "is_default": bool(euo.is_default),
+        "source": euo.source,
+        "created_at": to_iso(euo.created_at),
+        "updated_at": to_iso(euo.updated_at),
+    }
+
+
 def serialize_user_place(up: Any) -> dict:
     """UserPlace → user_places.json 元素。用户常用地点（家/公司等）。"""
     return {
