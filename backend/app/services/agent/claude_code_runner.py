@@ -42,7 +42,74 @@ __all__ = [
     "build_cmd",
     "build_env",
     "translate_event",
+    "describe_exit_code",
 ]
+
+# --------------------------------------------------------------------------- #
+# Windows 退出码 → 人类可读描述
+# --------------------------------------------------------------------------- #
+# 参考：NTSTATUS values / Win32 error codes
+_WIN32_EXIT_CODES: dict[int, str] = {
+    0xC0000005: "STATUS_ACCESS_VIOLATION（内存访问违规）",
+    0xC0000094: "STATUS_INTEGER_DIVIDE_BY_ZERO（整数除零）",
+    0xC00000FD: "STATUS_STACK_OVERFLOW（栈溢出）",
+    0xC0000135: "STATUS_DLL_NOT_FOUND（DLL 未找到）",
+    0xC0000139: "STATUS_ENTRYPOINT_NOT_FOUND（入口点未找到）",
+    0xC0000142: "STATUS_DLL_INIT_FAILED（DLL 初始化失败）",
+    0xC0000374: "STATUS_HEAP_CORRUPTION（堆损坏）",
+    0xC0000409: "STATUS_STACK_BUFFER_OVERRUN（栈缓冲区溢出）",
+    0xC0000417: "STATUS_INVALID_CRUNTIME_PARAMETER（C 运行时参数无效）",
+    0xC0000006: "STATUS_IN_PAGE_ERROR（页面调入错误）",
+    0xC000001D: "STATUS_ILLEGAL_INSTRUCTION（非法指令）",
+    0xC0000022: "STATUS_ACCESS_DENIED（拒绝访问）",
+    0xC000008C: "STATUS_ARRAY_BOUNDS_EXCEEDED（数组越界）",
+    0xC000008D: "STATUS_FLOAT_DENORMAL_OPERAND（浮点非规格化操作数）",
+    0xC000008E: "STATUS_FLOAT_DIVIDE_BY_ZERO（浮点除零）",
+    0xC000008F: "STATUS_FLOAT_INEXACT_RESULT（浮点不精确结果）",
+    0xC0000090: "STATUS_FLOAT_INVALID_OPERATION（浮点无效操作）",
+    0xC0000091: "STATUS_FLOAT_OVERFLOW（浮点溢出）",
+    0xC0000092: "STATUS_FLOAT_STACK_CHECK（浮点栈检查）",
+    0xC0000093: "STATUS_FLOAT_UNDERFLOW（浮点下溢）",
+    0xC0000095: "STATUS_INTEGER_OVERFLOW（整数溢出）",
+    0xC0000096: "STATUS_PRIVILEGED_INSTRUCTION（特权指令）",
+    0xC00000C5: "STATUS_KERNEL_APC（内核 APC 待处理）",
+}
+
+# 通用崩溃码前缀（NTSTATUS error severity）
+_STATUS_ERROR_MASK = 0xC0000000
+
+# 0xE0000000 区域的 Node.js / V8 崩溃码
+_NODE_CRASH_PREFIXES = (0xE0000000, 0x80000000)
+
+
+def describe_exit_code(rc: int) -> str:
+    """把子进程退出码翻译成人类可读描述（含 Windows NTSTATUS 映射）。
+
+    Args:
+        rc: ``Popen.wait()`` 返回的原始退出码（Windows 下为无符号 int）。
+
+    Returns:
+        描述字符串，如 ``3225781226 (0xC04583EA) — CLI 自身崩溃（非标准异常码）``。
+    """
+    base = f"{rc} (0x{rc:08X})"
+    # 0) 零/负值：正常或 signal。
+    if rc == 0:
+        return f"{base} — 正常退出"
+    if rc < 0:
+        return f"{base} — 进程被信号终止（signal {abs(rc)}）"
+    # 1) 已知 NTSTATUS 码（精确匹配，优先级最高）。
+    if rc in _WIN32_EXIT_CODES:
+        return f"{base} — {_WIN32_EXIT_CODES[rc]}（CLI 自身崩溃）"
+    # 2) Node.js / V8 崩溃码区域（0xE... / 0x8...）—— 先于泛 NTSTATUS，避免误判。
+    if any((rc & 0xF0000000) == prefix for prefix in _NODE_CRASH_PREFIXES):
+        return f"{base} — Node.js / V8 级别崩溃（CLI 自身崩溃）"
+    # 3) 泛 NTSTATUS 严重错误（高 2 位为 0xC）。
+    if (rc & _STATUS_ERROR_MASK) == _STATUS_ERROR_MASK:
+        return f"{base} — NTSTATUS 严重错误（CLI 自身崩溃）"
+    # 4) 已知应用层退出码。
+    if rc == 1:
+        return f"{base} — 一般错误退出"
+    return f"{base} — 未知应用退出码（CLI 自身崩溃或逻辑退出）"
 
 # stream_event 内层 delta 中我们关心的文本增量类型。
 _TEXT_DELTA = "text_delta"
@@ -333,6 +400,9 @@ class ClaudeCodeRunner:
         env = build_env(self.extra_env)
 
         cli_path = shutil.which(cmd[0]) or cmd[0]
+        # 用解析出的绝对路径替换 cmd[0]，避免 Windows CreateProcess 再度搜索 PATH
+        # （PATH 搜索在某些场景下会触发 FileNotFoundError，即使文件确实存在）。
+        cmd[0] = cli_path
         self._proc = None
         start_time = time.monotonic()
         try:
@@ -446,19 +516,34 @@ class ClaudeCodeRunner:
             # CLI 异常退出且未发 done：补一条 error（含 stderr 尾部）。
             if not done_emitted:
                 stderr_tail = self._drain(stderr_q)
+                rc_desc = describe_exit_code(rc)
+                # rc != 0/1 且非超时 → 大概率是 CLI 自身崩溃，标记 crash=True 可重试
+                is_crash = rc not in (0, 1) and rc != -1
                 yield AgentEvent(
                     kind="error",
                     is_error=True,
+                    crash=is_crash,
                     error=(
-                        f"claude CLI 异常退出 rc={rc}。" f" stderr: {stderr_tail[:500]}"
+                        f"claude CLI 异常退出：{rc_desc}。"
+                        f" stderr: {stderr_tail[:500]}"
                     ),
                 )
         except FileNotFoundError:
+            # Windows 上即使文件存在，Popen 也可能因以下原因报 FileNotFoundError：
+            # - CLI 正在自动更新，exe 被短暂锁定/替换
+            # - 杀毒软件实时扫描大文件（232MB）时短暂拦截
+            # - 依赖的 DLL 缺失或被锁定
+            # - 系统负载过高导致 CreateProcess 超时
+            # 这些都是瞬态的，标记 crash=True 供上游重试。
             yield AgentEvent(
                 kind="error",
+                is_error=True,
+                crash=True,
                 error=(
-                    f"找不到 claude CLI 可执行文件：{cli_path}。"
-                    f" 可通过环境变量 CLAUDE_CLI 指定。"
+                    f"找不到或无法执行 claude CLI：{cli_path}。"
+                    f" 文件可能被暂时锁定（自动更新/杀毒扫描），"
+                    f" 可通过环境变量 CLAUDE_CLI 指定其他路径。"
+                    f" 若确认文件存在，重试通常可恢复。"
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 顶层兜底，必须产 error 让调用方收尾

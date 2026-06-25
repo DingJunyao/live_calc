@@ -167,20 +167,21 @@ async def get_recipes(
             Recipe.is_active == True
         )
 
-        # 获取公共导入的菜谱（非当前用户所有，但有来源标识，排除软删除）
+        # 获取公共导入的菜谱（排除当前用户自己的，排除软删除；与 user_recipes 天然不重叠，可用 UNION ALL）
         public_imported_recipes = db.query(Recipe).filter(
             Recipe.source != None,
+            Recipe.user_id != current_user.id,
             Recipe.is_active == True
         )
 
-        # 合并查询结果，去重
-        all_recipes_query = user_recipes.union(public_imported_recipes)
+        # 合并查询结果（两个集合不相交，UNION ALL 即可，且 PostgreSQL json 列不支持 UNION 去重所需的 = 比较）
+        all_recipes_query = user_recipes.union_all(public_imported_recipes)
 
         # 应用标签过滤（如果指定了标签）
         if tag:
             user_recipes = user_recipes.filter(Recipe.tags.contains([tag]))
             public_imported_recipes = public_imported_recipes.filter(Recipe.tags.contains([tag]))
-            all_recipes_query = user_recipes.union(public_imported_recipes)
+            all_recipes_query = user_recipes.union_all(public_imported_recipes)
 
         # 应用搜索过滤（如果指定了搜索关键词）
         if search:

@@ -49,6 +49,7 @@ class AgentEvent:
     tool_use_id: str = ""
     tool_result: Any = None
     is_error: bool = False
+    crash: bool = False  # True 表示 CLI 自身崩溃（可重试），而非逻辑/超时错误
     cost_usd: float | None = None
     permission_denials: list = field(default_factory=list)
     error: str = ""

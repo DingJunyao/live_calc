@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column('latitude', sa.Numeric(precision=10, scale=7), nullable=False),
         sa.Column('longitude', sa.Numeric(precision=10, scale=7), nullable=False),
         sa.Column('address', sa.String(length=255), nullable=True),
-        sa.Column('is_default', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('is_default', sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column('sort_order', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('view_radius_km', sa.Numeric(precision=10, scale=2), nullable=False, server_default='5'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP')),
@@ -61,7 +61,7 @@ def downgrade() -> None:
         sa.Column('created_by', sa.Integer(), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('updated_by', sa.Integer(), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=True, server_default=sa.text('1')),
+        sa.Column('is_active', sa.Boolean(), nullable=True, server_default=sa.true()),
         sa.ForeignKeyConstraint(['user_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id'),
     )

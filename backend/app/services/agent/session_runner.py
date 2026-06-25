@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import Callable, Iterator
 
@@ -119,6 +120,7 @@ def _event_to_dict(ev: AgentEvent) -> dict:
         "tool_use_id": ev.tool_use_id,
         "tool_result": ev.tool_result,
         "is_error": ev.is_error,
+        "crash": ev.crash,
         "cost_usd": ev.cost_usd,
         "permission_denials": ev.permission_denials,
         "error": ev.error,
@@ -153,7 +155,7 @@ def _consume_events(
         on_event: 可选回调，每条事件落库+推送后调用。
 
     Returns:
-        tuple ``(turn_text, is_error, had_done, cost_usd, done_error, last_session_id)``:
+        tuple ``(turn_text, is_error, had_done, cost_usd, done_error, last_session_id, crashed)``:
             - turn_text: 本轮所有 text_delta 聚合成的完整 assistant 文本。
             - is_error: 本轮是否以 error 或 done.is_error 终态（True 则调用方应中止）。
             - had_done: 是否收到 done 事件。
@@ -162,6 +164,8 @@ def _consume_events(
                 无则 None。error 事件场景由 error 分支已落 assistant 消息，
                 调用方可用 ``_last_assistant_error`` 取回。
             - last_session_id: 未在此函数捕获（由调用方从 runner 读取）—— 占位 None。
+            - crashed: error 事件是否标记了 crash（CLI 自身崩溃，可重试）。
+                用于 ``run_agent_loop`` 区分崩溃重试 vs 逻辑错误终止。
     """
     asst_buf: list[str] = []
     # turn_text_parts：累积本轮所有 text_delta（不被 flush 清空），供 4b 提取 SQL。
@@ -169,6 +173,7 @@ def _consume_events(
     turn_text_parts: list[str] = []
     is_error = False
     had_done = False
+    crashed = False
     cost_usd: float | None = None
     done_error: "str | None" = None
 
@@ -258,6 +263,7 @@ def _consume_events(
             db.commit()
             _emit(ev)
             is_error = True
+            crashed = bool(ev.crash)
             # error 即终态：直接结束消费。
             break
 
@@ -266,7 +272,7 @@ def _consume_events(
 
     turn_text = "".join(turn_text_parts)
     _flush_asst()
-    return turn_text, is_error, had_done, cost_usd, done_error, None
+    return turn_text, is_error, had_done, cost_usd, done_error, None, crashed
 
 
 def run_session(
@@ -304,7 +310,7 @@ def run_session(
         sess.status = "running"
         db.commit()
 
-        turn_text, is_error, had_done, cost_usd, done_error, _ = _consume_events(
+        turn_text, is_error, had_done, cost_usd, done_error, _, _crashed = _consume_events(
             runner.run(prompt, resume_session_id=resume_session_id),
             session_id,
             db,
@@ -506,6 +512,7 @@ def run_agent_loop(
     safe_row_threshold: int = 100,
     resume_session_id: "str | None" = None,
     unattended: bool = False,
+    max_crash_retries: int = 3,
 ) -> None:
     """后台线程入口：多轮 Runner + 写操作提取/执行/审批 + 回流。
 
@@ -514,6 +521,8 @@ def run_agent_loop(
          后续用上一轮的执行结果摘要 + 本轮捕获的 claude_session_id）。
       2. 捕获本轮 assistant 文本（``_consume_events`` 聚合 text_delta）。
       3. error / done.is_error → session.failed，终止。
+         **例外**：若 error 来自 CLI 自身崩溃（``AgentEvent.crash=True``），
+         且 ``crash_retries_left > 0``，则退避重试同一轮（不消耗 turn 配额）。
       4. ``sqls = extract_sqls(turn_text)``：
          - 无 SQL → session.success，终止（Agent 表示完成）。
          - 有 SQL → 逐条 classify_sql：safe 自动执行；dangerous 写 AgentApproval
@@ -535,6 +544,9 @@ def run_agent_loop(
             ``_handle_dangerous_sql``，改为记 warning + 推 ``sql_skipped`` SSE +
             摘要标注「已跳过」。safe SQL 行为不变（照常执行 + D15 护栏）。
             老路径（导入后处理等用户不在线的场景）应传 True，dangerous 兜底跳过。
+        max_crash_retries: CLI 自身崩溃（非逻辑/超时错误）的最大重试次数（默认 3）。
+            每次重试间有指数退避延迟（2s→4s→8s，上限 30s）。
+            崩溃不消耗 ``max_turns`` 配额。
     """
     if db_session_factory is None:
         from app.core.database import SessionLocal as db_session_factory  # type: ignore[assignment]
@@ -560,8 +572,12 @@ def run_agent_loop(
         sess.status = "running"
         db.commit()
 
-        for turn_idx in range(1, max_turns + 1):
-            turn_text, is_error, had_done, cost_usd, done_error, _ = _consume_events(
+        crash_retries_left = max_crash_retries
+        turn_idx = 0
+        while turn_idx < max_turns:
+            turn_idx += 1
+
+            turn_text, is_error, had_done, cost_usd, done_error, _, _crashed = _consume_events(
                 runner.run(next_prompt, resume_session_id=current_sid),
                 session_id,
                 db,
@@ -599,8 +615,33 @@ def run_agent_loop(
                 db.commit()
                 return
 
-            # 终态错误：终止。
+            # 终态错误：CLI 崩溃可重试，其他错误直接终止。
             if is_error:
+                if _crashed and crash_retries_left > 0:
+                    crash_retries_left -= 1
+                    # 指数退避：2s → 4s → 8s（上限 30s）
+                    delay = min(2 ** (max_crash_retries - crash_retries_left), 30)
+                    logger.warning(
+                        "CLI 崩溃（turn %d/%d），%d 次重试剩余，%ds 后退避重试…",
+                        turn_idx, max_turns, crash_retries_left, delay,
+                    )
+                    _emit_sse(
+                        session_id,
+                        main_loop,
+                        {
+                            "kind": "crash_retry",
+                            "turn": turn_idx,
+                            "retries_left": crash_retries_left,
+                            "delay_s": delay,
+                            "error": done_error or _last_assistant_error(db, session_id) or "",
+                        },
+                    )
+                    time.sleep(delay)
+                    turn_idx -= 1  # 崩溃不消耗 turn 配额
+                    # 重置 current_sid：崩溃后 resume 可能失败，下次用 None 起新会话
+                    # （保留上次成功轮的 sid 供 resume 尝试，若失败 CLI 会起新会话）
+                    continue
+
                 s = db.query(AgentSession).get(session_id)
                 if s is not None:
                     s.status = "failed"

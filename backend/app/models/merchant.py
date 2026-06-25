@@ -14,7 +14,7 @@ class Merchant(Base):
     address = Column(String(500))
     latitude = Column(Numeric(10, 7))
     longitude = Column(Numeric(10, 7))
-    is_open = Column(Boolean, default=True, nullable=False, server_default=sa.text('1'))
+    is_open = Column(Boolean, default=True, nullable=False, server_default=sa.true())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
