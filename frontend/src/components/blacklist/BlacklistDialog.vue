@@ -9,21 +9,38 @@
       <v-card-text>
         <!-- 快速选择：过敏原分组 -->
         <div v-if="allergenGroups.length > 0" class="mb-4">
-          <div class="text-caption text-medium-emphasis mb-2">快速选择</div>
+          <div class="d-flex align-center mb-2">
+            <span class="text-caption text-medium-emphasis">快速选择</span>
+            <v-spacer />
+            <v-btn
+              v-if="selectedGroupIds.size > 0"
+              color="primary"
+              size="small"
+              variant="tonal"
+              :loading="saving"
+              @click="saveSelectedGroups"
+            >
+              <v-icon start size="small">mdi-check</v-icon>
+              保存 ({{ selectedGroupIds.size }} 组)
+            </v-btn>
+          </div>
           <v-chip-group>
             <v-chip
               v-for="group in allergenGroups"
               :key="group.id"
-              :color="isGroupFullyAdded(group) ? 'grey' : 'primary'"
-              :variant="isGroupFullyAdded(group) ? 'outlined' : 'tonal'"
+              :color="isGroupFullyAdded(group) ? 'grey' : selectedGroupIds.has(group.id) ? 'primary' : undefined"
+              :variant="isGroupFullyAdded(group) ? 'outlined' : selectedGroupIds.has(group.id) ? 'tonal' : 'outlined'"
               :disabled="isGroupFullyAdded(group)"
-              :loading="addingGroupId === group.id"
               size="small"
-              @click="addGroup(group)"
+              filter
+              @click="toggleGroup(group)"
             >
               {{ group.name }}
               <template #append v-if="isGroupFullyAdded(group)">
                 <v-icon size="small">mdi-check</v-icon>
+              </template>
+              <template #append v-else-if="selectedGroupIds.has(group.id)">
+                <v-icon size="small">mdi-plus</v-icon>
               </template>
             </v-chip>
           </v-chip-group>
@@ -117,11 +134,16 @@ interface AllergenGroup {
 const blacklistItems = ref<BlacklistItem[]>([])
 const allergenGroups = ref<AllergenGroup[]>([])
 const loading = ref(false)
-const addingGroupId = ref<number | null>(null)
+const saving = ref(false)
+const selectedGroupIds = ref<Set<number>>(new Set())
 const snackbar = ref({ show: false, message: '', color: 'error' })
 
 function showError(msg: string) {
   snackbar.value = { show: true, message: msg, color: 'error' }
+}
+
+function showSuccess(msg: string) {
+  snackbar.value = { show: true, message: msg, color: 'success' }
 }
 
 // 搜索
@@ -155,19 +177,38 @@ function isGroupFullyAdded(group: AllergenGroup): boolean {
   return group.ingredient_ids.every(id => blacklistedIds.has(id))
 }
 
-async function addGroup(group: AllergenGroup) {
-  addingGroupId.value = group.id
+function toggleGroup(group: AllergenGroup) {
+  if (selectedGroupIds.value.has(group.id)) {
+    selectedGroupIds.value.delete(group.id)
+  } else {
+    selectedGroupIds.value.add(group.id)
+  }
+  // 触发响应式更新
+  selectedGroupIds.value = new Set(selectedGroupIds.value)
+}
+
+async function saveSelectedGroups() {
+  saving.value = true
   try {
-    await api.post('/blacklist/batch', {
-      ingredient_ids: group.ingredient_ids,
-      source: 'allergen_group',
-      allergen_group_id: group.id,
-    })
+    const allIds: number[] = []
+    for (const gid of selectedGroupIds.value) {
+      const group = allergenGroups.value.find(g => g.id === gid)
+      if (group) {
+        for (const id of group.ingredient_ids) {
+          if (!allIds.includes(id)) allIds.push(id)
+        }
+      }
+    }
+    if (allIds.length > 0) {
+      await api.post('/blacklist/batch', { ingredient_ids: allIds })
+      showSuccess(`已添加 ${allIds.length} 种原料到黑名单`)
+    }
+    selectedGroupIds.value = new Set()
     await loadBlacklist()
   } catch (e: any) {
-    showError('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('保存失败：' + (e?.userMessage || e?.message || '未知错误'))
   } finally {
-    addingGroupId.value = null
+    saving.value = false
   }
 }
 
@@ -188,7 +229,7 @@ function searchIngredients(search: string | null) {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(async () => {
     try {
-      const { data } = await api.get(`/ingredients/search-by-name/${encodeURIComponent(search)}`)
+      const data = await api.get(`/ingredients/search-by-name/${encodeURIComponent(search)}`)
       searchResults.value = Array.isArray(data) ? data : []
     } catch {
       searchResults.value = []
@@ -220,6 +261,7 @@ function getSubtitle(item: BlacklistItem): string {
 
 watch(() => props.modelValue, (val) => {
   if (val) {
+    selectedGroupIds.value = new Set()
     loadBlacklist()
     loadAllergenGroups()
   }
