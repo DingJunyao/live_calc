@@ -169,6 +169,12 @@ const router = createRouter({
           meta: { adminOnly: true, title: 'Agent 任务台' },
           component: () => import('@/views/admin/AgentTaskConsole.vue'),
         },
+        {
+          path: 'admin/allergen-groups',
+          name: 'admin-allergen-groups',
+          meta: { adminOnly: true, title: '过敏原分组' },
+          component: () => import('@/views/admin/AllergenGroupsView.vue'),
+        },
       ],
     },
   ],
