@@ -88,6 +88,17 @@
           </template>
         </v-list-item>
 
+        <v-list-item @click="blacklistDialog = true">
+          <template #prepend>
+            <v-icon>mdi-cancel</v-icon>
+          </template>
+          <v-list-item-title>原料黑名单</v-list-item-title>
+          <v-list-item-subtitle>已屏蔽 {{ blacklistCount }} 种原料</v-list-item-subtitle>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
         <v-list-item @click="exportDialog = true">
           <template #prepend>
             <v-icon>mdi-export</v-icon>
@@ -131,6 +142,9 @@
 
     <!-- 数据导入对话框 -->
     <ImportUploadDialog v-model="importDialog" />
+
+    <!-- 黑名单对话框 -->
+    <BlacklistDialog v-model="blacklistDialog" />
 
     <!-- 饮食偏好对话框 -->
     <v-dialog v-model="nutritionDialog" max-width="480">
@@ -274,7 +288,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import axios from 'axios'
@@ -282,6 +296,7 @@ import { useUserStore } from '@/stores/user'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
 import { ImportUploadDialog } from '@/components/import'
+import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -445,7 +460,26 @@ const loadStats = async () => {
   }
 }
 
+// 黑名单
+const blacklistDialog = ref(false)
+const blacklistCount = ref(0)
+
+async function loadBlacklistCount() {
+  try {
+    const { data } = await api.get('/blacklist/ingredient-ids')
+    blacklistCount.value = data?.ingredient_ids?.length || 0
+  } catch {
+    // 忽略
+  }
+}
+
+// 黑名单对话框关闭后刷新计数
+watch(blacklistDialog, (val) => {
+  if (!val) loadBlacklistCount()
+})
+
 onMounted(() => {
   loadStats()
+  loadBlacklistCount()
 })
 </script>
