@@ -143,7 +143,6 @@ def _get_candidate_pool(
         if blacklisted_ids:
             excluded_recipes = db.query(RecipeIngredient.recipe_id).filter(
                 RecipeIngredient.ingredient_id.in_(blacklisted_ids),
-                RecipeIngredient.is_active == True,
             ).distinct().all()
             excluded_set = {r[0] for r in excluded_recipes}
             if excluded_set:

@@ -193,7 +193,6 @@ async def get_recipes(
                 # 找出包含黑名单原料的菜谱 ID
                 blacklisted_recipe_ids = db.query(RecipeIngredient.recipe_id).filter(
                     RecipeIngredient.ingredient_id.in_(blacklisted_ids),
-                    RecipeIngredient.is_active == True,
                 ).distinct().all()
                 excluded_ids = {r[0] for r in blacklisted_recipe_ids}
                 if excluded_ids:
