@@ -22,9 +22,10 @@ def _get_effective_blacklist_ids(db: Session, user_id: int) -> Set[int]:
     """计算用户的有效黑名单原料 ID 集合：手动 + 所有已订阅分组的原料"""
     ids: Set[int] = set()
 
-    # 手动添加的
+    # 手动添加的（只计 source='manual'，旧版 source='allergen_group' 的复制条目不再生效）
     manual = db.query(UserIngredientBlacklist.ingredient_id).filter(
         UserIngredientBlacklist.user_id == user_id,
+        UserIngredientBlacklist.source == "manual",
         UserIngredientBlacklist.is_active == True,
     ).all()
     ids.update(r[0] for r in manual)
@@ -232,6 +233,26 @@ def unsubscribe_group(
     sub.updated_by = current_user.id
     db.commit()
     return {"message": "已取消订阅"}
+
+
+# ---- 清理旧版复制条目 ----
+
+@router.delete("/blacklist/cleanup-legacy")
+@router.delete("/blacklist/cleanup-legacy/")
+def cleanup_legacy_entries(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """清理旧版通过分组复制产生的 source='allergen_group' 条目（这些现在由分组订阅动态管理）"""
+    count = db.query(UserIngredientBlacklist).filter(
+        UserIngredientBlacklist.user_id == current_user.id,
+        UserIngredientBlacklist.source == "allergen_group",
+        UserIngredientBlacklist.is_active == True,
+    ).update(
+        {"is_active": False, "updated_by": current_user.id}, synchronize_session=False
+    )
+    db.commit()
+    return {"message": f"已清理 {count} 条旧版记录"}
 
 
 # ---- 有效黑名单（手动 + 分组订阅的并集） ----
