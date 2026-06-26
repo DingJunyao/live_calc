@@ -30,18 +30,23 @@ def _get_effective_blacklist_ids(db: Session, user_id: int) -> Set[int]:
     ).all()
     ids.update(r[0] for r in manual)
 
-    # 已订阅分组的原料
+    # 已订阅分组的原料（只计仍启用 is_active=True 的分组，与其他端点逻辑一致）
     subscribed_groups = db.query(BlacklistGroupSubscription.blacklist_group_id).filter(
         BlacklistGroupSubscription.user_id == user_id,
         BlacklistGroupSubscription.is_active == True,
     ).all()
     if subscribed_groups:
         group_ids = [r[0] for r in subscribed_groups]
-        group_ingredients = db.query(BlacklistGroupIngredient.ingredient_id).filter(
-            BlacklistGroupIngredient.group_id.in_(group_ids),
-            BlacklistGroupIngredient.is_active == True,
-        ).all()
-        ids.update(r[0] for r in group_ingredients)
+        active_group_ids = [r[0] for r in db.query(BlacklistGroup.id).filter(
+            BlacklistGroup.id.in_(group_ids),
+            BlacklistGroup.is_active == True,
+        ).all()]
+        if active_group_ids:
+            group_ingredients = db.query(BlacklistGroupIngredient.ingredient_id).filter(
+                BlacklistGroupIngredient.group_id.in_(active_group_ids),
+                BlacklistGroupIngredient.is_active == True,
+            ).all()
+            ids.update(r[0] for r in group_ingredients)
 
     return ids
 
