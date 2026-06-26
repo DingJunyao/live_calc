@@ -285,6 +285,9 @@ import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
 import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
+import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
+
+const { notify } = useGlobalSnackbar()
 
 const route = useRoute()
 const router = useRouter()
@@ -558,7 +561,7 @@ const onPriceSaved = () => {
 const saveItem = async () => {
   if (!form.value.name.trim()) return
   if (!form.value.ingredient_id) {
-    alert('请选择关联的原料')
+    notify('请选择关联的原料', 'info')
     return
   }
 

@@ -297,6 +297,9 @@ import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
 import { ImportUploadDialog } from '@/components/import'
 import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
+import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
+
+const { notify } = useGlobalSnackbar()
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -342,7 +345,7 @@ const doExport = async () => {
     exportDialog.value = false
   } catch (e: any) {
     console.error('数据导出失败', e)
-    alert('数据导出失败：' + (e?.userMessage || e?.message || '未知错误'))
+    notify('数据导出失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
   } finally {
     exporting.value = false
   }
@@ -394,7 +397,7 @@ async function saveNutrition() {
     await userStore.fetchUser()
     nutritionDialog.value = false
   } catch (e: any) {
-    alert('保存失败：' + (e?.userMessage || e?.message || '未知错误'))
+    notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
   } finally {
     savingNutrition.value = false
   }

@@ -1691,6 +1691,9 @@ import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLa
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
 import UsdaMatchDialog from '@/components/usda/UsdaMatchDialog.vue'
 import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
+
+const { ask } = useConfirmDialog()
 
 const usdaDialog = ref(false)
 function onUsdaMatched() {
@@ -2452,7 +2455,7 @@ const saveEntityUnit = async () => {
 
 // 删除单位
 const deleteEntityUnit = async (unitId: number) => {
-  if (!confirm('确定删除此自定义单位？')) return
+  if (!(await ask({ text: '确定删除此自定义单位？', color: 'error', confirmText: '删除' }))) return
   try {
     await api.delete(`/entities/ingredient/${ingredientId.value}/units/${unitId}`)
     showMessage('删除成功', 'success')
@@ -2514,7 +2517,7 @@ const saveDensity = async () => {
 
 // 删除密度
 const deleteDensity = async (densityId: number) => {
-  if (!confirm('确定删除此密度数据？')) return
+  if (!(await ask({ text: '确定删除此密度数据？', color: 'error', confirmText: '删除' }))) return
   try {
     await api.delete(`/entities/ingredient/${ingredientId.value}/density/${densityId}`)
     showMessage('删除成功', 'success')
@@ -3794,7 +3797,7 @@ const saveEditPriceRecord = async () => {
 
 // 删除价格记录
 const deletePriceRecord = async (id: number) => {
-  if (!confirm('确定删除此价格记录？')) return
+  if (!(await ask({ text: '确定删除此价格记录？', color: 'error', confirmText: '删除' }))) return
 
   try {
     await api.delete(`/products/${id}`)

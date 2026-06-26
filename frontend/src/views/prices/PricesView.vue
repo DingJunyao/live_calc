@@ -312,6 +312,9 @@ import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
 import { formatToLocalDateTimeShort } from '@/utils/timezone'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
+
+const { ask } = useConfirmDialog()
 
 const route = useRoute()
 const router = useRouter()
@@ -806,7 +809,7 @@ const saveRecord = async () => {
 }
 
 const deleteRecord = async (id: number) => {
-  if (!confirm('确定删除此价格记录?')) return
+  if (!(await ask({ text: '确定删除此价格记录?', color: 'error', confirmText: '删除' }))) return
   try {
     await api.delete(`/products/${id}`)
     loadRecords()

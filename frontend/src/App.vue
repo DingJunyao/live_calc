@@ -1,12 +1,16 @@
 <template>
   <v-app>
     <router-view />
+    <GlobalConfirmDialog />
+    <GlobalSnackbar />
   </v-app>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
+import GlobalConfirmDialog from '@/components/common/GlobalConfirmDialog.vue'
+import GlobalSnackbar from '@/components/common/GlobalSnackbar.vue'
 
 const userStore = useUserStore()
 
