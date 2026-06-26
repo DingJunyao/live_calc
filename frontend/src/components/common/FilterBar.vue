@@ -357,6 +357,8 @@ export interface FilterConfig {
   loading?: boolean
   minWidth?: string
   maxWidth?: string
+  /** 初始值：仅 toggle 和 select/autocomplete 类型有效 */
+  defaultValue?: any
 }
 
 interface DateRangeValue {
@@ -418,9 +420,9 @@ const getValue = (key: string): FilterValue => {
     if (cfg?.type === 'date-range') {
       state[key] = { start: null, end: null } as DateRangeValue
     } else if (cfg?.type === 'toggle') {
-      state[key] = false
+      state[key] = cfg?.defaultValue ?? false
     } else {
-      state[key] = []
+      state[key] = cfg?.defaultValue ?? []
     }
   }
   return state[key]!

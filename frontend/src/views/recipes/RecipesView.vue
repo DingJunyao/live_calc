@@ -348,6 +348,7 @@ const recipeFilters: FilterConfig[] = reactive([
     key: 'exclude_blacklist',
     label: '隐藏黑名单',
     type: 'toggle' as const,
+    defaultValue: true,
     items: [
       { value: true, title: '隐藏含黑名单原料的菜谱' },
     ],

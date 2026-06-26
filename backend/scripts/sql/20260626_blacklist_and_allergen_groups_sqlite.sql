@@ -42,5 +42,6 @@ CREATE TABLE IF NOT EXISTS user_ingredient_blacklist (
 
 CREATE INDEX IF NOT EXISTS idx_blacklist_user ON user_ingredient_blacklist(user_id);
 CREATE INDEX IF NOT EXISTS idx_blacklist_ingredient ON user_ingredient_blacklist(ingredient_id);
+CREATE INDEX IF NOT EXISTS idx_blacklist_allergen_group ON user_ingredient_blacklist(allergen_group_id);
 CREATE INDEX IF NOT EXISTS idx_agi_group ON allergen_group_ingredients(group_id);
 CREATE INDEX IF NOT EXISTS idx_agi_ingredient ON allergen_group_ingredients(ingredient_id);

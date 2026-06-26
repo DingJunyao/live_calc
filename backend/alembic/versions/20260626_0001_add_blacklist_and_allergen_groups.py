@@ -72,6 +72,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_user_ingredient_blacklist_user_id'), 'user_ingredient_blacklist', ['user_id'])
     op.create_index(op.f('ix_user_ingredient_blacklist_ingredient_id'), 'user_ingredient_blacklist', ['ingredient_id'])
+    op.create_index(op.f('ix_blacklist_allergen_group'), 'user_ingredient_blacklist', ['allergen_group_id'])
 
 
 def downgrade() -> None:
