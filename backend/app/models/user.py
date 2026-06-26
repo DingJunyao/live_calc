@@ -33,4 +33,5 @@ class User(Base):
     expenses = relationship("Expense", back_populates="user")
     created_invite_codes = relationship("InviteCode", back_populates="creator")
     ingredient_preferences = relationship("UserIngredientPreference", back_populates="user", foreign_keys="UserIngredientPreference.user_id")
+    ingredient_blacklist = relationship("UserIngredientBlacklist", back_populates="user", foreign_keys="UserIngredientBlacklist.user_id")
     daily_recommendations = relationship("DailyRecommendation", back_populates="user")

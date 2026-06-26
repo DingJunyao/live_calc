@@ -26,6 +26,8 @@ from app.models.agent_message import AgentMessage
 from app.models.agent_approval import AgentApproval
 from app.models.user_merchant_product_order import UserMerchantProductOrder
 from app.models.daily_recommendation import DailyRecommendation
+from app.models.user_ingredient_blacklist import UserIngredientBlacklist
+from app.models.allergen_group import AllergenGroup, AllergenGroupIngredient
 
 __all__ = [
     "User", "UserPlace", "Merchant", "ProductRecord", "RecordType",
@@ -49,4 +51,7 @@ __all__ = [
     "UserMerchantProductOrder",
     "SystemConfig",
     "DailyRecommendation",
+    "UserIngredientBlacklist",
+    "AllergenGroup",
+    "AllergenGroupIngredient",
 ]
