@@ -50,13 +50,17 @@ def _build_group_response(group: BlacklistGroup) -> BlacklistGroupResponse:
 @blacklist_group_admin_router.get("/blacklist-groups", response_model=List[BlacklistGroupResponse])
 @blacklist_group_admin_router.get("/blacklist-groups/", response_model=List[BlacklistGroupResponse])
 def list_groups(
+    include_inactive: bool = Query(False, description="是否包含已删除（is_active=False）的分组"),
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """管理员：获取所有原料黑名单分组列表"""
-    groups = db.query(BlacklistGroup).options(
+    """管理员：获取原料黑名单分组列表（默认只显示未删除的）"""
+    query = db.query(BlacklistGroup).options(
         joinedload(BlacklistGroup.group_ingredients).joinedload(BlacklistGroupIngredient.ingredient)
-    ).order_by(BlacklistGroup.display_order, BlacklistGroup.id).all()
+    )
+    if not include_inactive:
+        query = query.filter(BlacklistGroup.is_active == True)
+    groups = query.order_by(BlacklistGroup.display_order, BlacklistGroup.id).all()
     return [_build_group_response(g) for g in groups]
 
 
@@ -113,21 +117,16 @@ def delete_group(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """删除原料黑名单分组（硬删除，连同关联数据级联清理）"""
+    """删除原料黑名单分组（软删除：仅置 is_active=False，原料映射和用户订阅保留以便恢复）
+
+    用户端三个端点都过滤 group.is_active=True，故软删除后自动对用户失效；
+    恢复（is_active=True）后自动重新生效。
+    """
     group = db.query(BlacklistGroup).filter(BlacklistGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="分组不存在")
-    # 级联清理：原料映射、用户订阅、黑名单引用
-    db.query(BlacklistGroupIngredient).filter(
-        BlacklistGroupIngredient.group_id == group_id
-    ).delete(synchronize_session=False)
-    db.query(BlacklistGroupSubscription).filter(
-        BlacklistGroupSubscription.blacklist_group_id == group_id
-    ).delete(synchronize_session=False)
-    db.query(UserIngredientBlacklist).filter(
-        UserIngredientBlacklist.blacklist_group_id == group_id
-    ).update({"blacklist_group_id": None}, synchronize_session=False)
-    db.delete(group)
+    group.is_active = False
+    group.updated_by = admin.id
     db.commit()
     return {"message": "已删除"}
 
