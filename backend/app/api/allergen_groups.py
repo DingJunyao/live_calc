@@ -1,5 +1,7 @@
 """过敏原分组 API（管理员维护 + 公开只读）"""
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from app.core.database import get_db
@@ -177,6 +179,34 @@ def remove_ingredient_from_group(
     agi.updated_by = admin.id
     db.commit()
     return {"message": "已移除"}
+
+
+class AiMatchResponse(BaseModel):
+    agent_session_id: int
+    message: str
+
+
+@admin_router.post("/allergen-groups/{group_id}/ai-match", response_model=AiMatchResponse)
+@admin_router.post("/allergen-groups/{group_id}/ai-match/", response_model=AiMatchResponse)
+def trigger_ai_match(
+    group_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """触发 AI Agent 匹配过敏原分组原料"""
+    group = db.query(AllergenGroup).filter(AllergenGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    from app.services.agent.allergen_task import trigger_allergen_match
+
+    main_loop = asyncio.get_running_loop()
+    session_id = trigger_allergen_match(db, group_id, group.name, admin.id, main_loop)
+
+    return AiMatchResponse(
+        agent_session_id=session_id,
+        message="已触发 AI 匹配任务，可在 Agent 任务台查看进度",
+    )
 
 
 # ---- 公开只读端点 ----

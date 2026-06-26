@@ -9,8 +9,9 @@
 - ``allowed_tools``：该任务允许 Agent 调用的工具白名单（对齐 runner_factory
   的 controlled_db MCP 暴露面；未来可按任务粒度收紧）。
 
-当前已实现 5 个模板：``fill_piece_weight`` / ``infer_quantities`` /
-``infer_densities`` / ``usda_translate`` / ``unmapped_nutrient_translate``。
+当前已实现 6 个模板：``fill_piece_weight`` / ``infer_quantities`` /
+``infer_densities`` / ``usda_translate`` / ``unmapped_nutrient_translate`` /
+``allergen_match``。
 """
 
 from __future__ import annotations
@@ -717,7 +718,50 @@ WHERE name_zh IS NULL;
 """
 
 
+_ALLERGEN_MATCH_PROMPT = """你是「生计」应用的食材数据维护助手，专门负责根据过敏原分组名称搜索匹配数据库中的原料。
+
+# 任务目标
+过敏原分组名称为「{group_name}」，请搜索数据库中所有属于该类别的原料，用 SQL LIKE 搜索原料的中文名（name）和别名（aliases 字段）。
+
+# 搜索策略
+1. 先思考哪些食物属于「{group_name}」这个类别
+2. 对每个可能的食物名，执行 SQL 搜索：
+   ```sql
+   SELECT id, name, aliases FROM ingredients
+   WHERE is_active = true
+     AND (name LIKE '%关键词%' OR aliases LIKE '%关键词%')
+   ORDER BY name;
+   ```
+3. 用不同的关键词多轮搜索，尽可能全面覆盖
+4. 去重后的结果集中输出所有匹配的 ingredient_id
+
+# 最终输出
+搜索完成后，在回复中列出所有匹配结果，格式：
+- ingredient_id: name (匹配依据)
+
+并在最后的 ```sql 代码块中输出一个批量 INSERT 语句（将 ingredient_id 写入 allergen_group_ingredients 表）：
+```sql
+INSERT INTO allergen_group_ingredients (group_id, ingredient_id, is_ai_matched, created_by)
+VALUES
+  ({group_id}, <id1>, true, {admin_id}),
+  ({group_id}, <id2>, true, {admin_id}),
+  ...
+;
+```
+
+注意：
+- 只匹配明确属于该类别的原料，不确定的不加入
+- 数据库中的名称可能和常用名不完全一致（如可能存「鲜虾」而非常「虾」），需要灵活搜索
+- 安全 SQL 自动执行，你可以放心输出 INSERT（系统已有 sql_guard 校验）
+"""
+
+
 TASK_TEMPLATES: dict[str, dict] = {
+    "allergen_match": {
+        "title": "过敏原分组 AI 匹配",
+        "allowed_tools": list(_READ_ONLY_TOOLS),
+        "prompt": _ALLERGEN_MATCH_PROMPT,
+    },
     "fill_piece_weight": {
         "title": "补单位质量（自定义单位对应克数）",
         "allowed_tools": list(_READ_ONLY_TOOLS),
