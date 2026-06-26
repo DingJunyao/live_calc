@@ -1,6 +1,6 @@
 """原料黑名单分组 API（管理员维护 + 公开只读）"""
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from typing import List
@@ -50,17 +50,15 @@ def _build_group_response(group: BlacklistGroup) -> BlacklistGroupResponse:
 @blacklist_group_admin_router.get("/blacklist-groups", response_model=List[BlacklistGroupResponse])
 @blacklist_group_admin_router.get("/blacklist-groups/", response_model=List[BlacklistGroupResponse])
 def list_groups(
-    include_inactive: bool = Query(False, description="是否包含已删除（is_active=False）的分组"),
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """管理员：获取原料黑名单分组列表（默认只显示未删除的）"""
-    query = db.query(BlacklistGroup).options(
+    """管理员：获取原料黑名单分组列表（只显示未删除的）"""
+    groups = db.query(BlacklistGroup).filter(
+        BlacklistGroup.is_active == True
+    ).options(
         joinedload(BlacklistGroup.group_ingredients).joinedload(BlacklistGroupIngredient.ingredient)
-    )
-    if not include_inactive:
-        query = query.filter(BlacklistGroup.is_active == True)
-    groups = query.order_by(BlacklistGroup.display_order, BlacklistGroup.id).all()
+    ).order_by(BlacklistGroup.display_order, BlacklistGroup.id).all()
     return [_build_group_response(g) for g in groups]
 
 

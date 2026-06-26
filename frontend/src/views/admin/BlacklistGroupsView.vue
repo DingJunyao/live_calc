@@ -4,34 +4,19 @@
       <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
       <v-app-bar-title>原料黑名单分组管理</v-app-bar-title>
       <template #append>
-        <v-switch
-          v-model="showInactive"
-          label="显示已删除"
-          density="compact"
-          color="warning"
-          hide-details
-          inset
-          class="mr-2"
-        />
         <v-btn color="primary" prepend-icon="mdi-plus" size="small" @click="openCreate">新建分组</v-btn>
       </template>
     </v-app-bar>
 
     <v-container style="max-width: 960px">
-      <v-card v-for="group in groups" :key="group.id" class="mb-4" elevation="0" :class="{ 'opacity-60': !group.is_active }">
+      <v-card v-for="group in groups" :key="group.id" class="mb-4" elevation="0">
         <v-card-title class="d-flex align-center">
-          <v-icon :icon="group.is_active ? 'mdi-shield-alert' : 'mdi-shield-off'" class="mr-2" />
+          <v-icon icon="mdi-shield-alert" class="mr-2" />
           {{ group.name }}
-          <v-chip size="small" class="ml-2" :color="group.is_active ? undefined : 'grey'">{{ group.ingredient_count }} 种原料</v-chip>
-          <v-chip v-if="!group.is_active" size="small" color="grey" class="ml-2">已删除</v-chip>
+          <v-chip size="small" class="ml-2">{{ group.ingredient_count }} 种原料</v-chip>
           <v-spacer />
-          <template v-if="group.is_active">
-            <v-btn icon="mdi-pencil" variant="text" size="small" @click="openEdit(group)" />
-            <v-btn icon="mdi-delete" variant="text" size="small" color="error" @click="confirmDelete(group)" />
-          </template>
-          <template v-else>
-            <v-btn prepend-icon="mdi-restore" variant="text" size="small" color="success" @click="restoreGroup(group)">恢复</v-btn>
-          </template>
+          <v-btn icon="mdi-pencil" variant="text" size="small" @click="openEdit(group)" />
+          <v-btn icon="mdi-delete" variant="text" size="small" color="error" @click="confirmDelete(group)" />
         </v-card-title>
         <v-card-text>
           <!-- 原料列表 -->
@@ -166,7 +151,6 @@ interface BlacklistGroup {
 
 const groups = ref<BlacklistGroup[]>([])
 const loading = ref(false)
-const showInactive = ref(false)
 const aiMatchingGroups = ref(new Set<number>())
 const snackbar = ref({ show: false, message: '', color: 'error' })
 const deleteDialog = ref(false)
@@ -178,10 +162,6 @@ function showError(msg: string) {
 
 function showInfo(msg: string) {
   snackbar.value = { show: true, message: msg, color: 'info' }
-}
-
-function showSuccess(msg: string) {
-  snackbar.value = { show: true, message: msg, color: 'success' }
 }
 
 // 编辑
@@ -200,9 +180,7 @@ const selectedIngredientsCache = ref<Map<number, any>>(new Map())
 async function loadGroups() {
   loading.value = true
   try {
-    const data = await api.get('/admin/blacklist-groups', {
-      params: { include_inactive: showInactive.value },
-    })
+    const data = await api.get('/admin/blacklist-groups')
     groups.value = data
   } catch (e) {
     console.error('加载分组失败', e)
@@ -210,18 +188,6 @@ async function loadGroups() {
     loading.value = false
   }
 }
-
-async function restoreGroup(group: BlacklistGroup) {
-  try {
-    await api.put(`/admin/blacklist-groups/${group.id}`, { is_active: true })
-    showSuccess(`已恢复分组「${group.name}」`)
-    await loadGroups()
-  } catch (e: any) {
-    showError('恢复失败：' + (e?.userMessage || e?.message || '未知错误'))
-  }
-}
-
-watch(showInactive, () => loadGroups())
 
 function openCreate() {
   editingGroup.value = null
