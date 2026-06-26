@@ -155,6 +155,7 @@ async def get_recipes(
     ingredient_ids: Optional[str] = Query(None, description="食材ID列表，逗号分隔（筛选包含任意该食材的菜谱，包括可选食材）"),
     has_unpriced_ingredient: bool = Query(False, description="筛选存在原料没有维护价格的菜谱"),
     has_unnourished_ingredient: bool = Query(False, description="筛选存在原料没有维护营养成分的菜谱"),
+    exclude_blacklist_ingredients: bool = Query(False, description="排除含当前用户黑名单原料的菜谱"),
     include_cost: bool = Query(False, description="是否包含成本和营养信息（列表页默认不计算，通过 batch-cost 懒加载）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -176,6 +177,27 @@ async def get_recipes(
 
         # 合并查询结果（两个集合不相交，UNION ALL 即可，且 PostgreSQL json 列不支持 UNION 去重所需的 = 比较）
         all_recipes_query = user_recipes.union_all(public_imported_recipes)
+
+        # 黑名单原料排除
+        if exclude_blacklist_ingredients and current_user:
+            from app.models.user_ingredient_blacklist import UserIngredientBlacklist
+            from app.models.recipe import RecipeIngredient
+
+            blacklisted_ingredient_ids = db.query(UserIngredientBlacklist.ingredient_id).filter(
+                UserIngredientBlacklist.user_id == current_user.id,
+                UserIngredientBlacklist.is_active == True,
+            ).all()
+            blacklisted_ids = {r[0] for r in blacklisted_ingredient_ids}
+
+            if blacklisted_ids:
+                # 找出包含黑名单原料的菜谱 ID
+                blacklisted_recipe_ids = db.query(RecipeIngredient.recipe_id).filter(
+                    RecipeIngredient.ingredient_id.in_(blacklisted_ids),
+                    RecipeIngredient.is_active == True,
+                ).distinct().all()
+                excluded_ids = {r[0] for r in blacklisted_recipe_ids}
+                if excluded_ids:
+                    all_recipes_query = all_recipes_query.filter(~Recipe.id.in_(excluded_ids))
 
         # 应用标签过滤（如果指定了标签）
         if tag:
