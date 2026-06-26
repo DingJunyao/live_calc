@@ -8,6 +8,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user, get_current_admin_user
 from app.models.user import User
 from app.models.blacklist_group import BlacklistGroup, BlacklistGroupIngredient
+from app.models.blacklist_group_subscription import BlacklistGroupSubscription
+from app.models.user_ingredient_blacklist import UserIngredientBlacklist
 from app.models.nutrition import Ingredient
 from app.schemas.blacklist_group import (
     BlacklistGroupCreate, BlacklistGroupUpdate,
@@ -30,7 +32,8 @@ def _build_ingredient_response(agi: BlacklistGroupIngredient) -> BlacklistGroupI
 
 
 def _build_group_response(group: BlacklistGroup) -> BlacklistGroupResponse:
-    ingredients = group.group_ingredients or []
+    # 只统计 is_active 的原料映射（单个原料删除是软删除）
+    ingredients = [i for i in (group.group_ingredients or []) if i.is_active]
     return BlacklistGroupResponse(
         id=group.id,
         name=group.name,
@@ -110,16 +113,21 @@ def delete_group(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """删除原料黑名单分组（软删除）"""
+    """删除原料黑名单分组（硬删除，连同关联数据级联清理）"""
     group = db.query(BlacklistGroup).filter(BlacklistGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="分组不存在")
-    group.is_active = False
-    group.updated_by = admin.id
-    # 同时软删除关联的原料映射
+    # 级联清理：原料映射、用户订阅、黑名单引用
     db.query(BlacklistGroupIngredient).filter(
         BlacklistGroupIngredient.group_id == group_id
-    ).update({"is_active": False}, synchronize_session=False)
+    ).delete(synchronize_session=False)
+    db.query(BlacklistGroupSubscription).filter(
+        BlacklistGroupSubscription.blacklist_group_id == group_id
+    ).delete(synchronize_session=False)
+    db.query(UserIngredientBlacklist).filter(
+        UserIngredientBlacklist.blacklist_group_id == group_id
+    ).update({"blacklist_group_id": None}, synchronize_session=False)
+    db.delete(group)
     db.commit()
     return {"message": "已删除"}
 
