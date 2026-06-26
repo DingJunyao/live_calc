@@ -128,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 const { toggleSidebar, isDesktop } = useMobileDrawerControl()
@@ -175,6 +175,7 @@ const addIngredientsDialog = ref(false)
 const selectedGroupForAdd = ref<AllergenGroup | null>(null)
 const selectedIngredientIds = ref<number[]>([])
 const ingredientOptions = ref<any[]>([])
+const selectedIngredientsCache = ref<Map<number, any>>(new Map())
 
 async function loadGroups() {
   loading.value = true
@@ -248,18 +249,48 @@ function openAddIngredients(group: AllergenGroup) {
   selectedGroupForAdd.value = group
   selectedIngredientIds.value = []
   ingredientOptions.value = []
+  selectedIngredientsCache.value.clear()
   addIngredientsDialog.value = true
 }
 
 async function searchAllIngredients(search: string | null) {
-  if (!search || search.length < 1) { ingredientOptions.value = []; return }
+  if (!search || search.length < 1) {
+    // 无搜索词时显示已选中的原料
+    ingredientOptions.value = Array.from(selectedIngredientsCache.value.values())
+    return
+  }
   try {
     const data = await api.get(`/ingredients/search-by-name/${encodeURIComponent(search || '')}`)
-    ingredientOptions.value = Array.isArray(data) ? data : []
+    const results: any[] = Array.isArray(data) ? data : []
+    // 将已选中的原料合并进结果，避免已选项只显示数字 ID
+    const merged = [...results]
+    for (const cached of selectedIngredientsCache.value.values()) {
+      if (!merged.some((r: any) => r.id === cached.id)) {
+        merged.unshift(cached)
+      }
+    }
+    ingredientOptions.value = merged
   } catch {
-    ingredientOptions.value = []
+    ingredientOptions.value = Array.from(selectedIngredientsCache.value.values())
   }
 }
+
+// 监听选中变化，缓存完整对象避免只显示数字 ID
+watch(selectedIngredientIds, (newIds, oldIds) => {
+  // 新增的 ID：从当前选项中获取完整对象并缓存
+  for (const id of newIds) {
+    if (!selectedIngredientsCache.value.has(id)) {
+      const found = ingredientOptions.value.find((item: any) => item.id === id)
+      if (found) selectedIngredientsCache.value.set(id, found)
+    }
+  }
+  // 移除的 ID：从缓存中清理
+  for (const id of (oldIds || [])) {
+    if (!newIds.includes(id)) {
+      selectedIngredientsCache.value.delete(id)
+    }
+  }
+})
 
 async function saveIngredients() {
   if (!selectedGroupForAdd.value) return
