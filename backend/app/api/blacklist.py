@@ -235,26 +235,6 @@ def unsubscribe_group(
     return {"message": "已取消订阅"}
 
 
-# ---- 清理旧版复制条目 ----
-
-@router.delete("/blacklist/cleanup-legacy")
-@router.delete("/blacklist/cleanup-legacy/")
-def cleanup_legacy_entries(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """清理旧版通过分组复制产生的 source='blacklist_group' 条目（这些现在由分组订阅动态管理）"""
-    count = db.query(UserIngredientBlacklist).filter(
-        UserIngredientBlacklist.user_id == current_user.id,
-        UserIngredientBlacklist.source == "blacklist_group",
-        UserIngredientBlacklist.is_active == True,
-    ).update(
-        {"is_active": False, "updated_by": current_user.id}, synchronize_session=False
-    )
-    db.commit()
-    return {"message": f"已清理 {count} 条旧版记录"}
-
-
 # ---- 有效黑名单（手动 + 分组订阅的并集） ----
 
 @router.get("/blacklist/ingredient-ids", response_model=BlacklistIngredientIdsResponse)

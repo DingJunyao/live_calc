@@ -171,8 +171,6 @@ function isGroupSubscribed(gid: number): boolean {
 async function loadData() {
   loading.value = true
   try {
-    // 静默清理旧版 group 复制条目
-    api.delete('/blacklist/cleanup-legacy').catch(() => {})
     const [manualData, groupsData, subGroupsData] = await Promise.all([
       api.get('/blacklist', { params: { limit: 1000 } }),
       api.get('/blacklist-groups'),
