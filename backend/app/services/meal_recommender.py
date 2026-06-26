@@ -105,7 +105,8 @@ def _calc_cost_score(cost_data: Optional[Dict], user: User, meal_type: str) -> f
 
 
 def _get_candidate_pool(
-    db: Session, meal_type: str, exclude_recipe_ids: Optional[Set[int]] = None
+    db: Session, meal_type: str, exclude_recipe_ids: Optional[Set[int]] = None,
+    user_id: Optional[int] = None
 ) -> List[Recipe]:
     """
     获取某餐类的候选菜谱池。
@@ -127,6 +128,26 @@ def _get_candidate_pool(
 
     if exclude_recipe_ids:
         query = query.filter(~Recipe.id.in_(exclude_recipe_ids))
+
+    # 排除用户黑名单中原料对应的菜谱
+    if user_id is not None:
+        from app.models.user_ingredient_blacklist import UserIngredientBlacklist
+        from app.models.recipe import RecipeIngredient
+
+        blacklisted_ingredient_ids = db.query(UserIngredientBlacklist.ingredient_id).filter(
+            UserIngredientBlacklist.user_id == user_id,
+            UserIngredientBlacklist.is_active == True,
+        ).all()
+        blacklisted_ids = {r[0] for r in blacklisted_ingredient_ids}
+
+        if blacklisted_ids:
+            excluded_recipes = db.query(RecipeIngredient.recipe_id).filter(
+                RecipeIngredient.ingredient_id.in_(blacklisted_ids),
+                RecipeIngredient.is_active == True,
+            ).distinct().all()
+            excluded_set = {r[0] for r in excluded_recipes}
+            if excluded_set:
+                query = query.filter(~Recipe.id.in_(excluded_set))
 
     return query.all()
 
@@ -169,7 +190,7 @@ async def _pick_best_recipe(
     db: Optional[Session] = None,
 ) -> Tuple[Optional[Recipe], Optional[Dict], Optional[Dict], float]:
     """从候选池中选取最优菜谱。"""
-    candidates = _get_candidate_pool(db, meal_type, exclude_recipe_ids)
+    candidates = _get_candidate_pool(db, meal_type, exclude_recipe_ids, user_id=user.id)
     if not candidates:
         return (None, None, None, 0.0)
 
