@@ -81,6 +81,14 @@
         </v-list>
       </v-card-text>
     </v-card>
+
+    <!-- 错误提示 -->
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="4000" location="top">
+      {{ snackbar.message }}
+      <template #actions>
+        <v-btn variant="text" @click="snackbar.show = false">关闭</v-btn>
+      </template>
+    </v-snackbar>
   </v-dialog>
 </template>
 
@@ -110,6 +118,11 @@ const blacklistItems = ref<BlacklistItem[]>([])
 const allergenGroups = ref<AllergenGroup[]>([])
 const loading = ref(false)
 const addingGroupId = ref<number | null>(null)
+const snackbar = ref({ show: false, message: '', color: 'error' })
+
+function showError(msg: string) {
+  snackbar.value = { show: true, message: msg, color: 'error' }
+}
 
 // 搜索
 const selectedIngredient = ref<any>(null)
@@ -119,8 +132,8 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null
 async function loadBlacklist() {
   loading.value = true
   try {
-    const { data } = await api.get('/blacklist', { params: { limit: 1000 } })
-    blacklistItems.value = data
+    const data = await api.get('/blacklist', { params: { limit: 1000 } })
+    blacklistItems.value = Array.isArray(data) ? data : []
   } catch (e) {
     console.error('加载黑名单失败', e)
   } finally {
@@ -130,8 +143,8 @@ async function loadBlacklist() {
 
 async function loadAllergenGroups() {
   try {
-    const { data } = await api.get('/allergen-groups')
-    allergenGroups.value = data
+    const data = await api.get('/allergen-groups')
+    allergenGroups.value = Array.isArray(data) ? data : []
   } catch (e) {
     console.error('加载过敏原分组失败', e)
   }
@@ -152,7 +165,7 @@ async function addGroup(group: AllergenGroup) {
     })
     await loadBlacklist()
   } catch (e: any) {
-    alert('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
   } finally {
     addingGroupId.value = null
   }
@@ -163,7 +176,7 @@ async function removeItem(item: BlacklistItem) {
     await api.delete(`/blacklist/${item.ingredient_id}`)
     blacklistItems.value = blacklistItems.value.filter(i => i.id !== item.id)
   } catch (e: any) {
-    alert('移除失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('移除失败：' + (e?.userMessage || e?.message || '未知错误'))
   }
 }
 
@@ -190,7 +203,7 @@ async function onSelectIngredient(ingredientId: number | null) {
     selectedIngredient.value = null
     await loadBlacklist()
   } catch (e: any) {
-    alert('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
   }
 }
 

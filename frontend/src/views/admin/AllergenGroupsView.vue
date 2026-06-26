@@ -102,6 +102,28 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+    <!-- 删除确认对话框 -->
+    <v-dialog v-model="deleteDialog" max-width="400">
+      <v-card>
+        <v-card-title>确认删除</v-card-title>
+        <v-card-text>
+          确定删除分组「{{ deleteTarget?.name }}」吗？此操作不可撤销。
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false">取消</v-btn>
+          <v-btn color="error" :loading="saving" @click="doDelete">删除</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 错误提示 -->
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="4000" location="top">
+      {{ snackbar.message }}
+      <template #actions>
+        <v-btn variant="text" @click="snackbar.show = false">关闭</v-btn>
+      </template>
+    </v-snackbar>
   </v-container>
 </template>
 
@@ -130,6 +152,17 @@ interface AllergenGroup {
 const groups = ref<AllergenGroup[]>([])
 const loading = ref(false)
 const aiMatchingGroups = ref(new Set<number>())
+const snackbar = ref({ show: false, message: '', color: 'error' })
+const deleteDialog = ref(false)
+const deleteTarget = ref<AllergenGroup | null>(null)
+
+function showError(msg: string) {
+  snackbar.value = { show: true, message: msg, color: 'error' }
+}
+
+function showInfo(msg: string) {
+  snackbar.value = { show: true, message: msg, color: 'info' }
+}
 
 // 编辑
 const editDialog = ref(false)
@@ -171,26 +204,43 @@ async function saveGroup() {
   saving.value = true
   try {
     if (editingGroup.value) {
-      await api.put(`/admin/allergen-groups/${editingGroup.value.id}`, form.value)
+      await api.put(`/admin/allergen-groups/${editingGroup.value.id}`, {
+        name: form.value.name,
+        display_order: form.value.display_order,
+        is_active: form.value.is_active,
+      })
     } else {
-      await api.post('/admin/allergen-groups', form.value)
+      await api.post('/admin/allergen-groups', {
+        name: form.value.name,
+        display_order: form.value.display_order,
+      })
     }
     editDialog.value = false
     await loadGroups()
   } catch (e: any) {
-    alert('保存失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('保存失败：' + (e?.userMessage || e?.message || '未知错误'))
   } finally {
     saving.value = false
   }
 }
 
-async function confirmDelete(group: AllergenGroup) {
-  if (!confirm(`确定删除分组「${group.name}」吗？`)) return
+function confirmDelete(group: AllergenGroup) {
+  deleteTarget.value = group
+  deleteDialog.value = true
+}
+
+async function doDelete() {
+  if (!deleteTarget.value) return
+  saving.value = true
   try {
-    await api.delete(`/admin/allergen-groups/${group.id}`)
+    await api.delete(`/admin/allergen-groups/${deleteTarget.value.id}`)
+    deleteDialog.value = false
+    deleteTarget.value = null
     await loadGroups()
   } catch (e: any) {
-    alert('删除失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('删除失败：' + (e?.userMessage || e?.message || '未知错误'))
+  } finally {
+    saving.value = false
   }
 }
 
@@ -221,7 +271,7 @@ async function saveIngredients() {
     addIngredientsDialog.value = false
     await loadGroups()
   } catch (e: any) {
-    alert('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
   } finally {
     saving.value = false
   }
@@ -237,7 +287,7 @@ async function removeIngredient(groupId: number, ingredientId: number) {
       group.ingredient_count = group.ingredients.length
     }
   } catch (e: any) {
-    alert('移除失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('移除失败：' + (e?.userMessage || e?.message || '未知错误'))
   }
 }
 
@@ -245,9 +295,9 @@ async function triggerAiMatch(group: AllergenGroup) {
   aiMatchingGroups.value.add(group.id)
   try {
     const data = await api.post(`/admin/allergen-groups/${group.id}/ai-match`)
-    alert(`AI 匹配任务已触发（任务 ID: ${data.agent_session_id}），可在 Agent 任务台查看进度。完成后请刷新本页。`)
+    showInfo(`AI 匹配任务已触发（任务 ID: ${data.agent_session_id}），可在 Agent 任务台查看进度。完成后请刷新本页。`)
   } catch (e: any) {
-    alert('触发失败：' + (e?.userMessage || e?.message || '未知错误'))
+    showError('触发失败：' + (e?.userMessage || e?.message || '未知错误'))
   } finally {
     aiMatchingGroups.value.delete(group.id)
   }
