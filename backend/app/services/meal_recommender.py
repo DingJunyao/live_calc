@@ -129,16 +129,12 @@ def _get_candidate_pool(
     if exclude_recipe_ids:
         query = query.filter(~Recipe.id.in_(exclude_recipe_ids))
 
-    # 排除用户黑名单中原料对应的菜谱
+    # 排除用户黑名单中原料对应的菜谱（手动 + 分组订阅）
     if user_id is not None:
-        from app.models.user_ingredient_blacklist import UserIngredientBlacklist
+        from app.api.blacklist import _get_effective_blacklist_ids
         from app.models.recipe import RecipeIngredient
 
-        blacklisted_ingredient_ids = db.query(UserIngredientBlacklist.ingredient_id).filter(
-            UserIngredientBlacklist.user_id == user_id,
-            UserIngredientBlacklist.is_active == True,
-        ).all()
-        blacklisted_ids = {r[0] for r in blacklisted_ingredient_ids}
+        blacklisted_ids = _get_effective_blacklist_ids(db, user_id)
 
         if blacklisted_ids:
             excluded_recipes = db.query(RecipeIngredient.recipe_id).filter(

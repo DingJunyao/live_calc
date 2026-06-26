@@ -36,3 +36,19 @@ class BlacklistResponse(BaseModel):
 
 class BlacklistIngredientIdsResponse(BaseModel):
     ingredient_ids: List[int]
+
+
+class BlacklistGroupSubscribe(BaseModel):
+    group_ids: List[int]
+
+
+class BlacklistGroupIngredientItem(BaseModel):
+    id: int
+    name: str
+
+
+class BlacklistGroupResponse(BaseModel):
+    id: int
+    name: str
+    ingredient_count: int
+    ingredients: List[BlacklistGroupIngredientItem] = []

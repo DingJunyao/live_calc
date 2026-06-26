@@ -466,7 +466,7 @@ const blacklistCount = ref(0)
 
 async function loadBlacklistCount() {
   try {
-    const { data } = await api.get('/blacklist/ingredient-ids')
+    const data = await api.get('/blacklist/ingredient-ids')
     blacklistCount.value = data?.ingredient_ids?.length || 0
   } catch {
     // 忽略

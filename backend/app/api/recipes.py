@@ -180,14 +180,8 @@ async def get_recipes(
 
         # 黑名单原料排除
         if exclude_blacklist_ingredients and current_user:
-            from app.models.user_ingredient_blacklist import UserIngredientBlacklist
-            from app.models.recipe import RecipeIngredient
-
-            blacklisted_ingredient_ids = db.query(UserIngredientBlacklist.ingredient_id).filter(
-                UserIngredientBlacklist.user_id == current_user.id,
-                UserIngredientBlacklist.is_active == True,
-            ).all()
-            blacklisted_ids = {r[0] for r in blacklisted_ingredient_ids}
+            from app.api.blacklist import _get_effective_blacklist_ids
+            blacklisted_ids = _get_effective_blacklist_ids(db, current_user.id)
 
             if blacklisted_ids:
                 # 找出包含黑名单原料的菜谱 ID

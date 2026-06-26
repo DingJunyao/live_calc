@@ -7,40 +7,22 @@
         <v-btn icon="mdi-close" variant="text" size="small" @click="$emit('update:model-value', false)" />
       </v-card-title>
       <v-card-text>
-        <!-- 快速选择：过敏原分组 -->
+        <!-- 快速选择：过敏原分组（订阅/取消订阅） -->
         <div v-if="allergenGroups.length > 0" class="mb-4">
-          <div class="d-flex align-center mb-2">
-            <span class="text-caption text-medium-emphasis">快速选择</span>
-            <v-spacer />
-            <v-btn
-              v-if="selectedGroupIds.size > 0"
-              color="primary"
-              size="small"
-              variant="tonal"
-              :loading="saving"
-              @click="saveSelectedGroups"
-            >
-              <v-icon start size="small">mdi-check</v-icon>
-              保存 ({{ selectedGroupIds.size }} 组)
-            </v-btn>
-          </div>
+          <div class="text-caption text-medium-emphasis mb-2">快速选择</div>
           <v-chip-group>
             <v-chip
               v-for="group in allergenGroups"
               :key="group.id"
-              :color="isGroupFullyAdded(group) ? 'grey' : selectedGroupIds.has(group.id) ? 'primary' : undefined"
-              :variant="isGroupFullyAdded(group) ? 'outlined' : selectedGroupIds.has(group.id) ? 'tonal' : 'outlined'"
-              :disabled="isGroupFullyAdded(group)"
+              :color="isGroupSubscribed(group.id) ? 'primary' : undefined"
+              :variant="isGroupSubscribed(group.id) ? 'tonal' : 'outlined'"
               size="small"
               filter
-              @click="toggleGroup(group)"
+              @click="toggleGroup(group.id)"
             >
               {{ group.name }}
-              <template #append v-if="isGroupFullyAdded(group)">
+              <template #append v-if="isGroupSubscribed(group.id)">
                 <v-icon size="small">mdi-check</v-icon>
-              </template>
-              <template #append v-else-if="selectedGroupIds.has(group.id)">
-                <v-icon size="small">mdi-plus</v-icon>
               </template>
             </v-chip>
           </v-chip-group>
@@ -71,19 +53,44 @@
           </v-autocomplete>
         </div>
 
-        <!-- 黑名单列表 -->
+        <!-- 已订阅的分组 -->
+        <div v-if="subscribedGroups.length > 0" class="mb-4">
+          <div class="text-caption text-medium-emphasis mb-2">已订阅的分组</div>
+          <v-expansion-panels variant="accordion">
+            <v-expansion-panel
+              v-for="sg in subscribedGroups"
+              :key="'sg-' + sg.id"
+              :title="sg.name + '（' + sg.ingredient_count + ' 种原料）'"
+            >
+              <v-expansion-panel-text>
+                <v-chip
+                  v-for="ing in sg.ingredients"
+                  :key="'sgi-' + ing.id"
+                  size="small"
+                  class="mr-1 mb-1"
+                  label
+                >
+                  {{ ing.name }}
+                </v-chip>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
+        </div>
+
+        <!-- 手动黑名单列表 -->
+        <div class="text-caption text-medium-emphasis mb-2">手动添加</div>
         <div v-if="loading" class="text-center pa-4">
           <v-progress-circular indeterminate />
         </div>
-        <div v-else-if="blacklistItems.length === 0" class="text-center pa-4 text-medium-emphasis">
-          暂无屏蔽的原料
+        <div v-else-if="manualBlacklistItems.length === 0" class="text-center pa-4 text-medium-emphasis">
+          暂无手动添加的原料
         </div>
         <v-list v-else density="compact">
           <v-list-item
-            v-for="item in blacklistItems"
+            v-for="item in manualBlacklistItems"
             :key="item.id"
             :title="item.ingredient_name"
-            :subtitle="getSubtitle(item)"
+            :subtitle="item.reason || ''"
           >
             <template #append>
               <v-btn
@@ -99,7 +106,7 @@
       </v-card-text>
     </v-card>
 
-    <!-- 错误提示 -->
+    <!-- 提示 -->
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="4000" location="top">
       {{ snackbar.message }}
       <template #actions>
@@ -110,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch } from 'vue'
 import { api } from '@/api/client'
 
 const props = defineProps<{ modelValue: boolean }>()
@@ -122,7 +129,6 @@ interface BlacklistItem {
   ingredient_name: string | null
   reason: string | null
   source: string
-  allergen_group_name: string | null
 }
 
 interface AllergenGroup {
@@ -131,11 +137,18 @@ interface AllergenGroup {
   ingredient_ids: number[]
 }
 
-const blacklistItems = ref<BlacklistItem[]>([])
+interface SubscribedGroup {
+  id: number
+  name: string
+  ingredient_count: number
+  ingredients: { id: number; name: string }[]
+}
+
+const manualBlacklistItems = ref<BlacklistItem[]>([])
 const allergenGroups = ref<AllergenGroup[]>([])
+const subscribedGroups = ref<SubscribedGroup[]>([])
+const subscribedGroupIds = ref<Set<number>>(new Set())
 const loading = ref(false)
-const saving = ref(false)
-const selectedGroupIds = ref<Set<number>>(new Set())
 const snackbar = ref({ show: false, message: '', color: 'error' })
 
 function showError(msg: string) {
@@ -151,71 +164,54 @@ const selectedIngredient = ref<any>(null)
 const searchResults = ref<any[]>([])
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-async function loadBlacklist() {
+function isGroupSubscribed(gid: number): boolean {
+  return subscribedGroupIds.value.has(gid)
+}
+
+async function loadData() {
   loading.value = true
   try {
-    const data = await api.get('/blacklist', { params: { limit: 1000 } })
-    blacklistItems.value = Array.isArray(data) ? data : []
+    const [manualData, groupsData, subGroupsData] = await Promise.all([
+      api.get('/blacklist', { params: { limit: 1000 } }),
+      api.get('/allergen-groups'),
+      api.get('/blacklist/groups'),
+    ])
+    manualBlacklistItems.value = Array.isArray(manualData) ? manualData : []
+    allergenGroups.value = Array.isArray(groupsData) ? groupsData : []
+    subscribedGroups.value = Array.isArray(subGroupsData) ? subGroupsData : []
+    subscribedGroupIds.value = new Set(subscribedGroups.value.map((g: SubscribedGroup) => g.id))
   } catch (e) {
-    console.error('加载黑名单失败', e)
+    console.error('加载黑名单数据失败', e)
   } finally {
     loading.value = false
   }
 }
 
-async function loadAllergenGroups() {
+async function toggleGroup(gid: number) {
   try {
-    const data = await api.get('/allergen-groups')
-    allergenGroups.value = Array.isArray(data) ? data : []
-  } catch (e) {
-    console.error('加载过敏原分组失败', e)
-  }
-}
-
-function isGroupFullyAdded(group: AllergenGroup): boolean {
-  const blacklistedIds = new Set(blacklistItems.value.map(i => i.ingredient_id))
-  return group.ingredient_ids.every(id => blacklistedIds.has(id))
-}
-
-function toggleGroup(group: AllergenGroup) {
-  if (selectedGroupIds.value.has(group.id)) {
-    selectedGroupIds.value.delete(group.id)
-  } else {
-    selectedGroupIds.value.add(group.id)
-  }
-  // 触发响应式更新
-  selectedGroupIds.value = new Set(selectedGroupIds.value)
-}
-
-async function saveSelectedGroups() {
-  saving.value = true
-  try {
-    const allIds: number[] = []
-    for (const gid of selectedGroupIds.value) {
-      const group = allergenGroups.value.find(g => g.id === gid)
-      if (group) {
-        for (const id of group.ingredient_ids) {
-          if (!allIds.includes(id)) allIds.push(id)
-        }
-      }
+    if (subscribedGroupIds.value.has(gid)) {
+      await api.delete(`/blacklist/groups/${gid}`)
+      subscribedGroupIds.value.delete(gid)
+      subscribedGroupIds.value = new Set(subscribedGroupIds.value)
+      showSuccess('已取消订阅')
+    } else {
+      await api.post('/blacklist/groups', { group_ids: [gid] })
+      subscribedGroupIds.value.add(gid)
+      subscribedGroupIds.value = new Set(subscribedGroupIds.value)
+      showSuccess('已订阅分组')
     }
-    if (allIds.length > 0) {
-      await api.post('/blacklist/batch', { ingredient_ids: allIds })
-      showSuccess(`已添加 ${allIds.length} 种原料到黑名单`)
-    }
-    selectedGroupIds.value = new Set()
-    await loadBlacklist()
+    // 重新加载分组详情
+    const subGroupsData = await api.get('/blacklist/groups')
+    subscribedGroups.value = Array.isArray(subGroupsData) ? subGroupsData : []
   } catch (e: any) {
-    showError('保存失败：' + (e?.userMessage || e?.message || '未知错误'))
-  } finally {
-    saving.value = false
+    showError('操作失败：' + (e?.userMessage || e?.message || '未知错误'))
   }
 }
 
 async function removeItem(item: BlacklistItem) {
   try {
     await api.delete(`/blacklist/${item.ingredient_id}`)
-    blacklistItems.value = blacklistItems.value.filter(i => i.id !== item.id)
+    manualBlacklistItems.value = manualBlacklistItems.value.filter(i => i.id !== item.id)
   } catch (e: any) {
     showError('移除失败：' + (e?.userMessage || e?.message || '未知错误'))
   }
@@ -242,28 +238,17 @@ async function onSelectIngredient(ingredientId: number | null) {
   try {
     await api.post('/blacklist', { ingredient_id: ingredientId })
     selectedIngredient.value = null
-    await loadBlacklist()
+    // 重新加载手动列表
+    const manualData = await api.get('/blacklist', { params: { limit: 1000 } })
+    manualBlacklistItems.value = Array.isArray(manualData) ? manualData : []
   } catch (e: any) {
     showError('添加失败：' + (e?.userMessage || e?.message || '未知错误'))
   }
 }
 
-function getSubtitle(item: BlacklistItem): string {
-  const parts: string[] = []
-  if (item.source === 'allergen_group' && item.allergen_group_name) {
-    parts.push(`来自 ${item.allergen_group_name}`)
-  } else {
-    parts.push('手动添加')
-  }
-  if (item.reason) parts.push(item.reason)
-  return parts.join(' · ')
-}
-
 watch(() => props.modelValue, (val) => {
   if (val) {
-    selectedGroupIds.value = new Set()
-    loadBlacklist()
-    loadAllergenGroups()
+    loadData()
   }
 })
 </script>
