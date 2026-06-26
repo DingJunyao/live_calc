@@ -13,7 +13,7 @@ class UserIngredientBlacklist(Base, AuditMixin):
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
     reason = Column(String(100), nullable=True)
     source = Column(String(50), default="manual", nullable=False)
-    allergen_group_id = Column(Integer, ForeignKey("allergen_groups.id"), nullable=True, index=True)
+    blacklist_group_id = Column(Integer, ForeignKey("blacklist_groups.id"), nullable=True, index=True)
 
     __table_args__ = (
         UniqueConstraint('user_id', 'ingredient_id', name='uq_user_ingredient_blacklist'),
@@ -22,4 +22,4 @@ class UserIngredientBlacklist(Base, AuditMixin):
     # 关系
     user = relationship("User", back_populates="ingredient_blacklist", foreign_keys=[user_id])
     ingredient = relationship("Ingredient")
-    allergen_group = relationship("AllergenGroup", foreign_keys=[allergen_group_id])
+    blacklist_group = relationship("BlacklistGroup", foreign_keys=[blacklist_group_id])

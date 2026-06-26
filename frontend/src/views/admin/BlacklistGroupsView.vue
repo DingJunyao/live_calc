@@ -2,7 +2,7 @@
   <v-container fluid>
     <v-app-bar elevation="0" color="background" density="comfortable" fixed>
       <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-      <v-app-bar-title>过敏原分组管理</v-app-bar-title>
+      <v-app-bar-title>原料黑名单分组管理</v-app-bar-title>
       <template #append>
         <v-btn color="primary" prepend-icon="mdi-plus" size="small" @click="openCreate">新建分组</v-btn>
       </template>
@@ -55,7 +55,7 @@
       </v-card>
 
       <div v-if="groups.length === 0 && !loading" class="text-center pa-8 text-medium-emphasis">
-        暂无过敏原分组，点击右上角「新建分组」创建
+        暂无原料黑名单分组，点击右上角「新建分组」创建
       </div>
     </v-container>
 
@@ -140,7 +140,7 @@ interface GroupIngredient {
   is_ai_matched: boolean
 }
 
-interface AllergenGroup {
+interface BlacklistGroup {
   id: number
   name: string
   display_order: number
@@ -149,12 +149,12 @@ interface AllergenGroup {
   ingredient_count: number
 }
 
-const groups = ref<AllergenGroup[]>([])
+const groups = ref<BlacklistGroup[]>([])
 const loading = ref(false)
 const aiMatchingGroups = ref(new Set<number>())
 const snackbar = ref({ show: false, message: '', color: 'error' })
 const deleteDialog = ref(false)
-const deleteTarget = ref<AllergenGroup | null>(null)
+const deleteTarget = ref<BlacklistGroup | null>(null)
 
 function showError(msg: string) {
   snackbar.value = { show: true, message: msg, color: 'error' }
@@ -166,13 +166,13 @@ function showInfo(msg: string) {
 
 // 编辑
 const editDialog = ref(false)
-const editingGroup = ref<AllergenGroup | null>(null)
+const editingGroup = ref<BlacklistGroup | null>(null)
 const saving = ref(false)
 const form = ref({ name: '', display_order: 0, is_active: true })
 
 // 添加原料
 const addIngredientsDialog = ref(false)
-const selectedGroupForAdd = ref<AllergenGroup | null>(null)
+const selectedGroupForAdd = ref<BlacklistGroup | null>(null)
 const selectedIngredientIds = ref<number[]>([])
 const ingredientOptions = ref<any[]>([])
 const selectedIngredientsCache = ref<Map<number, any>>(new Map())
@@ -180,7 +180,7 @@ const selectedIngredientsCache = ref<Map<number, any>>(new Map())
 async function loadGroups() {
   loading.value = true
   try {
-    const data = await api.get('/admin/allergen-groups')
+    const data = await api.get('/admin/blacklist-groups')
     groups.value = data
   } catch (e) {
     console.error('加载分组失败', e)
@@ -195,7 +195,7 @@ function openCreate() {
   editDialog.value = true
 }
 
-function openEdit(group: AllergenGroup) {
+function openEdit(group: BlacklistGroup) {
   editingGroup.value = group
   form.value = { name: group.name, display_order: group.display_order, is_active: group.is_active }
   editDialog.value = true
@@ -205,13 +205,13 @@ async function saveGroup() {
   saving.value = true
   try {
     if (editingGroup.value) {
-      await api.put(`/admin/allergen-groups/${editingGroup.value.id}`, {
+      await api.put(`/admin/blacklist-groups/${editingGroup.value.id}`, {
         name: form.value.name,
         display_order: form.value.display_order,
         is_active: form.value.is_active,
       })
     } else {
-      await api.post('/admin/allergen-groups', {
+      await api.post('/admin/blacklist-groups', {
         name: form.value.name,
         display_order: form.value.display_order,
       })
@@ -225,7 +225,7 @@ async function saveGroup() {
   }
 }
 
-function confirmDelete(group: AllergenGroup) {
+function confirmDelete(group: BlacklistGroup) {
   deleteTarget.value = group
   deleteDialog.value = true
 }
@@ -234,7 +234,7 @@ async function doDelete() {
   if (!deleteTarget.value) return
   saving.value = true
   try {
-    await api.delete(`/admin/allergen-groups/${deleteTarget.value.id}`)
+    await api.delete(`/admin/blacklist-groups/${deleteTarget.value.id}`)
     deleteDialog.value = false
     deleteTarget.value = null
     await loadGroups()
@@ -245,7 +245,7 @@ async function doDelete() {
   }
 }
 
-function openAddIngredients(group: AllergenGroup) {
+function openAddIngredients(group: BlacklistGroup) {
   selectedGroupForAdd.value = group
   selectedIngredientIds.value = []
   ingredientOptions.value = []
@@ -296,7 +296,7 @@ async function saveIngredients() {
   if (!selectedGroupForAdd.value) return
   saving.value = true
   try {
-    await api.post(`/admin/allergen-groups/${selectedGroupForAdd.value.id}/ingredients`, {
+    await api.post(`/admin/blacklist-groups/${selectedGroupForAdd.value.id}/ingredients`, {
       ingredient_ids: selectedIngredientIds.value,
     })
     addIngredientsDialog.value = false
@@ -310,7 +310,7 @@ async function saveIngredients() {
 
 async function removeIngredient(groupId: number, ingredientId: number) {
   try {
-    await api.delete(`/admin/allergen-groups/${groupId}/ingredients/${ingredientId}`)
+    await api.delete(`/admin/blacklist-groups/${groupId}/ingredients/${ingredientId}`)
     // 从本地列表移除
     const group = groups.value.find(g => g.id === groupId)
     if (group) {
@@ -322,10 +322,10 @@ async function removeIngredient(groupId: number, ingredientId: number) {
   }
 }
 
-async function triggerAiMatch(group: AllergenGroup) {
+async function triggerAiMatch(group: BlacklistGroup) {
   aiMatchingGroups.value.add(group.id)
   try {
-    const data = await api.post(`/admin/allergen-groups/${group.id}/ai-match`)
+    const data = await api.post(`/admin/blacklist-groups/${group.id}/ai-match`)
     showInfo(`AI 匹配任务已触发（任务 ID: ${data.agent_session_id}），可在 Agent 任务台查看进度。完成后请刷新本页。`)
   } catch (e: any) {
     showError('触发失败：' + (e?.userMessage || e?.message || '未知错误'))

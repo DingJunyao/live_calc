@@ -157,9 +157,9 @@
 
         <v-list-item
           prepend-icon="mdi-shield-alert"
-          title="过敏原分组"
-          subtitle="管理过敏原分类与原料映射"
-          to="/admin/allergen-groups"
+          title="原料黑名单分组"
+          subtitle="管理原料黑名单分类与原料映射"
+          to="/admin/blacklist-groups"
         >
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>

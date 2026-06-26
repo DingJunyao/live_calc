@@ -1,4 +1,4 @@
-"""用户原料黑名单 API（支持手动添加 + 过敏原分组订阅）"""
+"""用户原料黑名单 API（支持手动添加 + 原料黑名单分组订阅）"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Set
@@ -6,8 +6,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.user_ingredient_blacklist import UserIngredientBlacklist
-from app.models.user_allergen_group_blacklist import UserAllergenGroupBlacklist
-from app.models.allergen_group import AllergenGroup, AllergenGroupIngredient
+from app.models.blacklist_group_subscription import BlacklistGroupSubscription
+from app.models.blacklist_group import BlacklistGroup, BlacklistGroupIngredient
 from app.models.nutrition import Ingredient
 from app.schemas.blacklist import (
     BlacklistCreate, BlacklistBatchCreate, BlacklistBatchDelete,
@@ -22,7 +22,7 @@ def _get_effective_blacklist_ids(db: Session, user_id: int) -> Set[int]:
     """计算用户的有效黑名单原料 ID 集合：手动 + 所有已订阅分组的原料"""
     ids: Set[int] = set()
 
-    # 手动添加的（只计 source='manual'，旧版 source='allergen_group' 的复制条目不再生效）
+    # 手动添加的（只计 source='manual'，旧版 source='blacklist_group' 的复制条目不再生效）
     manual = db.query(UserIngredientBlacklist.ingredient_id).filter(
         UserIngredientBlacklist.user_id == user_id,
         UserIngredientBlacklist.source == "manual",
@@ -31,15 +31,15 @@ def _get_effective_blacklist_ids(db: Session, user_id: int) -> Set[int]:
     ids.update(r[0] for r in manual)
 
     # 已订阅分组的原料
-    subscribed_groups = db.query(UserAllergenGroupBlacklist.allergen_group_id).filter(
-        UserAllergenGroupBlacklist.user_id == user_id,
-        UserAllergenGroupBlacklist.is_active == True,
+    subscribed_groups = db.query(BlacklistGroupSubscription.blacklist_group_id).filter(
+        BlacklistGroupSubscription.user_id == user_id,
+        BlacklistGroupSubscription.is_active == True,
     ).all()
     if subscribed_groups:
         group_ids = [r[0] for r in subscribed_groups]
-        group_ingredients = db.query(AllergenGroupIngredient.ingredient_id).filter(
-            AllergenGroupIngredient.group_id.in_(group_ids),
-            AllergenGroupIngredient.is_active == True,
+        group_ingredients = db.query(BlacklistGroupIngredient.ingredient_id).filter(
+            BlacklistGroupIngredient.group_id.in_(group_ids),
+            BlacklistGroupIngredient.is_active == True,
         ).all()
         ids.update(r[0] for r in group_ingredients)
 
@@ -57,8 +57,8 @@ def _build_response(entry: UserIngredientBlacklist) -> BlacklistResponse:
         ingredient_name=ingredient_name,
         reason=entry.reason,
         source=entry.source,
-        allergen_group_id=None,
-        allergen_group_name=None,
+        blacklist_group_id=None,
+        blacklist_group_name=None,
         created_at=entry.created_at,
         is_active=entry.is_active,
     )
@@ -107,7 +107,7 @@ def add_to_blacklist(
         existing.is_active = True
         existing.reason = body.reason
         existing.source = "manual"
-        existing.allergen_group_id = None
+        existing.blacklist_group_id = None
         existing.updated_by = current_user.id
         db.commit()
         db.refresh(existing)
@@ -148,7 +148,7 @@ def remove_from_blacklist(
     return {"message": "已移除"}
 
 
-# ---- 过敏原分组订阅 ----
+# ---- 原料黑名单分组订阅 ----
 
 @router.get("/blacklist/groups", response_model=List[BlacklistGroupResponse])
 @router.get("/blacklist/groups/", response_model=List[BlacklistGroupResponse])
@@ -156,19 +156,19 @@ def list_subscribed_groups(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取当前用户已订阅的过敏原分组及当前原料列表"""
-    subs = db.query(UserAllergenGroupBlacklist).filter(
-        UserAllergenGroupBlacklist.user_id == current_user.id,
-        UserAllergenGroupBlacklist.is_active == True,
+    """获取当前用户已订阅的原料黑名单分组及当前原料列表"""
+    subs = db.query(BlacklistGroupSubscription).filter(
+        BlacklistGroupSubscription.user_id == current_user.id,
+        BlacklistGroupSubscription.is_active == True,
     ).all()
     result = []
     for sub in subs:
-        group = db.query(AllergenGroup).filter(AllergenGroup.id == sub.allergen_group_id).first()
+        group = db.query(BlacklistGroup).filter(BlacklistGroup.id == sub.blacklist_group_id).first()
         if not group or not group.is_active:
             continue
-        ingredients = db.query(AllergenGroupIngredient).filter(
-            AllergenGroupIngredient.group_id == group.id,
-            AllergenGroupIngredient.is_active == True,
+        ingredients = db.query(BlacklistGroupIngredient).filter(
+            BlacklistGroupIngredient.group_id == group.id,
+            BlacklistGroupIngredient.is_active == True,
         ).all()
         ingredient_list = []
         for agi in ingredients:
@@ -190,12 +190,12 @@ def subscribe_groups(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """订阅过敏原分组（已订阅的跳过）"""
+    """订阅原料黑名单分组（已订阅的跳过）"""
     added = 0
     for gid in body.group_ids:
-        existing = db.query(UserAllergenGroupBlacklist).filter(
-            UserAllergenGroupBlacklist.user_id == current_user.id,
-            UserAllergenGroupBlacklist.allergen_group_id == gid,
+        existing = db.query(BlacklistGroupSubscription).filter(
+            BlacklistGroupSubscription.user_id == current_user.id,
+            BlacklistGroupSubscription.blacklist_group_id == gid,
         ).first()
         if existing:
             if not existing.is_active:
@@ -203,9 +203,9 @@ def subscribe_groups(
                 existing.updated_by = current_user.id
                 added += 1
         else:
-            sub = UserAllergenGroupBlacklist(
+            sub = BlacklistGroupSubscription(
                 user_id=current_user.id,
-                allergen_group_id=gid,
+                blacklist_group_id=gid,
                 created_by=current_user.id,
             )
             db.add(sub)
@@ -221,11 +221,11 @@ def unsubscribe_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """取消订阅过敏原分组"""
-    sub = db.query(UserAllergenGroupBlacklist).filter(
-        UserAllergenGroupBlacklist.user_id == current_user.id,
-        UserAllergenGroupBlacklist.allergen_group_id == group_id,
-        UserAllergenGroupBlacklist.is_active == True,
+    """取消订阅原料黑名单分组"""
+    sub = db.query(BlacklistGroupSubscription).filter(
+        BlacklistGroupSubscription.user_id == current_user.id,
+        BlacklistGroupSubscription.blacklist_group_id == group_id,
+        BlacklistGroupSubscription.is_active == True,
     ).first()
     if not sub:
         raise HTTPException(status_code=404, detail="未订阅该分组")
@@ -243,10 +243,10 @@ def cleanup_legacy_entries(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """清理旧版通过分组复制产生的 source='allergen_group' 条目（这些现在由分组订阅动态管理）"""
+    """清理旧版通过分组复制产生的 source='blacklist_group' 条目（这些现在由分组订阅动态管理）"""
     count = db.query(UserIngredientBlacklist).filter(
         UserIngredientBlacklist.user_id == current_user.id,
-        UserIngredientBlacklist.source == "allergen_group",
+        UserIngredientBlacklist.source == "blacklist_group",
         UserIngredientBlacklist.is_active == True,
     ).update(
         {"is_active": False, "updated_by": current_user.id}, synchronize_session=False

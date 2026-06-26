@@ -7,12 +7,12 @@
         <v-btn icon="mdi-close" variant="text" size="small" @click="$emit('update:model-value', false)" />
       </v-card-title>
       <v-card-text>
-        <!-- 快速选择：过敏原分组（订阅/取消订阅） -->
-        <div v-if="allergenGroups.length > 0" class="mb-4">
+        <!-- 快速选择：原料黑名单分组（订阅/取消订阅） -->
+        <div v-if="blacklistGroups.length > 0" class="mb-4">
           <div class="text-caption text-medium-emphasis mb-2">快速选择</div>
           <v-chip-group>
             <v-chip
-              v-for="group in allergenGroups"
+              v-for="group in blacklistGroups"
               :key="group.id"
               :color="isGroupSubscribed(group.id) ? 'primary' : undefined"
               :variant="isGroupSubscribed(group.id) ? 'tonal' : 'outlined'"
@@ -131,7 +131,7 @@ interface BlacklistItem {
   source: string
 }
 
-interface AllergenGroup {
+interface BlacklistGroupPublic {
   id: number
   name: string
   ingredient_ids: number[]
@@ -145,7 +145,7 @@ interface SubscribedGroup {
 }
 
 const manualBlacklistItems = ref<BlacklistItem[]>([])
-const allergenGroups = ref<AllergenGroup[]>([])
+const blacklistGroups = ref<BlacklistGroupPublic[]>([])
 const subscribedGroups = ref<SubscribedGroup[]>([])
 const subscribedGroupIds = ref<Set<number>>(new Set())
 const loading = ref(false)
@@ -175,11 +175,11 @@ async function loadData() {
     api.delete('/blacklist/cleanup-legacy').catch(() => {})
     const [manualData, groupsData, subGroupsData] = await Promise.all([
       api.get('/blacklist', { params: { limit: 1000 } }),
-      api.get('/allergen-groups'),
+      api.get('/blacklist-groups'),
       api.get('/blacklist/groups'),
     ])
     manualBlacklistItems.value = Array.isArray(manualData) ? manualData : []
-    allergenGroups.value = Array.isArray(groupsData) ? groupsData : []
+    blacklistGroups.value = Array.isArray(groupsData) ? groupsData : []
     subscribedGroups.value = Array.isArray(subGroupsData) ? subGroupsData : []
     subscribedGroupIds.value = new Set(subscribedGroups.value.map((g: SubscribedGroup) => g.id))
   } catch (e) {

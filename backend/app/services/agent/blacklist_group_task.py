@@ -1,9 +1,9 @@
-"""过敏原分组 AI 匹配任务触发器
+"""原料黑名单分组 AI 匹配任务触发器
 
-自动启动 Agent 搜索数据库中属于某过敏原分组的原料，并写入 allergen_group_ingredients 表。
+自动启动 Agent 搜索数据库中属于某原料黑名单分组的原料，并写入 blacklist_group_ingredients 表。
 
 复用 ``run_agent_loop(unattended=True)``——Agent 自主「查原料 → SQL INSERT → 复核」，
-sql_guard 自动执行 safe SQL（写回 ``allergen_group_ingredients.is_ai_matched=true``）。
+sql_guard 自动执行 safe SQL（写回 ``blacklist_group_ingredients.is_ai_matched=true``）。
 """
 
 from __future__ import annotations
@@ -19,24 +19,24 @@ from app.models.agent_session import AgentSession
 from app.services.agent import runner_factory, session_runner
 from app.services.agent.task_templates import get_template
 
-logger = logging.getLogger("allergen_agent")
+logger = logging.getLogger("blacklist_group_agent")
 
-_TASK_TYPE = "allergen_match"
+_TASK_TYPE = "blacklist_group_match"
 
 
-def trigger_allergen_match(
+def trigger_blacklist_group_match(
     db: Session,
     group_id: int,
     group_name: str,
     admin_id: int,
     main_loop: asyncio.AbstractEventLoop,
 ) -> int:
-    """触发过敏原 AI 匹配任务。
+    """触发原料黑名单分组 AI 匹配任务。
 
     Args:
         db: SQLAlchemy Session（用于建 AgentSession 记录）。
-        group_id: 过敏原分组 ID。
-        group_name: 过敏原分组名称。
+        group_id: 原料黑名单分组 ID。
+        group_name: 原料黑名单分组名称。
         admin_id: 操作人 user_id。
         main_loop: 主事件循环（用于跨线程 SSE 推送）。
 
@@ -51,7 +51,7 @@ def trigger_allergen_match(
     # 创建 AgentSession
     sess = AgentSession(
         task_type=_TASK_TYPE,
-        title=f"过敏原匹配: {group_name}",
+        title=f"原料黑名单匹配: {group_name}",
         status="pending",
         runner_type="claude_code",
         initial_prompt=prompt,
@@ -85,7 +85,7 @@ def trigger_allergen_match(
             )
         except Exception:  # noqa: BLE001
             logger.exception(
-                "过敏原匹配 Agent 异常 session=%s", session_id
+                "原料黑名单分组匹配 Agent 异常 session=%s", session_id
             )
             _mark_session_failed(session_id)
 
@@ -110,7 +110,7 @@ def _mark_session_failed(session_id: int) -> None:
         s = db.query(AgentSession).get(session_id)
         if s is not None and s.status not in ("success", "failed"):
             s.status = "failed"
-            s.error = "allergen_match 后台线程启动失败（见日志）"
+            s.error = "blacklist_group_match 后台线程启动失败（见日志）"
             db.commit()
     except Exception:  # noqa: BLE001
         logger.exception("兜底置 failed 失败 session=%s", session_id)

@@ -11,7 +11,7 @@ class BlacklistCreate(BaseModel):
 class BlacklistBatchCreate(BaseModel):
     ingredient_ids: List[int]
     reason: Optional[str] = None
-    allergen_group_id: Optional[int] = None
+    blacklist_group_id: Optional[int] = None
 
 
 class BlacklistBatchDelete(BaseModel):
@@ -25,8 +25,8 @@ class BlacklistResponse(BaseModel):
     ingredient_name: Optional[str] = None
     reason: Optional[str] = None
     source: str
-    allergen_group_id: Optional[int] = None
-    allergen_group_name: Optional[str] = None
+    blacklist_group_id: Optional[int] = None
+    blacklist_group_name: Optional[str] = None
     created_at: datetime
     is_active: bool
 
