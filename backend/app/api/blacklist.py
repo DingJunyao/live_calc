@@ -7,7 +7,6 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.user_ingredient_blacklist import UserIngredientBlacklist
 from app.models.nutrition import Ingredient
-from app.models.allergen_group import AllergenGroup
 from app.schemas.blacklist import (
     BlacklistCreate, BlacklistBatchCreate, BlacklistBatchDelete,
     BlacklistResponse, BlacklistIngredientIdsResponse,
@@ -133,7 +132,7 @@ def batch_add_blacklist(
         ).first()
         if existing:
             if existing.is_active:
-                results.append(_build_response(existing))
+                results.append(existing)
                 continue
             existing.is_active = True
             existing.reason = body.reason
