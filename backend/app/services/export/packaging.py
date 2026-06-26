@@ -25,6 +25,9 @@ from app.models.product_ingredient_link import ProductIngredientLink
 from app.models.product import ProductRecord
 from app.models.merchant import Merchant
 from app.models.user_place import UserPlace
+from app.models.blacklist_group import BlacklistGroup, BlacklistGroupIngredient
+from app.models.user_ingredient_blacklist import UserIngredientBlacklist
+from app.models.blacklist_group_subscription import BlacklistGroupSubscription
 
 from .reachability import ExportSet, collect_full_set, collect_mine_set
 from . import serializers as S
@@ -304,6 +307,79 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
         "user_places", lambda: [S.serialize_user_place(p) for p in places]
     )
 
+    # ---- 黑名单 ----
+    # 黑名单分组（full 全量；mine 只导出用户已订阅的分组）
+    if scope == "full":
+        bl_groups = db.query(BlacklistGroup).all()
+    else:
+        subscribed_group_ids = [
+            r[0] for r in db.query(BlacklistGroupSubscription.blacklist_group_id).filter(
+                BlacklistGroupSubscription.user_id == user.id,
+                BlacklistGroupSubscription.is_active == True,
+            ).all()
+        ]
+        bl_groups = (
+            db.query(BlacklistGroup).filter(BlacklistGroup.id.in_(subscribed_group_ids)).all()
+            if subscribed_group_ids else []
+        )
+
+    def _build_blacklist_groups():
+        group_ids = [g.id for g in bl_groups]
+        if not group_ids:
+            return []
+        bgis = db.query(BlacklistGroupIngredient).filter(
+            BlacklistGroupIngredient.group_id.in_(group_ids),
+        ).all()
+        ing_ids = {bgi.ingredient_id for bgi in bgis}
+        ing_map = _ingredient_name_map(db, ing_ids) if ing_ids else {}
+        group_ing_map: dict[int, list[dict]] = {}
+        for bgi in bgis:
+            group_ing_map.setdefault(bgi.group_id, []).append({
+                "ingredient_id": bgi.ingredient_id,
+                "ingredient_name": ing_map.get(bgi.ingredient_id),
+                "is_ai_matched": bool(bgi.is_ai_matched),
+            })
+        return [
+            S.serialize_blacklist_group(g, group_ing_map.get(g.id, []))
+            for g in bl_groups
+        ]
+
+    bl_groups_payload = _safe_build("blacklist_groups", _build_blacklist_groups)
+
+    # 用户个人黑名单条目
+    bl_entries = db.query(UserIngredientBlacklist).filter(
+        UserIngredientBlacklist.user_id == user.id,
+        UserIngredientBlacklist.is_active == True,
+    ).all()
+    bl_entry_ing_ids = {e.ingredient_id for e in bl_entries}
+    bl_entry_ing_map = _ingredient_name_map(db, bl_entry_ing_ids) if bl_entry_ing_ids else {}
+
+    bl_entries_payload = _safe_build(
+        "user_ingredient_blacklist",
+        lambda: [
+            S.serialize_blacklist_entry(e, bl_entry_ing_map.get(e.ingredient_id))
+            for e in bl_entries
+        ],
+    )
+
+    # 用户黑名单分组订阅
+    bl_subs = db.query(BlacklistGroupSubscription).filter(
+        BlacklistGroupSubscription.user_id == user.id,
+        BlacklistGroupSubscription.is_active == True,
+    ).all()
+    bl_sub_group_ids = {s.blacklist_group_id for s in bl_subs}
+    bl_sub_group_map = {g.id: g.name for g in db.query(BlacklistGroup).filter(
+        BlacklistGroup.id.in_(bl_sub_group_ids),
+    ).all()} if bl_sub_group_ids else {}
+
+    bl_subs_payload = _safe_build(
+        "blacklist_group_subscriptions",
+        lambda: [
+            S.serialize_blacklist_subscription(s, bl_sub_group_map.get(s.blacklist_group_id))
+            for s in bl_subs
+        ],
+    )
+
     # ---- manifest ----
     manifest = {
         "format_version": "1.0",
@@ -317,7 +393,9 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
             "extended": ["unit_conversions", "ingredient_categories", "ingredient_hierarchy",
                          "entity_densities", "entity_unit_overrides", "products",
                          "product_barcodes", "product_ingredient_links", "price_records",
-                         "merchants", "user_places"],
+                         "merchants", "user_places",
+                         "blacklist_groups", "user_ingredient_blacklist",
+                         "blacklist_group_subscriptions"],
         },
         "counts": {
             "recipes": len(recipes_payload),
@@ -335,6 +413,9 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
             "price_records": len(records_payload),
             "merchants": len(merchants_payload),
             "user_places": len(places_payload),
+            "blacklist_groups": len(bl_groups_payload),
+            "user_ingredient_blacklist": len(bl_entries_payload),
+            "blacklist_group_subscriptions": len(bl_subs_payload),
         },
         "image_summary": {},
         "errors": errors,
@@ -364,6 +445,9 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
         zf.writestr("price_records.json", json.dumps(records_payload, ensure_ascii=False, indent=2))
         zf.writestr("merchants.json", json.dumps(merchants_payload, ensure_ascii=False, indent=2))
         zf.writestr("user_places.json", json.dumps(places_payload, ensure_ascii=False, indent=2))
+        zf.writestr("blacklist_groups.json", json.dumps(bl_groups_payload, ensure_ascii=False, indent=2))
+        zf.writestr("user_ingredient_blacklist.json", json.dumps(bl_entries_payload, ensure_ascii=False, indent=2))
+        zf.writestr("blacklist_group_subscriptions.json", json.dumps(bl_subs_payload, ensure_ascii=False, indent=2))
         for rel, phys in image_files:
             zf.write(phys, rel)
 

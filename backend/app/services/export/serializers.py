@@ -434,6 +434,42 @@ def serialize_entity_unit_override(
     }
 
 
+def serialize_blacklist_group(group: Any, ingredients: list[dict]) -> dict:
+    """BlacklistGroup → blacklist_groups.json 元素。
+    ingredients: [{"ingredient_id": int, "ingredient_name": str, "is_ai_matched": bool}, ...]
+    """
+    return {
+        "id": group.id,
+        "name": group.name,
+        "display_order": group.display_order,
+        "is_active": bool(group.is_active),
+        "ingredients": ingredients,
+    }
+
+
+def serialize_blacklist_entry(entry: Any, ingredient_name: Optional[str]) -> dict:
+    """UserIngredientBlacklist → user_ingredient_blacklist.json 元素。"""
+    return {
+        "id": entry.id,
+        "ingredient_id": entry.ingredient_id,
+        "ingredient_name": ingredient_name,
+        "reason": entry.reason,
+        "source": entry.source,
+        "blacklist_group_id": entry.blacklist_group_id,
+        "created_at": to_iso(entry.created_at),
+    }
+
+
+def serialize_blacklist_subscription(sub: Any, group_name: Optional[str]) -> dict:
+    """BlacklistGroupSubscription → blacklist_group_subscriptions.json 元素。"""
+    return {
+        "id": sub.id,
+        "blacklist_group_id": sub.blacklist_group_id,
+        "blacklist_group_name": group_name,
+        "created_at": to_iso(sub.created_at),
+    }
+
+
 def serialize_user_place(up: Any) -> dict:
     """UserPlace → user_places.json 元素。用户常用地点（家/公司等）。"""
     return {

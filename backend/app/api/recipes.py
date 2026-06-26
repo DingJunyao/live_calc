@@ -155,7 +155,8 @@ async def get_recipes(
     ingredient_ids: Optional[str] = Query(None, description="食材ID列表，逗号分隔（筛选包含任意该食材的菜谱，包括可选食材）"),
     has_unpriced_ingredient: bool = Query(False, description="筛选存在原料没有维护价格的菜谱"),
     has_unnourished_ingredient: bool = Query(False, description="筛选存在原料没有维护营养成分的菜谱"),
-    exclude_blacklist_ingredients: bool = Query(False, description="排除含当前用户黑名单原料的菜谱"),
+    # 默认始终过滤用户黑名单原料的菜谱（用户无需手动开关）
+    exclude_blacklist_ingredients: bool = Query(True, description="排除含当前用户黑名单原料的菜谱"),
     include_cost: bool = Query(False, description="是否包含成本和营养信息（列表页默认不计算，通过 batch-cost 懒加载）"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
