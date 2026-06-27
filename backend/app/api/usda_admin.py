@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.core.database import get_db, SessionLocal
-from app.core.security import get_current_user
+from app.core.security import get_current_admin_user
 from app.models.usda import UsdaFood, UsdaFoodNutrient, UsdaTask, TranslationConfig
 from app.services.usda.importer import UsdaImporter
 from app.services.usda.parser import parse_usda_food, dedupe_foods
@@ -23,11 +23,6 @@ from app.services.translate.task import TranslateTask
 from app.services.translate.nutrient_task import TranslateNutrientsTask
 
 router = APIRouter()
-
-
-def _require_admin(current_user) -> None:
-    if not getattr(current_user, "is_admin", False):
-        raise HTTPException(status_code=403, detail="仅限管理员访问")
 
 
 DEFAULT_TRANSLATION_CONFIG = {
@@ -68,9 +63,8 @@ class TestConnectionRequest(BaseModel):
 @router.get("/usda/statistics")
 async def usda_statistics(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
-    _require_admin(current_user)
     from sqlalchemy import func
 
     total = db.query(func.count(UsdaFood.id)).scalar() or 0
@@ -112,9 +106,8 @@ async def usda_statistics(
 @router.get("/usda/unmapped-nutrients")
 async def unmapped_nutrients(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
-    _require_admin(current_user)
     from sqlalchemy import distinct
 
     names = [
@@ -161,9 +154,8 @@ async def usda_download(
     background_tasks: BackgroundTasks,
     datasets: str | None = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
-    _require_admin(current_user)
     ds_list = datasets.split(",") if datasets else None
     # 先建 task 拿 id 返回前端，便于立即入列 + 轮询；后台任务按 id 更新该记录
     task = UsdaTask(task_type="download", status="running")
@@ -178,10 +170,9 @@ async def usda_download(
 async def usda_upload(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
-    _require_admin(current_user)
     content = await file.read()
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
@@ -232,9 +223,8 @@ async def usda_upload(
 @router.get("/usda/task")
 async def usda_task(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
-    _require_admin(current_user)
     latest = db.query(UsdaTask).order_by(UsdaTask.id.desc()).first()
     if not latest:
         return {"task_type": None, "status": "idle"}
@@ -266,10 +256,9 @@ def _usda_task_dict(t: UsdaTask) -> dict:
 async def usda_tasks(
     limit: int = 20,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
     """USDA 任务列表（按 id 倒序），供数据维护页任务列表展示。"""
-    _require_admin(current_user)
     rows = (
         db.query(UsdaTask)
         .order_by(UsdaTask.id.desc())
@@ -283,10 +272,9 @@ async def usda_tasks(
 async def usda_task_by_id(
     task_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
     """单条 USDA 任务（前端轮询用）。"""
-    _require_admin(current_user)
     t = db.query(UsdaTask).get(task_id)
     if not t:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -296,9 +284,8 @@ async def usda_task_by_id(
 @router.get("/translation-config")
 async def get_translation_config(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
-    _require_admin(current_user)
     return get_stored_translation_config(db).to_dict()
 
 
@@ -306,9 +293,8 @@ async def get_translation_config(
 async def put_translation_config(
     body: TranslationConfigUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
-    _require_admin(current_user)
     cfg = get_stored_translation_config(db)
     cfg.config = body.config
     db.commit()
@@ -320,10 +306,9 @@ async def put_translation_config(
 async def usda_translate(
     body: TranslateRequest,
     background_tasks: BackgroundTasks,
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
-    _require_admin(current_user)
     cfg = get_stored_translation_config(db).to_dict()
     if not find_provider_section(cfg, body.provider):
         raise HTTPException(status_code=400, detail=f"未配置 provider: {body.provider}")
@@ -351,11 +336,10 @@ class TranslateNutrientsRequest(BaseModel):
 async def usda_translate_nutrients(
     body: TranslateNutrientsRequest,
     background_tasks: BackgroundTasks,
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """用 AI 翻译未映射营养素名（缩写/脂肪酸记号等需营养学知识）。"""
-    _require_admin(current_user)
     cfg = get_stored_translation_config(db).to_dict()
     if not find_provider_section(cfg, body.provider):
         raise HTTPException(status_code=400, detail=f"未配置 provider: {body.provider}")
@@ -378,10 +362,9 @@ async def usda_translate_nutrients(
 @router.post("/translation-config/test")
 async def translation_config_test(
     body: TestConnectionRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
-    _require_admin(current_user)
     cfg = get_stored_translation_config(db).to_dict()
     section = find_provider_section(cfg, body.provider)
     if not section:

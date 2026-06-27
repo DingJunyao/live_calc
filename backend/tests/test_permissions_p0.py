@@ -119,3 +119,17 @@ def test_recipe_images_forbidden_for_non_author_private():
         db.close()
     r = client.get(f"/api/v1/recipes/{rid}/images")
     assert r.status_code == 403
+
+
+# ---------- import_api.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_import_repo_forbidden_for_non_admin():
+    r = client.post("/api/v1/import/data/import-from-repo", json={})
+    assert r.status_code == 403
+
+
+# ---------- usda_admin.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_usda_admin_statistics_forbidden_for_non_admin():
+    r = client.get("/api/v1/admin/usda/statistics")
+    assert r.status_code == 403
