@@ -144,3 +144,59 @@ def test_revert_calls_executor(db):
     db.commit()
     assert p.status == "reverted"
     assert _RecordingExecutor.reverted == 1
+
+
+# --- Task 1.6: 提议-审核 API + 路由注册 ---
+from fastapi.testclient import TestClient
+from app.main import app
+from app.core.database import get_db as _get_db
+from app.core.security import get_current_user as _get_cu
+from conftest import (
+    override_get_db,
+    fake_current_user,
+    _fake_non_admin_user,
+    engine as _testing_engine,
+)
+
+api_client = TestClient(app)
+
+
+def test_submit_via_api_requires_auth():
+    """未登录提交提议 → 401。"""
+    # 不安装 dependency_overrides → get_current_user 走真实鉴权，无 token → 401
+    app.dependency_overrides.clear()
+    r = api_client.post("/api/v1/proposals", json={
+        "entity_type": "rec", "entity_id": 1, "action": "update", "payload": {}})
+    assert r.status_code in (401, 403)
+
+
+def test_non_admin_submit_then_admin_review():
+    """非管理员提交 → pending；非管理员审核 → 403；管理员审核 → applied。"""
+    ExecutorRegistry.reset()
+    ExecutorRegistry.register(_RecordingExecutor())
+    ExecutorRegistry.set_policy("rec", "update", "manual")
+
+    app.dependency_overrides[_get_db] = override_get_db
+    app.dependency_overrides[_get_cu] = _fake_non_admin_user
+    try:
+        # 确保 change_proposals 表在测试 DB 存在（conftest create_all 早于模型注册）
+        Base.metadata.create_all(bind=_testing_engine)
+
+        # 非管理员提交
+        r = api_client.post("/api/v1/proposals", json={
+            "entity_type": "rec", "entity_id": 1, "action": "update", "payload": {"v": 1}})
+        assert r.status_code == 200, r.text
+        pid = r.json()["id"]
+        assert r.json()["status"] == "pending"
+
+        # 非管理员审核 → 403
+        r2 = api_client.post(f"/api/v1/proposals/{pid}/review", json={"approved": True})
+        assert r2.status_code == 403
+
+        # 管理员审核 → applied
+        app.dependency_overrides[_get_cu] = fake_current_user
+        r3 = api_client.post(f"/api/v1/proposals/{pid}/review", json={"approved": True})
+        assert r3.status_code == 200, r3.text
+        assert r3.json()["status"] == "applied"
+    finally:
+        app.dependency_overrides.clear()
