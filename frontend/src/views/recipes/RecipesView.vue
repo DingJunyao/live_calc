@@ -344,48 +344,15 @@ const recipeFilters: FilterConfig[] = reactive([
     ],
     minWidth: '220px',
   },
-  {
-    key: 'exclude_blacklist',
-    label: '隐藏黑名单',
-    type: 'toggle' as const,
-    defaultValue: true,
-    items: [
-      { value: true, title: '隐藏含黑名单原料的菜谱' },
-    ],
-  },
 ])
 
-// 从 localStorage 读取黑名单筛选开关状态
-const savedExcludeBlacklist = localStorage.getItem('excludeBlacklistRecipes')
-const excludeBlacklistDefault = savedExcludeBlacklist !== null ? savedExcludeBlacklist === 'true' : true
-
-const requestFilters = ref<Record<string, any>>({
-  exclude_blacklist_ingredients: excludeBlacklistDefault,
-})
+const requestFilters = ref<Record<string, any>>({})
 
 const onFilterChange = (filterState: Record<string, any>) => {
   currentPage.value = 1
-  // 将 exclude_blacklist toggle 映射为 API 参数
-  const apiFilters = { ...filterState }
-  if ('exclude_blacklist' in apiFilters) {
-    apiFilters.exclude_blacklist_ingredients = apiFilters.exclude_blacklist
-    delete apiFilters.exclude_blacklist
-  } else {
-    // 当 toggle 不在 filterState 中时（如清除筛选或其他 filter 变更），保留当前值
-    if (requestFilters.value.exclude_blacklist_ingredients !== undefined) {
-      apiFilters.exclude_blacklist_ingredients = requestFilters.value.exclude_blacklist_ingredients
-    }
-  }
-  requestFilters.value = apiFilters
+  requestFilters.value = { ...filterState }
   loadRecipes()
 }
-
-// 持久化黑名单筛选开关到 localStorage
-watch(() => requestFilters.value.exclude_blacklist_ingredients, (val) => {
-  if (val !== undefined) {
-    localStorage.setItem('excludeBlacklistRecipes', String(!!val))
-  }
-})
 
 // 菜谱创建相关
 const createForm = ref({
@@ -485,10 +452,6 @@ const loadRecipes = async () => {
       for (const cond of requestFilters.value.special_conditions) {
         params[cond] = 'true'
       }
-    }
-    // 黑名单筛选参数
-    if (requestFilters.value.exclude_blacklist_ingredients !== undefined) {
-      params.exclude_blacklist_ingredients = requestFilters.value.exclude_blacklist_ingredients ? 'true' : 'false'
     }
 
     const response = await api.get('/recipes', { params })

@@ -279,6 +279,28 @@ async def _build_response_from_records(
 
     refresh_counts = _count_today_refreshes(db, user.id, today)
 
+    # 过滤掉包含黑名单原料的推荐（用户可能后来修改了黑名单）
+    from app.api.blacklist import _get_effective_blacklist_ids
+    from app.models.recipe import RecipeIngredient
+
+    blacklisted_ids = _get_effective_blacklist_ids(db, user.id)
+    blocked_recipe_ids: set[int] = set()
+    if blacklisted_ids:
+        record_recipe_ids = [r.recipe_id for r in records if r and r.recipe_id]
+        if record_recipe_ids:
+            blocked_recipe_ids = set(
+                r[0] for r in db.query(RecipeIngredient.recipe_id).filter(
+                    RecipeIngredient.recipe_id.in_(record_recipe_ids),
+                    RecipeIngredient.ingredient_id.in_(blacklisted_ids),
+                ).distinct().all()
+            )
+    # 有被黑名单屏蔽的推荐时，异步触发后台刷新相应餐类
+    if blocked_recipe_ids:
+        blocked_meal_types = {r.meal_type for r in records if r.recipe_id in blocked_recipe_ids}
+        for mt in blocked_meal_types:
+            trigger_background_refresh(user.id, mt)
+        refreshing_meals = list(set((refreshing_meals or []) + list(blocked_meal_types)))
+
     rec_map = {r.meal_type: r for r in records}
     recommendations = []
     totals = {
@@ -291,6 +313,15 @@ async def _build_response_from_records(
 
     for meal_type in ["breakfast", "lunch", "dinner"]:
         record = rec_map.get(meal_type)
+        # 跳过被黑名单屏蔽的推荐
+        if record and record.recipe and record.recipe_id in blocked_recipe_ids:
+            recommendations.append({
+                "meal_type": meal_type,
+                "recipe": None,
+                "is_current_meal": (meal_type == current_meal),
+            })
+            continue
+
         if record and record.recipe:
             recipe = record.recipe
             try:
@@ -374,7 +405,60 @@ async def generate_recommendations(db: Session, user: User) -> Dict:
     )
 
     if existing:
-        return await _build_response_from_records(db, existing, user)
+        # 检查已有推荐是否包含黑名单原料（用户可能后来修改了黑名单）
+        from app.api.blacklist import _get_effective_blacklist_ids
+        from app.models.recipe import RecipeIngredient
+
+        blacklisted_ids = _get_effective_blacklist_ids(db, user.id)
+        if blacklisted_ids:
+            existing_recipe_ids = [r.recipe_id for r in existing if r.recipe_id]
+            if existing_recipe_ids:
+                bl_recipe_ids = set(
+                    r[0] for r in db.query(RecipeIngredient.recipe_id).filter(
+                        RecipeIngredient.recipe_id.in_(existing_recipe_ids),
+                        RecipeIngredient.ingredient_id.in_(blacklisted_ids),
+                    ).distinct().all()
+                )
+                if bl_recipe_ids:
+                    # 删除包含黑名单原料的推荐记录
+                    bl_meal_types = {r.meal_type for r in existing if r.recipe_id in bl_recipe_ids}
+                    db.query(DailyRecommendation).filter(
+                        DailyRecommendation.user_id == user.id,
+                        DailyRecommendation.date == today,
+                        DailyRecommendation.meal_type.in_(bl_meal_types),
+                    ).delete(synchronize_session=False)
+                    db.commit()
+                    # 保留未被黑名单影响的推荐
+                    existing = [r for r in existing if r.recipe_id not in bl_recipe_ids]
+
+                    # 为被删除的餐重新生成推荐
+                    picked_ids = {r.recipe_id for r in existing if r.recipe_id}
+                    for mt in ["breakfast", "lunch", "dinner"]:
+                        if mt not in bl_meal_types:
+                            continue
+                        best, nutrition, cost, score = await _pick_best_recipe(
+                            user, mt, exclude_recipe_ids=picked_ids, db=db,
+                        )
+                        if best:
+                            picked_ids.add(best.id)
+                            db.add(DailyRecommendation(
+                                user_id=user.id, date=today, meal_type=mt, recipe_id=best.id,
+                            ))
+                            db.flush()
+                    db.commit()
+                    # 重新读取完整记录
+                    existing = (
+                        db.query(DailyRecommendation)
+                        .options(joinedload(DailyRecommendation.recipe))
+                        .filter(
+                            DailyRecommendation.user_id == user.id,
+                            DailyRecommendation.date == today,
+                        )
+                        .all()
+                    )
+
+        if existing:
+            return await _build_response_from_records(db, existing, user)
 
     meal_types = ["breakfast", "lunch", "dinner"]
     picked_ids: Set[int] = set()  # 午/晚餐共享候选池，防止重复
