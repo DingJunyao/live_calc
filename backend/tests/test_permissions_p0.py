@@ -59,6 +59,18 @@ def test_merge_history_forbidden_for_non_admin():
     assert r.status_code == 403
 
 
+@pytest.mark.usefixtures("as_non_admin")
+def test_hierarchy_update_forbidden_for_non_admin():
+    r = client.put("/api/v1/ingredients/hierarchy/1", json={"strength": 50})
+    assert r.status_code == 403
+
+
+@pytest.mark.usefixtures("as_non_admin")
+def test_hierarchy_delete_forbidden_for_non_admin():
+    r = client.delete("/api/v1/ingredients/hierarchy/1")
+    assert r.status_code == 403
+
+
 # ---------- ingredient_extended.py ----------
 @pytest.mark.usefixtures("as_non_admin")
 def test_ingredient_hard_delete_forbidden_for_non_admin():
