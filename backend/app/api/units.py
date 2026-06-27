@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
+from app.core.security import get_current_user, get_current_admin_user
 from app.models.unit import Unit, UnitConversion
+from app.models.user import User
 from app.models.entity_unit_override import EntityUnitOverride
 from app.models.entity_density import EntityDensity
 from app.schemas.unit import (
@@ -92,7 +94,8 @@ def list_units(
     unit_type: Optional[str] = None,
     unit_system: Optional[str] = None,
     is_common: Optional[bool] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     获取单位列表
@@ -117,7 +120,7 @@ def list_units(
 
 
 @router.get("/{unit_id}", response_model=UnitResponse)
-def get_unit(unit_id: int, db: Session = Depends(get_db)):
+def get_unit(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """获取单个单位"""
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
@@ -126,7 +129,7 @@ def get_unit(unit_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=UnitResponse)
-def create_unit(unit_data: UnitCreate, db: Session = Depends(get_db)):
+def create_unit(unit_data: UnitCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
     """
     创建新单位
 
@@ -157,7 +160,8 @@ def create_unit(unit_data: UnitCreate, db: Session = Depends(get_db)):
 def update_unit(
     unit_id: int,
     unit_data: UnitUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """更新单位"""
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
@@ -188,7 +192,7 @@ def update_unit(
 
 
 @router.delete("/{unit_id}")
-def delete_unit(unit_id: int, db: Session = Depends(get_db)):
+def delete_unit(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
     """
     删除单位
 
@@ -213,7 +217,7 @@ def delete_unit(unit_id: int, db: Session = Depends(get_db)):
 # ============ 换算关系管理 ============
 
 @router.get("/{unit_id}/conversions", response_model=List[UnitConversionResponse])
-def list_unit_conversions(unit_id: int, db: Session = Depends(get_db)):
+def list_unit_conversions(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """获取单位的所有换算关系"""
     conversions = db.query(UnitConversion).filter(
         (UnitConversion.from_unit_id == unit_id) | (UnitConversion.to_unit_id == unit_id)
@@ -222,7 +226,7 @@ def list_unit_conversions(unit_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/conversions/", response_model=UnitConversionResponse)
-def create_conversion(conversion_data: UnitConversionCreate, db: Session = Depends(get_db)):
+def create_conversion(conversion_data: UnitConversionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
     """
     创建换算关系
 
@@ -277,7 +281,7 @@ def create_conversion(conversion_data: UnitConversionCreate, db: Session = Depen
 
 
 @router.delete("/conversions/{conversion_id}")
-def delete_conversion(conversion_id: int, db: Session = Depends(get_db)):
+def delete_conversion(conversion_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
     """删除换算关系"""
     conversion = db.query(UnitConversion).filter(UnitConversion.id == conversion_id).first()
     if not conversion:
@@ -291,7 +295,7 @@ def delete_conversion(conversion_id: int, db: Session = Depends(get_db)):
 # ============ 单位匹配 ============
 
 @router.post("/match", response_model=UnitMatchResponse)
-def match_unit(request: UnitMatchRequest, db: Session = Depends(get_db)):
+def match_unit(request: UnitMatchRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     匹配单位字符串
 
@@ -307,7 +311,7 @@ def match_unit(request: UnitMatchRequest, db: Session = Depends(get_db)):
 # ============ 单位转换（使用 UnitConversionService） ============
 
 @router.post("/convert", response_model=UnitConvertResponse)
-def convert_units(request: UnitConvertRequest, db: Session = Depends(get_db)):
+def convert_units(request: UnitConvertRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     单位转换
 
@@ -350,7 +354,7 @@ def convert_units(request: UnitConvertRequest, db: Session = Depends(get_db)):
 # ============ 批量导入 ============
 
 @router.post("/import-batch")
-def import_units_batch(unit_names: List[str], db: Session = Depends(get_db)):
+def import_units_batch(unit_names: List[str], db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
     """
     批量导入单位
 
@@ -396,6 +400,7 @@ def list_entity_unit_overrides(
     entity_type: str,
     entity_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     获取实体自定义单位列表
@@ -422,6 +427,7 @@ def create_entity_unit_override(
     entity_id: int,
     data: EntityUnitOverrideCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     创建实体单位覆盖
@@ -465,6 +471,7 @@ def update_entity_unit_override(
     override_id: int,
     data: EntityUnitOverrideUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     更新实体单位覆盖
@@ -502,6 +509,7 @@ def delete_entity_unit_override(
     entity_id: int,
     override_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     删除实体单位覆盖
@@ -534,6 +542,7 @@ def get_unmapped_units(
     entity_type: str,
     entity_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     获取实体在菜谱中使用的 count 类型单位中，尚未配置 Override 的列表
@@ -562,6 +571,7 @@ def list_entity_densities(
     entity_type: str,
     entity_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     获取实体密度列表
@@ -588,6 +598,7 @@ def upsert_entity_density(
     entity_id: int,
     data: EntityDensityCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     创建或更新实体密度（upsert）
@@ -639,6 +650,7 @@ def delete_entity_density(
     entity_id: int,
     density_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     删除实体密度
