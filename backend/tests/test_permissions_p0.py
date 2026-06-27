@@ -36,3 +36,10 @@ def test_nutrition_ingredient_write_forbidden_for_non_admin():
 def test_nutrition_correct_forbidden_for_non_admin():
     r = client.post("/api/v1/nutrition/correct", json={"ingredient_id": 1})
     assert r.status_code == 403
+
+
+# ---------- usda.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_usda_match_ingredient_forbidden_for_non_admin():
+    r = client.post("/api/v1/usda/match/ingredient/1", json={"fdc_id": 1})
+    assert r.status_code == 403

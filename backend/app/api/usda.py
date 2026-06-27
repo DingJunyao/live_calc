@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin_user
 from app.schemas.auth import UserResponse
 from app.schemas.usda import UsdaSearchItem, UsdaFoodDetail, UsdaNutrientItem, UsdaMatchRequest
 from app.models.usda import UsdaFood, UsdaFoodNutrient
@@ -86,14 +86,9 @@ async def match_ingredient_endpoint(
     ingredient_id: int,
     body: UsdaMatchRequest,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
 ):
-    """把 USDA 食材营养数据写入指定原料。
-
-    TODO(权限): 现有 ingredient 写端点（ingredient_extended.py / products_entity.py）
-    均只校验 `get_current_user`（登录即可），未做 owner/admin 校验。待项目引入
-    统一的所有者权限依赖后，替换此处 `get_current_user`。
-    """
+    """把 USDA 食材营养数据写入指定原料（仅管理员）。"""
     return match_ingredient(db, ingredient_id, body.fdc_id)
 
 
@@ -102,10 +97,7 @@ async def match_product_endpoint(
     product_id: int,
     body: UsdaMatchRequest,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
 ):
-    """把 USDA 食材营养数据写入指定商品的 custom_nutrition_data。
-
-    TODO(权限): 同 match_ingredient_endpoint，待统一所有者权限依赖后替换。
-    """
+    """把 USDA 食材营养数据写入指定商品的 custom_nutrition_data（仅管理员）。"""
     return match_product(db, product_id, body.fdc_id)
