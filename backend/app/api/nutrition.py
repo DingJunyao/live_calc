@@ -1059,7 +1059,7 @@ async def get_ingredient_latest_price_by_merchant(
             target_unit_abbr = "斤"
 
         def _lookup_merchant_prices(ing: Ingredient) -> list[dict]:
-            """对单个食材查找各商家最新价格，返回结果列表。不限制 user_id。"""
+            """对单个食材查找各商家最新价格，返回结果列表。仅当前用户的价格记录（P0 过渡期用户隔离，P2 改公开聚合后放开）。"""
             products = db.query(Product).filter(
                 Product.ingredient_id == ing.id,
                 Product.is_active == True
@@ -1151,7 +1151,7 @@ async def get_ingredient_latest_price_by_merchant(
         results = _lookup_merchant_prices(ingredient)
         fallback_chain = None
 
-        # ② 无直接价格 → 走 FALLBACK / SUBSTITUTABLE 回退链（不限 user_id）
+        # ② 无直接价格 → 走 FALLBACK / SUBSTITUTABLE 回退链（仅当前用户；P0 过渡期隔离）
         if not results:
             hierarchies = db.query(IngredientHierarchy).filter(
                 IngredientHierarchy.relation_type.in_([
@@ -1189,7 +1189,7 @@ async def get_ingredient_latest_price_by_merchant(
                     fb_ing = fb_ingredients_map.get(fb_id)
                     if not fb_ing or not fb_ing.is_active:
                         continue
-                    # 检查该回退食材是否有有价商品（不限 user_id）
+                    # 检查该回退食材是否有有价商品（仅当前用户；P0 过渡期隔离）
                     fb_prods = db.query(Product).filter(
                         Product.ingredient_id == fb_id,
                         Product.is_active == True
