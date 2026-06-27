@@ -11,6 +11,7 @@ from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelati
 from app.models.ingredient_merge_record import IngredientMergeRecord
 from app.models.nutrition import Ingredient
 from app.services.ingredient_merger import IngredientMerger
+from app.services.proposals import service as proposal_service
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -82,11 +83,13 @@ class MergeStatusResponse(BaseModel):
 @router.post("/ingredients/hierarchy", response_model=HierarchyRelationResponse)
 def create_hierarchy_relation(
     relation: HierarchyRelationCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     创建食材层级关系
+
+    分流模式：管理员 apply_as_admin（直写留痕）/ 普通用户 submit（提议，待审）。
     """
     # 验证关系类型
     try:
@@ -103,65 +106,74 @@ def create_hierarchy_relation(
     if not child_ingredient:
         raise HTTPException(status_code=404, detail=f"子食材ID {relation.child_id} 不存在")
 
-    # 检查是否已存在相同的关系（包括关系类型）
-    # 同一对原料之间可以存在不同类型的关系（如包含、回退、可替代）
+    # 对于 fallback（回退）关系，需要特殊处理
+    # 回退关系的语义是：从抽象原料回退到具体原料
+    # 数据模型中：parent 是具体原料（数据源），child 是抽象原料
+    # 例如：parent=猪肉, child=肉，表示"肉"可以回退使用"猪肉"的数据
+    if relation_type == HierarchyRelationType.FALLBACK:
+        actual_parent_id = relation.child_id
+        actual_child_id = relation.parent_id
+        if actual_parent_id == actual_child_id:
+            raise HTTPException(status_code=400, detail="不能创建自引用的回退关系")
+    else:
+        actual_parent_id = relation.parent_id
+        actual_child_id = relation.child_id
+
+    # 检查是否已存在相同的关系（含关系类型）
     existing_relation = db.query(IngredientHierarchy).filter(
-        IngredientHierarchy.parent_id == relation.parent_id,
-        IngredientHierarchy.child_id == relation.child_id,
+        IngredientHierarchy.parent_id == actual_parent_id,
+        IngredientHierarchy.child_id == actual_child_id,
         IngredientHierarchy.relation_type == relation.relation_type
     ).first()
-
     if existing_relation:
         raise HTTPException(
             status_code=400,
             detail=f"该层级关系已存在（{relation_type.value}）"
         )
 
-    # 对于 fallback（回退）关系，需要特殊处理
-    # 回退关系的语义是：从抽象原料回退到具体原料
-    # 数据模型中：parent 是具体原料（数据源），child 是抽象原料
-    # 例如：parent=猪肉, child=肉，表示"肉"可以回退使用"猪肉"的数据
-    if relation_type == HierarchyRelationType.FALLBACK:
-        # 交换 parent_id 和 child_id
-        actual_parent_id = relation.child_id
-        actual_child_id = relation.parent_id
+    payload = {
+        "parent_id": actual_parent_id,
+        "child_id": actual_child_id,
+        "relation_type": relation.relation_type,
+        "strength": relation.strength,
+    }
 
-        # 检查交换后是否自引用
-        if actual_parent_id == actual_child_id:
-            raise HTTPException(
-                status_code=400,
-                detail="不能创建自引用的回退关系"
-            )
-
-        hierarchy_relation = IngredientHierarchy(
-            parent_id=actual_parent_id,
-            child_id=actual_child_id,
-            relation_type=relation.relation_type,
-            strength=relation.strength
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="hierarchy", entity_id=None,
+            action="create", payload=payload, admin=current_user,
         )
-    else:
-        # 对于其他关系类型（contains, substitutable），保持原样
-        hierarchy_relation = IngredientHierarchy(
-            parent_id=relation.parent_id,
-            child_id=relation.child_id,
-            relation_type=relation.relation_type,
-            strength=relation.strength
+        db.commit()
+        created = db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.parent_id == actual_parent_id,
+            IngredientHierarchy.child_id == actual_child_id,
+            IngredientHierarchy.relation_type == relation.relation_type,
+        ).order_by(IngredientHierarchy.id.desc()).first()
+        return HierarchyRelationResponse(
+            id=created.id,
+            parent_id=created.parent_id,
+            parent_name=db.query(Ingredient).filter(Ingredient.id == created.parent_id).first().name,
+            child_id=created.child_id,
+            child_name=db.query(Ingredient).filter(Ingredient.id == created.child_id).first().name,
+            relation_type=created.relation_type,
+            strength=created.strength,
+            created_at=created.created_at,
         )
 
-    db.add(hierarchy_relation)
+    p = proposal_service.submit(
+        db, entity_type="hierarchy", entity_id=None,
+        action="create", payload=payload, proposer=current_user,
+    )
     db.commit()
-    db.refresh(hierarchy_relation)
-
-    # 返回包含食材名称的完整信息
     return HierarchyRelationResponse(
-        id=hierarchy_relation.id,
-        parent_id=hierarchy_relation.parent_id,
+        id=0,
+        parent_id=actual_parent_id,
         parent_name=parent_ingredient.name,
-        child_id=hierarchy_relation.child_id,
+        child_id=actual_child_id,
         child_name=child_ingredient.name,
-        relation_type=hierarchy_relation.relation_type,
-        strength=hierarchy_relation.strength,
-        created_at=hierarchy_relation.created_at
+        relation_type=relation.relation_type,
+        strength=relation.strength or 50,
+        created_at=p.created_at or datetime.utcnow(),
     )
 
 
@@ -272,22 +284,45 @@ def get_ingredient_hierarchy(
 def update_hierarchy_relation(
     relation_id: int,
     strength: int = Body(..., embed=True, ge=1, le=100),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    修改层级关系的强度
+    修改层级关系的强度（分流：管理员直写 / 普通用户提议）。
     """
     relation = db.query(IngredientHierarchy).filter(IngredientHierarchy.id == relation_id).first()
     if not relation:
         raise HTTPException(status_code=404, detail="层级关系不存在")
 
-    # 更新强度
-    relation.strength = strength
-    db.commit()
-    db.refresh(relation)
+    payload = {"strength": strength}
 
-    # 查询相关食材信息
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="hierarchy", entity_id=relation_id,
+            action="update", payload=payload, admin=current_user,
+        )
+        db.commit()
+        db.refresh(relation)
+    else:
+        p = proposal_service.submit(
+            db, entity_type="hierarchy", entity_id=relation_id,
+            action="update", payload=payload, proposer=current_user,
+        )
+        db.commit()
+        # 提议路径：返回当前值（待审），不立即变更
+        return HierarchyRelationResponse(
+            id=relation.id,
+            parent_id=relation.parent_id,
+            parent_name=db.query(Ingredient).filter(Ingredient.id == relation.parent_id).first().name
+            if db.query(Ingredient).filter(Ingredient.id == relation.parent_id).first() else "",
+            child_id=relation.child_id,
+            child_name=db.query(Ingredient).filter(Ingredient.id == relation.child_id).first().name
+            if db.query(Ingredient).filter(Ingredient.id == relation.child_id).first() else "",
+            relation_type=relation.relation_type,
+            strength=relation.strength,
+            created_at=relation.created_at,
+        )
+
     parent_ingredient = db.query(Ingredient).filter(Ingredient.id == relation.parent_id).first()
     child_ingredient = db.query(Ingredient).filter(Ingredient.id == relation.child_id).first()
 
@@ -309,20 +344,33 @@ def update_hierarchy_relation(
 @router.delete("/ingredients/hierarchy/{relation_id}")
 def delete_hierarchy_relation(
     relation_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    删除层级关系
+    删除层级关系（分流：管理员直写 / 普通用户提议）。
+
+    注：经框架执行器走的删除为软删（is_active=False），与原 db.delete 硬删有差异，
+    但便于 revert 回滚；查询侧统一按 is_active=True 过滤即可。
     """
     relation = db.query(IngredientHierarchy).filter(IngredientHierarchy.id == relation_id).first()
     if not relation:
         raise HTTPException(status_code=404, detail="层级关系不存在")
 
-    db.delete(relation)
-    db.commit()
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="hierarchy", entity_id=relation_id,
+            action="delete", payload={}, admin=current_user,
+        )
+        db.commit()
+        return {"message": "层级关系删除成功（管理员直写）"}
 
-    return {"message": "层级关系删除成功"}
+    p = proposal_service.submit(
+        db, entity_type="hierarchy", entity_id=relation_id,
+        action="delete", payload={}, proposer=current_user,
+    )
+    db.commit()
+    return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}
 
 
 # 食材合并功能接口
@@ -334,6 +382,11 @@ def merge_ingredients(
 ):
     """
     合并食材 - 将多个源食材合并到目标食材
+
+    分流模式：
+    - 管理员：经框架 apply_as_admin 直写（留痕 change_proposals），立即生效。
+    - 普通用户：经框架 submit 提议（治理总表 ingredient.merge = manual → 待审）；
+      仅当涉及食材（源与目标）均由本人创建时方允许提交，否则 403。
     """
     if not merge_request.source_ingredient_ids or not merge_request.target_ingredient_id:
         raise HTTPException(status_code=400, detail="缺少必要的参数：源食材ID列表和目标食材ID")
@@ -341,7 +394,7 @@ def merge_ingredients(
     if merge_request.target_ingredient_id in merge_request.source_ingredient_ids:
         raise HTTPException(status_code=400, detail="目标食材不能同时是源食材")
 
-    # 权限校验：管理员可合并任意食材；普通用户只能合并自己创建的食材（源与目标均须由本人创建）
+    # 普通用户的所有权预检（提议路径同样要求源与目标均由本人创建，避免提议堆积后仍被拒）
     if not current_user.is_admin:
         involved_ids = list(merge_request.source_ingredient_ids) + [merge_request.target_ingredient_id]
         involved_ingredients = db.query(Ingredient).filter(Ingredient.id.in_(involved_ids)).all()
@@ -355,17 +408,45 @@ def merge_ingredients(
                 detail="只能合并自己创建的食材，以下食材不由你创建：" + "、".join(not_owned)
             )
 
-    merger = IngredientMerger(db)
-    result = merger.merge_ingredients(
-        source_ingredient_ids=merge_request.source_ingredient_ids,
-        target_ingredient_id=merge_request.target_ingredient_id,
-        merged_by_user_id=current_user.id
+    payload = {
+        "source_ids": merge_request.source_ingredient_ids,
+        "target_id": merge_request.target_ingredient_id,
+    }
+
+    if current_user.is_admin:
+        # 管理员直写，经框架留痕（apply_as_admin 内部调执行器 apply → IngredientExecutor._apply_merge）
+        proposal_service.apply_as_admin(
+            db, entity_type="ingredient",
+            entity_id=merge_request.target_ingredient_id,
+            action="merge", payload=payload, admin=current_user,
+        )
+        db.commit()
+        return IngredientMergeResponse(
+            success=True,
+            message="合并完成（管理员直写）",
+            merged_count=len(merge_request.source_ingredient_ids),
+            updated_recipes_count=0,
+            updated_products_count=0,
+            updated_mappings_count=0,
+            stats_change={},
+        )
+
+    # 普通用户提交提议（治理总表 ingredient.merge = manual → 待审）
+    p = proposal_service.submit(
+        db, entity_type="ingredient",
+        entity_id=merge_request.target_ingredient_id,
+        action="merge", payload=payload, proposer=current_user,
     )
-
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["message"])
-
-    return IngredientMergeResponse(**result)
+    db.commit()
+    return IngredientMergeResponse(
+        success=True,
+        message=f"合并提议已提交（proposal_id={p.id}, status={p.status}）",
+        merged_count=0,
+        updated_recipes_count=0,
+        updated_products_count=0,
+        updated_mappings_count=0,
+        stats_change={},
+    )
 
 
 @router.get("/ingredients/merge-history", response_model=MergeHistoryResponse)

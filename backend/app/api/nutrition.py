@@ -11,6 +11,8 @@ from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
 from app.models.product_entity import Product
 from app.models.product import ProductRecord
+from app.services.proposals import service as proposal_service
+from app.services.proposals.registry import ExecutorRegistry
 from app.schemas.nutrition import (
     IngredientResponse,
     NutritionDataResponse,
@@ -1337,17 +1339,100 @@ async def get_product_nutrition(
 
 # ==================== 营养编辑端点 ====================
 
+def _build_structured_nutrients(request: NutritionEditRequest) -> dict:
+    """构建结构化营养数据字典（与 import 格式一致，含 NRV 计算）。
+
+    抽出供分流改造使用：管理员路径与提议路径共用同一构造逻辑，
+    确保 NutritionData.nutrients 格式一致（避免提议通过后字段缺失）。
+    """
+    from app.services.nutrition_import_service import NutritionImportService
+    core_display_map = NutritionImportService.CORE_DISPLAY_MAP
+
+    NRV_REF = {
+        "能量": (2000, "kcal"),
+        "蛋白质": (60, "g"),
+        "脂肪": (60, "g"),
+        "碳水化合物": (300, "g"),
+        "膳食纤维": (25, "g"),
+        "钙": (800, "mg"),
+        "铁": (15, "mg"),
+        "钠": (2000, "mg"),
+        "钾": (2000, "mg"),
+        "维生素A": (800, "μg"),
+        "维生素C": (100, "mg"),
+        "维生素B1": (1.2, "mg"),
+        "维生素B2": (1.4, "mg"),
+        "维生素B12": (2.4, "μg"),
+        "维生素D": (5, "μg"),
+        "维生素E": (14, "mg"),
+        "维生素K": (80, "μg"),
+    }
+    NRV_UNIT_FACTOR = {
+        ("kJ", "kcal"): 1.0 / 4.184,
+        ("mg", "g"): 0.001,
+        ("μg", "g"): 0.000001,
+        ("g", "mg"): 1000,
+        ("μg", "mg"): 0.001,
+        ("g", "μg"): 1000000,
+        ("mg", "μg"): 1000,
+    }
+
+    def _calc_nrp(display_name: str, value: float, unit: str) -> float:
+        ref = NRV_REF.get(display_name)
+        if not ref or value <= 0:
+            return 0
+        nrv_value, nrv_unit = ref
+        if unit != nrv_unit:
+            factor = NRV_UNIT_FACTOR.get((unit, nrv_unit))
+            if factor:
+                value = value * factor
+            else:
+                return 0
+        if nrv_value <= 0:
+            return 0
+        return round((value / nrv_value) * 100, 2)
+
+    structured_nutrients = {
+        "core_nutrients": {},
+        "all_nutrients": {},
+        "nutrient_details": {},
+    }
+
+    for nutrient in request.nutrients:
+        key = nutrient.key or nutrient.name
+        info = {"value": nutrient.value, "unit": nutrient.unit, "key": key}
+        display_name = core_display_map.get(nutrient.name)
+        if display_name:
+            nrp = _calc_nrp(display_name, float(nutrient.value), nutrient.unit)
+            if nrp > 0:
+                info["nrp_pct"] = nrp
+                info["standard"] = "中国GB标准"
+
+        structured_nutrients["all_nutrients"][key] = info
+        structured_nutrients["nutrient_details"][key] = info
+        if display_name:
+            structured_nutrients["core_nutrients"][display_name] = {**info, "key": key}
+
+    return structured_nutrients
+
+
 @router.post("/ingredients/{ingredient_id}/nutrition", response_model=NutritionEditResponse)
 async def edit_ingredient_nutrition(
     ingredient_id: int,
     request: NutritionEditRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     编辑原料营养数据
 
-    创建或更新原料的营养数据
+    分流模式：
+    - 管理员：apply_as_admin 直写（执行器写入 NutritionData.nutrients）。
+    - 普通用户：submit 提议；执行器 apply 内按是否已有数据动态 set_policy
+      （补空 → auto_approve 立即生效；覆盖 → manual 待审）。
+
+    注：执行器仅写 nutrients 字段；reference_amount/reference_unit/source 的细节
+    通过 payload 一并传递，执行器按需消费（本期执行器只写 nutrients，余字段忽略）。
     """
     try:
         # 验证原料是否存在
@@ -1355,119 +1440,36 @@ async def edit_ingredient_nutrition(
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
 
-        # 构建结构化营养数据字典（与 import 格式一致）
-        # 格式: { core_nutrients: {...}, all_nutrients: {...}, nutrient_details: {...} }
-        from app.services.nutrition_import_service import NutritionImportService
-        core_display_map = NutritionImportService.CORE_DISPLAY_MAP
-
-        # NRV 参考值（中国GB标准，成人每日推荐摄入量）
-        NRV_REF = {
-            "能量": (2000, "kcal"),
-            "蛋白质": (60, "g"),
-            "脂肪": (60, "g"),
-            "碳水化合物": (300, "g"),
-            "膳食纤维": (25, "g"),
-            "钙": (800, "mg"),
-            "铁": (15, "mg"),
-            "钠": (2000, "mg"),
-            "钾": (2000, "mg"),
-            "维生素A": (800, "μg"),
-            "维生素C": (100, "mg"),
-            "维生素B1": (1.2, "mg"),
-            "维生素B2": (1.4, "mg"),
-            "维生素B12": (2.4, "μg"),
-            "维生素D": (5, "μg"),
-            "维生素E": (14, "mg"),
-            "维生素K": (80, "μg"),
-        }
-        NRV_UNIT_FACTOR = {
-            ("kJ", "kcal"): 1.0 / 4.184,
-            ("mg", "g"): 0.001,
-            ("μg", "g"): 0.000001,
-            ("g", "mg"): 1000,
-            ("μg", "mg"): 0.001,
-            ("g", "μg"): 1000000,
-            ("mg", "μg"): 1000,
+        structured_nutrients = _build_structured_nutrients(request)
+        payload = {
+            "nutrients": structured_nutrients,
+            "base_quantity": request.base_quantity,
+            "base_unit": request.base_unit,
+            "source": request.source,
         }
 
-        def _calc_nrp(display_name: str, value: float, unit: str) -> float:
-            """根据 NRV 标准计算百分比"""
-            ref = NRV_REF.get(display_name)
-            if not ref or value <= 0:
-                return 0
-            nrv_value, nrv_unit = ref
-            if unit != nrv_unit:
-                factor = NRV_UNIT_FACTOR.get((unit, nrv_unit))
-                if factor:
-                    value = value * factor
-                else:
-                    return 0
-            if nrv_value <= 0:
-                return 0
-            return round((value / nrv_value) * 100, 2)
-
-        structured_nutrients = {
-            "core_nutrients": {},
-            "all_nutrients": {},
-            "nutrient_details": {}
-        }
-
-        for nutrient in request.nutrients:
-            key = nutrient.key or nutrient.name
-            info = {
-                "value": nutrient.value,
-                "unit": nutrient.unit,
-                "key": key
-            }
-
-            # 计算 NRV 百分比
-            display_name = core_display_map.get(nutrient.name)
-            if display_name:
-                nrp = _calc_nrp(display_name, float(nutrient.value), nutrient.unit)
-                if nrp > 0:
-                    info["nrp_pct"] = nrp
-                    info["standard"] = "中国GB标准"
-
-            structured_nutrients["all_nutrients"][key] = info
-            structured_nutrients["nutrient_details"][key] = info
-
-            if display_name:
-                structured_nutrients["core_nutrients"][display_name] = {
-                    **info, "key": key
-                }
-
-        # 查找或创建营养数据
-        nutrition_data = db.query(NutritionData).filter(
-            NutritionData.ingredient_id == ingredient_id
-        ).first()
-
-        if nutrition_data:
-            # 更新现有数据
-            nutrition_data.nutrients = structured_nutrients
-            nutrition_data.reference_amount = request.base_quantity
-            nutrition_data.reference_unit = request.base_unit
-            nutrition_data.source = request.source
-            nutrition_data.is_verified = True
-        else:
-            # 创建新数据
-            nutrition_data = NutritionData(
-                ingredient_id=ingredient_id,
-                nutrients=structured_nutrients,
-                reference_amount=request.base_quantity,
-                reference_unit=request.base_unit,
-                source=request.source,
-                is_verified=True,
-                match_confidence=100.0  # 用户自定义数据，置信度100%
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="nutrition", entity_id=ingredient_id,
+                action="update", payload=payload, admin=current_user,
             )
-            db.add(nutrition_data)
+            db.commit()
+            return NutritionEditResponse(
+                success=True, message="营养数据保存成功（管理员直写）",
+                ingredient_id=ingredient_id,
+            )
 
+        p = proposal_service.submit(
+            db, entity_type="nutrition", entity_id=ingredient_id,
+            action="update", payload=payload, proposer=current_user,
+        )
         db.commit()
-        db.refresh(nutrition_data)
-
+        msg = (
+            "营养数据保存成功（补空自动通过）" if p.status == "applied"
+            else f"营养数据提议已提交（status={p.status}，待管理员审核）"
+        )
         return NutritionEditResponse(
-            success=True,
-            message="营养数据保存成功",
-            ingredient_id=ingredient_id
+            success=True, message=msg, ingredient_id=ingredient_id,
         )
 
     except HTTPException:

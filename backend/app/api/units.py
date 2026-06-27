@@ -15,6 +15,7 @@ from app.models.unit import Unit, UnitConversion
 from app.models.user import User
 from app.models.entity_unit_override import EntityUnitOverride
 from app.models.entity_density import EntityDensity
+from app.services.proposals import service as proposal_service
 from app.schemas.unit import (
     UnitCreate,
     UnitUpdate,
@@ -129,14 +130,11 @@ def get_unit(unit_id: int, db: Session = Depends(get_db), current_user: User = D
 
 
 @router.post("/", response_model=UnitResponse)
-def create_unit(unit_data: UnitCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
+def create_unit(unit_data: UnitCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
-    创建新单位
+    创建新单位（分流：管理员直写 / 普通用户提议）。
 
-    - **name**: 单位名称（必须唯一）
-    - **abbreviation**: 单位缩写（必须唯一）
-    - **unit_type**: 单位类型
-    - **is_common**: 是否为常用单位
+    单位创建在治理总表里默认 auto_approve，故普通用户提交即生效（但经框架留痕）。
     """
     # 检查名称和缩写是否已存在
     existing = db.query(Unit).filter(
@@ -149,11 +147,29 @@ def create_unit(unit_data: UnitCreate, db: Session = Depends(get_db), current_us
         else:
             raise HTTPException(status_code=400, detail=f"单位缩写 '{unit_data.abbreviation}' 已存在")
 
-    unit = Unit(**unit_data.model_dump())
-    db.add(unit)
+    payload = unit_data.model_dump()
+
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="unit", entity_id=None,
+            action="create", payload=payload, admin=current_user,
+        )
+        db.commit()
+        unit = db.query(Unit).filter(Unit.name == unit_data.name).first()
+        return unit
+
+    p = proposal_service.submit(
+        db, entity_type="unit", entity_id=None,
+        action="create", payload=payload, proposer=current_user,
+    )
     db.commit()
-    db.refresh(unit)
-    return unit
+    # auto_approve（治理总表 unit.create 默认）→ 已 applied，返回新建单位；
+    # 若策略被改为 manual，返回提议占位（前端按 status 提示）
+    if p.status == "applied":
+        unit = db.query(Unit).filter(Unit.name == unit_data.name).first()
+        return unit
+    # 提议待审：返回骨架信息（满足 response_model）
+    return Unit(id=0, name=unit_data.name, abbreviation=unit_data.abbreviation)
 
 
 @router.put("/{unit_id}", response_model=UnitResponse)
@@ -161,9 +177,12 @@ def update_unit(
     unit_id: int,
     unit_data: UnitUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """更新单位"""
+    """更新单位（分流：管理员直写 / 普通用户提议）。
+
+    标准单位（is_standard=True）仅管理员可改，提议路径由执行器 validate 拒绝。
+    """
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
         raise HTTPException(status_code=404, detail="单位不存在")
@@ -181,37 +200,52 @@ def update_unit(
             else:
                 raise HTTPException(status_code=400, detail=f"单位缩写 '{unit_data.abbreviation}' 已存在")
 
-    # 更新字段
     update_data = unit_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(unit, field, value)
 
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="unit", entity_id=unit_id,
+            action="update", payload=update_data, admin=current_user,
+        )
+        db.commit()
+        db.refresh(unit)
+        return unit
+
+    p = proposal_service.submit(
+        db, entity_type="unit", entity_id=unit_id,
+        action="update", payload=update_data, proposer=current_user,
+    )
     db.commit()
-    db.refresh(unit)
+    # unit.update 治理总表默认 manual → 待审；返回当前单位（值未变）
     return unit
 
 
 @router.delete("/{unit_id}")
-def delete_unit(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
+def delete_unit(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
-    删除单位
+    删除单位（分流：管理员直写 / 普通用户提议）。
 
-    注意：如果单位被其他记录引用，将无法删除
+    标准单位（is_standard=True）仅管理员可删，提议路径由执行器 validate 拒绝。
+    执行器 delete 为软删（is_active=False），原硬删改为软删以便 revert。
     """
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
         raise HTTPException(status_code=404, detail="单位不存在")
 
-    try:
-        db.delete(unit)
-        db.commit()
-        return {"message": "单位已删除"}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail=f"无法删除单位，可能被其他记录引用：{str(e)}"
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="unit", entity_id=unit_id,
+            action="delete", payload={}, admin=current_user,
         )
+        db.commit()
+        return {"message": "单位已删除（管理员直写）"}
+
+    p = proposal_service.submit(
+        db, entity_type="unit", entity_id=unit_id,
+        action="delete", payload={}, proposer=current_user,
+    )
+    db.commit()
+    return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}
 
 
 # ============ 换算关系管理 ============

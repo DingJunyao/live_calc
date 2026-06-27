@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.merchant import Merchant
 from app.models.map_config import MapConfiguration
+from app.services.proposals import service as proposal_service
 from app.schemas.merchant import (
     MerchantCreate,
     MerchantUpdate,
@@ -600,22 +601,34 @@ async def update_merchant(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """更新商家信息"""
+    """更新商家信息（分流：管理员直写 / 普通用户提议）。
+
+    商家为共享池，原 user_id 过滤已失效（user_id 改 nullable 录入者语义）；
+    改用框架分流：管理员 apply_as_admin 直写；普通用户 submit 提议
+    （治理总表 merchant.update = manual + high risk → 待审，含坐标高危）。
+    """
     try:
-        db_merchant = db.query(Merchant).filter(
-            Merchant.id == merchant_id,
-            Merchant.user_id == current_user.id
-        ).first()
+        db_merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
         if not db_merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
 
-        # 更新字段
         update_data = merchant.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(db_merchant, key, value)
 
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="merchant", entity_id=merchant_id,
+                action="update", payload=update_data, admin=current_user,
+            )
+            db.commit()
+            db.refresh(db_merchant)
+            return db_merchant
+
+        p = proposal_service.submit(
+            db, entity_type="merchant", entity_id=merchant_id,
+            action="update", payload=update_data, proposer=current_user,
+        )
         db.commit()
-        db.refresh(db_merchant)
+        # merchant.update 治理总表默认 manual → 待审；返回当前商家（值未变）
         return db_merchant
     except HTTPException:
         raise
@@ -639,29 +652,31 @@ async def delete_merchant(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """删除商家"""
+    """删除商家（分流：管理员直写 / 普通用户提议）。
+
+    执行器 delete 为软删（is_open=False + 名称加 [已停用] 前缀），
+    并把 ProductRecord.merchant_id 引用置 NULL（不再硬性拒绝有价格的商家）。
+    治理总表 merchant.delete = manual + high risk。
+    """
     try:
-        db_merchant = db.query(Merchant).filter(
-            Merchant.id == merchant_id,
-            Merchant.user_id == current_user.id
-        ).first()
+        db_merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
         if not db_merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
 
-        # 检查是否有关联的商品记录
-        from app.models.product import ProductRecord
-        record_count = db.query(ProductRecord).filter(
-            ProductRecord.merchant_id == merchant_id
-        ).count()
-        if record_count > 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"该商家还有 {record_count} 条价格记录，无法删除"
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="merchant", entity_id=merchant_id,
+                action="delete", payload={}, admin=current_user,
             )
+            db.commit()
+            return {"message": "商家已停用（管理员直写，价格记录引用已置空）"}
 
-        db.delete(db_merchant)
+        p = proposal_service.submit(
+            db, entity_type="merchant", entity_id=merchant_id,
+            action="delete", payload={}, proposer=current_user,
+        )
         db.commit()
-        return {"message": "商家删除成功"}
+        return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}
     except HTTPException:
         raise
     except SQLAlchemyError:
