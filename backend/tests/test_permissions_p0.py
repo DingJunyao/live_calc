@@ -43,3 +43,24 @@ def test_nutrition_correct_forbidden_for_non_admin():
 def test_usda_match_ingredient_forbidden_for_non_admin():
     r = client.post("/api/v1/usda/match/ingredient/1", json={"fdc_id": 1})
     assert r.status_code == 403
+
+
+# ---------- ingredient_hierarchy.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_hierarchy_create_forbidden_for_non_admin():
+    r = client.post("/api/v1/ingredients/hierarchy",
+                    json={"parent_id": 1, "child_id": 2, "relation_type": "contains"})
+    assert r.status_code == 403
+
+
+@pytest.mark.usefixtures("as_non_admin")
+def test_merge_history_forbidden_for_non_admin():
+    r = client.get("/api/v1/ingredients/merge-history")
+    assert r.status_code == 403
+
+
+# ---------- ingredient_extended.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_ingredient_hard_delete_forbidden_for_non_admin():
+    r = client.delete("/api/v1/ingredients/1/hard")
+    assert r.status_code == 403

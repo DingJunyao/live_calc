@@ -4,7 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Set
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin_user
 from app.core.database import get_db
 from app.models.user import User
 from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelationType
@@ -82,7 +82,7 @@ class MergeStatusResponse(BaseModel):
 @router.post("/ingredients/hierarchy", response_model=HierarchyRelationResponse)
 def create_hierarchy_relation(
     relation: HierarchyRelationCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -272,7 +272,7 @@ def get_ingredient_hierarchy(
 def update_hierarchy_relation(
     relation_id: int,
     strength: int = Body(..., embed=True, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -309,7 +309,7 @@ def update_hierarchy_relation(
 @router.delete("/ingredients/hierarchy/{relation_id}")
 def delete_hierarchy_relation(
     relation_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -370,7 +370,7 @@ def merge_ingredients(
 
 @router.get("/ingredients/merge-history", response_model=MergeHistoryResponse)
 def get_merge_history(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """

@@ -549,6 +549,11 @@ app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["菜谱"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["报告"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["管理员"])
 app.include_router(invite_codes.router, prefix="/api/v1/invite-codes", tags=["邀请码"])
+# 食材层级关系路由必须在食材扩展路由之前，避免 /ingredients/merge-history、
+# /ingredients/hierarchy、/ingredients/{id}/hierarchy、/ingredients/{id}/merge-status
+# 被 ingredient_extended 的 GET /{ingredient_id} 捕获（返回 422/404 而非命中层级端点）。
+# 与上方「商品实体路由必须在商品记录路由之前」同模式（路径冲突按 include 顺序裁决）。
+app.include_router(ingredient_hierarchy.router, prefix="/api/v1", tags=["食材层级"])
 app.include_router(ingredient_extended.router, prefix="/api/v1/ingredients", tags=["食材扩展"])
 # 商品实体路由必须在商品记录路由之前，避免 /products/entity 被 /products/{record_id} 匹配
 app.include_router(products_entity.router, prefix="/api/v1", tags=["商品实体"])
@@ -561,7 +566,6 @@ app.include_router(sparklines.router, prefix="/api/v1", tags=["迷你图"])
 # 注册实体单位覆盖和密度路由
 app.include_router(units.entities_unit_router, prefix="/api/v1", tags=["实体单位覆盖"])
 app.include_router(units.entities_density_router, prefix="/api/v1", tags=["实体密度"])
-app.include_router(ingredient_hierarchy.router, prefix="/api/v1", tags=["食材层级"])
 app.include_router(export.router, prefix="/api/v1/export", tags=["数据导出"])
 app.include_router(import_api.router, prefix="/api/v1/import", tags=["数据导入"])
 app.include_router(agent_api.router, prefix="/api/v1/agent", tags=["Agent任务台"])

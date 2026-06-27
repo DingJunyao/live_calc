@@ -6,7 +6,7 @@ from typing import List, Optional
 from decimal import Decimal
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin_user
 from app.services.unit_conversion_service import UnitConversionService
 from app.services.ingredient_matcher import IngredientMatcher
 from app.utils.database_helpers import json_text_contains
@@ -715,7 +715,7 @@ async def update_ingredient(
 async def hard_delete_ingredient(
     ingredient_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """硬删除食材 - 永久删除"""
     try:
