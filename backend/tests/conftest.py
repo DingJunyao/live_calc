@@ -116,3 +116,46 @@ def clean_usda_tables(usda_app_overrides):
         db.commit()
     finally:
         db.close()
+
+
+class NonAdminFakeUser:
+    """非管理员测试用户（id=2）。"""
+    id = 2
+    username = "normal"
+    email = "n@b.c"
+    phone = None
+    is_admin = False
+    is_active = True
+    email_verified = True
+    token_version = 0
+    created_at = None
+
+
+def _fake_non_admin_user():
+    return NonAdminFakeUser()
+
+
+@pytest.fixture()
+def as_admin():
+    """以管理员身份请求（override get_current_user 为 FakeUser）。"""
+    previous = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = fake_current_user
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+@pytest.fixture()
+def as_non_admin():
+    """以普通用户身份请求（override get_current_user 为 NonAdminFakeUser）。"""
+    previous = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = _fake_non_admin_user
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
