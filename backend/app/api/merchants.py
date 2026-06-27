@@ -15,11 +15,13 @@ from app.schemas.merchant import (
     ProductOrderCreate,
 )
 from app.models.user_merchant_product_order import UserMerchantProductOrder
+from app.models.user_merchant_favorite import UserMerchantFavorite
 from app.schemas.common import PaginatedResponse
 from app.models.product import ProductRecord
 from app.models.product_entity import Product
 from app.models.unit import Unit
 from app.schemas.product import ProductRecordResponse
+from app.models.user import User
 
 from datetime import date as date_type, datetime as _dt
 from app.utils.datetime_utils import serialize_datetime
@@ -133,11 +135,10 @@ async def get_merchant_coordinates(
     """获取商家的坐标全集（不分页，供地图 fitBounds 用）。
 
     支持与列表同语义的 search / include_closed，保证 fitAll 与列表筛选一致。
-    只返回有坐标的商家。
+    只返回有坐标的商家。商家为共享池，所有登录用户可见全部。
     """
     try:
         query = db.query(Merchant).filter(
-            Merchant.user_id == current_user.id,
             Merchant.latitude.isnot(None),
             Merchant.longitude.isnot(None),
         )
@@ -164,17 +165,99 @@ async def get_merchant_coordinates(
         )
 
 
+# ---------- 收藏端点 ----------
+# 注意：收藏端点的固定路径（/favorites、/{id}/favorite）必须注册在
+# GET /{merchant_id} 之前，否则 "favorites" 会被当作 merchant_id 路径参数解析。
+# FastAPI 按声明顺序匹配路由，这里放在 GET /{merchant_id} 之前。
+
+
+@router.get("/favorites", response_model=List[MerchantResponse])
+async def list_favorite_merchants(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取当前用户收藏的商家列表。
+
+    商家为共享池，收藏表 user_merchant_favorites 表达「我的收藏」。
+    """
+    try:
+        from sqlalchemy import select
+        fav_ids_subq = select(UserMerchantFavorite.merchant_id).where(
+            UserMerchantFavorite.user_id == current_user.id
+        )
+        return db.query(Merchant).filter(Merchant.id.in_(fav_ids_subq)).all()
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=500,
+            detail="获取收藏商家列表时发生错误，请稍后重试"
+        )
+
+
+@router.post("/{merchant_id}/favorite")
+async def add_favorite(
+    merchant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """收藏一个商家（共享池中的任意商家均可收藏）。"""
+    try:
+        if not db.query(Merchant).filter(Merchant.id == merchant_id).first():
+            raise HTTPException(status_code=404, detail="商家不存在")
+        existing = db.query(UserMerchantFavorite).filter(
+            UserMerchantFavorite.user_id == current_user.id,
+            UserMerchantFavorite.merchant_id == merchant_id,
+        ).first()
+        if not existing:
+            db.add(UserMerchantFavorite(
+                user_id=current_user.id, merchant_id=merchant_id
+            ))
+            db.commit()
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="收藏商家时发生错误，请稍后重试"
+        )
+
+
+@router.delete("/{merchant_id}/favorite")
+async def remove_favorite(
+    merchant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """取消收藏一个商家。"""
+    try:
+        db.query(UserMerchantFavorite).filter(
+            UserMerchantFavorite.user_id == current_user.id,
+            UserMerchantFavorite.merchant_id == merchant_id,
+        ).delete()
+        db.commit()
+        return {"ok": True}
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="取消收藏时发生错误，请稍后重试"
+        )
+
+
 @router.get("/{merchant_id}", response_model=MerchantResponse)
 async def get_merchant(
     merchant_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取单个商家详情"""
+    """获取单个商家详情。
+
+    商家为共享池，按 id 查询即可（不再校验 user_id 归属）。
+    """
     try:
         merchant = db.query(Merchant).filter(
-            Merchant.id == merchant_id,
-            Merchant.user_id == current_user.id
+            Merchant.id == merchant_id
         ).first()
         if not merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
@@ -196,12 +279,14 @@ async def get_merchant_prices(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取商家的价格记录列表（分页）"""
+    """获取商家的价格记录列表（分页）。
+
+    商家为共享池（仅校验存在），但价格记录仍按 user_id 隔离（只看自己的记录）。
+    """
     try:
-        # 校验商家存在且属于当前用户
+        # 校验商家存在于共享池
         merchant = db.query(Merchant).filter(
-            Merchant.id == merchant_id,
-            Merchant.user_id == current_user.id
+            Merchant.id == merchant_id
         ).first()
         if not merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
@@ -268,15 +353,17 @@ async def get_merchant_product_prices(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取商家每个商品的最新价格，价格换算为该商品/原料默认单位的单价。"""
+    """获取商家每个商品的最新价格，价格换算为该商品/原料默认单位的单价。
+
+    商家为共享池（仅校验存在），但价格记录仍按 user_id 隔离（只看自己的记录）。
+    """
     from decimal import Decimal
     from app.services.unit_conversion_service import UnitConversionService
 
     try:
-        # 校验商家存在且属于当前用户
+        # 校验商家存在于共享池
         merchant = db.query(Merchant).filter(
-            Merchant.id == merchant_id,
-            Merchant.user_id == current_user.id
+            Merchant.id == merchant_id
         ).first()
         if not merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
@@ -447,12 +534,12 @@ async def save_product_orders(
 
     按 (user_id, merchant_id, product_id, session_date) upsert 每条记录。
     sort_order 取 product_ids 数组的索引（从 0 开始）。
+    商家为共享池（仅校验存在），排序记录本身按 user_id 隔离。
     """
     try:
-        # 校验商家存在且属于当前用户
+        # 校验商家存在于共享池
         merchant = db.query(Merchant).filter(
             Merchant.id == merchant_id,
-            Merchant.user_id == current_user.id,
         ).first()
         if not merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
@@ -601,12 +688,14 @@ async def get_merchants(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """获取商家列表（支持分页和搜索）"""
+    """获取商家列表（支持分页和搜索）。
+
+    商家为共享池：所有登录用户可见全部商家（含他人录入的），
+    私有归属语义改由 user_merchant_favorites（收藏）表达。
+    """
     try:
-        # 构建查询
-        query = db.query(Merchant).filter(
-            Merchant.user_id == current_user.id
-        )
+        # 构建查询（共享池，不再按 user_id 过滤）
+        query = db.query(Merchant)
 
         # 默认只显示营业中的商家
         if not include_closed:

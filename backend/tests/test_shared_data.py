@@ -1,4 +1,5 @@
 """P2 共享数据测试。"""
+import pytest
 from conftest import TestingSessionLocal, engine
 from app.models.price_summary import ProductMerchantPriceSummary
 from app.core.database import Base
@@ -53,3 +54,61 @@ def test_recompute_summary_aggregates_price_records():
         db.query(ProductMerchantPriceSummary).delete()
         db.commit()
         db.close()
+
+
+# ---------- merchants.py 共享池 ----------
+
+
+@pytest.fixture()
+def clean_merchants():
+    """插入一条 user_id=999 的商家，yield 其 id，teardown 删除。
+
+    语义：商家现在是「共享池」，user_id 仅代表录入者（999 = 他人的标记），
+    任意登录用户都应能在列表中看到它。
+    """
+    from app.models.merchant import Merchant
+
+    # 确保表存在（内存库在 conftest 导入时已 create_all，这里幂等再保一次）
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    try:
+        db.query(Merchant).delete()
+        db.commit()
+        m = Merchant(user_id=999, name="他人商家", is_open=True)
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+        merchant_id = m.id
+    finally:
+        db.close()
+
+    yield merchant_id
+
+    db = TestingSessionLocal()
+    try:
+        db.query(Merchant).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_merchant_list_visible_to_all_logged_in_users(clean_merchants):
+    """商家是共享池，任意登录用户可见全部（含他人录入的）。"""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.core.database import get_db as _gdb
+    from app.core.security import get_current_user as _gcu
+    from conftest import override_get_db, _fake_non_admin_user
+
+    client = TestClient(app)
+    app.dependency_overrides[_gdb] = override_get_db
+    app.dependency_overrides[_gcu] = _fake_non_admin_user
+    try:
+        r = client.get("/api/v1/merchants")
+        assert r.status_code == 200
+        # clean_merchants 插入了 user_id=999 的商家，非管理员（id=2）能看到
+        ids = [m["id"] for m in r.json()["items"]]
+        assert clean_merchants in ids
+    finally:
+        app.dependency_overrides.clear()
