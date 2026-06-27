@@ -2,10 +2,28 @@ import io
 import zipfile
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from app.core.security import get_current_user
 
 client = TestClient(app)
+
+
+@pytest.fixture()
+def admin_with_real_db():
+    """管理员身份 + 真实 DB（仅 override get_current_user，保留真实 get_db）。
+
+    P0 后 scope=full 限管理员；导出功能测试需管理员身份 + 真实数据。
+    """
+    from conftest import fake_current_user
+    previous = dict(app.dependency_overrides)
+    app.dependency_overrides[get_current_user] = fake_current_user
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
 
 
 def _login_token():
@@ -25,12 +43,9 @@ def _extract_zip(response):
     return zf
 
 
+@pytest.mark.usefixtures("admin_with_real_db")
 def test_export_full_returns_valid_zip():
-    token = _login_token()
-    resp = client.get(
-        "/api/v1/export/data?scope=full",
-        headers={"Authorization": f"Bearer {token}"},
-    )
+    resp = client.get("/api/v1/export/data?scope=full")
     zf = _extract_zip(resp)
     names = zf.namelist()
     assert "manifest.json" in names
@@ -59,13 +74,10 @@ def test_export_requires_auth():
     assert resp.status_code in (401, 403)
 
 
+@pytest.mark.usefixtures("admin_with_real_db")
 def test_export_howto_cook_compatibility():
     """导出的菜谱/食材/营养/单位字段符合 HowToCook 结构。"""
-    token = _login_token()
-    resp = client.get(
-        "/api/v1/export/data?scope=full",
-        headers={"Authorization": f"Bearer {token}"},
-    )
+    resp = client.get("/api/v1/export/data?scope=full")
     zf = _extract_zip(resp)
 
     # 单位：数组，每项含 name + aliases
