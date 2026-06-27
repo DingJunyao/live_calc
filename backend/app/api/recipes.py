@@ -107,6 +107,9 @@ async def create_recipe(
             tips=recipe.tips,
             images=recipe.images or []
         )
+        # 管理员创建即发布（公共）；普通用户私有
+        if getattr(current_user, "is_admin", False):
+            db_recipe.is_public = True
         db.add(db_recipe)
         db.flush()
 
@@ -170,9 +173,9 @@ async def get_recipes(
             Recipe.is_active == True
         )
 
-        # 获取公共导入的菜谱（排除当前用户自己的，排除软删除；与 user_recipes 天然不重叠，可用 UNION ALL）
+        # 获取公共菜谱（排除当前用户自己的，排除软删除）：导入来源 OR 显式发布
         public_imported_recipes = db.query(Recipe).filter(
-            Recipe.source != None,
+            or_(Recipe.source != None, Recipe.is_public == True),
             Recipe.user_id != current_user.id,
             Recipe.is_active == True
         )
@@ -550,6 +553,35 @@ def _build_recipe_detail_response(recipe: Recipe, db: Session) -> RecipeDetailRe
     )
 
 
+@router.post("/{recipe_id}/publish")
+def publish_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """发布菜谱。普通用户提交审核提议；管理员直写生效。"""
+    from app.services.proposals import service as proposal_service
+
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="菜谱不存在")
+    if getattr(current_user, "is_admin", False):
+        p = proposal_service.apply_as_admin(
+            db, entity_type="recipe", entity_id=recipe_id,
+            action="publish", payload={}, admin=current_user)
+    else:
+        # 发布前仅作者可发起发布提议
+        if recipe.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="仅作者可发布自己的菜谱")
+        p = proposal_service.submit(
+            db, entity_type="recipe", entity_id=recipe_id,
+            action="publish", payload={}, proposer=current_user)
+    db.commit()
+    db.refresh(recipe)
+    return {"proposal_id": p.id, "status": p.status,
+            "is_public": getattr(recipe, "is_public", False)}
+
+
 @router.delete("/{recipe_id}")
 async def delete_recipe(
     recipe_id: int,
@@ -566,6 +598,11 @@ async def delete_recipe(
             raise HTTPException(status_code=404, detail="菜谱不存在")
         if recipe.user_id != current_user.id and not current_user.is_admin:
             raise HTTPException(status_code=403, detail="无权删除此菜谱")
+        # 已发布的菜谱：作者不可撤回/删除，仅管理员可删
+        if getattr(recipe, "is_public", False) and not current_user.is_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="已发布的菜谱不可删除/撤回，请联系管理员")
 
         recipe.is_active = False
         db.commit()

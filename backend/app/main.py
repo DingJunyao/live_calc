@@ -290,6 +290,14 @@ async def lifespan(app: FastAPI):
             logger.info("USDA 搜索索引已加载")
         except Exception as e:
             logger.warning(f"USDA 索引加载失败（可能尚未迁移或为空）: {e}")
+
+        # 注册提议执行器（P2.4 起）
+        try:
+            from app.services.proposals.bootstrap import register_all
+            register_all()
+            logger.info("提议执行器已注册")
+        except Exception as e:
+            logger.error(f"提议执行器注册失败: {e}")
     except Exception as e:
         logger.error(f"初始化过程中发生错误: {str(e)}")
     finally:

@@ -200,3 +200,26 @@ def test_non_admin_submit_then_admin_review():
         assert r3.json()["status"] == "applied"
     finally:
         app.dependency_overrides.clear()
+
+
+# --- Task 2.4: 菜谱发布执行器 ---
+def test_recipe_publish_executor_sets_is_public(db):
+    from app.services.proposals.executors.recipe_publish import RecipePublishExecutor
+    from app.models.recipe import Recipe
+    from conftest import engine as _testing_engine
+    Base.metadata.create_all(bind=_testing_engine)
+    # 插一条私有菜谱
+    r = Recipe(name="测试菜谱", user_id=5, source=None)
+    db.add(r); db.commit(); db.refresh(r)
+    rid = r.id
+
+    ExecutorRegistry.reset()
+    ExecutorRegistry.register(RecipePublishExecutor(), default_policy="manual", default_risk="mid")
+    ex = ExecutorRegistry.get("recipe")
+    proposal = type("P", (), {"entity_type": "recipe", "entity_id": rid,
+                              "action": "publish", "payload": {}, "proposer_id": 5})()
+    result = ex.apply(db, proposal)
+    db.commit()
+    refreshed = db.query(Recipe).get(rid)
+    assert refreshed.is_public is True
+    assert result.revert_payload == {"set_public": False}
