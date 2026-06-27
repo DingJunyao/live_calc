@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin_user
 from app.models.user import User
 from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
@@ -108,7 +108,8 @@ def list_products(
     no_price: bool = Query(False, description="筛选没有维护过价格的商品"),
     single_price: bool = Query(False, description="筛选仅有一条价格记录的商品"),
     single_merchant: bool = Query(False, description="筛选仅有一家商家有其价格记录的商品"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取商品列表（分页）
 
@@ -259,7 +260,7 @@ def list_products(
 
 @router.get("/products/entity/{product_id}", response_model=ProductWithDetails)
 @router.get("/products/entity/{product_id}/", response_model=ProductWithDetails)
-def get_product(product_id: int, db: Session = Depends(get_db)):
+def get_product(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """获取商品详情"""
     product = db.query(Product).options(
         joinedload(Product.ingredient)
@@ -453,7 +454,7 @@ def add_product_barcode(
     product_id: int,
     barcode: ProductBarcodeCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """为商品添加条码"""
     # 验证商品是否存在
@@ -495,7 +496,8 @@ def add_product_barcode(
 @router.get("/products/entity/{product_id}/barcodes", response_model=List[ProductBarcodeResponse])
 def get_product_barcodes(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取商品的所有条码"""
     # 验证商品是否存在
@@ -516,7 +518,7 @@ def update_product_barcode(
     barcode_id: int,
     barcode_update: ProductBarcodeUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """更新条码信息"""
     barcode = db.query(ProductBarcode).filter(ProductBarcode.id == barcode_id).first()
@@ -547,7 +549,7 @@ def update_product_barcode(
 def delete_product_barcode(
     barcode_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """删除条码（软删除）"""
     barcode = db.query(ProductBarcode).filter(ProductBarcode.id == barcode_id).first()
@@ -562,7 +564,8 @@ def delete_product_barcode(
 @router.get("/products/entity/{product_id}/latest-price")
 def get_product_latest_price(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取商品的最近价格 - 计算平均单价
@@ -647,7 +650,8 @@ def get_product_latest_price(
 @router.get("/products/entity/{product_id}/latest-price-by-merchant")
 def get_product_latest_price_by_merchant(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取商品按商家分组的最新价格
@@ -750,7 +754,8 @@ def get_product_latest_price_by_merchant(
 def product_autocomplete(
     q: str = Query(..., min_length=1, description="搜索关键词"),
     limit: int = Query(20, ge=1, le=100, description="返回结果数量限制"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """商品自动完成搜索
 
@@ -830,7 +835,8 @@ def product_autocomplete(
 @router.get("/products/entity/{product_id}/nutrition")
 async def get_product_nutrition(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取商品的营养数据
@@ -886,7 +892,7 @@ async def update_product_nutrition(
     product_id: int,
     nutrition: Optional[dict] = Body(None, description="营养数据，传 null 清空自定义数据"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     更新商品的营养数据
@@ -1221,7 +1227,7 @@ def add_import_alias(
     product_id: int,
     body: ImportAliasRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """粘贴导入时将商品名添加为别名
 

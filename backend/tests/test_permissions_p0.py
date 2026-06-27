@@ -76,3 +76,15 @@ def test_hierarchy_delete_forbidden_for_non_admin():
 def test_ingredient_hard_delete_forbidden_for_non_admin():
     r = client.delete("/api/v1/ingredients/1/hard")
     assert r.status_code == 403
+
+
+# ---------- products_entity.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_product_barcode_add_forbidden_for_non_admin():
+    r = client.post("/api/v1/products/entity/1/barcodes", json={"barcode": "0001"})
+    assert r.status_code == 403
+
+
+def test_product_entity_list_requires_auth():
+    r = client.get("/api/v1/products/entity")
+    assert r.status_code in (401, 403)
