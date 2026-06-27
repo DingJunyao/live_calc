@@ -181,6 +181,9 @@ async def create_product_record(
             recorded_at=record.recorded_at  # 使用自定义记录时间，如果为空则使用默认值
         )
         db.add(db_record)
+        # P2 共享转型：写入时增量重算去标识公开聚合汇总（不含 user_id/record_type）
+        from app.services.price_aggregator import recompute_summary
+        recompute_summary(db, product_id=product_id, merchant_id=db_record.merchant_id)
         db.commit()
 
         # 重新查询以加载单位关系和商家关系

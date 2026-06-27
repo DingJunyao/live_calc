@@ -572,11 +572,11 @@ def get_product_latest_price(
 
     - **product_id**: 商品ID
 
-    返回该商品关联的最近一天所有价格记录的平均单价
+    返回该商品关联的最近一天所有价格记录的平均单价（单位归一化到 ¥/斤）。
+    P2：价格跨用户公开，响应去标识（不含 user_id/record_type）。
     """
     try:
         from datetime import datetime, timedelta
-        from sqlalchemy import func
         from collections import Counter
 
         # PostgreSQL 返回 aware datetime，统一转 naive 比较
@@ -585,7 +585,7 @@ def get_product_latest_price(
                 return None
             return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
-        # 查询该商品的所有价格记录
+        # 查询该商品的所有价格记录（P2：跨用户公开，不按 user_id 过滤）
         all_records = db.query(ProductRecord).filter(
             ProductRecord.product_id == product_id
         ).order_by(ProductRecord.recorded_at.desc()).all()
@@ -615,9 +615,9 @@ def get_product_latest_price(
             }
 
         # 计算平均价格 - 使用单价而非总价
+        # 使用 standard_quantity（克）归一化到 ¥/斤，确保跨单位可比较
         unit_prices = []
         for record in recent_records:
-            # 使用 standard_quantity（克）归一化到 ¥/斤，确保跨单位可比较
             std_qty = record.standard_quantity
             if record.price is not None and std_qty is not None and float(std_qty) > 0:
                 unit_price = float(record.price) * 500.0 / float(std_qty)
@@ -631,7 +631,7 @@ def get_product_latest_price(
 
         average_price = sum(unit_prices) / len(unit_prices)
 
-        # 获取最常见的单位名称
+        # 获取最常见的单位名称（不含 user_id/record_type，去标识）
         units = [record.original_unit.name if record.original_unit else None for record in recent_records]
         units = [u for u in units if u is not None]
         if units:
@@ -656,12 +656,12 @@ def get_product_latest_price_by_merchant(
     """
     获取商品按商家分组的最新价格
 
-    返回每个商家的最新一条价格记录。
+    返回每个商家的最新一条价格记录（已转换为关联原料默认单位，缺失时回退原价）。
     按价格从低到高排序，并标注最低价。
+    P2：价格跨用户公开，响应去标识（不含 user_id/record_type）。
     """
     try:
         from app.models.merchant import Merchant
-        from sqlalchemy import func
 
         product = db.query(Product).filter(Product.id == product_id).first()
         if not product:
@@ -672,6 +672,7 @@ def get_product_latest_price_by_merchant(
         if product.ingredient and product.ingredient.default_unit:
             target_unit_abbr = product.ingredient.default_unit.abbreviation
 
+        # P2：跨用户公开查询价格记录（不按 user_id 过滤）
         records = db.query(ProductRecord).options(
             joinedload(ProductRecord.original_unit),
             joinedload(ProductRecord.merchant)
@@ -721,6 +722,7 @@ def get_product_latest_price_by_merchant(
             if unit_price is None:
                 unit_price = total_price / original_quantity
 
+            # 响应去标识：只保留价格维度信息，不含 user_id/record_type
             results.append({
                 "merchant_id": mid,
                 "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",

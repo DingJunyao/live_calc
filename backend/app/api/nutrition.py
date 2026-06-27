@@ -885,7 +885,8 @@ async def get_ingredient_latest_price(
 
     - **ingredient_id**: 食材ID
 
-    返回该原料关联商品在最近一天的平均价格（基于原料的默认单位）
+    返回该原料关联商品在最近一天的平均价格（基于原料的默认单位）。
+    P2：价格跨用户公开，响应去标识（不含 user_id/record_type）。
     """
     try:
         from app.models.product import ProductRecord
@@ -912,7 +913,7 @@ async def get_ingredient_latest_price(
 
         product_ids = [p.id for p in products]
 
-        # 首先尝试获取最近24小时内的记录
+        # 首先尝试获取最近24小时内的记录（P2：跨用户公开，不按 user_id 过滤）
         from sqlalchemy import func
         now = datetime.utcnow()
         one_day_ago = now - timedelta(days=1)
@@ -922,28 +923,23 @@ async def get_ingredient_latest_price(
         ).filter(
             ProductRecord.product_id.in_(product_ids),
             ProductRecord.recorded_at >= one_day_ago,
-            ProductRecord.user_id == current_user.id
         ).order_by(ProductRecord.recorded_at.desc()).all()
 
         # 如果最近24小时内没有记录，则查找最近一次记录的那一天的所有记录
         if not recent_records:
-            # 查找最近一次记录
             latest_record = db.query(ProductRecord).filter(
                 ProductRecord.product_id.in_(product_ids),
-                ProductRecord.user_id == current_user.id
             ).order_by(ProductRecord.recorded_at.desc()).first()
 
             if not latest_record:
                 return {"average_price": None, "unit": None}
 
-            # 获取与最近记录同一天的所有记录
             latest_date = latest_record.recorded_at.date()
             recent_records = db.query(ProductRecord).options(
                 joinedload(ProductRecord.original_unit)
             ).filter(
                 ProductRecord.product_id.in_(product_ids),
                 func.date(ProductRecord.recorded_at) == latest_date,
-                ProductRecord.user_id == current_user.id
             ).all()
 
 
@@ -961,7 +957,7 @@ async def get_ingredient_latest_price(
             target_unit_abbr = "斤"
 
 
-        # 计算平均价格 - 转换到原料的默认单位
+        # 计算平均价格 - 转换到原料的默认单位（响应去标识：只产出价格维度，不含 user_id/record_type）
         unit_prices = []
         for i, record in enumerate(recent_records):
             if record.price is not None and record.original_quantity is not None and record.original_quantity > 0 and record.original_unit:
@@ -971,7 +967,6 @@ async def get_ingredient_latest_price(
 
                 # 如果原料有默认单位，且与记录单位不同，则转换数量到目标单位
                 if target_unit_abbr and original_unit_abbr != target_unit_abbr:
-                    # 转换数量到目标单位
                     convert_result = unit_service.convert(
                         original_quantity,
                         original_unit_abbr,
@@ -985,14 +980,11 @@ async def get_ingredient_latest_price(
                         converted_quantity = None
 
                     if converted_quantity is not None and converted_quantity > 0:
-                        # 用总价除以转换后的数量，得到目标单位的单价
                         unit_price = float(total_price) / float(converted_quantity)
                         unit_prices.append(unit_price)
                     else:
-                        # 转换失败，跳过此记录
                         continue
                 else:
-                    # 单位相同或原料没有默认单位，直接计算单价
                     unit_price = total_price / original_quantity
                     unit_prices.append(unit_price)
 
@@ -1001,7 +993,6 @@ async def get_ingredient_latest_price(
             return {"average_price": None, "unit": None}
 
         average_price = sum(unit_prices) / len(unit_prices)
-
 
         # 返回原料的默认单位（如果有）
         latest_date = max(r.recorded_at for r in recent_records)
@@ -1032,6 +1023,7 @@ async def get_ingredient_latest_price_by_merchant(
     返回每个商家的最新一条价格记录（已转换为原料默认单位）。
     按价格从低到高排序，并标注最低价。
     可选传入 quantity + quantity_unit 来计算该食材在该商家的预估总价。
+    P2：价格跨用户公开，响应去标识（不含 user_id/record_type）。
     """
     try:
         from app.models.merchant import Merchant
@@ -1059,7 +1051,7 @@ async def get_ingredient_latest_price_by_merchant(
             target_unit_abbr = "斤"
 
         def _lookup_merchant_prices(ing: Ingredient) -> list[dict]:
-            """对单个食材查找各商家最新价格，返回结果列表。仅当前用户的价格记录（P0 过渡期用户隔离，P2 改公开聚合后放开）。"""
+            """对单个食材查找各商家最新价格，返回结果列表。P2：价格跨用户公开，不按 user_id 过滤。"""
             products = db.query(Product).filter(
                 Product.ingredient_id == ing.id,
                 Product.is_active == True
@@ -1077,7 +1069,6 @@ async def get_ingredient_latest_price_by_merchant(
                 ProductRecord.product_id.in_(product_ids),
                 ProductRecord.merchant_id.isnot(None),
                 Merchant.is_open == True,
-                ProductRecord.user_id == current_user.id
             ).order_by(ProductRecord.recorded_at.desc()).all()
 
             merchant_latest: dict = {}
@@ -1135,6 +1126,7 @@ async def get_ingredient_latest_price_by_merchant(
                     if qty is not None:
                         total_cost = round(unit_price * qty, 2)
 
+                # 响应去标识：只保留价格维度信息，不含 user_id/record_type
                 results.append({
                     "merchant_id": mid,
                     "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
@@ -1151,7 +1143,7 @@ async def get_ingredient_latest_price_by_merchant(
         results = _lookup_merchant_prices(ingredient)
         fallback_chain = None
 
-        # ② 无直接价格 → 走 FALLBACK / SUBSTITUTABLE 回退链（仅当前用户；P0 过渡期隔离）
+        # ② 无直接价格 → 走 FALLBACK / SUBSTITUTABLE 回退链（P2：跨用户公开，不按 user_id 隔离）
         if not results:
             hierarchies = db.query(IngredientHierarchy).filter(
                 IngredientHierarchy.relation_type.in_([
@@ -1189,7 +1181,7 @@ async def get_ingredient_latest_price_by_merchant(
                     fb_ing = fb_ingredients_map.get(fb_id)
                     if not fb_ing or not fb_ing.is_active:
                         continue
-                    # 检查该回退食材是否有有价商品（仅当前用户；P0 过渡期隔离）
+                    # 检查该回退食材是否有有价商品（P2：跨用户公开，不按 user_id 隔离）
                     fb_prods = db.query(Product).filter(
                         Product.ingredient_id == fb_id,
                         Product.is_active == True
@@ -1201,7 +1193,6 @@ async def get_ingredient_latest_price_by_merchant(
                         ProductRecord.product_id.in_(fb_pids),
                         ProductRecord.merchant_id.isnot(None),
                         ProductRecord.is_active == True,
-                        ProductRecord.user_id == current_user.id
                     ).first()
                     if has_price:
                         cur = fb_ingredients_map.get(ing_id)
@@ -1231,7 +1222,7 @@ async def get_ingredient_latest_price_by_merchant(
             # 将来如需恢复，建议改为异步任务预计算 + 缓存
 
         # 返回的 unit 优先取回退食材的（results 里每条已带 unit），整体用第一条的
-        display_unit = results[0]["unit"] if results else (target_unit_abbr)
+        display_unit = results[0]["unit"] if results else target_unit_abbr
         response = {"prices": results, "unit": display_unit}
         if fallback_chain:
             response["fallback_chain"] = fallback_chain
