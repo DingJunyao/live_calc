@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from sqlalchemy import Column, Integer, String, DateTime, Numeric, Boolean, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -16,6 +17,7 @@ class Unit(Base, AuditMixin):
     base_unit_id = Column(Integer, ForeignKey("units.id"))  # [deprecated] 基础单位ID，保留兼容
     si_factor = Column(Numeric(15, 10), default=1.0)  # 转换为国际单位制的因子
     is_si_base = Column(Boolean, default=False)  # 是否是国际单位制基本单位
+    is_standard = Column(Boolean, default=False, nullable=False, server_default=sa.text("false"))  # 是否为标准单位（系统内置、共享）
     is_common = Column(Boolean, default=False)  # 是否为常用单位
     display_order = Column(Integer, default=0)  # 显示顺序
     unit_system = Column(String(20), nullable=True)  # 单位制：metric/market/imperial/count/vague

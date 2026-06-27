@@ -32,6 +32,8 @@ from app.models import (
     entity_density,
     change_proposal,
 )  # noqa: F401
+from app.models.user_merchant_favorite import UserMerchantFavorite  # noqa: F401
+from app.models.price_summary import ProductMerchantPriceSummary  # noqa: F401
 
 # Alembic 配置
 config = context.config

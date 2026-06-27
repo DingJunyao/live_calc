@@ -9,7 +9,7 @@ class Merchant(Base):
     __tablename__ = "merchants"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # 录入者（可空）；私有归属改由 user_merchant_favorites 表表达
     name = Column(String(200), nullable=False)
     address = Column(String(500))
     latitude = Column(Numeric(10, 7))

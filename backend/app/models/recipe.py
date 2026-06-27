@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from sqlalchemy import Column, Integer, String, ForeignKey, Text, JSON, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -10,6 +11,7 @@ class Recipe(Base, AuditMixin):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
     source = Column(String(100))
+    is_public = Column(Boolean, default=False, nullable=False, server_default=sa.text("false"))  # 是否公开（共享转型后区分私有/公开菜谱）
     user_id = Column(Integer, ForeignKey("users.id"))
     category = Column(String(50))  # 菜谱分类：荤菜、素菜、水产、主食、汤与粥、早餐、甜品、调料、半成品、小食
     tags = Column(JSON)
