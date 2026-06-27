@@ -30,6 +30,7 @@ from app.models import (
     map_config,
     entity_unit_override,
     entity_density,
+    change_proposal,
 )  # noqa: F401
 
 # Alembic 配置
