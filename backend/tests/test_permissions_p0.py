@@ -101,3 +101,21 @@ def test_export_full_forbidden_for_non_admin():
 def test_recipe_images_requires_auth():
     r = client.get("/api/v1/recipes/999999/images")
     assert r.status_code in (401, 403)
+
+
+@pytest.mark.usefixtures("as_non_admin")
+def test_recipe_images_forbidden_for_non_author_private():
+    """登录用户看他人私有菜谱图 → 403（真正的登录用户间越权场景）。"""
+    from conftest import TestingSessionLocal
+    from app.models.recipe import Recipe
+    db = TestingSessionLocal()
+    try:
+        recipe = Recipe(name="他人私有菜谱", user_id=999, source=None)
+        db.add(recipe)
+        db.commit()
+        db.refresh(recipe)
+        rid = recipe.id
+    finally:
+        db.close()
+    r = client.get(f"/api/v1/recipes/{rid}/images")
+    assert r.status_code == 403

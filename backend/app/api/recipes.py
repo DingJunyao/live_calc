@@ -1232,6 +1232,8 @@ async def get_recipe_images(
             image_urls.append(full_url)
 
         return {"images": image_urls}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取图片失败：{str(e)}")
 
