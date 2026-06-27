@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session, load_only, joinedload
 from typing import List, Optional
 import json
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin_user
+from app.models.user import User
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
 from app.models.product_entity import Product
@@ -611,7 +612,7 @@ async def match_ingredient_nutrition(
 async def correct_nutrition_mapping(
     request: NutritionCorrectRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """更正映射"""
     try:
@@ -920,14 +921,16 @@ async def get_ingredient_latest_price(
             joinedload(ProductRecord.original_unit)
         ).filter(
             ProductRecord.product_id.in_(product_ids),
-            ProductRecord.recorded_at >= one_day_ago
+            ProductRecord.recorded_at >= one_day_ago,
+            ProductRecord.user_id == current_user.id
         ).order_by(ProductRecord.recorded_at.desc()).all()
 
         # 如果最近24小时内没有记录，则查找最近一次记录的那一天的所有记录
         if not recent_records:
             # 查找最近一次记录
             latest_record = db.query(ProductRecord).filter(
-                ProductRecord.product_id.in_(product_ids)
+                ProductRecord.product_id.in_(product_ids),
+                ProductRecord.user_id == current_user.id
             ).order_by(ProductRecord.recorded_at.desc()).first()
 
             if not latest_record:
@@ -939,7 +942,8 @@ async def get_ingredient_latest_price(
                 joinedload(ProductRecord.original_unit)
             ).filter(
                 ProductRecord.product_id.in_(product_ids),
-                func.date(ProductRecord.recorded_at) == latest_date
+                func.date(ProductRecord.recorded_at) == latest_date,
+                ProductRecord.user_id == current_user.id
             ).all()
 
 
@@ -1072,7 +1076,8 @@ async def get_ingredient_latest_price_by_merchant(
             ).filter(
                 ProductRecord.product_id.in_(product_ids),
                 ProductRecord.merchant_id.isnot(None),
-                Merchant.is_open == True
+                Merchant.is_open == True,
+                ProductRecord.user_id == current_user.id
             ).order_by(ProductRecord.recorded_at.desc()).all()
 
             merchant_latest: dict = {}
@@ -1195,7 +1200,8 @@ async def get_ingredient_latest_price_by_merchant(
                     has_price = db.query(ProductRecord).filter(
                         ProductRecord.product_id.in_(fb_pids),
                         ProductRecord.merchant_id.isnot(None),
-                        ProductRecord.is_active == True
+                        ProductRecord.is_active == True,
+                        ProductRecord.user_id == current_user.id
                     ).first()
                     if has_price:
                         cur = fb_ingredients_map.get(ing_id)
@@ -1345,7 +1351,7 @@ async def edit_ingredient_nutrition(
     ingredient_id: int,
     request: NutritionEditRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     编辑原料营养数据
@@ -1485,7 +1491,7 @@ async def edit_product_nutrition(
     product_id: int,
     request: NutritionEditRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     编辑商品营养数据

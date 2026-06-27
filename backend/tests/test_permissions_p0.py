@@ -23,3 +23,16 @@ def test_units_list_requires_auth():
     # 无 override = 无 Authorization header → 401/403
     r = client.get("/api/v1/units/")
     assert r.status_code in (401, 403)
+
+
+# ---------- nutrition.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_nutrition_ingredient_write_forbidden_for_non_admin():
+    r = client.post("/api/v1/nutrition/ingredients/1/nutrition", json={"nutrients": {}})
+    assert r.status_code == 403
+
+
+@pytest.mark.usefixtures("as_non_admin")
+def test_nutrition_correct_forbidden_for_non_admin():
+    r = client.post("/api/v1/nutrition/correct", json={"ingredient_id": 1})
+    assert r.status_code == 403
