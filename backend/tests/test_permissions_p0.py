@@ -88,3 +88,16 @@ def test_product_barcode_add_forbidden_for_non_admin():
 def test_product_entity_list_requires_auth():
     r = client.get("/api/v1/products/entity")
     assert r.status_code in (401, 403)
+
+
+# ---------- export.py ----------
+@pytest.mark.usefixtures("as_non_admin")
+def test_export_full_forbidden_for_non_admin():
+    r = client.get("/api/v1/export/data", params={"scope": "full"})
+    assert r.status_code == 403
+
+
+# ---------- recipes.py images ----------
+def test_recipe_images_requires_auth():
+    r = client.get("/api/v1/recipes/999999/images")
+    assert r.status_code in (401, 403)

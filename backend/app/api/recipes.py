@@ -9,6 +9,7 @@ from app.core.security import get_current_user
 from app.models.recipe import Recipe, RecipeIngredient, RecipeCostHistory
 from app.models.nutrition import Ingredient
 from app.models.unit import Unit
+from app.models.user import User
 from app.schemas.recipe import (
     RecipeCreate,
     RecipeUpdate,
@@ -1199,13 +1200,23 @@ async def import_from_json_repo(
 async def get_recipe_images(
     recipe_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """获取菜谱图片的完整 URL 列表"""
     try:
         recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
+
+        # 可见性校验：本人 / 公开来源（source 非空） / 公开菜谱（is_public） / 管理员
+        is_visible = (
+            recipe.user_id == current_user.id
+            or recipe.source is not None
+            or getattr(recipe, "is_public", False)
+            or current_user.is_admin
+        )
+        if not is_visible:
+            raise HTTPException(status_code=403, detail="无权查看此菜谱图片")
 
         if not recipe.images:
             return {"images": []}
