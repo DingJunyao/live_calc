@@ -108,12 +108,19 @@ def resolve_user_from_token(token: "Optional[str]"):
             detail="无效的令牌"
         )
 
-    from app.core.database import get_db
+    from app.core.database import SessionLocal
     from app.models.user import User
 
-    db = next(get_db())
-    user = db.query(User).filter(User.id == int(user_id)).first()
-    db.close()
+    # 直接 SessionLocal + try/finally，避免 ``next(get_db())`` 反模式：
+    # 后者取到的 generator 临时对象无变量绑定，CPython 引用计数下会立即被 GC，
+    # 反过来触发 get_db 的 finally 提前 close，使单次鉴权借两次连接；且异常
+    # 路径下连接归还依赖 GC 时机，高并发下不稳。这里是每个鉴权请求的必经
+    # 高频路径，必须保证异常时也立即归还连接。
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == int(user_id)).first()
+    finally:
+        db.close()
 
     if not user:
         raise HTTPException(

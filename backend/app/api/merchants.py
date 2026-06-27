@@ -463,22 +463,26 @@ async def save_product_orders(
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="session_date 格式无效，应为 YYYY-MM-DD")
 
-        # 查询当天已有记录（用于 upsert）
-        existing = {}
-        existing_rows = db.query(UserMerchantProductOrder).filter(
-            UserMerchantProductOrder.user_id == current_user.id,
-            UserMerchantProductOrder.merchant_id == merchant_id,
-            UserMerchantProductOrder.session_date == sess_date,
-        ).all()
-        for row in existing_rows:
-            key = (current_user.id, merchant_id, row.product_id, sess_date)
-            existing[key] = row
+        # 查询当天已有记录（用于 upsert）。
+        # 本请求内 (user_id, merchant_id, session_date) 固定，以 product_id 为键即可。
+        existing: dict[int, UserMerchantProductOrder] = {
+            row.product_id: row
+            for row in db.query(UserMerchantProductOrder).filter(
+                UserMerchantProductOrder.user_id == current_user.id,
+                UserMerchantProductOrder.merchant_id == merchant_id,
+                UserMerchantProductOrder.session_date == sess_date,
+            ).all()
+        }
+
+        # seen 登记本轮新增的记录。请求体内若出现重复 product_id（如粘贴导入时
+        # 两行匹配到同一商品），第二次遇到时直接更新已有对象的 sort_order，
+        # 而非再次 db.add —— 否则同 (user, merchant, product, date) 会触发
+        # UNIQUE 约束冲突，整批 500 回滚，排序记录一条也写不进去。
+        seen: dict[int, UserMerchantProductOrder] = {}
 
         for idx, pid in enumerate(body.product_ids):
-            key = (current_user.id, merchant_id, pid, sess_date)
-            if key in existing:
-                existing[key].sort_order = idx
-            else:
+            record = seen.get(pid) or existing.get(pid)
+            if record is None:
                 record = UserMerchantProductOrder(
                     user_id=current_user.id,
                     merchant_id=merchant_id,
@@ -487,6 +491,10 @@ async def save_product_orders(
                     sort_order=idx,
                 )
                 db.add(record)
+                seen[pid] = record
+            else:
+                # 同一商品重复出现：后者覆盖前者的排序位置
+                record.sort_order = idx
 
         db.commit()
         return {"message": f"已保存 {len(body.product_ids)} 条排序记录"}

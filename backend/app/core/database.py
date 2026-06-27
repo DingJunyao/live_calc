@@ -16,9 +16,11 @@ if "sqlite" in settings.database_url:
 _sqlite_pool_args = {}
 if "sqlite" in settings.database_url:
     # SQLite 的 QueuePool 默认 pool_size=5, max_overflow=10——Agent 场景不够用。
-    # pool_size=10 可容纳约 5 个长 Agent + 5 个短 API 请求同时运作。
-    _sqlite_pool_args["pool_size"] = 10
-    _sqlite_pool_args["max_overflow"] = 20
+    # pool_size=15 + max_overflow=30（共 45）容纳并发长持有：多个 Agent 会话
+    # （run_agent_loop 每会话持一个连接直到结束）+ SSE 订阅 + 后台导入/翻译任务
+    # + 常规 API 请求。SQLite 单写锁下等锁的连接也算「占用」，故留足余量。
+    _sqlite_pool_args["pool_size"] = 15
+    _sqlite_pool_args["max_overflow"] = 30
 
 engine = create_engine(
     settings.database_url,

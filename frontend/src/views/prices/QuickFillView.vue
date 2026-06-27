@@ -52,7 +52,8 @@
               <div class="fill-row__name">{{ row.productName }}</div>
               <div class="fill-row__inputs">
                 <v-text-field
-                  v-model="row.price"
+                  :model-value="row.price"
+                  @update:model-value="(v) => onPriceChange(row, v == null ? '' : String(v))"
                   type="number"
                   step="0.01"
                   placeholder="¥0.00"
@@ -245,6 +246,7 @@ interface FillRow {
   loading?: boolean
   categoryId: number | null
   categoryName: string
+  filledAt?: number  // 首次填上有效价格的时间戳，保存时按此排序（填写顺序）
 }
 
 interface HiddenItem {
@@ -530,6 +532,14 @@ onUnmounted(() => {
   }
 })
 
+// 历史商品「首次填上有效价格」的时间戳记录：保存时按填写顺序排序，
+// 而非页面显示顺序。改为无效值则清空，重新填会重新计时。
+function onPriceChange(row: FillRow, val: string) {
+  row.price = val
+  const ok = !!(val && parseFloat(val) > 0)
+  row.filledAt = ok ? (row.filledAt ?? Date.now()) : undefined
+}
+
 // --- 保存 ---
 const saveAll = async () => {
   if (!selectedMerchantId.value) {
@@ -603,13 +613,14 @@ const saveAll = async () => {
   let successCount = 0
   let failCount = 0
   let newSavedCount = 0
-  const savedProductIds: number[] = []
+  // 按用户实际填写顺序（首次填上有效价格的时间）排序，而非页面显示顺序
+  const savedEntries: Array<{ pid: number; filledAt: number | undefined }> = []
 
   for (const r of results) {
     if (r.ok) {
       successCount++
       if (!r.fillRow.isNew && r.pid) {
-        savedProductIds.push(r.pid)
+        savedEntries.push({ pid: r.pid, filledAt: r.fillRow.filledAt })
       } else if (r.fillRow.isNew) {
         newSavedCount++
       }
@@ -617,6 +628,9 @@ const saveAll = async () => {
       failCount++
     }
   }
+
+  savedEntries.sort((a, b) => (a.filledAt ?? Infinity) - (b.filledAt ?? Infinity))
+  const savedProductIds = savedEntries.map(e => e.pid)
 
   if (savedProductIds.length > 0) {
     addHiddenItems(selectedMerchantId.value, savedProductIds)

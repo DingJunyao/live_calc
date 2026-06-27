@@ -302,7 +302,6 @@ async def stream_session(
         "header，故用 query 参数。生产建议使用短时效 token 或改用 "
         "fetch + ReadableStream，避免 query token 进入 access log 泄漏。",
     ),
-    db: Session = Depends(get_db),
 ):
     """SSE 流：1) **先 subscribe 实时 queue**（C1：防止回放期间实时事件被丢）；
     2) 回放历史 AgentMessage（按 seq）；3) 从 queue 消费实时事件，对带 ``seq``
@@ -318,13 +317,19 @@ async def stream_session(
     心跳（I1）：queue 空超时分支每 ~15s 发一行 SSE 注释 ``: ping\\n\\n``（浏览器
     忽略，仅保活 TCP），防 nginx/CDN 超时断连。
     """
-    # C2：query token 鉴权。
-    current_user = _auth_user_from_token(token, db)
-    sess = _get_session_or_404(db, sid, current_user)
-
-    # 已终态：回放历史 + synthesized done。
-    # 仍 running/awaiting_approval：回放历史 + 续实时 queue。
-    is_terminal = sess.status in ("success", "failed", "cancelled")
+    # C2：query token 鉴权。用独立短命 Session 完成鉴权 + 取会话状态后立即归还，
+    # 不让整个 SSE 流（可达数分钟）始终占用连接池的一个连接——此前用
+    # ``Depends(get_db)`` 会在流结束前一直持有连接，多个任务台标签页 + 后台
+    # Agent 会话叠加即可耗尽 QueuePool。
+    auth_db = SessionLocal()
+    try:
+        current_user = _auth_user_from_token(token, auth_db)
+        sess = _get_session_or_404(auth_db, sid, current_user)
+        # close 后 ORM 对象会 detached，先捕获 event_gen 需要的标量。
+        is_terminal = sess.status in ("success", "failed", "cancelled")
+        initial_status = sess.status
+    finally:
+        auth_db.close()
 
     async def event_gen() -> AsyncGenerator[bytes, None]:
         q: "Optional[Any]" = None
@@ -368,13 +373,13 @@ async def stream_session(
                     {
                         "kind": "done",
                         "synthesized": True,
-                        "status": sess.status,
+                        "status": initial_status,
                     }
                 )
                 return
 
             # synthesized marker：历史回放结束、转入实时。
-            yield _format_sse({"kind": "history_end", "status": sess.status})
+            yield _format_sse({"kind": "history_end", "status": initial_status})
 
             tick = 0
             idle_ticks = 0  # 连续空超时计数，用于心跳（I1）。
