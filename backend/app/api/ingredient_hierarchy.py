@@ -335,14 +335,25 @@ def merge_ingredients(
     """
     合并食材 - 将多个源食材合并到目标食材
     """
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="只有管理员可以执行食材合并操作")
-
     if not merge_request.source_ingredient_ids or not merge_request.target_ingredient_id:
         raise HTTPException(status_code=400, detail="缺少必要的参数：源食材ID列表和目标食材ID")
 
     if merge_request.target_ingredient_id in merge_request.source_ingredient_ids:
         raise HTTPException(status_code=400, detail="目标食材不能同时是源食材")
+
+    # 权限校验：管理员可合并任意食材；普通用户只能合并自己创建的食材（源与目标均须由本人创建）
+    if not current_user.is_admin:
+        involved_ids = list(merge_request.source_ingredient_ids) + [merge_request.target_ingredient_id]
+        involved_ingredients = db.query(Ingredient).filter(Ingredient.id.in_(involved_ids)).all()
+        not_owned = [
+            ing.name for ing in involved_ingredients
+            if ing.created_by != current_user.id
+        ]
+        if not_owned:
+            raise HTTPException(
+                status_code=403,
+                detail="只能合并自己创建的食材，以下食材不由你创建：" + "、".join(not_owned)
+            )
 
     merger = IngredientMerger(db)
     result = merger.merge_ingredients(

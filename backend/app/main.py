@@ -21,7 +21,6 @@ from app.api import ingredient_extended  # 新增的食材扩展API
 from app.api import products_entity  # 商品实体 API
 from app.api import user_preferences  # 用户偏好 API
 from app.api import units  # 单位管理 API（含实体单位覆盖和密度路由）
-from app.api import ingredient_merge  # 食材合并 API
 from app.api import ingredient_hierarchy  # 食材层级关系 API
 from app.api import sparklines  # 迷你图数据 API
 from app.api import export  # 数据导出 API
@@ -562,7 +561,6 @@ app.include_router(sparklines.router, prefix="/api/v1", tags=["迷你图"])
 # 注册实体单位覆盖和密度路由
 app.include_router(units.entities_unit_router, prefix="/api/v1", tags=["实体单位覆盖"])
 app.include_router(units.entities_density_router, prefix="/api/v1", tags=["实体密度"])
-app.include_router(ingredient_merge.router, prefix="/api/v1", tags=["食材合并"])
 app.include_router(ingredient_hierarchy.router, prefix="/api/v1", tags=["食材层级"])
 app.include_router(export.router, prefix="/api/v1/export", tags=["数据导出"])
 app.include_router(import_api.router, prefix="/api/v1/import", tags=["数据导入"])
