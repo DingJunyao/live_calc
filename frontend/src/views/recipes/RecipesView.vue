@@ -80,12 +80,12 @@
           <div class="text-center pa-2 text-subtitle-1">
             {{ recipe.name }}
             <v-chip
-              v-if="recipe.is_public || recipe.source"
+              v-if="recipe.user_id === userStore.user?.id && !recipe.is_public && !recipe.source"
               size="x-small"
-              color="success"
+              color="warning"
               variant="tonal"
               class="ms-1"
-            >已发布</v-chip>
+            >未发布</v-chip>
           </div>
 
           <v-card-text class="text-center pa-2">
@@ -233,6 +233,7 @@ import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { useUserStore } from '@/stores/user'
 import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
 
@@ -244,6 +245,7 @@ const route = useRoute()
 interface Recipe {
   id: number
   name: string
+  user_id?: number
   description?: string
   category?: string
   difficulty?: string
@@ -258,6 +260,7 @@ interface Recipe {
 }
 
 const router = useRouter()
+const userStore = useUserStore()
 
 const recipes = ref<Recipe[]>([])
 const loading = ref(true)
