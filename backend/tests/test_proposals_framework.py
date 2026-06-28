@@ -426,6 +426,24 @@ def test_merchant_executor_delete_and_revert_with_references(db):
     assert pr_restored.merchant_id == m.id
 
 
+# --- Task 3.2: 反垃圾——一键回退某用户全部已生效提议 ---
+def test_revert_all_by_user_admin_only_and_bulk(db):
+    from app.services.proposals import service as proposal_service
+    from app.services.proposals.registry import ExecutorRegistry
+    ExecutorRegistry.reset(); ExecutorRegistry.register(_RecordingExecutor())
+    ExecutorRegistry.set_policy("rec", "update", "auto_approve")
+    u = type("U", (), {"id": 5, "is_admin": False})()
+    for _ in range(3):
+        p = proposal_service.submit(db, entity_type="rec", entity_id=1,
+                                    action="update", payload={"v": 1}, proposer=u)
+    db.commit()
+    admin = type("A", (), {"id": 1, "is_admin": True})()
+    n = proposal_service.revert_all_by_user(db, user_id=5, reviewer=admin)
+    db.commit()
+    assert n == 3
+    assert _RecordingExecutor.reverted == 3
+
+
 def test_register_all_sets_governance_policies():
     """治理总表策略在 register_all 后正确落地。"""
     ExecutorRegistry.reset()

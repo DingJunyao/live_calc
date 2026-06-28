@@ -118,6 +118,32 @@ def revert(db: Session, *, proposal_id: int, reviewer) -> ChangeProposal:
     return proposal
 
 
+def revert_all_by_user(db: Session, *, user_id: int, reviewer) -> int:
+    """回退某用户所有 applied 提议。返回回退条数。
+
+    反垃圾场景：管理员一键清理某用户全部已生效贡献。单条失败不阻断整体回退
+    （已成功回退的条目仍保留 reverted 状态）。权限校验由 API 层负责。
+
+    注意：不强制回滚窗口（revertable_until）——批量反垃圾需要突破窗口限制。
+    """
+    proposals = db.query(ChangeProposal).filter(
+        ChangeProposal.proposer_id == user_id,
+        ChangeProposal.status == "applied",
+    ).all()
+    count = 0
+    for p in proposals:
+        try:
+            executor = _get_executor(p.entity_type)
+            executor.revert(db, p)
+            p.status = "reverted"
+            p.reverted_at = _now()
+            p.reviewer_id = reviewer.id
+            count += 1
+        except Exception:
+            continue   # 单条失败不阻断整体回退
+    return count
+
+
 def apply_as_admin(db: Session, *, entity_type: str, entity_id: Optional[int], action: str,
                    payload: dict, admin) -> ChangeProposal:
     """管理员直写：绕过审核，立即 apply。单用户场景的核心路径。

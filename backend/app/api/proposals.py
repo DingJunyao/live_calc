@@ -70,6 +70,23 @@ def list_proposals(status_filter: Optional[str] = Query(None, alias="status"),
     return [_to_response(p) for p in items]
 
 
+@router.post("/proposals/revert-by-user")
+def revert_by_user(body: dict,
+                   db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_admin_user)):
+    """一键回退某用户全部已生效提议（反垃圾，仅管理员）。
+
+    注意：此固定路径必须早于 /proposals/{proposal_id} 注册，否则
+    "revert-by-user" 会被当作 proposal_id 匹配到动态路由。
+    """
+    user_id = body.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="缺少 user_id")
+    n = proposal_service.revert_all_by_user(db, user_id=user_id, reviewer=current_user)
+    db.commit()
+    return {"reverted_count": n}
+
+
 @router.get("/proposals/{proposal_id}", response_model=ProposalResponse)
 def get_proposal(proposal_id: int,
                  db: Session = Depends(get_db),
