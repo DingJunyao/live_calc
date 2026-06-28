@@ -24,6 +24,20 @@
     </v-alert>
 
     <template v-else>
+      <!-- 顶部 Tab：提议列表 / 策略配置 -->
+      <v-tabs v-model="activeTab" color="primary" density="comfortable" class="mb-4">
+        <v-tab value="list">
+          <v-icon start size="small">mdi-clipboard-list-outline</v-icon>
+          提议列表
+        </v-tab>
+        <v-tab value="policies">
+          <v-icon start size="small">mdi-tune-vertical</v-icon>
+          策略配置
+        </v-tab>
+      </v-tabs>
+
+      <!-- ===== 提议列表 ===== -->
+      <template v-if="activeTab === 'list'">
       <!-- 状态筛选 -->
       <v-card class="rounded-lg mb-4">
         <v-card-text class="d-flex flex-wrap align-center ga-3 py-3">
@@ -173,6 +187,71 @@
           </template>
         </v-data-table>
       </v-card>
+      </template>
+
+      <!-- ===== 策略配置 ===== -->
+      <template v-else-if="activeTab === 'policies'">
+        <v-card class="rounded-lg">
+          <v-card-text class="py-3 d-flex align-center ga-2 flex-wrap">
+            <v-icon color="primary">mdi-tune-vertical</v-icon>
+            <span class="text-body-2 text-medium-emphasis">
+              为每种「实体类型 · 动作」配置审核策略。改动即时保存，重启后保持。
+            </span>
+            <v-spacer />
+            <v-btn icon="mdi-refresh" variant="text" size="small" @click="loadPolicies" />
+          </v-card-text>
+          <v-divider />
+
+          <v-data-table
+            :headers="policyHeaders"
+            :items="policies"
+            :loading="policiesLoading"
+            density="comfortable"
+            item-value="entity_type"
+            no-data-text="暂无已注册的提议类型"
+          >
+            <template #item.type="{ item }">
+              <span class="text-body-2 font-weight-medium">
+                {{ entityTypeLabel(item.entity_type) }} · {{ actionLabel(item.action) }}
+              </span>
+              <div class="text-caption text-medium-emphasis">
+                {{ item.entity_type }} / {{ item.action }}
+              </div>
+            </template>
+
+            <template #item.risk_level="{ item }">
+              <v-chip :color="riskColor(item.risk_level)" size="x-small" variant="outlined">
+                {{ riskLabel(item.risk_level) }}
+              </v-chip>
+            </template>
+
+            <template #item.policy="{ item }">
+              <div class="d-flex align-center ga-2">
+                <v-select
+                  :model-value="item.policy"
+                  :items="policyOptions"
+                  item-title="label"
+                  item-value="value"
+                  density="compact"
+                  variant="outlined"
+                  hide-details
+                  style="max-width: 200px"
+                  :color="policyChipColor(item.policy)"
+                  @update:model-value="(v) => onPolicyChange(item, v)"
+                />
+                <v-chip
+                  v-if="!item.is_default"
+                  size="x-small"
+                  variant="text"
+                  color="warning"
+                >
+                  已自定义
+                </v-chip>
+              </div>
+            </template>
+          </v-data-table>
+        </v-card>
+      </template>
     </template>
 
     <!-- 详情 + 影响预览 + 审核对话框 -->
@@ -421,8 +500,12 @@ import {
   reviewProposal,
   revertProposal,
   revertByUser,
+  listPolicies,
+  updatePolicy,
   type Proposal,
   type ProposalStatus,
+  type PolicyItem,
+  type ReviewPolicy,
 } from '@/api/proposals'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
@@ -433,6 +516,77 @@ const { notify } = useGlobalSnackbar()
 const goBack = () => router.back()
 
 const isAdmin = computed(() => !!userStore.user?.is_admin)
+
+// ---------- 顶部 Tab ----------
+const activeTab = ref<'list' | 'policies'>('list')
+
+// ---------- 策略配置 ----------
+const policies = ref<PolicyItem[]>([])
+const policiesLoading = ref(false)
+const policySavingKey = ref<string | null>(null)
+
+const policyHeaders = [
+  { title: '实体类型 · 动作', key: 'type', sortable: false },
+  { title: '风险', key: 'risk_level', sortable: false, width: 90 },
+  { title: '审核策略', key: 'policy', sortable: false, width: 280 },
+]
+
+const policyOptions: { value: ReviewPolicy; label: string }[] = [
+  { value: 'auto_approve', label: '自动批准生效' },
+  { value: 'auto_review', label: '自动审核（辅助）' },
+  { value: 'manual', label: '人工审核' },
+]
+
+const loadPolicies = async () => {
+  if (!isAdmin.value) return
+  policiesLoading.value = true
+  try {
+    policies.value = await listPolicies()
+  } catch (e: any) {
+    notify(e?.userMessage || '加载策略配置失败', 'error')
+  } finally {
+    policiesLoading.value = false
+  }
+}
+
+const onPolicyChange = async (item: PolicyItem, newPolicy: ReviewPolicy) => {
+  if (newPolicy === item.policy) return
+  policySavingKey.value = `${item.entity_type}/${item.action}`
+  const prev = item.policy
+  // 乐观更新
+  item.policy = newPolicy
+  try {
+    const updated = await updatePolicy({
+      entity_type: item.entity_type,
+      action: item.action,
+      policy: newPolicy,
+    })
+    // 用服务端返回覆盖（含 is_default 重算）
+    Object.assign(item, updated)
+    notify(
+      `${entityTypeLabel(item.entity_type)} · ${actionLabel(item.action)} 策略已更新为「${policyOptionLabel(newPolicy)}」`,
+      'success',
+    )
+  } catch (e: any) {
+    item.policy = prev // 回滚
+    notify(e?.userMessage || '保存策略失败', 'error')
+  } finally {
+    policySavingKey.value = null
+  }
+}
+
+function policyOptionLabel(v: string): string {
+  return policyOptions.find((o) => o.value === v)?.label || v
+}
+
+function policyChipColor(p: string): string {
+  switch (p) {
+    case 'auto_approve': return 'success'
+    case 'auto_review': return 'info'
+    case 'manual': return 'warning'
+    default: return 'default'
+  }
+}
 
 // ---------- 状态筛选 ----------
 type FilterValue = 'pending' | 'applied' | 'rejected' | 'reverted' | 'all'
@@ -474,6 +628,10 @@ const loadList = async () => {
 }
 
 watch(statusFilter, () => loadList())
+
+watch(activeTab, (t) => {
+  if (t === 'policies' && policies.value.length === 0) loadPolicies()
+})
 
 // ---------- 详情 + 预览 ----------
 const detailDialog = ref(false)
@@ -648,6 +806,7 @@ function riskColor(r: string): string {
 function riskLabel(r: string): string {
   switch (r) {
     case 'high': return '高'
+    case 'mid': return '中'
     case 'medium': return '中'
     case 'low': return '低'
     default: return r || '—'
@@ -655,9 +814,9 @@ function riskLabel(r: string): string {
 }
 function policyLabel(p: string): string {
   switch (p) {
-    case 'auto_apply': return '自动生效'
-    case 'admin_review': return '管理员审核'
-    case 'reject': return '拒绝'
+    case 'auto_approve': return '自动生效'
+    case 'auto_review': return '自动审核'
+    case 'manual': return '人工审核'
     default: return p
   }
 }

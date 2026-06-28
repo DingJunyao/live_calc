@@ -471,3 +471,138 @@ def test_register_all_sets_governance_policies():
     # 6 个执行器全部注册
     for et in ("ingredient", "nutrition", "unit", "hierarchy", "merchant", "recipe"):
         assert ExecutorRegistry.get(et) is not None
+
+
+# --- 审核策略配置 API（GET/PUT /proposals/policies）+ 持久化 ---
+from app.models.system_config import SystemConfig
+
+
+def _setup_real_executors(db):
+    """注册真实执行器（覆盖 autouse fixture 的 _RecordingExecutor），返回 db。"""
+    ExecutorRegistry.reset()
+    from app.services.proposals.bootstrap import register_all
+    register_all(db=db)
+    # 清掉历史持久化策略键，确保测试起点干净
+    db.query(SystemConfig).filter(SystemConfig.key.like("proposal_policy:%")).delete()
+    db.commit()
+    # 重载默认（删除后 registry 仍持有上次 load 的值 → 重置）
+    ExecutorRegistry.reset()
+    register_all(db=db)
+
+
+def test_list_policies_requires_admin():
+    """非管理员访问 GET /proposals/policies → 403。"""
+    _fastapi_app.dependency_overrides.clear()
+    _fastapi_app.dependency_overrides[_get_db] = override_get_db
+    _fastapi_app.dependency_overrides[_get_cu] = _fake_non_admin_user
+    try:
+        Base.metadata.create_all(bind=_testing_engine)
+        r = api_client.get("/api/v1/proposals/policies")
+        assert r.status_code == 403
+    finally:
+        _fastapi_app.dependency_overrides.clear()
+
+
+def test_list_policies_returns_all_registered():
+    """GET 返回全部已注册的 (entity_type, action)，含 is_default 标记。"""
+    _fastapi_app.dependency_overrides.clear()
+    _fastapi_app.dependency_overrides[_get_db] = override_get_db
+    _fastapi_app.dependency_overrides[_get_cu] = fake_current_user
+    try:
+        Base.metadata.create_all(bind=_testing_engine)
+        # 用一个独立 session 做前置清理（override_get_db 与本 fixture 的 db 不同 session）
+        s = TestingSessionLocal()
+        _setup_real_executors(s)
+        s.close()
+
+        r = api_client.get("/api/v1/proposals/policies")
+        assert r.status_code == 200, r.text
+        items = r.json()
+        assert len(items) > 0
+        # 抽样：ingredient/create 未被 bootstrap 覆盖 → 默认 auto_approve → is_default True
+        ing_create = next(it for it in items if it["entity_type"] == "ingredient" and it["action"] == "create")
+        assert ing_create["policy"] == "auto_approve"
+        assert ing_create["is_default"] is True
+        # ingredient/update 被 bootstrap 显式设为 manual（默认是 auto_approve）→ is_default False
+        ing_update = next(it for it in items if it["entity_type"] == "ingredient" and it["action"] == "update")
+        assert ing_update["policy"] == "manual"
+        assert ing_update["is_default"] is False
+        # 每个 item 含必要字段
+        for it in items:
+            assert {"entity_type", "action", "policy", "risk_level", "is_default"} <= set(it.keys())
+    finally:
+        _fastapi_app.dependency_overrides.clear()
+
+
+def test_update_policy_persists_and_updates_registry():
+    """PUT 写 system_config + 即时改 registry；重启（重新 load）保持。"""
+    _fastapi_app.dependency_overrides.clear()
+    _fastapi_app.dependency_overrides[_get_db] = override_get_db
+    _fastapi_app.dependency_overrides[_get_cu] = fake_current_user
+    try:
+        Base.metadata.create_all(bind=_testing_engine)
+        s = TestingSessionLocal()
+        _setup_real_executors(s)
+        s.close()
+
+        # 改 ingredient/update manual → auto_approve
+        # （ingredient 默认是 auto_approve，bootstrap 把 update 改成 manual；
+        #  现在改回 auto_approve → 与默认一致 → is_default True）
+        r = api_client.put("/api/v1/proposals/policies", json={
+            "entity_type": "ingredient", "action": "update", "policy": "auto_approve"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["policy"] == "auto_approve"
+        assert body["is_default"] is True
+
+        # registry 即时更新
+        assert ExecutorRegistry.policy_for("ingredient", "update") == "auto_approve"
+
+        # system_config 已写入
+        s2 = TestingSessionLocal()
+        row = s2.query(SystemConfig).filter(
+            SystemConfig.key == "proposal_policy:ingredient:update").first()
+        assert row is not None
+        assert row.value == "auto_approve"
+        s2.close()
+
+        # 模拟「重启」：重置 registry 再 load_persisted_policies
+        ExecutorRegistry.reset()
+        from app.services.proposals.bootstrap import register_all
+        s3 = TestingSessionLocal()
+        register_all(db=s3)
+        s3.close()
+        assert ExecutorRegistry.policy_for("ingredient", "update") == "auto_approve"
+
+        # 清理
+        s4 = TestingSessionLocal()
+        s4.query(SystemConfig).filter(
+            SystemConfig.key == "proposal_policy:ingredient:update").delete()
+        s4.commit()
+        s4.close()
+    finally:
+        _fastapi_app.dependency_overrides.clear()
+
+
+def test_update_policy_rejects_invalid():
+    """非法 policy → 400；未注册类型 → 400。"""
+    _fastapi_app.dependency_overrides.clear()
+    _fastapi_app.dependency_overrides[_get_db] = override_get_db
+    _fastapi_app.dependency_overrides[_get_cu] = fake_current_user
+    try:
+        Base.metadata.create_all(bind=_testing_engine)
+        s = TestingSessionLocal()
+        _setup_real_executors(s)
+        s.close()
+
+        # 非法 policy
+        r = api_client.put("/api/v1/proposals/policies", json={
+            "entity_type": "ingredient", "action": "update", "policy": "bogus"})
+        assert r.status_code == 400
+
+        # 未注册类型
+        r2 = api_client.put("/api/v1/proposals/policies", json={
+            "entity_type": "nonexistent", "action": "update", "policy": "manual"})
+        assert r2.status_code == 400
+    finally:
+        _fastapi_app.dependency_overrides.clear()

@@ -96,3 +96,32 @@ export function revertByUser(
 ): Promise<{ reverted_count: number }> {
   return api.post('/proposals/revert-by-user', { user_id: userId })
 }
+
+/** 审核策略档位。 */
+export type ReviewPolicy = 'auto_approve' | 'auto_review' | 'manual' | string
+
+/** 单条策略项（与后端 PolicyItem 对齐）。 */
+export interface PolicyItem {
+  entity_type: string
+  action: string
+  policy: ReviewPolicy
+  risk_level: string
+  is_default: boolean
+}
+
+/** 策略更新请求体。 */
+export interface PolicyUpdate {
+  entity_type: string
+  action: string
+  policy: ReviewPolicy
+}
+
+/** 列出全部 entity_type+action 的当前策略 + 风险（仅管理员）。 */
+export function listPolicies(): Promise<PolicyItem[]> {
+  return api.get('/proposals/policies')
+}
+
+/** 设置某 entity_type+action 的策略（仅管理员）。 */
+export function updatePolicy(body: PolicyUpdate): Promise<PolicyItem> {
+  return api.put('/proposals/policies', body)
+}

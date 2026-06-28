@@ -1,6 +1,7 @@
 """通用提议-审核 API。"""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user, get_current_admin_user
@@ -16,6 +17,22 @@ from app.schemas.proposal import (
 )
 
 router = APIRouter()
+
+
+# ---------------- 策略配置（仅管理员） ----------------
+
+class PolicyItem(BaseModel):
+    entity_type: str
+    action: str
+    policy: str
+    risk_level: str
+    is_default: bool
+
+
+class PolicyUpdate(BaseModel):
+    entity_type: str
+    action: str
+    policy: str   # auto_approve / auto_review / manual
 
 
 def _to_response(p: ChangeProposal) -> ProposalResponse:
@@ -85,6 +102,42 @@ def revert_by_user(body: dict,
     n = proposal_service.revert_all_by_user(db, user_id=user_id, reviewer=current_user)
     db.commit()
     return {"reverted_count": n}
+
+
+@router.get("/proposals/policies", response_model=List[PolicyItem])
+def list_policies(db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_admin_user)):
+    """列出全部 entity_type+action 的当前审核策略 + 风险（仅管理员）。"""
+    return ExecutorRegistry.list_all_policies()
+
+
+@router.put("/proposals/policies", response_model=PolicyItem)
+def update_policy(body: PolicyUpdate,
+                  db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_admin_user)):
+    """设置某 entity_type+action 的审核策略（仅管理员）。
+
+    写 system_config 持久化 + 即时更新 registry。校验 policy 合法且
+    (entity_type, action) 已注册。
+    """
+    if body.policy not in ("auto_approve", "auto_review", "manual"):
+        raise HTTPException(status_code=400, detail=f"非法策略: {body.policy}")
+    # 校验 (entity_type, action) 已注册（避免写入孤儿配置）
+    if (body.entity_type, body.action) not in ExecutorRegistry._risk_levels:
+        raise HTTPException(status_code=400, detail=f"未注册的提议类型: {body.entity_type}/{body.action}")
+    try:
+        ExecutorRegistry.persist_policy(db, body.entity_type, body.action, body.policy)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    default = ExecutorRegistry._defaults.get(body.entity_type, "manual")
+    return PolicyItem(
+        entity_type=body.entity_type,
+        action=body.action,
+        policy=body.policy,
+        risk_level=ExecutorRegistry.risk_for(body.entity_type, body.action),
+        is_default=(body.policy == default),
+    )
 
 
 @router.get("/proposals/{proposal_id}", response_model=ProposalResponse)

@@ -14,8 +14,12 @@ from app.services.proposals.executors.merchant import MerchantExecutor
 from app.services.proposals.executors.merchant_merge import MerchantMergeExecutor
 
 
-def register_all() -> None:
-    """注册所有业务执行器并设默认策略（治理总表 §5.5）。"""
+def register_all(db=None) -> None:
+    """注册所有业务执行器并设默认策略（治理总表 §5.5）。
+
+    若提供 db（SQLAlchemy Session），则在默认策略生效后从 system_config
+    加载持久化策略覆盖之，使管理员配置在重启后保持。
+    """
     # 食材：新增 auto、编辑/删除/合并 manual（合并/删除 high）
     ExecutorRegistry.register(IngredientExecutor(), default_policy="auto_approve", default_risk="mid")
     ExecutorRegistry.set_policy("ingredient", "update", "manual")
@@ -47,3 +51,14 @@ def register_all() -> None:
 
     # 菜谱发布：manual
     ExecutorRegistry.register(RecipePublishExecutor(), default_policy="manual", default_risk="mid")
+
+    # 加载持久化策略覆盖默认（system_config）
+    if db is not None:
+        try:
+            n = ExecutorRegistry.load_persisted_policies(db)
+            if n:
+                # 仅日志用，调用方可在 lifespan 记录；这里静默返回
+                pass
+        except Exception:
+            # 持久化加载失败不应阻断启动（沿用默认策略）
+            pass
