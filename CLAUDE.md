@@ -236,6 +236,7 @@ live_calc/
 - 成本趋势并行加载优化：菜谱详情成本趋势切大跨度区间（季/年/全部）时，分批加载由串行 `while await`（每批 90 天一批接一批）改为并行。拆出无副作用 `fetchCostHistoryBatch` + 并行合并核心 `loadCostHistoryParallel`（各段 offset 不重叠 → `Promise.all` 并发，后端纯读无竞态）；固定区间一次性并行到底，「全部」分波次并行（每波 4 批 ≈360 天，末批空即终止）；任务间仍走 `costHistoryQueue` 串行队列避免区间切换竞态。「年」约 4×、「全部」约 4× 提速。详见 [PERF_成本趋势并行加载.md](cc/PERF_成本趋势并行加载.md)
 
 ### 功能实现记录
+- 多用户权限系统：完整的多用户权限体系（六桶数据分类 + 通用提议-审核框架 + 审核策略三档 + 管理员超级权限）。P0 堵漏（收紧共享写/越权读/统一鉴权，含路由遮蔽与 HTTPException 被吞两个 bug 修复）+ P1 框架（change_proposals 表 + 类型执行器 + submit/review/revert/apply_as_admin API + ProposalAutoReviewer 预留接口）+ P2 共享转型（商家共享池+收藏、价格去标识 latest-price 跨用户公开、菜谱 is_public+发布、5 业务执行器含合并 snapshot/revert+分流改造、前端适配）+ P3 增强（商家合并执行器、反垃圾批量回退）。管理员超级权限：所有写操作直写 apply_as_admin、菜谱创建即发布（单用户零负担）。29 commit 在 `feat/multi-user-permissions` 分支（未合并，待 review）。新增 51 个权限/框架/共享测试。详见 [MULTI_USER_PERMISSIONS.md](cc/MULTI_USER_PERMISSIONS.md)
 - 用户重置密码与 token 失效：后台「用户管理」编辑表单去掉密码字段，改为「重置密码」按钮 + 独立对话框输两次新密码（仅编辑态，新增态密码框保留）；后端给 users 加 `token_version` 列，JWT 签发带 `ver`、`resolve_user_from_token` 与 `/auth/refresh` 校验比对版本，`update_user` 改密码时 `token_version += 1` 作废该用户所有 access/refresh token（存量用户默认 0 不受影响、老 token 无 ver 取 0 兼容、前端 401 自动 refresh 闭环零改动）；bump 仅限改密码，改其他字段不踢人。详见 [FEATURE_重置密码与token失效.md](cc/FEATURE_重置密码与token失效.md)
 - 商品拆分为原料：在商品详情页添加「拆分为原料」按钮，将商品从当前原料中拆分为独立同名原料，迁移营养数据 mixin，同名冲突时支持重命名。详见 [FEATURE_PRODUCT_SPLIT_TO_INGREDIENT.md](cc/FEATURE_PRODUCT_SPLIT_TO_INGREDIENT.md)
 - 详情页宽屏响应式布局：菜谱、原料、商品三个详情页实现宽屏（≥960px）双栏布局，行对齐区域用 CSS Grid，不对齐区域用 Flexbox。详见 [FEATURE_WIDESCREEN_DETAIL_LAYOUT.md](cc/FEATURE_WIDESCREEN_DETAIL_LAYOUT.md)
