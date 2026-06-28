@@ -269,13 +269,13 @@ async def get_product_records(
         # 为此，我们将查询每个记录及其所属商品的记录数量
 
         # 子查询：计算每个商品的价格记录数量
+        rc_filter = [ProductRecord.is_active == True]
+        if not ingredient_id:
+            rc_filter.append(ProductRecord.user_id == current_user.id)
         record_counts = db.query(
             ProductRecord.product_id,
             func.count(ProductRecord.id).label('record_count')
-        ).filter(
-            ProductRecord.user_id == current_user.id,
-            ProductRecord.is_active == True
-        )
+        ).filter(*rc_filter)
 
         # 应用过滤条件
         if ingredient_id:
@@ -341,9 +341,9 @@ async def get_product_records(
             joinedload(ProductRecord.original_unit),
             joinedload(ProductRecord.standard_unit),
             joinedload(ProductRecord.merchant)
-        ).filter(
-            ProductRecord.user_id == current_user.id
         )
+        if not ingredient_id:
+            query = query.filter(ProductRecord.user_id == current_user.id)
 
         # 应用过滤条件到主查询
         if ingredient_id:
@@ -411,9 +411,10 @@ async def get_product_records(
             joinedload(ProductRecord.standard_unit),
             joinedload(ProductRecord.merchant)
         ).filter(
-            ProductRecord.user_id == current_user.id,
             ProductRecord.is_active == True
         )
+        if not ingredient_id:
+            query = query.filter(ProductRecord.user_id == current_user.id)
 
         # 优先使用 ingredient_id 过滤（通过关联商品）
         if ingredient_id:
@@ -532,7 +533,7 @@ async def get_product_records(
                 original_unit=display_unit,  # 使用转换后的单位
                 standard_quantity=record.standard_quantity,
                 standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
-                record_type=record.record_type,
+                record_type=None if ingredient_id else record.record_type,
                 exchange_rate=record.exchange_rate,
                 recorded_at=record.recorded_at,
                 notes=record.notes
