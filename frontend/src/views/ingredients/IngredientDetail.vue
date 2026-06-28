@@ -447,6 +447,7 @@
             <template #append>
               <div class="d-flex ga-1">
                 <v-btn
+                  v-if="userStore.user?.is_admin"
                   icon="mdi-pencil"
                   size="small"
                   variant="text"
@@ -454,6 +455,7 @@
                   @click="openEditPriceDialog(record)"
                 />
                 <v-btn
+                  v-if="userStore.user?.is_admin"
                   icon="mdi-delete"
                   size="small"
                   variant="text"
@@ -1692,8 +1694,10 @@ import SparklineBackground from '@/components/charts/SparklineBackground.vue'
 import UsdaMatchDialog from '@/components/usda/UsdaMatchDialog.vue'
 import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { useUserStore } from '@/stores/user'
 
 const { ask } = useConfirmDialog()
+const userStore = useUserStore()
 
 const usdaDialog = ref(false)
 function onUsdaMatched() {

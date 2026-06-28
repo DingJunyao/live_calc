@@ -506,6 +506,7 @@
             <template #append>
               <div class="d-flex ga-1">
                 <v-btn
+                  v-if="userStore.user?.is_admin"
                   icon="mdi-pencil"
                   size="small"
                   variant="text"
@@ -513,6 +514,7 @@
                   @click="openEditPriceDialog(record)"
                 />
                 <v-btn
+                  v-if="userStore.user?.is_admin"
                   icon="mdi-delete"
                   size="small"
                   variant="text"
@@ -1126,11 +1128,13 @@ import { usePageTitle } from '@/composables/usePageTitle'
 import QuickPriceRecordDialog from '@/components/prices/QuickPriceRecordDialog.vue'
 import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
+import { useUserStore } from '@/stores/user'
 import UsdaMatchDialog from '@/components/usda/UsdaMatchDialog.vue'
 import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const { ask } = useConfirmDialog()
+const userStore = useUserStore()
 
 const usdaDialog = ref(false)
 function onUsdaMatched() {
