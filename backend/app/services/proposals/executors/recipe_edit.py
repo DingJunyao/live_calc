@@ -41,23 +41,22 @@ class RecipeEditExecutor(ProposalExecutor):
         update_data = proposal.payload.get("update_data", {})
         snapshot = {c.name: _json_safe(getattr(recipe, c.name)) for c in recipe.__table__.columns}
 
-        # 更新标量字段
-        direct_fields = {"name", "category", "difficulty", "total_time_minutes", "servings", "tips", "tags", "cooking_steps"}
-        for k, v in update_data.items():
-            if k in direct_fields and v is not None:
-                setattr(recipe, k, v)
+        # 获取 Recipe 模型的所有列名，排除特殊处理字段
+        model_cols = {c.name for c in Recipe.__table__.columns}
+        skip_fields = {"id", "is_public", "user_id", "source", "created_at", "updated_at",
+                       "created_by", "updated_by", "is_active", "images", "ingredients"}
 
         # 全量替换食材
         if "ingredients" in update_data and update_data["ingredients"] is not None:
             db.query(RecipeIngredient).filter(RecipeIngredient.recipe_id == recipe_id).delete()
             for ing_data in update_data["ingredients"]:
-                ingredient = db.query(Ingredient).options(
+                ing = db.query(Ingredient).options(
                     load_only(Ingredient.id, Ingredient.name, Ingredient.is_active)
                 ).filter(Ingredient.name == ing_data.get("ingredient_name")).first()
-                if ingredient:
+                if ing:
                     db.add(RecipeIngredient(
                         recipe_id=recipe_id,
-                        ingredient_id=ingredient.id,
+                        ingredient_id=ing.id,
                         quantity=ing_data.get("quantity"),
                         quantity_range=ing_data.get("quantity_range"),
                         unit_id=ing_data.get("unit_id"),
@@ -65,6 +64,13 @@ class RecipeEditExecutor(ProposalExecutor):
                         note=ing_data.get("note"),
                         original_quantity=ing_data.get("original_quantity"),
                     ))
+
+        # 更新所有匹配模型列的标量字段
+        for k, v in update_data.items():
+            if k in model_cols and k not in skip_fields and v is not None:
+                setattr(recipe, k, v)
+
+        db.flush()  # 确保变更被发送到数据库
 
         return ApplyResult(snapshot=snapshot, revert_payload=snapshot,
                            summary=f"编辑菜谱 {recipe.name}")

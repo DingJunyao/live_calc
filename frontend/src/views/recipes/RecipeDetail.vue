@@ -1091,7 +1091,7 @@ const onRecipeSaved = (updatedRecipe: any) => {
   if (updatedRecipe?.proposal_id) {
     // 编辑已提交为提议 → 显示审核中
     proposalStatus.value = updatedRecipe.status || 'pending'
-    showMessage('编辑已提交，待管理员审核', 'info')
+    notify('编辑已提交，待管理员审核', 'info')
     return
   }
   if (recipe.value) {
@@ -1105,7 +1105,7 @@ const onRecipeSaved = (updatedRecipe: any) => {
 const onBasicInfoSaved = (updatedRecipe: any) => {
   if (updatedRecipe?.proposal_id) {
     proposalStatus.value = updatedRecipe.status || 'pending'
-    showMessage('编辑已提交，待管理员审核', 'info')
+    notify('编辑已提交，待管理员审核', 'info')
     return
   }
   if (recipe.value) {
