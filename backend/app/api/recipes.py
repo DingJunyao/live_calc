@@ -457,7 +457,9 @@ async def update_recipe(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
         if recipe.user_id != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权修改此菜谱")
+            # 已发布菜谱允许任何人编辑（编辑内容通过提议框架 submit/review 审核生效）
+            if not getattr(recipe, "is_public", False):
+                raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         exclude_unset = update_data.model_dump(exclude_unset=True)
 
@@ -630,7 +632,9 @@ async def upload_recipe_image(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
         if recipe.user_id != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权修改此菜谱")
+            # 已发布菜谱允许任何人上传图片（图片直接生效，不经过提议框架）
+            if not getattr(recipe, "is_public", False):
+                raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         # 验证文件类型
         allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -685,7 +689,9 @@ async def delete_recipe_image(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
         if recipe.user_id != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权修改此菜谱")
+            # 已发布菜谱的图片删除也仅作者或管理员可操作
+            if not getattr(recipe, "is_public", False):
+                raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         # 从 images 列表中移除
         current_images = recipe.images or []
