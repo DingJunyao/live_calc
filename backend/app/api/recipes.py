@@ -440,7 +440,7 @@ async def get_recipe_detail(
         raise HTTPException(status_code=500, detail=f"获取菜谱详情失败: {str(e)}")
 
 
-@router.put("/{recipe_id}", response_model=RecipeDetailResponse)
+@router.put("/{recipe_id}")
 async def update_recipe(
     recipe_id: int,
     update_data: RecipeUpdate,
@@ -456,11 +456,25 @@ async def update_recipe(
 
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
-        if recipe.user_id != current_user.id and not current_user.is_admin:
-            # 已发布或公共导入菜谱允许任何人编辑（编辑走提议审核）
-            if not getattr(recipe, "is_public", False) and not recipe.source:
-                raise HTTPException(status_code=403, detail="无权修改此菜谱")
+        is_public_or_source = getattr(recipe, "is_public", False) or recipe.source
 
+        # 未发布且非作者的私有菜谱 → 拒绝
+        if not is_public_or_source and recipe.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="无权修改此菜谱")
+
+        # 已发布/公共菜谱 + 非管理员 → 提交提议待审核
+        if is_public_or_source and not current_user.is_admin:
+            from app.services.proposals import service as proposal_service
+            update_payload = update_data.model_dump(exclude_unset=True)
+            p = proposal_service.submit(
+                db, entity_type="recipe_edit", entity_id=recipe_id,
+                action="update", payload={"update_data": update_payload},
+                proposer=current_user,
+            )
+            db.commit()
+            return {"proposal_id": p.id, "status": p.status, "message": "编辑已提交，待管理员审核"}
+
+        # 管理员直写已发布菜谱，或作者编辑自己的菜谱
         exclude_unset = update_data.model_dump(exclude_unset=True)
 
         # 处理 ingredients 全量替换

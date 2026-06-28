@@ -12,6 +12,7 @@ from app.services.proposals.executors.unit import UnitExecutor
 from app.services.proposals.executors.hierarchy import HierarchyExecutor
 from app.services.proposals.executors.merchant import MerchantExecutor
 from app.services.proposals.executors.merchant_merge import MerchantMergeExecutor
+from app.services.proposals.executors.recipe_edit import RecipeEditExecutor
 
 
 def register_all(db=None) -> None:
@@ -51,6 +52,9 @@ def register_all(db=None) -> None:
 
     # 菜谱发布：manual
     ExecutorRegistry.register(RecipePublishExecutor(), default_policy="manual", default_risk="mid")
+
+    # 菜谱编辑：已发布菜谱的修改走提议（manual）
+    ExecutorRegistry.register(RecipeEditExecutor(), default_policy="manual", default_risk="mid")
 
     # 加载持久化策略覆盖默认（system_config）
     if db is not None:
