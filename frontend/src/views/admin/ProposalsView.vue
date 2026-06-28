@@ -483,6 +483,24 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <v-dialog v-model="approveConfirmDialog" max-width="460px">
+      <v-card>
+        <v-card-title class="d-flex align-center ga-2">
+          <v-icon color="warning">mdi-alert-circle-outline</v-icon>
+          确认批准
+        </v-card-title>
+        <v-card-text>
+          确定批准并生效提议 <strong>#{{ approveConfirmItem?.id }}</strong>？
+         （{{ entityTypeLabel(approveConfirmItem?.entity_type) }} · {{ actionLabel(approveConfirmItem?.action) }}）
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="tonal" @click="approveConfirmDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="reviewing" @click="doQuickApprove">确定</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -667,9 +685,18 @@ const loadPreview = async () => {
 
 // ---------- 审核 ----------
 const reviewing = ref(false)
+const approveConfirmDialog = ref(false)
+const approveConfirmItem = ref<Proposal | null>(null)
 
 const quickApprove = async (item: Proposal) => {
-  if (!confirm(`确定批准并生效提议 #${item.id}？`)) return
+  approveConfirmItem.value = item
+  approveConfirmDialog.value = true
+}
+
+const doQuickApprove = async () => {
+  const item = approveConfirmItem.value
+  if (!item) return
+  approveConfirmDialog.value = false
   reviewing.value = true
   try {
     await reviewProposal(item.id, { approved: true })
@@ -679,6 +706,7 @@ const quickApprove = async (item: Proposal) => {
     notify(e?.userMessage || '审核操作失败', 'error')
   } finally {
     reviewing.value = false
+    approveConfirmItem.value = null
   }
 }
 
