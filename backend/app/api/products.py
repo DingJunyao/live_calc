@@ -534,6 +534,7 @@ async def get_product_records(
                 standard_quantity=record.standard_quantity,
                 standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
                 record_type=None if ingredient_id else record.record_type,
+                is_owner=record.user_id == current_user.id,
                 exchange_rate=record.exchange_rate,
                 recorded_at=record.recorded_at,
                 notes=record.notes

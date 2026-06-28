@@ -506,7 +506,7 @@
             <template #append>
               <div class="d-flex ga-1">
                 <v-btn
-                  v-if="userStore.user?.is_admin"
+                  v-if="record.is_owner || userStore.user?.is_admin"
                   icon="mdi-pencil"
                   size="small"
                   variant="text"
@@ -514,7 +514,7 @@
                   @click="openEditPriceDialog(record)"
                 />
                 <v-btn
-                  v-if="userStore.user?.is_admin"
+                  v-if="record.is_owner || userStore.user?.is_admin"
                   icon="mdi-delete"
                   size="small"
                   variant="text"

@@ -43,6 +43,7 @@ class ProductRecordResponse(TimeZoneAwareModel):
     standard_quantity: Decimal
     standard_unit: str  # 标准单位缩写字符串
     record_type: Optional[str] = None
+    is_owner: Optional[bool] = None
     exchange_rate: Decimal
     recorded_at: datetime
     notes: Optional[str]
