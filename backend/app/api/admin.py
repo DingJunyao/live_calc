@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pathlib import Path
+from datetime import datetime
 from app.core.security import get_current_user, get_current_admin_user
 from app.core.database import get_db
 from app.models.user import User
@@ -234,3 +236,71 @@ async def update_admin_config(
         if body.registration_require_invite_code is not None
         else False
     )
+
+
+# ==================== 图片管理 ====================
+
+@router.get("/images/unused")
+async def get_unused_images(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """获取服务器上未被任何菜谱引用的图片列表 - 仅限管理员"""
+    static_dir = Path(__file__).parent.parent.parent / "static" / "images" / "recipes"
+    if not static_dir.exists():
+        return {"images": []}
+
+    # 获取所有菜谱引用的图片
+    all_recipes = db.query(Recipe.images).all()
+    used_names: set = set()
+    for row in all_recipes:
+        if row[0]:
+            for img in row[0]:
+                name = img.split("/")[-1] if "/" in img else img
+                if name:
+                    used_names.add(name)
+
+    # 扫描目录
+    unused = []
+    if not static_dir.is_dir():
+        return {"images": []}
+    for f in sorted(static_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if f.is_file() and f.name not in used_names:
+            stat = f.stat()
+            unused.append({
+                "filename": f.name,
+                "size": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "url": f"/static/images/recipes/{f.name}",
+            })
+
+    return {"images": unused}
+
+
+@router.post("/images/unused/delete")
+async def delete_unused_images(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """删除指定的未使用图片 - 仅限管理员"""
+    paths = body.get("paths", [])
+    if not paths:
+        raise HTTPException(status_code=400, detail="缺少 paths")
+
+    static_dir = Path(__file__).parent.parent.parent / "static" / "images" / "recipes"
+    deleted: list = []
+    errors: list = []
+
+    for filename in paths:
+        file_path = static_dir / filename
+        try:
+            if file_path.exists():
+                file_path.unlink()
+                deleted.append(filename)
+            else:
+                errors.append(f"{filename}: 文件不存在")
+        except Exception as e:
+            errors.append(f"{filename}: {str(e)}")
+
+    return {"deleted": deleted, "errors": errors}

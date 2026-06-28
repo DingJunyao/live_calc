@@ -181,6 +181,12 @@ const router = createRouter({
           meta: { adminOnly: true, title: '提议审核台' },
           component: () => import('@/views/admin/ProposalsView.vue'),
         },
+        {
+          path: 'admin/images-unused',
+          name: 'admin-images-unused',
+          meta: { adminOnly: true, title: '未使用图片清理' },
+          component: () => import('@/views/admin/UnusedImagesView.vue'),
+        },
       ],
     },
   ],

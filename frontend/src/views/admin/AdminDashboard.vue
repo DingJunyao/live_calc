@@ -176,6 +176,17 @@
             <v-icon>mdi-chevron-right</v-icon>
           </template>
         </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-image-off-outline"
+          title="未使用图片清理"
+          subtitle="扫描并删除服务器上未被任何菜谱引用的图片"
+          to="/admin/images-unused"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
       </v-list>
     </v-card>
   </v-container>
