@@ -11,6 +11,7 @@ from app.services.proposals.executors.nutrition import NutritionExecutor
 from app.services.proposals.executors.unit import UnitExecutor
 from app.services.proposals.executors.hierarchy import HierarchyExecutor
 from app.services.proposals.executors.merchant import MerchantExecutor
+from app.services.proposals.executors.merchant_merge import MerchantMergeExecutor
 
 
 def register_all() -> None:
@@ -40,6 +41,9 @@ def register_all() -> None:
     ExecutorRegistry.set_policy("merchant", "delete", "manual")
     ExecutorRegistry.set_risk("merchant", "update", "high")
     ExecutorRegistry.set_risk("merchant", "delete", "high")
+
+    # 商家合并：清理共享池重复商家（manual + high risk）
+    ExecutorRegistry.register(MerchantMergeExecutor(), default_policy="manual", default_risk="high")
 
     # 菜谱发布：manual
     ExecutorRegistry.register(RecipePublishExecutor(), default_policy="manual", default_risk="mid")

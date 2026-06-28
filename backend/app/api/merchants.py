@@ -172,6 +172,71 @@ async def get_merchant_coordinates(
 # FastAPI 按声明顺序匹配路由，这里放在 GET /{merchant_id} 之前。
 
 
+@router.post("/merge")
+async def merge_merchants(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """合并商家 - 把多个源商家的引用迁到目标商家，软停用源商家。
+
+    分流模式（与 /ingredients/merge 一致）：
+    - 管理员：经框架 apply_as_admin 直写（留痕 change_proposals），立即生效。
+    - 普通用户：经框架 submit 提议（治理总表 merchant_merge.merge = manual → 待审）。
+
+    payload: {"source_ids": [int], "target_id": int}
+    路由顺序：/merge 是固定路径，必须注册在 GET /{merchant_id} 之前，
+    否则 "merge" 会被当作 merchant_id 路径参数解析（405/422）。
+    """
+    source_ids: List[int] = body.get("source_ids") or []
+    target_id = body.get("target_id")
+
+    if not source_ids or target_id is None:
+        raise HTTPException(status_code=400, detail="缺少必要的参数：source_ids 和 target_id")
+    if target_id in source_ids:
+        raise HTTPException(status_code=400, detail="目标商家不能同时是源商家")
+
+    payload = {"source_ids": source_ids, "target_id": target_id}
+
+    try:
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="merchant_merge", entity_id=target_id,
+                action="merge", payload=payload, admin=current_user,
+            )
+            db.commit()
+            return {
+                "success": True,
+                "message": "合并完成（管理员直写）",
+                "merged_count": len(source_ids),
+            }
+
+        p = proposal_service.submit(
+            db, entity_type="merchant_merge", entity_id=target_id,
+            action="merge", payload=payload, proposer=current_user,
+        )
+        db.commit()
+        return {
+            "success": True,
+            "message": f"合并提议已提交（proposal_id={p.id}, status={p.status}）",
+            "merged_count": 0,
+        }
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="合并商家时发生错误，请稍后重试"
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="合并商家时发生未知错误"
+        )
+
+
 @router.get("/favorites", response_model=List[MerchantResponse])
 async def list_favorite_merchants(
     db: Session = Depends(get_db),
