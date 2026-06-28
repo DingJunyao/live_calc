@@ -825,7 +825,9 @@ function entityTypeLabel(t: string): string {
     ingredient: '原料',
     nutrition: '营养',
     unit: '单位',
+    hierarchy: '食材层级关系',
     merchant: '商家',
+    merchant_merge: '商家合并',
     product: '商品',
     recipe: '菜谱',
   }
