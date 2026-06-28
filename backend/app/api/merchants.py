@@ -347,7 +347,7 @@ async def get_merchant_prices(
 ):
     """获取商家的价格记录列表（分页）。
 
-    商家为共享池（仅校验存在），但价格记录仍按 user_id 隔离（只看自己的记录）。
+    商家为共享池（仅校验存在）；价格记录改为跨用户公开（去标识，不含 user_id/record_type）。
     """
     try:
         # 校验商家存在于共享池
@@ -362,7 +362,6 @@ async def get_merchant_prices(
             joinedload(ProductRecord.standard_unit),
             joinedload(ProductRecord.merchant)
         ).filter(
-            ProductRecord.user_id == current_user.id,
             ProductRecord.merchant_id == merchant_id
         )
 

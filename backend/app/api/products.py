@@ -737,7 +737,6 @@ async def get_product_history(
         joinedload(ProductRecord.standard_unit),
         joinedload(ProductRecord.merchant)
     ).filter(
-        ProductRecord.user_id == current_user.id,
         ProductRecord.product_name == product_name
     ).order_by(ProductRecord.recorded_at.desc()).all()
 
@@ -755,7 +754,7 @@ async def get_product_history(
             original_unit=record.original_unit.abbreviation if record.original_unit else "",
             standard_quantity=record.standard_quantity,
             standard_unit=record.standard_unit.abbreviation if record.standard_unit else "",
-            record_type=record.record_type,
+            record_type=None,
             exchange_rate=record.exchange_rate,
             recorded_at=record.recorded_at,
             notes=record.notes
