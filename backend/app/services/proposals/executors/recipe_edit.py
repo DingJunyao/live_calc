@@ -44,7 +44,7 @@ class RecipeEditExecutor(ProposalExecutor):
         # 获取 Recipe 模型的所有列名，排除特殊处理字段
         model_cols = {c.name for c in Recipe.__table__.columns}
         skip_fields = {"id", "is_public", "user_id", "source", "created_at", "updated_at",
-                       "created_by", "updated_by", "is_active", "images", "ingredients"}
+                       "created_by", "updated_by", "is_active", "ingredients"}
 
         # 全量替换食材
         if "ingredients" in update_data and update_data["ingredients"] is not None:
