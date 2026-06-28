@@ -59,7 +59,7 @@
 - 5 业务执行器：ingredient（含合并完整 snapshot/revert）/ nutrition（补空 auto/覆盖 manual）/ unit（拒标准单位）/ hierarchy / merchant（软停用）+ CrudExecutorBase DRY 基类
 - bootstrap.register_all 注册 7 执行器 + 治理总表策略（main.py lifespan 调用）
 - 分流改造：共享写端点统一 `if is_admin: apply_as_admin else: submit`
-- 前端：MerchantsView（收藏/筛选/提议 toast）+ RecipesView/RecipeDetail（发布按钮/守卫/chip）+ RecipeResponse.is_public
+- 前端：MerchantsView（收藏/筛选/提议 toast）+ RecipesView/RecipeDetail（发布按钮/守卫/chip）+ RecipeResponse.is_public + **管理员审核台**（`/admin/proposals` → ProposalsView：待审列表/状态筛选/详情/影响预览/批准驳回/回滚/反垃圾，adminOnly 守卫）+ **审核策略配置 tab**（v-select 三档 auto_approve/auto_review/manual 即时保存，system_config 持久化，bootstrap 启动加载覆盖默认）
 
 ### P3 增强（2 commit）
 - 商家合并执行器（merchant_merge，清理重复商家）
