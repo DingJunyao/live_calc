@@ -270,7 +270,7 @@ async def get_product_records(
 
         # 子查询：计算每个商品的价格记录数量
         rc_filter = [ProductRecord.is_active == True]
-        if not ingredient_id:
+        if not ingredient_id and not product_id:
             rc_filter.append(ProductRecord.user_id == current_user.id)
         record_counts = db.query(
             ProductRecord.product_id,
@@ -342,7 +342,7 @@ async def get_product_records(
             joinedload(ProductRecord.standard_unit),
             joinedload(ProductRecord.merchant)
         )
-        if not ingredient_id:
+        if not ingredient_id and not product_id:
             query = query.filter(ProductRecord.user_id == current_user.id)
 
         # 应用过滤条件到主查询
@@ -413,7 +413,7 @@ async def get_product_records(
         ).filter(
             ProductRecord.is_active == True
         )
-        if not ingredient_id:
+        if not ingredient_id and not product_id:
             query = query.filter(ProductRecord.user_id == current_user.id)
 
         # 优先使用 ingredient_id 过滤（通过关联商品）
