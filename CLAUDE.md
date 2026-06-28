@@ -204,7 +204,7 @@ live_calc/
 
 所有与 Claude Code 相关的文档，都放在 `./cc` 目录下。并且，在这里描述文档内容，以便索引。
 
-如：部署说明：详见 [DEPLOYMENT.md](cc/DEPLOYMENT.md) 和 [QUICKSTART.md](cc/QUICKSTART.md)
+如：部署说明：详见 [DEPLOYMENT.md](cc/DEPLOYMENT.md) 和 [QUICKSTART.md](cc/QUICKSTART.md)；开发时的规则，详见 [DEV_RULE.md](cc/DEV_RULE.md)
 
 ### 最新修复记录
 - 共享写端点分流改造（Task 2.5b）：P0 阶段共享数据写端点统一限管理员（`get_current_admin_user`），P1 框架 + P2 业务执行器就绪后升级为分流——管理员 `apply_as_admin`（经框架执行器 apply 立即生效 + change_proposals 留痕 status=applied）/ 普通用户 `submit`（按治理总表策略：auto_approve 立即 / manual 待审）。改造 5 文件：[ingredient_hierarchy.py](backend/app/api/ingredient_hierarchy.py) 食材合并 + 层级 create/update/delete（注意 delete 改软删 is_active=False 支持回滚，原硬删）；[units.py](backend/app/api/units.py) 单位 create/update/delete（执行器 validate 拒改标准单位，delete 软删）；[nutrition.py](backend/app/api/nutrition.py) 食材营养写入（抽 `_build_structured_nutrients` 共用构造，补空→auto 覆盖→manual）；[merchants.py](backend/app/api/merchants.py) 商家 update/delete（delete 不再拒绝有价格商家，改软停用+ProductRecord.merchant_id 置 NULL）；[ingredient_extended.py](backend/app/api/ingredient_extended.py) 硬删除保留管理员直写（高危不可逆，执行器软删语义不符）。未进分流（同模式待续）：units 换算/覆盖/密度（执行器未覆盖多表）、nutrition 商品营养/correct（写 Product.custom_nutrition_data / IngredientNutritionMapping，与 NutritionData 执行器语义不符）、products_entity 条码/别名。测试：P0 改造 + 新增 8 条分流测试（[test_shared_data.py](backend/tests/test_shared_data.py) 管理员直写 + 普通提议各一类，覆盖 ingredient.merge/unit.create/hierarchy.create/merchant.update）；P0 加 autouse fixture 显式 `register_all()`（TestClient 不触发 main.py lifespan）。`pytest tests/test_permissions_p0.py tests/test_proposals_framework.py tests/test_shared_data.py` 46 passed；全量回归 16 failed/368 passed（失败数与基线一致——全是预存 auth/import/locations/recipes/reports 等无关失败，通过数从 360 升到 368）。py_compile 全通过，无表结构变更。详见 [BUGFIX_共享写端点分流改造.md](cc/BUGFIX_共享写端点分流改造.md)
