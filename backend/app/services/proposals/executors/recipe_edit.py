@@ -1,9 +1,22 @@
 """菜谱编辑执行器：已发布菜谱的修改走提议审核。"""
+from datetime import datetime
+from decimal import Decimal
 from fastapi import HTTPException
 from app.services.proposals.base import ProposalExecutor, ApplyResult
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.nutrition import Ingredient
 from sqlalchemy.orm import load_only
+
+
+def _json_safe(v):
+    """将不可 JSON 序列化的值转为安全格式（snapshot/revert_payload 存储用）。"""
+    if isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, set):
+        return list(v)
+    return v
 
 
 class RecipeEditExecutor(ProposalExecutor):
@@ -26,7 +39,7 @@ class RecipeEditExecutor(ProposalExecutor):
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
         update_data = proposal.payload.get("update_data", {})
-        snapshot = {c.name: getattr(recipe, c.name) for c in recipe.__table__.columns}
+        snapshot = {c.name: _json_safe(getattr(recipe, c.name)) for c in recipe.__table__.columns}
 
         # 更新标量字段
         direct_fields = {"name", "category", "difficulty", "total_time_minutes", "servings", "tips", "tags", "cooking_steps"}
