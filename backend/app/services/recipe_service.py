@@ -39,9 +39,9 @@ def _get_price_record_with_fallback(
         ProductRecord: 价格记录，如果找不到则返回 None
     """
     # 构建基础查询条件
-    query = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id
-    )
+    # 价格公开：成本跨用户使用公开价格计算，不再按 user_id 过滤。
+    # user_id 参数仅保留以维持签名兼容。
+    query = db.query(ProductRecord)
 
     if product_id:
         query = query.filter(ProductRecord.product_id == product_id)
@@ -88,7 +88,6 @@ def _get_price_records_with_fallback(
     """
     # 找到截至指定日期的最新记录
     latest_record = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id,
         ProductRecord.product_id == product_id,
         ProductRecord.recorded_at <= as_of_date
     ).order_by(ProductRecord.recorded_at.desc()).first()
@@ -99,7 +98,6 @@ def _get_price_records_with_fallback(
         day_start = datetime.combine(fill_date, datetime.min.time())
         day_end = datetime.combine(fill_date, datetime.max.time())
         return db.query(ProductRecord).filter(
-            ProductRecord.user_id == user_id,
             ProductRecord.product_id == product_id,
             ProductRecord.recorded_at >= day_start,
             ProductRecord.recorded_at <= day_end
@@ -107,7 +105,6 @@ def _get_price_records_with_fallback(
 
     # 如果指定日期之前没有记录，获取所有记录中最早日期的所有记录
     earliest_record = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id,
         ProductRecord.product_id == product_id
     ).order_by(ProductRecord.recorded_at.asc()).first()
 
@@ -116,7 +113,6 @@ def _get_price_records_with_fallback(
         day_start = datetime.combine(fill_date, datetime.min.time())
         day_end = datetime.combine(fill_date, datetime.max.time())
         return db.query(ProductRecord).filter(
-            ProductRecord.user_id == user_id,
             ProductRecord.product_id == product_id,
             ProductRecord.recorded_at >= day_start,
             ProductRecord.recorded_at <= day_end
@@ -167,7 +163,6 @@ def _get_price_records_for_date(
 
     # 查询当天的所有价格记录
     records = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id,
         ProductRecord.product_id == product.id,
         ProductRecord.recorded_at >= day_start,
         ProductRecord.recorded_at <= day_end
@@ -243,9 +238,8 @@ def _get_ingredient_fallback(db: Session, ingredient: Ingredient, user_id: int, 
         ).first()
 
         if product:
-            # 查找用户是否有该商品的价格记录
+            # 查找该商品的公开价格记录（跨用户）
             latest_record = db.query(ProductRecord).filter(
-                ProductRecord.user_id == user_id,
                 ProductRecord.product_id == product.id
             ).order_by(ProductRecord.recorded_at.desc()).first()
 
@@ -861,7 +855,6 @@ async def calculate_recipe_cost(
             # 如果仍然没有记录，尝试通过名称匹配
             if not day_records:
                 latest_record = db.query(ProductRecord).filter(
-                    ProductRecord.user_id == user_id,
                     ProductRecord.product_name.contains(original_ingredient_name)
                 ).order_by(ProductRecord.recorded_at.desc()).first()
 
@@ -1211,10 +1204,10 @@ def calculate_recipe_cost_range_trend(
     if not recipe:
         return []
 
-    # 获取最早的价格记录日期
-    earliest_record = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id
-    ).order_by(ProductRecord.recorded_at.asc()).first()
+    # 获取最早的价格记录日期（跨用户公开价格）
+    earliest_record = db.query(ProductRecord).order_by(
+        ProductRecord.recorded_at.asc()
+    ).first()
 
     if not earliest_record:
         return []
@@ -1258,7 +1251,6 @@ def calculate_recipe_cost_range_trend(
 
     # 3. 批量加载所有价格记录（按 product_id 升序、recorded_at 升序排列）
     all_records = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id,
         ProductRecord.product_id.in_(list(all_product_ids))
     ).order_by(ProductRecord.product_id, ProductRecord.recorded_at.asc()).all()
 
@@ -1363,7 +1355,6 @@ def calculate_recipe_cost_range_trend(
         # 批量加载子食材商品的价格记录
         if child_product_ids:
             child_records = db.query(ProductRecord).filter(
-                ProductRecord.user_id == user_id,
                 ProductRecord.product_id.in_(list(child_product_ids))
             ).order_by(ProductRecord.product_id, ProductRecord.recorded_at.asc()).all()
             for r in child_records:
@@ -1416,7 +1407,6 @@ def calculate_recipe_cost_range_trend(
         # 批量加载 fallback 食材商品的价格记录
         if fb_product_ids:
             fb_records = db.query(ProductRecord).filter(
-                ProductRecord.user_id == user_id,
                 ProductRecord.product_id.in_(list(fb_product_ids))
             ).order_by(ProductRecord.product_id, ProductRecord.recorded_at.asc()).all()
             for r in fb_records:
@@ -2352,10 +2342,10 @@ def calculate_recipe_cost_trend(
     if not recipe_ingredients:
         return []
 
-    # 获取最早的价格记录日期
-    earliest_record = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id
-    ).order_by(ProductRecord.recorded_at.asc()).first()
+    # 获取最早的价格记录日期（跨用户公开价格）
+    earliest_record = db.query(ProductRecord).order_by(
+        ProductRecord.recorded_at.asc()
+    ).first()
 
     if not earliest_record:
         return []
