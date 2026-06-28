@@ -79,6 +79,13 @@
           <!-- 菜谱名称（始终显示在图片/占位符下方） -->
           <div class="text-center pa-2 text-subtitle-1">
             {{ recipe.name }}
+            <v-chip
+              v-if="recipe.is_public || recipe.source"
+              size="x-small"
+              color="success"
+              variant="tonal"
+              class="ms-1"
+            >已发布</v-chip>
           </div>
 
           <v-card-text class="text-center pa-2">
@@ -245,6 +252,8 @@ interface Recipe {
   estimated_cost?: number | string
   calories?: number
   images?: string[]
+  is_public?: boolean
+  source?: string
   created_at?: string
 }
 

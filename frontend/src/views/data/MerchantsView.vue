@@ -84,6 +84,14 @@
               <template #append>
                 <div class="d-flex ga-1">
                   <v-btn
+                    :icon="favoriteIds.has(item.id) ? 'mdi-heart' : 'mdi-heart-outline'"
+                    size="small"
+                    variant="text"
+                    :color="favoriteIds.has(item.id) ? 'error' : 'default'"
+                    :title="favoriteIds.has(item.id) ? '取消收藏' : '收藏'"
+                    @click.stop="toggleFavorite(item.id)"
+                  />
+                  <v-btn
                     icon="mdi-crosshairs-gps"
                     size="small"
                     variant="text"
@@ -228,6 +236,7 @@ import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import FilterBar, { type FilterConfig } from '@/components/common/FilterBar.vue'
 import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
@@ -236,6 +245,7 @@ import type { Coordinate } from '@/utils/map/mapTypes'
 const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { notify } = useGlobalSnackbar()
 
 interface Merchant {
   id: number
@@ -270,6 +280,8 @@ const places = ref<PlaceOption[]>([])
 const allCoordinates = ref<{ latitude: number; longitude: number }[]>([])
 const currentPlaceId = ref<number | null>(null)
 const PLACES_STORAGE_KEY = 'merchants_map_current_place_id'
+// 收藏的商家 id 集合（共享池下「我的收藏」由 user_merchant_favorites 表达）
+const favoriteIds = ref<Set<number>>(new Set())
 const saving = ref(false)
 const form = ref({
   name: '',
@@ -295,6 +307,12 @@ const merchantFilters: FilterConfig[] = [
     minWidth: '160px',
   },
   {
+    key: 'favorites_only',
+    label: '仅看我的收藏',
+    type: 'toggle',
+    minWidth: '140px',
+  },
+  {
     key: 'special_conditions',
     label: '特殊条件',
     type: 'multicheck',
@@ -313,6 +331,7 @@ const onFilterChange = (filterState: Record<string, any>) => {
 }
 
 const showAllMerchants = computed(() => requestFilters.value.include_closed === true)
+const favoritesOnly = computed(() => requestFilters.value.favorites_only === true)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 const { md, lgAndUp } = useDisplay()
@@ -346,6 +365,27 @@ const loadMerchants = async () => {
   loading.value = true
   error.value = null
   try {
+    // 收藏筛选：后端列表端点不支持 favorites 过滤，改用 /merchants/favorites
+    // 全量拉取后在客户端做搜索/营业/分页过滤（收藏量通常不大，可接受）
+    if (favoritesOnly.value) {
+      const favs: Merchant[] = await api.get('/merchants/favorites')
+      let filtered = Array.isArray(favs) ? favs : []
+      if (!showAllMerchants.value) {
+        filtered = filtered.filter(m => m.is_open !== false)
+      }
+      if (search.value) {
+        const kw = search.value.toLowerCase()
+        filtered = filtered.filter(m =>
+          (m.name || '').toLowerCase().includes(kw) ||
+          (m.address || '').toLowerCase().includes(kw)
+        )
+      }
+      total.value = filtered.length
+      const skip = (currentPage.value - 1) * pageSize.value
+      items.value = filtered.slice(skip, skip + pageSize.value)
+      return
+    }
+
     const skip = (currentPage.value - 1) * pageSize.value
     const params: Record<string, any> = {
       skip,
@@ -370,6 +410,44 @@ const loadMerchants = async () => {
     error.value = getErrorMessage(e, '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 加载当前用户收藏的商家 id 集合（共享池下「我的收藏」）
+const loadFavorites = async () => {
+  try {
+    const favs: Merchant[] = await api.get('/merchants/favorites')
+    favoriteIds.value = new Set((Array.isArray(favs) ? favs : []).map(m => m.id))
+  } catch (e: any) {
+    console.error('加载收藏列表失败', e)
+  }
+}
+
+// 收藏 / 取消收藏商家（共享池任意商家均可收藏）
+const toggleFavorite = async (id: number) => {
+  const wasFav = favoriteIds.value.has(id)
+  // 乐观更新
+  const next = new Set(favoriteIds.value)
+  if (wasFav) next.delete(id); else next.add(id)
+  favoriteIds.value = next
+  try {
+    if (wasFav) {
+      await api.delete(`/merchants/${id}/favorite`)
+      notify('已取消收藏', 'info')
+    } else {
+      await api.post(`/merchants/${id}/favorite`)
+      notify('已收藏', 'success')
+    }
+    // 若当前处于「仅看收藏」视图，移除后需重新加载列表
+    if (favoritesOnly.value) {
+      loadMerchants()
+    }
+  } catch (e: any) {
+    // 回滚
+    favoriteIds.value = wasFav
+      ? new Set([...favoriteIds.value, id])
+      : (() => { const r = new Set(favoriteIds.value); r.delete(id); return r })()
+    notify(getErrorMessage(e, wasFav ? '取消收藏失败' : '收藏失败'), 'error')
   }
 }
 
@@ -513,34 +591,24 @@ const saveItem = async () => {
 
     if (editingItem.value) {
       const response = await api.put(`/merchants/${editingItem.value.id}`, data)
-      if (!showAllMerchants.value && response.is_open === false) {
-        // 已关闭且当前视图只显示营业中商家，从列表中移除
-        const index = items.value.findIndex(i => i.id === editingItem.value!.id)
-        if (index !== -1) {
-          items.value.splice(index, 1)
-          total.value--
-        }
-      } else {
-        const index = items.value.findIndex(i => i.id === editingItem.value!.id)
-        if (index !== -1) {
-          items.value[index] = response
-        }
-      }
+      // 共享池分流：管理员直写返回更新后的商家；普通用户走提议（值未变），
+      // 返回的是原商家。两种情况都统一刷新列表以反映最终状态。
+      notify('已保存', 'success')
+      await loadMerchants()
+      // 编辑后若当前视图筛掉了该商家（如改了 is_open），无需特殊处理
+      void response
     } else {
       const response = await api.post('/merchants', data)
       if (showAllMerchants.value || response.is_open !== false) {
         items.value.unshift(response)
         total.value++
       }
+      notify('已创建商家', 'success')
     }
     addDialog.value = false
-
-    // 如果选中的是被编辑的商家，更新选中状态
-    if (selectedMerchant.value && editingItem.value && selectedMerchant.value.id === editingItem.value.id) {
-      selectedMerchant.value = items.value.find(i => i.id === editingItem.value!.id) || null
-    }
   } catch (e: any) {
     console.error('保存商家失败', e)
+    notify(getErrorMessage(e, '保存商家失败'), 'error')
   } finally {
     saving.value = false
   }
@@ -548,18 +616,27 @@ const saveItem = async () => {
 
 const deleteItem = async (id: number) => {
   try {
-    await api.delete(`/merchants/${id}`)
-    const index = items.value.findIndex(i => i.id === id)
-    if (index !== -1) {
-      items.value.splice(index, 1)
-      total.value--
-    }
-    // 如果删除的是选中的商家，清除选中状态
-    if (selectedMerchant.value?.id === id) {
-      selectedMerchant.value = null
+    const result = await api.delete(`/merchants/${id}`)
+    // 共享池分流：普通用户提交提议（返回 {message: ... proposal_id ...}），
+    // 管理员直写软删（返回 {message: ...}）。普通用户提议待审，列表暂不移除。
+    const msg: string = (result && result.message) || ''
+    if (msg.includes('提议') || msg.includes('proposal')) {
+      notify('删除提议已提交，待管理员审核', 'info')
+    } else {
+      notify('商家已删除', 'success')
+      const index = items.value.findIndex(i => i.id === id)
+      if (index !== -1) {
+        items.value.splice(index, 1)
+        total.value--
+      }
+      // 如果删除的是选中的商家，清除选中状态
+      if (selectedMerchant.value?.id === id) {
+        selectedMerchant.value = null
+      }
     }
   } catch (e: any) {
     console.error('删除商家失败', e)
+    notify(getErrorMessage(e, '删除商家失败'), 'error')
   }
 }
 
@@ -567,6 +644,7 @@ onMounted(() => {
   loadMerchants()
   loadPlaces()
   loadAllCoordinates()
+  loadFavorites()
   window.addEventListener('app-refresh', loadMerchants)
 })
 

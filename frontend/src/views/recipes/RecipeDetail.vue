@@ -7,16 +7,41 @@
       <div class="d-flex align-center ga-2">
         <span class="text-truncate">{{ recipe?.name || '菜谱详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">菜谱</v-chip>
+        <v-chip v-if="isPublished" size="x-small" variant="tonal" color="success">已发布</v-chip>
       </div>
     </v-app-bar-title>
     <template #append>
       <v-btn
+        v-if="canPublish"
+        icon="mdi-cloud-upload-outline"
+        variant="text"
+        color="success"
+        :loading="publishing"
+        :disabled="!recipe"
+        title="发布菜谱"
+        @click="handlePublish"
+      />
+      <v-btn
+        v-if="!isPublished || !canManage"
         icon="mdi-delete"
         variant="text"
         color="error"
         :disabled="!recipe || deleting"
         @click="showDeleteDialog = true"
       />
+      <v-tooltip v-else location="bottom">
+        <template #activator="{ props }">
+          <span v-bind="props">
+            <v-btn
+              icon="mdi-delete-off-outline"
+              variant="text"
+              color="error"
+              disabled
+            />
+          </span>
+        </template>
+        已发布菜谱不可删除，请联系管理员
+      </v-tooltip>
       <v-btn
         icon="mdi-chart-box-outline"
         variant="text"
@@ -416,6 +441,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
+import { useUserStore } from '@/stores/user'
+import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { usePageTitle } from '@/composables/usePageTitle'
@@ -450,6 +477,7 @@ interface Recipe {
   created_at?: string
   updated_at?: string
   source?: string
+  is_public?: boolean
   ingredients?: RecipeIngredient[]
 }
 
@@ -509,10 +537,28 @@ interface NutritionData {
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const { notify } = useGlobalSnackbar()
 
 const recipeId = computed(() => {
   const id = Number(route.params.id)
   return Number.isFinite(id) ? id : 0
+})
+
+// 已发布：is_public=True 或 source 非空（公共导入来源）
+const isPublished = computed(() => {
+  const r = recipe.value
+  if (!r) return false
+  return r.is_public === true || !!r.source
+})
+
+// 是否可管理（删除/撤回）：管理员始终可；否则需为未发布状态
+const canManage = computed(() => !!userStore.user?.is_admin)
+
+// 是否显示「发布」按钮：未发布时显示，由后端校验仅作者可发（非作者点会 403）
+const canPublish = computed(() => {
+  if (!recipe.value) return false
+  return !isPublished.value
 })
 
 const recipe = ref<Recipe | null>(null)
@@ -1046,11 +1092,39 @@ const handleDelete = async () => {
   try {
     await api.delete(`/recipes/${recipeId.value}`)
     showDeleteDialog.value = false
+    notify('菜谱已删除', 'success')
     router.push('/recipes')
   } catch (e: any) {
     console.error('删除菜谱失败', e)
+    notify(getErrorMessage(e, '删除菜谱失败'), 'error')
   } finally {
     deleting.value = false
+  }
+}
+
+// 发布菜谱：管理员直写生效；普通用户提交审核提议
+const publishing = ref(false)
+const handlePublish = async () => {
+  if (!recipe.value) return
+  publishing.value = true
+  try {
+    const result = await api.post(`/recipes/${recipeId.value}/publish`)
+    // 后端返回 {proposal_id, status, is_public}
+    if (result?.is_public) {
+      notify('菜谱已发布', 'success')
+      // 管理员直写：刷新详情反映 is_public
+      await loadData()
+    } else if (result?.status === 'pending') {
+      notify('发布提议已提交，待管理员审核', 'info')
+    } else {
+      notify('发布请求已提交', 'info')
+      await loadData()
+    }
+  } catch (e: any) {
+    console.error('发布菜谱失败', e)
+    notify(getErrorMessage(e, '发布菜谱失败'), 'error')
+  } finally {
+    publishing.value = false
   }
 }
 

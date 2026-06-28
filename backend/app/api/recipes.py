@@ -288,6 +288,7 @@ async def get_recipes(
                     description=recipe.description,
                     images=images_list,
                     result_ingredient_id=recipe.result_ingredient_id,
+                    is_public=getattr(recipe, "is_public", False),
                     created_at=recipe.created_at,
                     updated_at=recipe.updated_at,
                     estimated_cost=estimated_cost,
@@ -317,6 +318,7 @@ async def get_recipes(
                     description=recipe.description,
                     images=images_list,
                     result_ingredient_id=recipe.result_ingredient_id,
+                    is_public=getattr(recipe, "is_public", False),
                     created_at=recipe.created_at,
                     updated_at=recipe.updated_at,
                     estimated_cost=None,
@@ -429,6 +431,7 @@ async def get_recipe_detail(
             tips=recipe.tips,
             description=recipe.description,
             images=recipe.images or [],
+            is_public=getattr(recipe, "is_public", False),
             created_at=recipe.created_at,
             updated_at=recipe.updated_at,
             ingredients=ingredients_detail

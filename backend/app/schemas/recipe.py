@@ -52,6 +52,8 @@ class RecipeResponse(TimeZoneAwareModel):
     description: Optional[str] = None
     images: Optional[List[str]] = None
     result_ingredient_id: Optional[int] = None
+    # 是否已发布（共享转型后区分私有/公开菜谱，供前端显示发布标记与守卫）
+    is_public: Optional[bool] = False
     created_at: datetime
     updated_at: Optional[datetime]
     # 添加成本相关字段，用于前端显示
