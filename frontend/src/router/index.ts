@@ -175,6 +175,12 @@ const router = createRouter({
           meta: { adminOnly: true, title: '原料黑名单分组' },
           component: () => import('@/views/admin/BlacklistGroupsView.vue'),
         },
+        {
+          path: 'admin/proposals',
+          name: 'admin-proposals',
+          meta: { adminOnly: true, title: '提议审核台' },
+          component: () => import('@/views/admin/ProposalsView.vue'),
+        },
       ],
     },
   ],

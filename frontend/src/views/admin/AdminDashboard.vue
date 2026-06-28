@@ -165,6 +165,17 @@
             <v-icon>mdi-chevron-right</v-icon>
           </template>
         </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-clipboard-check-multiple"
+          title="提议审核台"
+          subtitle="审核多用户提议、影响预览、回滚与反垃圾回退"
+          to="/admin/proposals"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
       </v-list>
     </v-card>
   </v-container>
