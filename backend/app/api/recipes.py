@@ -1292,13 +1292,19 @@ async def get_recipe_cost_history(
     如果没有食材价格，则以时间最早的为准。
     """
     try:
-        # 验证菜谱存在且属于当前用户
-        recipe = db.query(Recipe).filter(
-            Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id
-        ).first()
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
 
         if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+
+        # 可见性校验：本人 / 公开来源（source 非空） / 公开菜谱（is_public） / 管理员
+        is_visible = (
+            recipe.user_id == current_user.id
+            or recipe.source is not None
+            or getattr(recipe, "is_public", False)
+            or current_user.is_admin
+        )
+        if not is_visible:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
         # 实时计算成本趋势
@@ -1316,6 +1322,8 @@ async def get_recipe_cost_history(
             )
             for i, item in enumerate(reversed(cost_trend))
         ]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取成本历史失败：{str(e)}")
 
@@ -1344,13 +1352,19 @@ async def get_recipe_cost_history_range(
     使用前向填充机制处理缺失的价格记录。
     """
     try:
-        # 验证菜谱存在且属于当前用户
-        recipe = db.query(Recipe).filter(
-            Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id
-        ).first()
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
 
         if not recipe:
+            raise HTTPException(status_code=404, detail="菜谱不存在")
+
+        # 可见性校验：本人 / 公开来源（source 非空） / 公开菜谱（is_public） / 管理员
+        is_visible = (
+            recipe.user_id == current_user.id
+            or recipe.source is not None
+            or getattr(recipe, "is_public", False)
+            or current_user.is_admin
+        )
+        if not is_visible:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
         # 计算成本区间趋势
@@ -1378,5 +1392,7 @@ async def get_recipe_cost_history_range(
             )
             for i, item in enumerate(cost_range_trend)
         ]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取成本区间历史失败：{str(e)}")
