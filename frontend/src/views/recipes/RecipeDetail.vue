@@ -8,6 +8,7 @@
         <span class="text-truncate">{{ recipe?.name || '菜谱详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">菜谱</v-chip>
         <v-chip v-if="isPublished" size="x-small" variant="tonal" color="success">已发布</v-chip>
+        <v-chip v-if="proposalStatus === 'pending'" size="x-small" variant="tonal" color="warning">审核中</v-chip>
       </div>
     </v-app-bar-title>
     <template #append>
@@ -1060,7 +1061,39 @@ const getColorByIndex = (index: number) => {
 }
 
 // 保存事件处理：更新本地 recipe 数据并重设标题
+// 当前菜谱是否有待审的编辑提议
+const proposalStatus = ref<string | null>(null)
+
+// 加载当前菜谱的待审提议状态
+const loadProposalStatus = async () => {
+  if (!recipeId.value || !userStore.user?.id) return
+  try {
+    const resp = await api.get('/proposals', {
+      params: {
+        status: 'pending',
+        limit: 50,
+      },
+    })
+    const items = resp || []
+    const found = items.find(
+      (p: any) =>
+        p.entity_type === 'recipe_edit' &&
+        p.entity_id === recipeId.value &&
+        p.proposer_id === userStore.user?.id,
+    )
+    proposalStatus.value = found ? found.status : null
+  } catch {
+    proposalStatus.value = null
+  }
+}
+
 const onRecipeSaved = (updatedRecipe: any) => {
+  if (updatedRecipe?.proposal_id) {
+    // 编辑已提交为提议 → 显示审核中
+    proposalStatus.value = updatedRecipe.status || 'pending'
+    showMessage('编辑已提交，待管理员审核', 'info')
+    return
+  }
   if (recipe.value) {
     recipe.value = { ...recipe.value, ...updatedRecipe }
   }
@@ -1070,12 +1103,18 @@ const onRecipeSaved = (updatedRecipe: any) => {
 
 // 基本信息保存事件
 const onBasicInfoSaved = (updatedRecipe: any) => {
+  if (updatedRecipe?.proposal_id) {
+    proposalStatus.value = updatedRecipe.status || 'pending'
+    showMessage('编辑已提交，待管理员审核', 'info')
+    return
+  }
   if (recipe.value) {
     recipe.value = { ...recipe.value, ...updatedRecipe }
     if (updatedRecipe.name) {
       setDetailTitle(updatedRecipe.name, '菜谱', '菜谱详情')
     }
   }
+  loadCostData()
 }
 
 // 图片列表变更时刷新 recipe 数据（保持图片区域同步）
@@ -1139,7 +1178,7 @@ watch(() => route.params.id, () => {
   }
 })
 
-onMounted(loadData)
+onMounted(() => { loadData(); loadProposalStatus() })
 </script>
 
 <style scoped>
