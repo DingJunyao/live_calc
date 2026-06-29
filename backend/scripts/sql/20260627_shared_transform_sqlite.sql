@@ -5,17 +5,45 @@
 -- 4) user_merchant_favorites 收藏表（替代原 user_id 私有归属语义）
 -- 5) product_merchant_price_summary 价格聚合汇总表（去标识）
 --
--- 注意：SQLite 对 ALTER 的支持有限——
---   - merchants.user_id 由 NOT NULL 改 nullable 必须走表重建（alembic batch_alter_table 已处理）；
---   - recipes.is_public / units.is_standard 用 ADD COLUMN，但 SQLite 无 IF NOT EXISTS 语义，
---     重复执行会报错，故此处注释保留语句，由 alembic 迁移或一次性手动执行。
--- 新建库应在 merchants/recipes/units 建表 DDL 中直接包含对应列定义。
+-- ⚠️ 本项目不使用 alembic 管理开发/生产库，本脚本为可直接手动执行的完整变更（不依赖 alembic）。
+-- 幂等性说明：
+--   - SQLite 的 ALTER COLUMN / ADD COLUMN 无 IF NOT EXISTS 语义，第 1)~3) 项均为
+--     「一次性」变更，重复执行会报错；已应用请整段跳过。
+--   - 第 4)~5) 项的两张新表用 CREATE TABLE IF NOT EXISTS，可重复执行。
+--   - 收藏回填用 INSERT OR IGNORE，可重复执行。
+-- 新建库应在 merchants/recipes/units 建表 DDL 中直接包含对应列定义（参见模型 create_all）。
+
+-- 1) merchants.user_id 改 nullable（SQLite 不支持 ALTER COLUMN，按官方「表重建」流程；一次性执行）
+--    PRAGMA foreign_keys 必须在事务外切换；foreign_keys=OFF 期间允许 DROP 被外键引用的旧表。
+PRAGMA foreign_keys=OFF;
+BEGIN;
+CREATE TABLE merchants_new (
+    id INTEGER NOT NULL,
+    user_id INTEGER,
+    name VARCHAR(200) NOT NULL,
+    address VARCHAR(500),
+    latitude NUMERIC(10, 7),
+    longitude NUMERIC(10, 7),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME,
+    is_open BOOLEAN DEFAULT 1,
+    PRIMARY KEY (id),
+    FOREIGN KEY(user_id) REFERENCES users (id)
+);
+INSERT INTO merchants_new (id, user_id, name, address, latitude, longitude, created_at, updated_at, is_open)
+    SELECT id, user_id, name, address, latitude, longitude, created_at, updated_at, is_open FROM merchants;
+DROP TABLE merchants;
+ALTER TABLE merchants_new RENAME TO merchants;
+COMMIT;
+PRAGMA foreign_keys=ON;
+CREATE INDEX IF NOT EXISTS ix_merchants_user_id ON merchants (user_id);
+CREATE INDEX IF NOT EXISTS ix_merchants_id ON merchants (id);
 
 -- 2) recipes.is_public（一次性执行；已存在请跳过）
--- ALTER TABLE recipes ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT 0;
+ALTER TABLE recipes ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT 0;
 
 -- 3) units.is_standard（一次性执行；已存在请跳过）
--- ALTER TABLE units ADD COLUMN is_standard BOOLEAN NOT NULL DEFAULT 0;
+ALTER TABLE units ADD COLUMN is_standard BOOLEAN NOT NULL DEFAULT 0;
 
 -- 4) 收藏表
 CREATE TABLE IF NOT EXISTS user_merchant_favorites (
