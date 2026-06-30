@@ -8,7 +8,7 @@ ingredient_hierarchies + 源食材字段 + 合并记录 id），revert 按快照
 revert 读取 proposal.snapshot / proposal.revert_payload（service._do_apply 已将
 ApplyResult.snapshot 落库到 ChangeProposal.snapshot）。
 """
-from typing import List
+from typing import List, Optional
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
 from app.services.proposals.base import ApplyResult
@@ -24,6 +24,26 @@ from app.services.ingredient_merger import IngredientMerger
 class IngredientExecutor(CrudExecutorBase):
     entity_type = "ingredient"
     model_class = Ingredient
+
+    def entity_label(self, db, proposal) -> Optional[str]:
+        """create/update/delete 默认查 ingredient.name；merge 显示源→目标。"""
+        if proposal.action == "merge":
+            p = proposal.payload or {}
+            target_id = p.get("target_id")
+            source_ids = p.get("source_ids") or []
+            names = []
+            for sid in source_ids:
+                s = db.query(Ingredient).get(sid)
+                if s:
+                    names.append(s.name)
+            tgt = db.query(Ingredient).get(target_id) if target_id else None
+            label = ""
+            if names:
+                label += "源：" + "、".join(names) + " "
+            if tgt:
+                label += f"目标：「{tgt.name}」"
+            return label.strip() or None
+        return super().entity_label(db, proposal)
 
     def validate(self, db, proposal) -> None:
         # 合并校验：源/目标参数完整且源不含目标
@@ -66,6 +86,8 @@ class IngredientExecutor(CrudExecutorBase):
     def apply(self, db, proposal) -> ApplyResult:
         if proposal.action == "merge":
             return self._apply_merge(db, proposal)
+        if proposal.action == "delete":
+            return self._apply_delete(db, proposal)
         return super().apply(db, proposal)
 
     def _apply_merge(self, db, proposal) -> ApplyResult:
@@ -127,9 +149,98 @@ class IngredientExecutor(CrudExecutorBase):
             summary=result.get("message", "合并完成"),
         )
 
+    def _apply_delete(self, db, proposal) -> ApplyResult:
+        from app.models.product_entity import Product
+        from app.services.proposals.executors._crud_base import _json_safe
+
+        eid = proposal.entity_id
+        ing = (
+            db.query(Ingredient)
+            .filter(Ingredient.id == eid, Ingredient.is_active.is_(True))
+            .first()
+        )
+        if ing is None:
+            raise HTTPException(status_code=404, detail=f"食材 {eid} 不存在或已删除")
+
+        # 菜谱引用检查（双层检查之执行器侧）
+        recipe_count = (
+            db.query(RecipeIngredient)
+            .filter(RecipeIngredient.ingredient_id == eid)
+            .count()
+        )
+        if recipe_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"该食材已被 {recipe_count} 个菜谱引用，无法删除。请先移除菜谱中的该食材。",
+            )
+
+        # snapshot 级联：活跃商品 id + 相关层级关系 id
+        product_ids = [
+            p.id for p in db.query(Product).filter(
+                Product.ingredient_id == eid, Product.is_active.is_(True)
+            ).all()
+        ]
+        hierarchy_ids = [
+            h.id for h in db.query(IngredientHierarchy).filter(
+                or_(IngredientHierarchy.parent_id == eid,
+                    IngredientHierarchy.child_id == eid)
+            ).all()
+        ]
+
+        # 主记录全列快照（**必须在置 is_active=False 之前**，对齐基类 _crud_base.py:81 顺序）
+        snapshot = {c.name: _json_safe(getattr(ing, c.name)) for c in ing.__table__.columns}
+        snapshot["_cascade_product_ids"] = product_ids
+        snapshot["_cascade_hierarchy_ids"] = hierarchy_ids
+
+        # 级联软删商品
+        if product_ids:
+            db.query(Product).filter(Product.id.in_(product_ids)).update(
+                {"is_active": False}, synchronize_session=False)
+        # 级联软删层级关系（parent / child 两向）
+        db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.parent_id == eid
+        ).update({"is_active": False}, synchronize_session=False)
+        db.query(IngredientHierarchy).filter(
+            IngredientHierarchy.child_id == eid
+        ).update({"is_active": False}, synchronize_session=False)
+
+        # 软删食材
+        ing.is_active = False
+
+        return ApplyResult(
+            snapshot=snapshot,
+            revert_payload={"restore_active": True,
+                            "cascade_product_ids": product_ids,
+                            "cascade_hierarchy_ids": hierarchy_ids},
+            summary=f"已软删食材 {eid}（级联 {len(product_ids)} 商品 / {len(hierarchy_ids)} 层级）",
+        )
+
+    def _revert_delete(self, db, proposal) -> None:
+        from app.models.product_entity import Product
+
+        rp = proposal.revert_payload or {}
+        eid = proposal.entity_id
+        ing = db.query(Ingredient).get(eid) if eid else None
+        if ing is not None:
+            ing.is_active = True
+        # 反级联：复活商品
+        product_ids = rp.get("cascade_product_ids") or []
+        if product_ids:
+            db.query(Product).filter(Product.id.in_(product_ids)).update(
+                {"is_active": True}, synchronize_session=False)
+        # 反级联：复活层级关系
+        hierarchy_ids = rp.get("cascade_hierarchy_ids") or []
+        if hierarchy_ids:
+            db.query(IngredientHierarchy).filter(
+                IngredientHierarchy.id.in_(hierarchy_ids)
+            ).update({"is_active": True}, synchronize_session=False)
+
     def revert(self, db, proposal) -> None:
         if proposal.action == "merge":
             self._revert_merge(db, proposal)
+            return
+        if proposal.action == "delete":
+            self._revert_delete(db, proposal)
             return
         super().revert(db, proposal)
 

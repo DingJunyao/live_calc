@@ -542,35 +542,37 @@ async def soft_delete_ingredient(
     try:
         from app.models.recipe import RecipeIngredient
 
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
+        ingredient = db.query(Ingredient).filter(
+            Ingredient.id == ingredient_id, Ingredient.is_active == True
+        ).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
 
-        # 检查是否有关联菜谱
+        # 菜谱引用检查（端点提交时；执行器 apply 时再查一次）
         recipe_count = db.query(RecipeIngredient).filter(
             RecipeIngredient.ingredient_id == ingredient_id
         ).count()
         if recipe_count > 0:
             raise HTTPException(
                 status_code=400,
-                detail=f"该原料已被 {recipe_count} 个菜谱引用，无法删除。请先移除菜谱中的该原料。"
+                detail=f"该食材已被 {recipe_count} 个菜谱引用，无法删除。请先移除菜谱中的该食材。"
             )
 
-        # 权限检查
-        if ingredient.created_by != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权删除此原料")
+        # 分流：管理员直写（级联软删商品+层级在执行器）/ 普通用户提议待审
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="ingredient", entity_id=ingredient_id,
+                action="delete", payload={}, admin=current_user,
+            )
+            db.commit()
+            return {"message": "原料已删除（管理员直写，级联软删商品和层级关系）"}
 
-        # 级联软删除关联的商品
-        db.query(Product).filter(
-            Product.ingredient_id == ingredient_id,
-            Product.is_active == True
-        ).update({"is_active": False}, synchronize_session=False)
-
-        ingredient.is_active = False
-        ingredient.updated_by = current_user.id
+        p = proposal_service.submit(
+            db, entity_type="ingredient", entity_id=ingredient_id,
+            action="delete", payload={}, proposer=current_user,
+        )
         db.commit()
-
-        return {"message": "原料已删除，关联商品也已软删除"}
+        return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}
     except HTTPException:
         raise
     except Exception as e:

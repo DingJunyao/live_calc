@@ -206,7 +206,7 @@ def match_ingredient(db: Session, ingredient_id: int, fdc_id: int) -> dict:
         reference_unit="g",
     )
     db.add(nd)
-    db.commit()
+    db.flush()
     return {"ingredient_id": ingredient_id, "fdc_id": fdc_id}
 
 
@@ -267,5 +267,5 @@ def match_product(db: Session, product_id: int, fdc_id: int) -> dict:
         "reference_amount": 100.0,
         "reference_unit": "g",
     }
-    db.commit()
+    db.flush()
     return {"product_id": product_id, "fdc_id": fdc_id}

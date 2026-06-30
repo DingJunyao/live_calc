@@ -269,6 +269,18 @@
         <v-divider />
 
         <v-card-text class="py-4">
+          <!-- 目标实体标签（醒目置顶） -->
+          <v-alert
+            v-if="detailItem.entity_label"
+            type="info"
+            variant="tonal"
+            density="comfortable"
+            class="mb-4"
+          >
+            <div class="text-caption text-medium-emphasis">目标实体</div>
+            <div class="text-body-2">{{ detailItem.entity_label }}</div>
+          </v-alert>
+
           <!-- 基本信息 -->
           <v-row dense>
             <v-col cols="6" sm="4">
@@ -323,13 +335,32 @@
             <div>{{ detailItem.review_note }}</div>
           </v-alert>
 
-          <!-- 完整 payload -->
+          <!-- 变更内容 diff -->
           <div class="mt-4">
             <div class="text-subtitle-2 mb-2">
-              <v-icon size="small" start>mdi-code-json</v-icon>
-              变更内容 (payload)
+              <v-icon size="small" start>mdi-compare-horizontal</v-icon>
+              变更内容
+              <span v-if="detailItem.action === 'delete'" class="text-caption text-medium-emphasis ms-2">（将删除）</span>
+              <span v-else-if="detailItem.action === 'create'" class="text-caption text-medium-emphasis ms-2">（将新增）</span>
             </div>
-            <pre class="payload-block pa-3 rounded">{{ formatJson(detailItem.payload) }}</pre>
+            <v-table v-if="diffRows.length" density="compact" class="diff-table">
+              <tbody>
+                <tr v-for="row in diffRows" :key="row.field">
+                  <td class="text-caption text-medium-emphasis" style="width: 28%">{{ row.field }}</td>
+                  <td :class="['diff-cell', 'before', row.kind]">
+                    <span v-if="row.before === null" class="text-medium-emphasis">—</span>
+                    <span v-else>{{ formatValue(row.before) }}</span>
+                  </td>
+                  <td class="text-center text-medium-emphasis" style="width: 32px">→</td>
+                  <td :class="['diff-cell', 'after', row.kind]">
+                    <span v-if="row.kind === 'removed'" class="text-medium-emphasis">（删除）</span>
+                    <span v-else-if="row.after === null" class="text-medium-emphasis">—</span>
+                    <span v-else>{{ formatValue(row.after) }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+            <div v-else class="text-caption text-medium-emphasis">无变更字段（如仅触发动作，无数据变更）</div>
           </div>
 
           <!-- 影响预览 -->
@@ -858,6 +889,10 @@ function entityTypeLabel(t: string): string {
     merchant_merge: '商家合并',
     product: '商品',
     recipe: '菜谱',
+    entity_unit_override: '实体单位覆盖',
+    entity_density: '实体密度',
+    usda_ingredient_match: 'USDA 原料匹配',
+    usda_product_match: 'USDA 商品匹配',
   }
   return map[t] || t
 }
@@ -872,6 +907,8 @@ function actionLabel(a: string): string {
   return map[a] || a
 }
 function payloadSummary(item: Proposal): string {
+  // 目标实体可读标签前置（如「原料「鸡蛋」单位「盒」」），无则降级
+  const label = item.entity_label ? `${item.entity_label}` : ''
   const p = item.payload || {}
   // 常见字段优先：name / source / target
   const candidates = ['name', 'source_name', 'target_name', 'target_id', 'source_id', 'category']
@@ -879,19 +916,57 @@ function payloadSummary(item: Proposal): string {
   for (const key of candidates) {
     if (p[key] != null) parts.push(`${key}: ${p[key]}`)
   }
-  if (parts.length) return parts.slice(0, 2).join('，')
-  // 兜底：截断 JSON
-  try {
-    const s = JSON.stringify(p)
-    return s.length > 60 ? s.slice(0, 60) + '…' : s
-  } catch {
-    return '—'
+  let detail: string
+  if (parts.length) {
+    detail = parts.slice(0, 2).join('，')
+  } else {
+    // 兜底：截断 JSON
+    try {
+      const s = JSON.stringify(p)
+      detail = s.length > 60 ? s.slice(0, 60) + '…' : s
+    } catch {
+      detail = '—'
+    }
   }
+  return label ? `${label} · ${detail}` : detail
 }
 function submitTime(item: Proposal): string {
   // 后端未直接返回 created_at；用 reviewed_at/applied_at 的较前者兜底，仅作"未审核"分支展示占位
   return item.reviewed_at || item.applied_at || new Date().toISOString()
 }
+interface DiffRow {
+  field: string
+  before: any
+  after: any
+  kind: 'added' | 'removed' | 'changed' | 'unchanged'
+}
+
+const diffRows = computed<DiffRow[]>(() => {
+  const item = detailItem.value
+  if (!item) return []
+  const before = item.snapshot || {}
+  const after = item.payload || {}
+  const fields = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
+    .filter(f => !f.startsWith('_'))
+  return fields.map(f => {
+    const b = before[f]
+    const a = after[f]
+    let kind: DiffRow['kind'] = 'unchanged'
+    const hasB = f in before
+    const hasA = f in after
+    if (hasB && !hasA) kind = 'removed'
+    else if (!hasB && hasA) kind = 'added'
+    else if (JSON.stringify(b) !== JSON.stringify(a)) kind = 'changed'
+    return { field: f, before: hasB ? b : null, after: hasA ? a : null, kind }
+  })
+})
+
+function formatValue(v: any): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
 function formatJson(obj: any): string {
   try {
     return JSON.stringify(obj, null, 2)
@@ -921,4 +996,10 @@ code {
   background: rgba(var(--v-theme-primary), 0.1);
   border-radius: 4px;
 }
+.diff-table .diff-cell { font-size: 0.8rem; word-break: break-all; }
+.diff-table .diff-cell.changed { background: rgba(255, 193, 7, 0.12); }
+.diff-table .diff-cell.added { background: rgba(76, 175, 80, 0.12); }
+.diff-table .diff-cell.removed { background: rgba(244, 67, 54, 0.10); }
+.diff-table .before.removed { color: rgb(244, 67, 54); }
+.diff-table .after.added { color: rgb(76, 175, 80); }
 </style>

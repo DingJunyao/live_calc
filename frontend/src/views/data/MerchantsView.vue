@@ -234,6 +234,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
+import { useUserStore } from '@/stores/user'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
@@ -246,6 +247,7 @@ const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { notify } = useGlobalSnackbar()
+const userStore = useUserStore()
 
 interface Merchant {
   id: number
@@ -591,10 +593,15 @@ const saveItem = async () => {
 
     if (editingItem.value) {
       const response = await api.put(`/merchants/${editingItem.value.id}`, data)
-      // 共享池分流：管理员直写返回更新后的商家；普通用户走提议（值未变），
-      // 返回的是原商家。两种情况都统一刷新列表以反映最终状态。
-      notify('已保存', 'success')
-      await loadMerchants()
+      // 共享池分流：管理员直写返回更新后的商家；普通用户走提议（merchant.update=manual
+      // → 待审，值未变，返回原商家）。两端点均返回商家对象（无 message 字段），
+      // 故用 userStore.is_admin 区分提示，避免普通用户待审时误报「已保存」。
+      if (userStore.user?.is_admin) {
+        notify('已保存', 'success')
+        await loadMerchants()
+      } else {
+        notify('编辑提议已提交，待管理员审核', 'info')
+      }
       // 编辑后若当前视图筛掉了该商家（如改了 is_open），无需特殊处理
       void response
     } else {

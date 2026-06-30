@@ -35,13 +35,21 @@ class PolicyUpdate(BaseModel):
     policy: str   # auto_approve / auto_review / manual
 
 
-def _to_response(p: ChangeProposal) -> ProposalResponse:
+def _to_response(db: Session, p: ChangeProposal) -> ProposalResponse:
+    executor = ExecutorRegistry.get(p.entity_type)
+    label = None
+    if executor is not None:
+        try:
+            label = executor.entity_label(db, p)
+        except Exception:
+            label = None
     return ProposalResponse(
         id=p.id, entity_type=p.entity_type, entity_id=p.entity_id, action=p.action,
         payload=p.payload or {}, status=p.status, review_policy=p.review_policy,
         risk_level=p.risk_level, proposer_id=p.proposer_id, reviewer_id=p.reviewer_id,
         review_note=p.review_note, revertable_until=p.revertable_until,
         applied_at=p.applied_at, reviewed_at=p.reviewed_at, reverted_at=p.reverted_at,
+        entity_label=label,
     )
 
 
@@ -55,7 +63,7 @@ def submit_proposal(body: ProposalCreate,
         action=body.action, payload=body.payload, proposer=current_user,
     )
     db.commit()
-    return _to_response(p)
+    return _to_response(db, p)
 
 
 @router.post("/proposals/preview")
@@ -84,7 +92,7 @@ def list_proposals(status_filter: Optional[str] = Query(None, alias="status"),
     if status_filter:
         q = q.filter(ChangeProposal.status == status_filter)
     items = q.order_by(ChangeProposal.id.desc()).limit(limit).all()
-    return [_to_response(p) for p in items]
+    return [_to_response(db, p) for p in items]
 
 
 @router.post("/proposals/revert-by-user")
@@ -150,7 +158,7 @@ def get_proposal(proposal_id: int,
     if not current_user.is_admin and p.proposer_id != current_user.id:
         # 越权访问他人提议 → 同样 404（不泄露存在性）
         raise HTTPException(status_code=404, detail="提议不存在")
-    return _to_response(p)
+    return _to_response(db, p)
 
 
 @router.post("/proposals/{proposal_id}/review", response_model=ProposalResponse)
@@ -161,7 +169,7 @@ def review_proposal(proposal_id: int, body: ReviewDecision,
     p = proposal_service.review(db, proposal_id=proposal_id, approved=body.approved,
                                 reviewer=current_user, note=body.note)
     db.commit()
-    return _to_response(p)
+    return _to_response(db, p)
 
 
 @router.post("/proposals/{proposal_id}/revert", response_model=ProposalResponse)
@@ -171,4 +179,4 @@ def revert_proposal(proposal_id: int,
     """回滚已 apply 的提议（仅管理员）。"""
     p = proposal_service.revert(db, proposal_id=proposal_id, reviewer=current_user)
     db.commit()
-    return _to_response(p)
+    return _to_response(db, p)

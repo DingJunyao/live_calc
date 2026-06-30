@@ -77,10 +77,10 @@ def collect_full_set(db: Session) -> ExportSet:
         es.product_link_ids = {
             l.id for l in db.query(ProductIngredientLink).filter(ProductIngredientLink.product_id.in_(es.product_ids)).all()
         }
-    # 密度（ingredient + product 全量）
-    es.entity_density_ids = {d.id for d in db.query(EntityDensity).all()}
-    # 自定义单位（ingredient + product 全量）
-    es.entity_unit_override_ids = {o.id for o in db.query(EntityUnitOverride).all()}
+    # 密度（ingredient + product 全量，仅活跃数据）
+    es.entity_density_ids = {d.id for d in db.query(EntityDensity).filter(EntityDensity.is_active.is_(True)).all()}
+    # 自定义单位（ingredient + product 全量，仅活跃数据）
+    es.entity_unit_override_ids = {o.id for o in db.query(EntityUnitOverride).filter(EntityUnitOverride.is_active.is_(True)).all()}
     # 价格记录 / 商家 / 收藏全量
     es.price_record_ids = {r.id for r in db.query(ProductRecord).all()}
     es.merchant_ids = {m.id for m in db.query(Merchant).all()}
@@ -221,12 +221,14 @@ def collect_mine_set(db: Session, user_id: int) -> ExportSet:
             d.id for d in db.query(EntityDensity).filter(
                 EntityDensity.entity_type == "ingredient",
                 EntityDensity.entity_id.in_(es.ingredient_ids),
+                EntityDensity.is_active.is_(True),
             ).all()
         }
         es.entity_unit_override_ids = {
             o.id for o in db.query(EntityUnitOverride).filter(
                 EntityUnitOverride.entity_type == "ingredient",
                 EntityUnitOverride.entity_id.in_(es.ingredient_ids),
+                EntityUnitOverride.is_active.is_(True),
             ).all()
         }
         es.hierarchy_ids = {
@@ -240,12 +242,14 @@ def collect_mine_set(db: Session, user_id: int) -> ExportSet:
             d.id for d in db.query(EntityDensity).filter(
                 EntityDensity.entity_type == "product",
                 EntityDensity.entity_id.in_(es.product_ids),
+                EntityDensity.is_active.is_(True),
             ).all()
         )
         es.entity_unit_override_ids.update(
             o.id for o in db.query(EntityUnitOverride).filter(
                 EntityUnitOverride.entity_type == "product",
                 EntityUnitOverride.entity_id.in_(es.product_ids),
+                EntityUnitOverride.is_active.is_(True),
             ).all()
         )
     if es.unit_ids:

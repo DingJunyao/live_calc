@@ -241,6 +241,7 @@ class ExportImporter(Importer):
                 EntityDensity.entity_type == entity_type,
                 EntityDensity.entity_id == new_entity_id,
                 EntityDensity.condition == condition,
+                EntityDensity.is_active.is_(True),
             ).first()
             if existing:
                 continue

@@ -466,7 +466,10 @@ class AIInferrer:
         # 写前计数，用于统计净增量。
         ed_before = (
             self.db.query(EntityDensity)
-            .filter(EntityDensity.entity_type == "ingredient")
+            .filter(
+                EntityDensity.entity_type == "ingredient",
+                EntityDensity.is_active.is_(True),
+            )
             .count()
         )
 
@@ -560,7 +563,10 @@ class AIInferrer:
             self.db.expire_all()
             ed_after = (
                 self.db.query(EntityDensity)
-                .filter(EntityDensity.entity_type == "ingredient")
+                .filter(
+                    EntityDensity.entity_type == "ingredient",
+                    EntityDensity.is_active.is_(True),
+                )
                 .count()
             )
             inferred = max(ed_after - ed_before, 0)
@@ -598,6 +604,7 @@ class AIInferrer:
             .filter(
                 EntityDensity.entity_type == "ingredient",
                 EntityDensity.condition.is_(None),
+                EntityDensity.is_active.is_(True),
             )
             .subquery()
         )

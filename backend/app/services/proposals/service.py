@@ -33,10 +33,13 @@ def _now() -> datetime:
 
 
 def submit(db: Session, *, entity_type: str, entity_id: Optional[int], action: str,
-           payload: dict, proposer) -> ChangeProposal:
-    """普通用户提交提议。按策略分流：auto_approve 立即 apply；auto_review 走自动审核；manual 待审。"""
+           payload: dict, proposer, policy_override: Optional[str] = None) -> ChangeProposal:
+    """普通用户提交提议。按策略分流：auto_approve 立即 apply；auto_review 走自动审核；manual 待审。
+
+    policy_override：可选，覆盖 registry 默认 policy（用于「补空 auto」等场景）。None 时走 registry。
+    """
     executor = _get_executor(entity_type)
-    policy = ExecutorRegistry.policy_for(entity_type, action)
+    policy = policy_override if policy_override is not None else ExecutorRegistry.policy_for(entity_type, action)
     risk = ExecutorRegistry.risk_for(entity_type, action)
 
     proposal = ChangeProposal(
@@ -53,6 +56,14 @@ def submit(db: Session, *, entity_type: str, entity_id: Optional[int], action: s
     db.add(proposal)
     db.flush()
     executor.validate(db, proposal)
+    # 预填 before 快照（供审核员 pending 时看原内容；apply 时 _do_apply 覆盖）
+    _build_snapshot = getattr(executor, "build_snapshot", None)
+    if _build_snapshot is not None:
+        try:
+            proposal.snapshot = _build_snapshot(db, proposal)
+        except Exception:
+            # 预填失败不阻断提交（snapshot 留空）
+            pass
 
     if policy == "auto_approve":
         _do_apply(db, proposal, executor)

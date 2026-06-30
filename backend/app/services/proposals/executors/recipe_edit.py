@@ -1,6 +1,7 @@
 """菜谱编辑执行器：已发布菜谱的修改走提议审核。"""
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 from fastapi import HTTPException
 from app.services.proposals.base import ProposalExecutor, ApplyResult
 from app.models.recipe import Recipe, RecipeIngredient
@@ -21,6 +22,14 @@ def _json_safe(v):
 
 class RecipeEditExecutor(ProposalExecutor):
     entity_type = "recipe_edit"
+
+    def entity_label(self, db, proposal) -> Optional[str]:
+        """entity_id 是 recipe.id，查 recipe.name。"""
+        eid = proposal.entity_id
+        if eid is None:
+            return None
+        r = db.query(Recipe).get(eid)
+        return f"菜谱「{r.name}」" if r else None
 
     def validate(self, db, proposal):
         r = db.query(Recipe).filter(Recipe.id == proposal.entity_id).first()

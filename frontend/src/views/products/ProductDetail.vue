@@ -1508,8 +1508,9 @@ const densityInputUnitLabel = computed(() => densityInputUnit.value === 'g/cm3' 
 
 // 显示密度值（根据选中的显示单位换算）
 const displayDensityValue = computed(() => {
-  if (!entityDensity.value || typeof entityDensity.value.density !== 'number') return ''
-  const val = entityDensity.value.density
+  if (!entityDensity.value || entityDensity.value.density === null || entityDensity.value.density === undefined) return ''
+  const val = Number(entityDensity.value.density)
+  if (isNaN(val)) return ''
   if (densityDisplayUnit.value === 'g/cm3') {
     return (val / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
   }
@@ -1550,7 +1551,16 @@ const loadEntityUnits = async () => {
 const loadDensity = async () => {
   try {
     const response = await api.get(`/entities/product/${productId.value}/density`)
-    entityDensity.value = (Array.isArray(response) && response.length > 0) ? response[0] : null
+    if (Array.isArray(response) && response.length > 0) {
+      const d = response[0]
+      // 后端 density 是 Decimal，JSON 序列化为 string，转 number 供显示/换算
+      if (d && d.density !== null && d.density !== undefined) {
+        d.density = Number(d.density)
+      }
+      entityDensity.value = d
+    } else {
+      entityDensity.value = null
+    }
   } catch (e) {
     entityDensity.value = null
   }
@@ -1620,10 +1630,15 @@ const saveEntityUnit = async () => {
     } else {
       await api.post(`/entities/product/${productId.value}/units`, payload)
     }
-    showMessage('保存成功', 'success')
-    showUnitDialog.value = false
-    await loadEntityUnits()
-    await loadUnmappedUnits()
+    if (userStore.user?.is_admin) {
+      showMessage('保存成功', 'success')
+      showUnitDialog.value = false
+      await loadEntityUnits()
+      await loadUnmappedUnits()
+    } else {
+      showMessage('已提交，待管理员审核', 'info')
+      showUnitDialog.value = false
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -1636,9 +1651,13 @@ const deleteEntityUnit = async (unitId: number) => {
   if (!(await ask({ text: '确定删除此自定义单位？', color: 'error', confirmText: '删除' }))) return
   try {
     await api.delete(`/entities/product/${productId.value}/units/${unitId}`)
-    showMessage('删除成功', 'success')
-    await loadEntityUnits()
-    await loadUnmappedUnits()
+    if (userStore.user?.is_admin) {
+      showMessage('删除成功', 'success')
+      await loadEntityUnits()
+      await loadUnmappedUnits()
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
@@ -1649,8 +1668,8 @@ const openDensityDialog = (density?: EntityDensity) => {
   if (density) {
     densityForm.value = {
       id: density.id,
-      // 按当前输入单位显示（后端存储为 kg/m³）
-      density: densityInputUnit.value === 'g/cm3' ? density.density / 1000 : density.density,
+      // 按当前输入单位显示（后端存储为 kg/m³）；Number() 兜底防 density 为 string
+      density: densityInputUnit.value === 'g/cm3' ? Number(density.density) / 1000 : Number(density.density),
       temperature: density.temperature,
       source: density.source
     }
@@ -1683,9 +1702,14 @@ const saveDensity = async () => {
       temperature: densityForm.value.temperature,
       source: densityForm.value.source
     })
-    showMessage('保存成功', 'success')
-    showDensityDialog.value = false
-    await loadDensity()
+    if (userStore.user?.is_admin) {
+      showMessage('保存成功', 'success')
+      showDensityDialog.value = false
+      await loadDensity()
+    } else {
+      showMessage('已提交，待管理员审核', 'info')
+      showDensityDialog.value = false
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -1698,8 +1722,12 @@ const deleteDensity = async (densityId: number) => {
   if (!(await ask({ text: '确定删除此密度数据？', color: 'error', confirmText: '删除' }))) return
   try {
     await api.delete(`/entities/product/${productId.value}/density/${densityId}`)
-    showMessage('删除成功', 'success')
-    entityDensity.value = null
+    if (userStore.user?.is_admin) {
+      showMessage('删除成功', 'success')
+      entityDensity.value = null
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
@@ -2308,13 +2336,18 @@ const saveBasicInfo = async () => {
       tags: basicEditForm.value.tags,
       aliases: basicEditForm.value.aliases,
     })
-    product.value = response
-    // 重新加载营养数据（原料变更可能影响营养数据）
-    await loadNutritionData()
-    editingBasicInfo.value = false
-    selectedIngredient.value = null
-    ingredientSearch.value = ''
-    showMessage('基本信息已保存', 'success')
+    if (userStore.user?.is_admin) {
+      product.value = response
+      // 重新加载营养数据（原料变更可能影响营养数据）
+      await loadNutritionData()
+      editingBasicInfo.value = false
+      selectedIngredient.value = null
+      ingredientSearch.value = ''
+      showMessage('基本信息已保存', 'success')
+    } else {
+      editingBasicInfo.value = false
+      showMessage('已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -2576,8 +2609,12 @@ const deleteProduct = async () => {
   deleting.value = true
   try {
     await api.delete(`/products/entity/${productId.value}`)
-    showMessage('删除成功', 'success')
-    router.push('/data/products')
+    if (userStore.user?.is_admin) {
+      showMessage('删除成功', 'success')
+      router.push('/data/products')
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   } finally {

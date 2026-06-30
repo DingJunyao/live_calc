@@ -123,6 +123,7 @@ class UnitConversionService:
             .filter(
                 EntityDensity.entity_type == entity_type,
                 EntityDensity.entity_id == entity_id,
+                EntityDensity.is_active.is_(True),
             )
             .order_by(EntityDensity.confidence.desc())
             .first()
@@ -143,6 +144,7 @@ class UnitConversionService:
                     .filter(
                         EntityDensity.entity_type == "ingredient",
                         EntityDensity.entity_id == product.ingredient_id,
+                        EntityDensity.is_active.is_(True),
                     )
                     .order_by(EntityDensity.confidence.desc())
                     .first()
@@ -162,6 +164,7 @@ class UnitConversionService:
                     .filter(
                         EntityDensity.entity_type == "ingredient",
                         EntityDensity.entity_id == link.ingredient_id,
+                        EntityDensity.is_active.is_(True),
                     )
                     .order_by(EntityDensity.confidence.desc())
                     .first()
@@ -313,6 +316,7 @@ class UnitConversionService:
                 EntityUnitOverride.entity_type == entity_type,
                 EntityUnitOverride.entity_id == entity_id,
                 EntityUnitOverride.unit_name == unit_name,
+                EntityUnitOverride.is_active.is_(True),
             )
             .first()
         )
@@ -332,6 +336,7 @@ class UnitConversionService:
                         EntityUnitOverride.entity_type == "ingredient",
                         EntityUnitOverride.entity_id == product.ingredient_id,
                         EntityUnitOverride.unit_name == unit_name,
+                        EntityUnitOverride.is_active.is_(True),
                     )
                     .first()
                 )
@@ -350,6 +355,7 @@ class UnitConversionService:
                         EntityUnitOverride.entity_type == "ingredient",
                         EntityUnitOverride.entity_id == link.ingredient_id,
                         EntityUnitOverride.unit_name == unit_name,
+                        EntityUnitOverride.is_active.is_(True),
                     )
                     .first()
                 )
@@ -513,6 +519,7 @@ class UnitConversionService:
             .filter(
                 EntityUnitOverride.entity_type == entity_type,
                 EntityUnitOverride.entity_id == entity_id,
+                EntityUnitOverride.is_active.is_(True),
             )
             .all()
         )
@@ -555,6 +562,7 @@ class UnitConversionService:
                     .filter(
                         EntityUnitOverride.entity_type == "ingredient",
                         EntityUnitOverride.entity_id == ingredient_id,
+                        EntityUnitOverride.is_active.is_(True),
                     )
                     .all()
                 )
@@ -664,6 +672,7 @@ class UnitConversionService:
             .filter(
                 EntityUnitOverride.entity_type == entity_type,
                 EntityUnitOverride.entity_id == entity_id,
+                EntityUnitOverride.is_active.is_(True),
             )
             .all()
         )

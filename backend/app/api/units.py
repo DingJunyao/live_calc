@@ -448,6 +448,7 @@ def list_entity_unit_overrides(
         .filter(
             EntityUnitOverride.entity_type == entity_type,
             EntityUnitOverride.entity_id == entity_id,
+            EntityUnitOverride.is_active.is_(True),
         )
         .all()
     )
@@ -461,41 +462,49 @@ def create_entity_unit_override(
     entity_id: int,
     data: EntityUnitOverrideCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    创建实体单位覆盖
+    创建实体单位覆盖（分流：管理员直写 / 普通用户提议）。
+
+    全 manual——普通用户提交后待管理员审核（同名查重在执行器 validate 带 is_active 过滤）。
 
     - **entity_type**: 实体类型（ingredient 或 product）
     - **entity_id**: 实体ID
     """
     _validate_entity_type(entity_type)
+    # mode="json"：Decimal → str（无损），保证 payload 可入 JSON 列；
+    # model 构造器/setattr 接收 Numeric 列时自动再转回 Decimal。
+    payload = {"entity_type": entity_type, "entity_id": entity_id, **data.model_dump(mode="json")}
 
-    # 检查是否已存在同名的覆盖
-    existing = (
-        db.query(EntityUnitOverride)
-        .filter(
-            EntityUnitOverride.entity_type == entity_type,
-            EntityUnitOverride.entity_id == entity_id,
-            EntityUnitOverride.unit_name == data.unit_name,
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="entity_unit_override", entity_id=None,
+            action="create", payload=payload, admin=current_user,
         )
-        .first()
-    )
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"实体 {entity_type}/{entity_id} 已存在单位覆盖 '{data.unit_name}'"
+        db.commit()
+        return (
+            db.query(EntityUnitOverride)
+            .filter(
+                EntityUnitOverride.entity_type == entity_type,
+                EntityUnitOverride.entity_id == entity_id,
+                EntityUnitOverride.unit_name == data.unit_name,
+                EntityUnitOverride.is_active.is_(True),
+            )
+            .order_by(EntityUnitOverride.id.desc())
+            .first()
         )
 
-    override = EntityUnitOverride(
-        entity_type=entity_type,
-        entity_id=entity_id,
-        **data.model_dump(),
+    p = proposal_service.submit(
+        db, entity_type="entity_unit_override", entity_id=None,
+        action="create", payload=payload, proposer=current_user,
     )
-    db.add(override)
     db.commit()
-    db.refresh(override)
-    return override
+    # manual → status=pending；返回占位骨架满足 response_model
+    return EntityUnitOverride(
+        id=0, entity_type=entity_type, entity_id=entity_id,
+        unit_name=data.unit_name,
+    )
 
 
 @entities_unit_router.put("/{override_id}", response_model=EntityUnitOverrideResponse)
@@ -505,36 +514,49 @@ def update_entity_unit_override(
     override_id: int,
     data: EntityUnitOverrideUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    更新实体单位覆盖
+    更新实体单位覆盖（分流：管理员直写 / 普通用户提议）。
+
+    普通用户待审：值未变，返回当前对象。
 
     - **entity_type**: 实体类型（ingredient 或 product）
     - **entity_id**: 实体ID
     - **override_id**: 覆盖记录ID
     """
     _validate_entity_type(entity_type)
-
-    override = (
+    obj = (
         db.query(EntityUnitOverride)
         .filter(
             EntityUnitOverride.id == override_id,
             EntityUnitOverride.entity_type == entity_type,
             EntityUnitOverride.entity_id == entity_id,
+            EntityUnitOverride.is_active.is_(True),
         )
         .first()
     )
-    if not override:
+    if not obj:
         raise HTTPException(status_code=404, detail="实体单位覆盖不存在")
 
-    update_data = data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(override, field, value)
+    update_data = data.model_dump(exclude_unset=True, mode="json")
 
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="entity_unit_override", entity_id=override_id,
+            action="update", payload=update_data, admin=current_user,
+        )
+        db.commit()
+        db.refresh(obj)
+        return obj
+
+    proposal_service.submit(
+        db, entity_type="entity_unit_override", entity_id=override_id,
+        action="update", payload=update_data, proposer=current_user,
+    )
     db.commit()
-    db.refresh(override)
-    return override
+    db.refresh(obj)
+    return obj  # 待审：值未变
 
 
 @entities_unit_router.delete("/{override_id}")
@@ -543,32 +565,45 @@ def delete_entity_unit_override(
     entity_id: int,
     override_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    删除实体单位覆盖
+    删除实体单位覆盖（分流，软删）。
+
+    普通用户待审。
 
     - **entity_type**: 实体类型（ingredient 或 product）
     - **entity_id**: 实体ID
     - **override_id**: 覆盖记录ID
     """
     _validate_entity_type(entity_type)
-
-    override = (
+    obj = (
         db.query(EntityUnitOverride)
         .filter(
             EntityUnitOverride.id == override_id,
             EntityUnitOverride.entity_type == entity_type,
             EntityUnitOverride.entity_id == entity_id,
+            EntityUnitOverride.is_active.is_(True),
         )
         .first()
     )
-    if not override:
+    if not obj:
         raise HTTPException(status_code=404, detail="实体单位覆盖不存在")
 
-    db.delete(override)
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="entity_unit_override", entity_id=override_id,
+            action="delete", payload={}, admin=current_user,
+        )
+        db.commit()
+        return {"message": "实体单位覆盖已删除（管理员直写，软删）"}
+
+    p = proposal_service.submit(
+        db, entity_type="entity_unit_override", entity_id=override_id,
+        action="delete", payload={}, proposer=current_user,
+    )
     db.commit()
-    return {"message": "实体单位覆盖已删除"}
+    return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}
 
 
 @entities_unit_router.get("/unmapped-units", response_model=List[UnmappedUnitItem])
@@ -619,6 +654,7 @@ def list_entity_densities(
         .filter(
             EntityDensity.entity_type == entity_type,
             EntityDensity.entity_id == entity_id,
+            EntityDensity.is_active.is_(True),
         )
         .all()
     )
@@ -632,12 +668,13 @@ def upsert_entity_density(
     entity_id: int,
     data: EntityDensityCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    创建或更新实体密度（upsert）
+    创建或更新实体密度（upsert，分流：管理员直写 / 普通用户提议）。
 
-    如果相同 entity_type + entity_id + condition 的记录已存在，则更新；否则创建。
+    全 manual。端点层先按 entity_type+entity_id+condition 查活跃记录——
+    有则 submit/apply update，无则 submit/apply create。
 
     - **entity_type**: 实体类型（ingredient 或 product）
     - **entity_id**: 实体ID
@@ -645,37 +682,63 @@ def upsert_entity_density(
     - **condition**: 状态描述（用于区分同实体不同状态，如"切碎"、"压碎"）
     """
     _validate_entity_type(entity_type)
-
-    # 查找已有记录（按 entity_type + entity_id + condition 唯一约束匹配）
     existing = (
         db.query(EntityDensity)
         .filter(
             EntityDensity.entity_type == entity_type,
             EntityDensity.entity_id == entity_id,
-            EntityDensity.condition == data.condition,
+            EntityDensity.condition.is_(data.condition) if data.condition is None
+            else EntityDensity.condition == data.condition,
+            EntityDensity.is_active.is_(True),
         )
         .first()
     )
 
     if existing:
-        # 更新已有记录
-        update_data = data.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(existing, field, value)
+        update_data = data.model_dump(exclude_unset=True, mode="json")
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="entity_density", entity_id=existing.id,
+                action="update", payload=update_data, admin=current_user,
+            )
+            db.commit()
+            db.refresh(existing)
+            return existing
+        proposal_service.submit(
+            db, entity_type="entity_density", entity_id=existing.id,
+            action="update", payload=update_data, proposer=current_user,
+        )
         db.commit()
         db.refresh(existing)
-        return existing
+        return existing  # 待审：值未变
 
-    # 创建新记录
-    density_record = EntityDensity(
-        entity_type=entity_type,
-        entity_id=entity_id,
-        **data.model_dump(),
+    # create 路径
+    base = {"entity_type": entity_type, "entity_id": entity_id, **data.model_dump(mode="json")}
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="entity_density", entity_id=None,
+            action="create", payload=base, admin=current_user,
+        )
+        db.commit()
+        return (
+            db.query(EntityDensity)
+            .filter(
+                EntityDensity.entity_type == entity_type,
+                EntityDensity.entity_id == entity_id,
+                EntityDensity.is_active.is_(True),
+            )
+            .order_by(EntityDensity.id.desc())
+            .first()
+        )
+    p = proposal_service.submit(
+        db, entity_type="entity_density", entity_id=None,
+        action="create", payload=base, proposer=current_user,
     )
-    db.add(density_record)
     db.commit()
-    db.refresh(density_record)
-    return density_record
+    return EntityDensity(
+        id=0, entity_type=entity_type, entity_id=entity_id,
+        density=data.density, confidence=data.confidence,
+    )
 
 
 @entities_density_router.delete("/{density_id}")
@@ -684,29 +747,42 @@ def delete_entity_density(
     entity_id: int,
     density_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    删除实体密度
+    删除实体密度（分流，软删）。
+
+    普通用户待审。
 
     - **entity_type**: 实体类型（ingredient 或 product）
     - **entity_id**: 实体ID
     - **density_id**: 密度记录ID
     """
     _validate_entity_type(entity_type)
-
-    density_record = (
+    obj = (
         db.query(EntityDensity)
         .filter(
             EntityDensity.id == density_id,
             EntityDensity.entity_type == entity_type,
             EntityDensity.entity_id == entity_id,
+            EntityDensity.is_active.is_(True),
         )
         .first()
     )
-    if not density_record:
+    if not obj:
         raise HTTPException(status_code=404, detail="实体密度记录不存在")
 
-    db.delete(density_record)
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="entity_density", entity_id=density_id,
+            action="delete", payload={}, admin=current_user,
+        )
+        db.commit()
+        return {"message": "实体密度记录已删除（管理员直写，软删）"}
+
+    p = proposal_service.submit(
+        db, entity_type="entity_density", entity_id=density_id,
+        action="delete", payload={}, proposer=current_user,
+    )
     db.commit()
-    return {"message": "实体密度记录已删除"}
+    return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}

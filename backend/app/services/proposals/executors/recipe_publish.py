@@ -1,4 +1,5 @@
 """菜谱发布执行器：apply 置 is_public=True，revert 置回 False。"""
+from typing import Optional
 from fastapi import HTTPException
 from app.services.proposals.base import ProposalExecutor, ApplyResult
 from app.models.recipe import Recipe
@@ -6,6 +7,14 @@ from app.models.recipe import Recipe
 
 class RecipePublishExecutor(ProposalExecutor):
     entity_type = "recipe"
+
+    def entity_label(self, db, proposal) -> Optional[str]:
+        """entity_id 是 recipe.id，查 recipe.name。"""
+        eid = proposal.entity_id
+        if eid is None:
+            return None
+        r = db.query(Recipe).get(eid)
+        return f"菜谱「{r.name}」" if r else None
 
     def validate(self, db, proposal):
         r = db.query(Recipe).filter(Recipe.id == proposal.entity_id).first()

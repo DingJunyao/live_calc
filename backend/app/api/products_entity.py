@@ -20,6 +20,7 @@ from app.schemas.product_entity import (
 from app.schemas.common import PaginatedResponse
 from app.utils.database_helpers import serialize_tags, deserialize_tags, json_text_contains
 from app.utils.datetime_utils import serialize_datetime
+from app.services.proposals import service as proposal_service
 
 router = APIRouter(tags=["products_entity"])
 
@@ -368,12 +369,10 @@ def update_product(
     db_product = db.query(Product).filter(Product.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="商品不存在")
-    if db_product.created_by != current_user.id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="无权修改此商品")
 
     update_data = product_update.model_dump(exclude_unset=True)
 
-    # 检查条码唯一性
+    # 检查条码唯一性（端点提交时）
     if 'barcode' in update_data and update_data['barcode']:
         existing = db.query(Product).filter(
             Product.barcode == update_data['barcode'],
@@ -386,10 +385,19 @@ def update_product(
     if 'tags' in update_data:
         update_data['tags'] = serialize_tags(update_data['tags'])
 
-    for field, value in update_data.items():
-        setattr(db_product, field, value)
+    update_data["updated_by"] = current_user.id
 
-    db_product.updated_by = current_user.id
+    # 分流：管理员直写 / 普通用户提议（全 manual）
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="product", entity_id=product_id,
+            action="update", payload=update_data, admin=current_user,
+        )
+    else:
+        proposal_service.submit(
+            db, entity_type="product", entity_id=product_id,
+            action="update", payload=update_data, proposer=current_user,
+        )
     db.commit()
     db.refresh(db_product)
 
@@ -398,10 +406,7 @@ def update_product(
         db_product.tags = deserialize_tags(db_product.tags)
     else:
         db_product.tags = []
-
-    # 填充原料名称
     db_product.ingredient_name = db_product.ingredient.name if db_product.ingredient else None
-
     return db_product
 
 
@@ -420,10 +425,8 @@ def delete_product(
     db_product = db.query(Product).filter(Product.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="商品不存在")
-    if db_product.created_by != current_user.id and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="无权删除此商品")
 
-    # 检查是否为原料的唯一商品
+    # 唯一商品检查（端点提交时；执行器 apply 时再查一次防审核期间变化）
     sibling_count = db.query(Product).filter(
         Product.ingredient_id == db_product.ingredient_id,
         Product.is_active == True,
@@ -435,16 +438,21 @@ def delete_product(
             detail=f"「{db_product.name}」是其所属原料的唯一商品，无法删除。请先为该原料添加其他商品后再删除。"
         )
 
-    db_product.is_active = False
-    db_product.updated_by = current_user.id
+    # 分流：管理员直写（级联软删在执行器）/ 普通用户提议待审
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="product", entity_id=product_id,
+            action="delete", payload={}, admin=current_user,
+        )
+        db.commit()
+        return {"message": "商品已删除（管理员直写，级联软删价格记录）"}
 
-    # 级联软删除所有关联的价格记录
-    db.query(ProductRecord).filter(
-        ProductRecord.product_id == product_id
-    ).update({"is_active": False}, synchronize_session=False)
-
+    p = proposal_service.submit(
+        db, entity_type="product", entity_id=product_id,
+        action="delete", payload={}, proposer=current_user,
+    )
     db.commit()
-    return {"message": "商品已删除"}
+    return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}
 
 
 # ==================== 条码管理端点 ====================

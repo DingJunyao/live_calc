@@ -100,6 +100,10 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
     # ---- 查询（full 不加 id 过滤；mine 按 ExportSet 过滤）----
     def _query(model, id_set):
         q = db.query(model)
+        # entity_densities / entity_unit_overrides 软删行（is_active=False）
+        # 即使 full 模式也不导出，避免幽灵数据。
+        if model in (EntityDensity, EntityUnitOverride):
+            q = q.filter(model.is_active.is_(True))
         if not es.full_mode:
             if id_set:
                 q = q.filter(model.id.in_(id_set))

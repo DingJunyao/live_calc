@@ -10,7 +10,7 @@ Merchant 无 is_active 字段，软停用语义与 executors/merchant.py（delet
 is_open=False + 名称加后缀标记；但本执行器用 [已合并] 前缀与 delete 的 [已停用]
 区分，避免回滚时混淆两种软停用语义。
 """
-from typing import List
+from typing import List, Optional
 
 from fastapi import HTTPException
 
@@ -24,6 +24,24 @@ _MERGED_PREFIX = "[已合并] "
 
 class MerchantMergeExecutor(ProposalExecutor):
     entity_type = "merchant_merge"
+
+    def entity_label(self, db, proposal) -> Optional[str]:
+        """payload 含 source_ids/target_id，显示源/目标商家名。"""
+        p = proposal.payload or {}
+        target_id = p.get("target_id")
+        source_ids = p.get("source_ids") or []
+        names = []
+        for sid in source_ids:
+            s = db.query(Merchant).get(sid)
+            if s:
+                names.append(s.name)
+        tgt = db.query(Merchant).get(target_id) if target_id else None
+        label = ""
+        if names:
+            label += "源：" + "、".join(names) + " "
+        if tgt:
+            label += f"目标：「{tgt.name}」"
+        return label.strip() or None
 
     def validate(self, db, proposal) -> None:
         source_ids = proposal.payload.get("source_ids") or []

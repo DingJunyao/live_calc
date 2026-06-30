@@ -1,7 +1,7 @@
 """执行器基类、apply 结果、自动审核协议。"""
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Optional, Protocol
 
 
 @dataclass
@@ -34,6 +34,10 @@ class ProposalExecutor(ABC):
     @abstractmethod
     def revert(self, db, proposal) -> None:
         """用 proposal.snapshot 与 proposal.revert_payload 原路还原。调用方负责 commit。"""
+
+    def entity_label(self, db, proposal) -> Optional[str]:
+        """目标实体的可读标签（如「原料「鸡蛋」」），供审核台显示。默认 None，子类可选覆写。"""
+        return None
 
 
 class ProposalAutoReviewer(Protocol):

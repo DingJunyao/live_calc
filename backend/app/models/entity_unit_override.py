@@ -1,11 +1,17 @@
-from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, UniqueConstraint
+import sqlalchemy as sa
+from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
 
 
 class EntityUnitOverride(Base):
-    """实体单位覆盖表，用于记录特定原料或商品的自定义单位换算"""
+    """实体单位覆盖表，用于记录特定原料或商品的自定义单位换算。
+
+    is_active 软删：delete 提议软删（is_active=False），revert 复活。
+    原唯一约束 uq_entity_unit 已拆为普通复合索引，软删后同名重建不撞约束
+    （应用层校验带 is_active=True 过滤，参照 ingredients 同名重建先例）。
+    """
     __tablename__ = "entity_unit_overrides"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -17,12 +23,15 @@ class EntityUnitOverride(Base):
     weight_per_unit = Column(Numeric(10, 3))  # 单位重量，如 55（一个55g）
     weight_unit_id = Column(Integer, ForeignKey("units.id"))  # 指向质量单位
     is_default = Column(Boolean, default=False)  # 是否为该实体的默认单位
-    source = Column(String(20), default="manual")  # 来源：import(导入自动创建) / manual(手动维护) / agent(Agent 维护任务写入)
+    source = Column(String(20), default="manual")  # import / manual / agent
+    is_active = Column(Boolean, default=True, nullable=False, index=True,
+                       server_default=sa.text("1"))  # 软删标记
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("entity_type", "entity_id", "unit_name", name="uq_entity_unit"),
+        # 去唯一约束，改普通复合索引（软删后同名重建不撞约束，校验走应用层）
+        Index("ix_entity_unit_active", "entity_type", "entity_id", "unit_name"),
     )
 
     # 关系

@@ -10,7 +10,6 @@ from app.schemas.auth import UserResponse
 from app.schemas.usda import UsdaSearchItem, UsdaFoodDetail, UsdaNutrientItem, UsdaMatchRequest
 from app.models.usda import UsdaFood, UsdaFoodNutrient
 from app.services.usda.index_manager import get_usda_index
-from app.services.usda.matcher import match_ingredient, match_product
 
 router = APIRouter()
 
@@ -86,10 +85,41 @@ async def match_ingredient_endpoint(
     ingredient_id: int,
     body: UsdaMatchRequest,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_user),
 ):
-    """把 USDA 食材营养数据写入指定原料（仅管理员）。"""
-    return match_ingredient(db, ingredient_id, body.fdc_id)
+    """把 USDA 食材营养数据写入指定原料（分流：管理员直写 / 普通用户提议）。
+
+    普通用户：有数据→manual 待审；无数据→补空 auto_approve 立即生效。
+    """
+    from app.models.nutrition import Ingredient
+    from app.models.nutrition_data import NutritionData
+    from app.services.proposals import service as proposal_service
+
+    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="原料不存在")
+
+    payload = {"fdc_id": body.fdc_id}
+
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="usda_ingredient_match", entity_id=ingredient_id,
+            action="create", payload=payload, admin=current_user,
+        )
+        db.commit()
+        return {"ingredient_id": ingredient_id, "fdc_id": body.fdc_id, "message": "USDA 匹配成功（管理员直写）"}
+
+    has_data = db.query(NutritionData).filter(
+        NutritionData.ingredient_id == ingredient_id).count() > 0
+    policy = "manual" if has_data else "auto_approve"
+    p = proposal_service.submit(
+        db, entity_type="usda_ingredient_match", entity_id=ingredient_id,
+        action="create", payload=payload, proposer=current_user, policy_override=policy,
+    )
+    db.commit()
+    if p.status == "applied":
+        return {"ingredient_id": ingredient_id, "fdc_id": body.fdc_id, "message": "USDA 匹配成功（补空自动通过）"}
+    return {"ingredient_id": ingredient_id, "fdc_id": body.fdc_id, "message": f"USDA 匹配提议已提交（status={p.status}，待管理员审核）"}
 
 
 @router.post("/match/product/{product_id}")
@@ -97,7 +127,36 @@ async def match_product_endpoint(
     product_id: int,
     body: UsdaMatchRequest,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_user),
 ):
-    """把 USDA 食材营养数据写入指定商品的 custom_nutrition_data（仅管理员）。"""
-    return match_product(db, product_id, body.fdc_id)
+    """把 USDA 食材营养数据写入指定商品的 custom_nutrition_data（分流：管理员直写 / 普通用户提议）。
+
+    普通用户：商品有 custom_nutrition_data→manual 待审；无数据→补空 auto_approve 立即生效。
+    """
+    from app.models.product_entity import Product
+    from app.services.proposals import service as proposal_service
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="商品不存在")
+
+    payload = {"fdc_id": body.fdc_id}
+
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="usda_product_match", entity_id=product_id,
+            action="create", payload=payload, admin=current_user,
+        )
+        db.commit()
+        return {"product_id": product_id, "fdc_id": body.fdc_id, "message": "USDA 匹配成功（管理员直写）"}
+
+    has_data = bool(product.custom_nutrition_data)
+    policy = "manual" if has_data else "auto_approve"
+    p = proposal_service.submit(
+        db, entity_type="usda_product_match", entity_id=product_id,
+        action="create", payload=payload, proposer=current_user, policy_override=policy,
+    )
+    db.commit()
+    if p.status == "applied":
+        return {"product_id": product_id, "fdc_id": body.fdc_id, "message": "USDA 匹配成功（补空自动通过）"}
+    return {"product_id": product_id, "fdc_id": body.fdc_id, "message": f"USDA 匹配提议已提交（status={p.status}，待管理员审核）"}

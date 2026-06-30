@@ -1,10 +1,15 @@
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, UniqueConstraint
+import sqlalchemy as sa
+from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, Index
 from sqlalchemy.sql import func
 from app.core.database import Base
 
 
 class EntityDensity(Base):
-    """实体密度表，用于记录特定原料或商品的密度数据（kg/m³）"""
+    """实体密度表，用于记录特定原料或商品的密度数据（kg/m³）。
+
+    is_active 软删：delete 提议软删，revert 复活。
+    原唯一约束 uq_entity_density 已拆为普通复合索引。
+    """
     __tablename__ = "entity_densities"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -15,9 +20,11 @@ class EntityDensity(Base):
     condition = Column(String(100))  # 状态描述，如"切碎"、"压碎"等
     source = Column(String(200))  # 数据来源
     confidence = Column(Numeric(3, 2), default=1.0)  # 数据可信度
+    is_active = Column(Boolean, default=True, nullable=False, index=True,
+                       server_default=sa.text("1"))  # 软删标记
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("entity_type", "entity_id", "condition", name="uq_entity_density"),
+        Index("ix_entity_density_active", "entity_type", "entity_id", "condition"),
     )

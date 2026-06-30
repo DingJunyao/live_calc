@@ -26,8 +26,10 @@ export interface Proposal {
   id: number
   entity_type: EntityType
   entity_id: number | null
+  entity_label: string | null   // 目标实体可读标签（后端 entity_label）
   action: string
   payload: Record<string, any>
+  snapshot: Record<string, any> | null
   status: ProposalStatus
   review_policy: string
   risk_level: string

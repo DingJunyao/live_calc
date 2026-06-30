@@ -1836,7 +1836,8 @@ async def calculate_recipe_nutrition(
                     EntityUnitOverride.entity_id == ingredient.id,
                     EntityUnitOverride.unit_name == recipe_ingredient.unit.abbreviation,
                     EntityUnitOverride.weight_per_unit.isnot(None),
-                    EntityUnitOverride.weight_unit_id.isnot(None)
+                    EntityUnitOverride.weight_unit_id.isnot(None),
+                    EntityUnitOverride.is_active.is_(True),
                 ).first()
                 if entity_override and entity_override.weight_per_unit:
                     # 使用自定义单位中维护的每件标准重量（如 1 颗=0.2g）

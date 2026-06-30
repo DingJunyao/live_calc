@@ -29,6 +29,7 @@ class ProposalResponse(BaseModel):
     entity_id: Optional[int]
     action: str
     payload: dict
+    snapshot: Optional[dict] = None   # before 快照（提交时预填，apply 时覆盖）
     status: str
     review_policy: str
     risk_level: str
@@ -40,5 +41,6 @@ class ProposalResponse(BaseModel):
     reviewed_at: Optional[datetime]
     reverted_at: Optional[datetime]
     preview: Optional[dict] = None   # 可选附影响预览
+    entity_label: Optional[str] = None   # 目标实体可读标签（审核台显示）
 
     model_config = {"from_attributes": True}

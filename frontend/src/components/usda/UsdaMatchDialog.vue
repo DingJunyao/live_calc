@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { searchUsdaFoods, getUsdaFood, matchIngredient, matchProduct } from '@/api/usda'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const props = defineProps<{
   modelValue: boolean
@@ -11,6 +14,13 @@ const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
   (e: 'matched'): void
 }>()
+
+// 行内提示（管理员直写 / 补空自动通过 / 待审核 区分）
+const snackbar = ref<{ show: boolean; message: string; color: string }>({
+  show: false,
+  message: '',
+  color: 'success',
+})
 
 const query = ref('')
 const results = ref<any[]>([])
@@ -58,12 +68,40 @@ async function confirmMatch() {
   confirmDialog.value = false
   matching.value = true
   try {
+    let res: any
     if (props.entityType === 'ingredient') {
-      await matchIngredient(props.entityId, selected.value.fdc_id)
+      res = await matchIngredient(props.entityId, selected.value.fdc_id)
     } else {
-      await matchProduct(props.entityId, selected.value.fdc_id)
+      res = await matchProduct(props.entityId, selected.value.fdc_id)
     }
-    emit('matched')
+
+    // 后端返回 message：管理员直写 / 补空自动通过 / 待审核
+    const message: string = res?.message || ''
+    const isAdmin = !!userStore.user?.is_admin
+    const isPending = message.includes('待管理员审核') || /status=pending/.test(message)
+
+    if (isAdmin) {
+      snackbar.value = { show: true, message: 'USDA 匹配成功', color: 'success' }
+    } else if (isPending) {
+      // 普通用户、有数据：提议待审，营养数据未变
+      snackbar.value = {
+        show: true,
+        message: message || '已提交，待管理员审核',
+        color: 'info',
+      }
+    } else {
+      // 普通用户补空自动通过
+      snackbar.value = {
+        show: true,
+        message: message || 'USDA 匹配成功（补空自动通过）',
+        color: 'success',
+      }
+    }
+
+    // 数据已落地才刷新营养（管理员直写 / 补空自动通过）；pending 时数据未变，不触发刷新
+    if (!isPending) {
+      emit('matched')
+    }
     emit('update:modelValue', false)
   } finally {
     matching.value = false
@@ -145,4 +183,9 @@ async function confirmMatch() {
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <!-- 行内提示：按角色/status 区分（管理员直写 / 补空自动通过 / 待审核） -->
+  <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000">
+    {{ snackbar.message }}
+  </v-snackbar>
 </template>

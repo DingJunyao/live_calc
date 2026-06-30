@@ -1868,12 +1868,16 @@ const saveProduct = async () => {
         ingredient_id: ingredientId.value,
         aliases: productForm.value.aliases,
       })
-      // 更新本地列表
-      const idx = products.value.findIndex(p => p.id === editingProductId.value)
-      if (idx !== -1) {
-        products.value[idx] = { ...products.value[idx], ...response }
+      if (userStore.user?.is_admin) {
+        // 更新本地列表
+        const idx = products.value.findIndex(p => p.id === editingProductId.value)
+        if (idx !== -1) {
+          products.value[idx] = { ...products.value[idx], ...response }
+        }
+        showMessage('商品已更新', 'success')
+      } else {
+        showMessage('已提交，待管理员审核', 'info')
       }
-      showMessage('商品已更新', 'success')
     } else {
       // 新增
       const response = await api.post('/products/entity', {
@@ -1910,8 +1914,12 @@ const deleteProduct = async () => {
   deletingProductLoading.value = true
   try {
     await api.delete(`/products/entity/${deletingProduct.value.id}`)
-    products.value = products.value.filter(p => p.id !== deletingProduct.value!.id)
-    showMessage('商品已删除', 'success')
+    if (userStore.user?.is_admin) {
+      products.value = products.value.filter(p => p.id !== deletingProduct.value!.id)
+      showMessage('商品已删除', 'success')
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+    }
     showDeleteProductDialog.value = false
     deletingProduct.value = null
   } catch (e: any) {
@@ -2334,8 +2342,9 @@ const densityInputUnitLabel = computed(() => densityInputUnit.value === 'g/cm3' 
 
 // 显示密度值（根据选中的显示单位换算）
 const displayDensityValue = computed(() => {
-  if (!entityDensity.value || typeof entityDensity.value.density !== 'number') return ''
-  const val = entityDensity.value.density
+  if (!entityDensity.value || entityDensity.value.density === null || entityDensity.value.density === undefined) return ''
+  const val = Number(entityDensity.value.density)
+  if (isNaN(val)) return ''
   if (densityDisplayUnit.value === 'g/cm3') {
     return (val / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
   }
@@ -2376,7 +2385,16 @@ const loadEntityUnits = async () => {
 const loadDensity = async () => {
   try {
     const response = await api.get(`/entities/ingredient/${ingredientId.value}/density`)
-    entityDensity.value = (Array.isArray(response) && response.length > 0) ? response[0] : null
+    if (Array.isArray(response) && response.length > 0) {
+      const d = response[0]
+      // 后端 density 是 Decimal，JSON 序列化为 string，转 number 供显示/换算
+      if (d && d.density !== null && d.density !== undefined) {
+        d.density = Number(d.density)
+      }
+      entityDensity.value = d
+    } else {
+      entityDensity.value = null
+    }
   } catch (e) {
     entityDensity.value = null
   }
@@ -2446,10 +2464,15 @@ const saveEntityUnit = async () => {
     } else {
       await api.post(`/entities/ingredient/${ingredientId.value}/units`, payload)
     }
-    showMessage('保存成功', 'success')
-    showUnitDialog.value = false
-    await loadEntityUnits()
-    await loadUnmappedUnits()
+    if (userStore.user?.is_admin) {
+      showMessage('保存成功', 'success')
+      showUnitDialog.value = false
+      await loadEntityUnits()
+      await loadUnmappedUnits()
+    } else {
+      showMessage('已提交，待管理员审核', 'info')
+      showUnitDialog.value = false
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -2462,9 +2485,13 @@ const deleteEntityUnit = async (unitId: number) => {
   if (!(await ask({ text: '确定删除此自定义单位？', color: 'error', confirmText: '删除' }))) return
   try {
     await api.delete(`/entities/ingredient/${ingredientId.value}/units/${unitId}`)
-    showMessage('删除成功', 'success')
-    await loadEntityUnits()
-    await loadUnmappedUnits()
+    if (userStore.user?.is_admin) {
+      showMessage('删除成功', 'success')
+      await loadEntityUnits()
+      await loadUnmappedUnits()
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
@@ -2475,8 +2502,8 @@ const openDensityDialog = (density?: EntityDensity) => {
   if (density) {
     densityForm.value = {
       id: density.id,
-      // 按当前输入单位显示（后端存储为 kg/m³）
-      density: densityInputUnit.value === 'g/cm3' ? density.density / 1000 : density.density,
+      // 按当前输入单位显示（后端存储为 kg/m³）；Number() 兜底防 density 为 string
+      density: densityInputUnit.value === 'g/cm3' ? Number(density.density) / 1000 : Number(density.density),
       temperature: density.temperature,
       source: density.source
     }
@@ -2509,9 +2536,14 @@ const saveDensity = async () => {
       temperature: densityForm.value.temperature,
       source: densityForm.value.source
     })
-    showMessage('保存成功', 'success')
-    showDensityDialog.value = false
-    await loadDensity()
+    if (userStore.user?.is_admin) {
+      showMessage('保存成功', 'success')
+      showDensityDialog.value = false
+      await loadDensity()
+    } else {
+      showMessage('已提交，待管理员审核', 'info')
+      showDensityDialog.value = false
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -2524,8 +2556,12 @@ const deleteDensity = async (densityId: number) => {
   if (!(await ask({ text: '确定删除此密度数据？', color: 'error', confirmText: '删除' }))) return
   try {
     await api.delete(`/entities/ingredient/${ingredientId.value}/density/${densityId}`)
-    showMessage('删除成功', 'success')
-    entityDensity.value = null
+    if (userStore.user?.is_admin) {
+      showMessage('删除成功', 'success')
+      entityDensity.value = null
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   }
@@ -3195,9 +3231,14 @@ const addRelation = async () => {
       relation_type: actualType,
       strength: relationForm.value.strength
     })
-    showMessage('关系添加成功', 'success')
-    showAddRelationDialog.value = false
-    await loadHierarchy()
+    if (userStore.user?.is_admin) {
+      showMessage('关系添加成功', 'success')
+      showAddRelationDialog.value = false
+      await loadHierarchy()
+    } else {
+      showMessage('已提交，待管理员审核', 'info')
+      showAddRelationDialog.value = false
+    }
   } catch (e: any) {
     // 从 response.data.detail 获取详细的错误信息
     const errorMessage = e.response?.data?.detail || e.message || '添加关系失败'
@@ -3227,9 +3268,14 @@ const saveEditRelation = async () => {
       relation_type: editRelationForm.value.relation_type,
       strength: editRelationForm.value.strength
     })
-    showMessage('关系更新成功', 'success')
-    showEditRelationDialog.value = false
-    await loadHierarchy()
+    if (userStore.user?.is_admin) {
+      showMessage('关系更新成功', 'success')
+      showEditRelationDialog.value = false
+      await loadHierarchy()
+    } else {
+      showMessage('已提交，待管理员审核', 'info')
+      showEditRelationDialog.value = false
+    }
   } catch (e: any) {
     // 从 response.data.detail 获取详细的错误信息
     const errorMessage = e.response?.data?.detail || e.message || '更新关系失败'
@@ -3252,9 +3298,14 @@ const deleteRelation = async () => {
   deletingRelation.value = true
   try {
     await api.delete(`/ingredients/hierarchy/${relationToDelete.value.id}`)
-    showMessage('关系删除成功', 'success')
-    showDeleteRelationDialog.value = false
-    await loadHierarchy()
+    if (userStore.user?.is_admin) {
+      showMessage('关系删除成功', 'success')
+      showDeleteRelationDialog.value = false
+      await loadHierarchy()
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+      showDeleteRelationDialog.value = false
+    }
   } catch (e: any) {
     // 从 response.data.detail 获取详细的错误信息
     const errorMessage = e.response?.data?.detail || e.message || '删除关系失败'
@@ -3551,14 +3602,19 @@ const saveBasicInfo = async () => {
         await api.put(`/recipes/${newRecipeId}`, { result_ingredient_id: ingredientId.value })
       }
     }
-    // 重新拉取原料详情（含新的 making_recipe_* / serving_weight 信息）
-    const fresh = await api.get(`/ingredients/${ingredientId.value}`)
-    ingredient.value = fresh
-    // 刷新价格数据（默认单位可能影响价格显示）
-    await loadLatestPrice()
-    await loadPriceRecords()
-    editingBasicInfo.value = false
-    showMessage('基本信息已保存', 'success')
+    if (userStore.user?.is_admin) {
+      // 重新拉取原料详情（含新的 making_recipe_* / serving_weight 信息）
+      const fresh = await api.get(`/ingredients/${ingredientId.value}`)
+      ingredient.value = fresh
+      // 刷新价格数据（默认单位可能影响价格显示）
+      await loadLatestPrice()
+      await loadPriceRecords()
+      editingBasicInfo.value = false
+      showMessage('基本信息已保存', 'success')
+    } else {
+      editingBasicInfo.value = false
+      showMessage('已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -3703,16 +3759,26 @@ const saveNutritionEdit = async () => {
       return
     }
 
-    await api.post(`/nutrition/ingredients/${ingredientId.value}/nutrition`, {
+    const res = await api.post(`/nutrition/ingredients/${ingredientId.value}/nutrition`, {
       base_quantity: 100,
       base_unit: 'g',
       nutrients,
       source: 'custom',
     })
 
+    // 共享数据分流：管理员直写 / 普通用户补空自动通过（applied，营养已变）/
+    // 普通用户有数据→manual 待审（status=pending，营养未变）。
+    // 按后端返回 message 区分提示，避免普通用户待审时误报「已保存」。
     editingNutrition.value = false
-    await loadNutritionData()
-    showMessage('营养数据已保存', 'success')
+    const msg: string = (res && res.message) || ''
+    if (msg.includes('待管理员审核')) {
+      // 普通用户有数据→manual 待审：营养未落地，无需刷新
+      showMessage('已提交，待管理员审核', 'info')
+    } else {
+      // 管理员直写 或 普通用户补空自动通过：营养已落地，刷新展示
+      await loadNutritionData()
+      showMessage('营养数据已保存', 'success')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -3876,8 +3942,12 @@ const deleteIngredient = async () => {
   deleting.value = true
   try {
     await api.delete(`/nutrition/ingredients/${ingredientId.value}`)
-    showMessage('删除成功', 'success')
-    router.push('/data/ingredients')
+    if (userStore.user?.is_admin) {
+      showMessage('删除成功', 'success')
+      router.push('/data/ingredients')
+    } else {
+      showMessage('删除提议已提交，待管理员审核', 'info')
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   } finally {

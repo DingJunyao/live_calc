@@ -13,6 +13,11 @@ from app.services.proposals.executors.hierarchy import HierarchyExecutor
 from app.services.proposals.executors.merchant import MerchantExecutor
 from app.services.proposals.executors.merchant_merge import MerchantMergeExecutor
 from app.services.proposals.executors.recipe_edit import RecipeEditExecutor
+from app.services.proposals.executors.entity_unit_override import EntityUnitOverrideExecutor
+from app.services.proposals.executors.entity_density import EntityDensityExecutor
+from app.services.proposals.executors.product import ProductExecutor
+from app.services.proposals.executors.usda_ingredient_match import UsdaIngredientMatchExecutor
+from app.services.proposals.executors.usda_product_match import UsdaProductMatchExecutor
 
 
 def register_all(db=None) -> None:
@@ -55,6 +60,19 @@ def register_all(db=None) -> None:
 
     # 菜谱编辑：已发布菜谱的修改走提议（manual）
     ExecutorRegistry.register(RecipeEditExecutor(), default_policy="manual", default_risk="mid")
+
+    # 实体单位覆盖：全 manual（新增/编辑/删除均需审核，用户加严要求）
+    ExecutorRegistry.register(EntityUnitOverrideExecutor(), default_policy="manual", default_risk="mid")
+
+    # 实体密度：全 manual
+    ExecutorRegistry.register(EntityDensityExecutor(), default_policy="manual", default_risk="mid")
+
+    # 商品实体：全 manual（update/delete 均需审核）
+    ExecutorRegistry.register(ProductExecutor(), default_policy="manual", default_risk="mid")
+
+    # USDA 匹配：替换语义（清旧写新），全 manual（覆盖营养数据，用户已确认需审核）
+    ExecutorRegistry.register(UsdaIngredientMatchExecutor(), default_policy="manual", default_risk="mid")
+    ExecutorRegistry.register(UsdaProductMatchExecutor(), default_policy="manual", default_risk="mid")
 
     # 加载持久化策略覆盖默认（system_config）
     if db is not None:

@@ -14,6 +14,7 @@ from app.models.ingredient_category import IngredientCategory
 from app.models.unit import Unit
 from app.models.nutrition import Ingredient
 from app.schemas.common import PaginatedResponse
+from app.services.proposals import service as proposal_service
 
 router = APIRouter()
 
@@ -540,52 +541,52 @@ async def update_ingredient(
 ):
     """更新食材 - 这是 ingredient_extended.py 中支持 nutrition 参数的版本"""
     try:
-        from app.services.unit_matcher import UnitMatcher
-
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
 
-        # 权限检查：管理员可修改任意食材，普通用户只能修改自己创建的
-        if ingredient.created_by != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权修改此食材")
-
-        # 检查是否为导入原料且用户不是管理员
-        if ingredient.is_imported and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="导入的原料名称只能由管理员修改")
-
-        if name and name != ingredient.name:
-            existing = db.query(Ingredient).filter(Ingredient.name == name, Ingredient.is_active == True).first()
+        # 构造基本信息 payload（不含 nutrition——前端基本信息编辑不传 nutrition）
+        payload = {}
+        if name is not None and name != ingredient.name:
+            existing = db.query(Ingredient).filter(
+                Ingredient.name == name, Ingredient.is_active == True
+            ).first()
             if existing:
                 raise HTTPException(status_code=400, detail="食材已存在")
-            ingredient.name = name
-
+            payload["name"] = name
         if category_id is not None:
-            ingredient.category_id = category_id
+            payload["category_id"] = category_id
         if aliases is not None:
-            ingredient.aliases = aliases
+            payload["aliases"] = aliases
         if density is not None:
-            ingredient.density = density
-
-        # 处理默认单位：优先使用 default_unit_id（数字ID），如果没有则使用 default_unit（字符串）
+            payload["density"] = density
         if default_unit_id is not None:
-            # 直接使用单位 ID
-            ingredient.default_unit_id = default_unit_id if default_unit_id > 0 else None
+            payload["default_unit_id"] = default_unit_id if default_unit_id > 0 else None
         elif default_unit is not None:
-            # 使用单位匹配器获取单位 ID
+            from app.services.unit_matcher import UnitMatcher
             matcher = UnitMatcher(db)
             unit_obj = matcher.match_or_create_unit(default_unit)
-            ingredient.default_unit_id = unit_obj.id if unit_obj else None
-
-        # 处理成品基准量（用于制作菜谱成本换算）
+            payload["default_unit_id"] = unit_obj.id if unit_obj else None
         if serving_weight is not None:
-            ingredient.serving_weight = serving_weight if serving_weight > 0 else None
+            payload["serving_weight"] = serving_weight if serving_weight > 0 else None
         if serving_weight_unit_id is not None:
-            ingredient.serving_weight_unit_id = serving_weight_unit_id if serving_weight_unit_id > 0 else None
+            payload["serving_weight_unit_id"] = serving_weight_unit_id if serving_weight_unit_id > 0 else None
 
-        ingredient.updated_by = current_user.id
-
-        db.commit()
+        # 分流：管理员直写 / 普通用户提议（全 manual）。放开 created_by 限制。
+        if payload:
+            payload["updated_by"] = current_user.id
+            if current_user.is_admin:
+                proposal_service.apply_as_admin(
+                    db, entity_type="ingredient", entity_id=ingredient_id,
+                    action="update", payload=payload, admin=current_user,
+                )
+            else:
+                proposal_service.submit(
+                    db, entity_type="ingredient", entity_id=ingredient_id,
+                    action="update", payload=payload, proposer=current_user,
+                )
+            db.commit()
+            db.refresh(ingredient)
 
         # 处理营养素数据
         if nutrition:
@@ -954,18 +955,17 @@ async def soft_delete_ingredient(
     """软删除食材
 
     仅当原料未关联任何菜谱时可删除。删除时级联软删除其下的商品和关联关系。
-    管理员可删除任意食材，普通用户只能删除自己创建的食材。
+    管理员可删除任意食材（直写即时生效），普通用户提交删除提议（manual 待审）。
+    级联软删商品/层级关系由 IngredientExecutor._apply_delete 完成。
     """
     try:
         from app.models.recipe import RecipeIngredient
-        from app.models.product_entity import Product
-        from app.models.ingredient_hierarchy import IngredientHierarchy
 
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="食材不存在")
 
-        # 检查是否有关联菜谱
+        # 菜谱引用检查（端点提交时；执行器 apply 时再查一次）
         recipe_count = db.query(RecipeIngredient).filter(
             RecipeIngredient.ingredient_id == ingredient_id
         ).count()
@@ -975,34 +975,26 @@ async def soft_delete_ingredient(
                 detail=f"该食材已被 {recipe_count} 个菜谱引用，无法删除。请先移除菜谱中的该食材。"
             )
 
-        # 权限检查
-        if ingredient.created_by != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权删除此食材")
+        # 分流：管理员直写（级联软删商品+层级在执行器）/ 普通用户提议待审
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="ingredient", entity_id=ingredient_id,
+                action="delete", payload={}, admin=current_user,
+            )
+            db.commit()
+            return {"message": "原料已删除（管理员直写，级联软删商品和层级关系）"}
 
-        # 级联软删除关联的商品
-        db.query(Product).filter(
-            Product.ingredient_id == ingredient_id,
-            Product.is_active == True
-        ).update({"is_active": False}, synchronize_session=False)
-
-        # 软删除关联关系
-        db.query(IngredientHierarchy).filter(
-            IngredientHierarchy.parent_id == ingredient_id
-        ).update({"is_active": False}, synchronize_session=False)
-        db.query(IngredientHierarchy).filter(
-            IngredientHierarchy.child_id == ingredient_id
-        ).update({"is_active": False}, synchronize_session=False)
-
-        ingredient.is_active = False
-        ingredient.updated_by = current_user.id
+        p = proposal_service.submit(
+            db, entity_type="ingredient", entity_id=ingredient_id,
+            action="delete", payload={}, proposer=current_user,
+        )
         db.commit()
-
-        return {"message": "食材已删除，关联商品和层次关系已软删除"}
+        return {"message": f"删除提议已提交（proposal_id={p.id}, status={p.status}）"}
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"删除食材失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除原料失败: {str(e)}")
 
 
 def _flatten_nutrients(nutrients_dict: dict) -> dict:
