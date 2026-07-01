@@ -2480,19 +2480,42 @@ const saveNutritionEdit = async () => {
 
     if (nutrients.length === 0) {
       // 商品允许删除全部覆盖数据，回退到继承原料的营养成分
-      await api.put(`/products/entity/${productId.value}/nutrition`, null)
+      // 共享数据分流：管理员直写 / 普通用户补空自动通过 / 普通用户有数据→manual 待审
+      const res = await api.put(`/products/entity/${productId.value}/nutrition`, null)
+      const msg: string = (res && res.message) || ''
+      if (msg.includes('待管理员审核')) {
+        // 普通用户有数据→manual 待审：营养未落地，无需刷新
+        editingNutrition.value = false
+        showMessage('已提交，待管理员审核', 'info')
+      } else {
+        // 管理员直写 或 普通用户补空自动通过：营养已落地，刷新展示
+        editingNutrition.value = false
+        await loadNutritionData()
+        showMessage('营养数据已保存', 'success')
+      }
     } else {
-      await api.post(`/nutrition/products/${productId.value}/nutrition`, {
+      const res = await api.post(`/nutrition/products/${productId.value}/nutrition`, {
         base_quantity: 100,
         base_unit: 'g',
         nutrients,
         source: 'custom',
       })
-    }
 
-    editingNutrition.value = false
-    await loadNutritionData()
-    showMessage('营养数据已保存', 'success')
+      // 共享数据分流：管理员直写 / 普通用户补空自动通过（applied，营养已变）/
+      // 普通用户有数据→manual 待审（status=pending，营养未变）。
+      // 按后端返回 message 区分提示，避免普通用户待审时误报「已保存」。
+      const msg: string = (res && res.message) || ''
+      if (msg.includes('待管理员审核')) {
+        // 普通用户有数据→manual 待审：营养未落地，无需刷新
+        editingNutrition.value = false
+        showMessage('已提交，待管理员审核', 'info')
+      } else {
+        // 管理员直写 或 普通用户补空自动通过：营养已落地，刷新展示
+        editingNutrition.value = false
+        await loadNutritionData()
+        showMessage('营养数据已保存', 'success')
+      }
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {

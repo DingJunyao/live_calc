@@ -186,6 +186,9 @@ async def _pick_best_recipe(
 ) -> Tuple[Optional[Recipe], Optional[Dict], Optional[Dict], float]:
     """从候选池中选取最优菜谱。"""
     candidates = _get_candidate_pool(db, meal_type, exclude_recipe_ids, user_id=user.id)
+    # 释放候选池查询的读事务（SHARED 锁），避免 generate 后台长读事务阻塞并发写
+    # （SQLite 写 commit 需 EXCLUSIVE 锁，被 SHARED 阻塞至 busy_timeout 超时）
+    db.rollback()
     if not candidates:
         return (None, None, None, 0.0)
 
@@ -197,6 +200,9 @@ async def _pick_best_recipe(
 
     for recipe in candidates:
         score, nutrition, cost = await _score_recipe(db, user, recipe, meal_type, targets)
+        # 每个候选打分后释放读事务（SHARED 锁），让并发写（如 POST /products）
+        # 能在候选间隙拿到 EXCLUSIVE 锁，避免等至 busy_timeout 超时
+        db.rollback()
         if score > best_score:
             best_score = score
             best_recipe = recipe
@@ -431,8 +437,9 @@ async def generate_recommendations(db: Session, user: User) -> Dict:
                     # 保留未被黑名单影响的推荐
                     existing = [r for r in existing if r.recipe_id not in bl_recipe_ids]
 
-                    # 为被删除的餐重新生成推荐
+                    # 为被删除的餐重新生成推荐（先算后写，避免长事务持锁阻塞并发写）
                     picked_ids = {r.recipe_id for r in existing if r.recipe_id}
+                    regen_picks: list = []
                     for mt in ["breakfast", "lunch", "dinner"]:
                         if mt not in bl_meal_types:
                             continue
@@ -441,10 +448,11 @@ async def generate_recommendations(db: Session, user: User) -> Dict:
                         )
                         if best:
                             picked_ids.add(best.id)
-                            db.add(DailyRecommendation(
-                                user_id=user.id, date=today, meal_type=mt, recipe_id=best.id,
-                            ))
-                            db.flush()
+                            regen_picks.append((mt, best.id))
+                    for mt, rid in regen_picks:
+                        db.add(DailyRecommendation(
+                            user_id=user.id, date=today, meal_type=mt, recipe_id=rid,
+                        ))
                     db.commit()
                     # 重新读取完整记录
                     existing = (
@@ -463,22 +471,23 @@ async def generate_recommendations(db: Session, user: User) -> Dict:
     meal_types = ["breakfast", "lunch", "dinner"]
     picked_ids: Set[int] = set()  # 午/晚餐共享候选池，防止重复
 
+    # 先完成所有餐的打分挑选（读 + 计算，不持写锁），再批量写入 + commit。
+    # 避免循环内 add+flush 后继续 _pick_best_recipe（计算密集）导致写锁持有整个循环，
+    # 阻塞并发写（如 POST /products 等 SQLite 写锁至 busy_timeout 30s 超时）。
+    picks: list = []
     for meal_type in meal_types:
         best_recipe, nutrition, cost, score = await _pick_best_recipe(
             user, meal_type, exclude_recipe_ids=picked_ids, db=db
         )
-
         if best_recipe:
             picked_ids.add(best_recipe.id)
-            record = DailyRecommendation(
-                user_id=user.id,
-                date=today,
-                meal_type=meal_type,
-                recipe_id=best_recipe.id,
-            )
-            db.add(record)
-            db.flush()
+            picks.append((meal_type, best_recipe.id))
 
+    # 批量写入 + commit（写锁持有时间短）
+    for meal_type, recipe_id in picks:
+        db.add(DailyRecommendation(
+            user_id=user.id, date=today, meal_type=meal_type, recipe_id=recipe_id,
+        ))
     db.commit()
 
     all_records = (

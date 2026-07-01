@@ -341,3 +341,104 @@ def test_proposal_response_includes_entity_label(db_session, as_admin):
     assert found[0].get("entity_label") is not None
     assert "响应商品" in found[0]["entity_label"]
 
+
+def test_product_nutrition_apply_reverts(db_session):
+    """商品营养执行器 apply 覆盖 custom_nutrition_data + source，revert 还原。"""
+    from app.services.proposals.executors.product_nutrition import ProductNutritionExecutor
+    from app.models.product_entity import Product
+    ing_id = _make_ingredient(db_session, name="pnut_ing")
+    p = _make_product(db_session, ing_id, name="pnut_prod")
+    pid = p.id
+    prod = db_session.query(Product).get(pid)
+    prod.custom_nutrition_data = {"old": True}
+    prod.custom_nutrition_source = "old_src"
+    db_session.commit()
+    ex = ProductNutritionExecutor()
+    prop = _proposal("update",
+                     {"custom_nutrition_data": {"new": True}, "custom_nutrition_source": "custom"},
+                     entity_id=pid)
+    result = ex.apply(db_session, prop)
+    db_session.commit()
+    db_session.refresh(prod)
+    assert prod.custom_nutrition_data == {"new": True}
+    assert prod.custom_nutrition_source == "custom"
+    # revert 还原
+    prop.revert_payload = result.revert_payload
+    prop.snapshot = result.snapshot
+    ex.revert(db_session, prop)
+    db_session.commit()
+    db_session.refresh(prod)
+    assert prod.custom_nutrition_data == {"old": True}
+    assert prod.custom_nutrition_source == "old_src"
+
+
+def test_non_admin_edit_product_nutrition_has_data_manual(db_session, as_non_admin):
+    """普通用户编辑有数据的商品营养→manual 待审（值未变）。"""
+    from app.models.product_entity import Product
+    ing_id = _make_ingredient(db_session, name="pnut_ing2")
+    p = _make_product(db_session, ing_id, name="pnut_prod2")
+    pid = p.id
+    prod = db_session.query(Product).get(pid)
+    prod.custom_nutrition_data = {"existing": 1}
+    db_session.commit()
+    resp = client.post(f"/api/v1/nutrition/products/{pid}/nutrition", json={
+        "base_quantity": 100, "base_unit": "g",
+        "nutrients": [{"name": "蛋白质", "value": 10, "unit": "g"}], "source": "custom",
+    })
+    assert resp.status_code == 200
+    assert "待管理员审核" in resp.json()["message"]
+    refreshed = db_session.query(Product).get(pid)
+    db_session.refresh(refreshed)
+    assert refreshed.custom_nutrition_data == {"existing": 1}  # 待审未变
+
+
+def test_non_admin_edit_product_nutrition_no_data_auto(db_session, as_non_admin):
+    """普通用户编辑无数据的商品营养→补空 auto 立即生效。"""
+    from app.models.product_entity import Product
+    ing_id = _make_ingredient(db_session, name="pnut_ing3")
+    p = _make_product(db_session, ing_id, name="pnut_prod3")  # 无 custom_nutrition_data
+    pid = p.id
+    resp = client.post(f"/api/v1/nutrition/products/{pid}/nutrition", json={
+        "base_quantity": 100, "base_unit": "g",
+        "nutrients": [{"name": "蛋白质", "value": 10, "unit": "g"}], "source": "custom",
+    })
+    assert resp.status_code == 200
+    assert "补空自动通过" in resp.json()["message"]
+    refreshed = db_session.query(Product).get(pid)
+    db_session.refresh(refreshed)
+    assert refreshed.custom_nutrition_data is not None  # 已写入
+
+
+def test_non_admin_clear_product_nutrition_has_data_manual(db_session, as_non_admin):
+    """普通用户全删除（PUT null）有数据的商品营养→manual 待审（值未清空）。"""
+    from app.models.product_entity import Product
+    ing_id = _make_ingredient(db_session, name="clr_pnut_ing")
+    p = _make_product(db_session, ing_id, name="clr_pnut_prod")
+    pid = p.id
+    prod = db_session.query(Product).get(pid)
+    prod.custom_nutrition_data = {"existing": 1}
+    db_session.commit()
+    resp = client.put(f"/api/v1/products/entity/{pid}/nutrition", json=None)
+    assert resp.status_code == 200
+    assert "待管理员审核" in resp.json()["message"]
+    refreshed = db_session.query(Product).get(pid)
+    db_session.refresh(refreshed)
+    assert refreshed.custom_nutrition_data == {"existing": 1}  # 待审未清空
+
+
+def test_admin_clear_product_nutrition_applied(db_session, as_admin):
+    """管理员全删除（PUT null）即时清空。"""
+    from app.models.product_entity import Product
+    ing_id = _make_ingredient(db_session, name="adm_clr_ing")
+    p = _make_product(db_session, ing_id, name="adm_clr_prod")
+    pid = p.id
+    prod = db_session.query(Product).get(pid)
+    prod.custom_nutrition_data = {"old": 1}
+    db_session.commit()
+    resp = client.put(f"/api/v1/products/entity/{pid}/nutrition", json=None)
+    assert resp.status_code == 200
+    assert "管理员直写" in resp.json()["message"]
+    refreshed = db_session.query(Product).get(pid)
+    db_session.refresh(refreshed)
+    assert refreshed.custom_nutrition_data is None  # 已清空
+

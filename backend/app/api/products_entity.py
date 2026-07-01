@@ -902,14 +902,15 @@ async def update_product_nutrition(
     product_id: int,
     nutrition: Optional[dict] = Body(None, description="营养数据，传 null 清空自定义数据"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
-    更新商品的营养数据
+    更新/清空商品营养数据（分流：管理员直写 / 普通用户提议）。
 
-    传 null / 空 dict 可清除自定义营养数据，回退到继承原料数据。
+    传 null / 空 dict 清除自定义营养数据，回退到继承原料数据。
+    普通用户：有数据→manual 待审；无数据→补空 auto。
 
-    请求体格式：
+    请求体格式（非清空时）：
     {
         "core_nutrients": {
             "能量": {"value": 100, "unit": "kcal"},
@@ -930,17 +931,47 @@ async def update_product_nutrition(
         if not product:
             raise HTTPException(status_code=404, detail="商品不存在")
 
-        # 保存或清空自定义营养数据
-        product.custom_nutrition_data = nutrition
-        product.custom_nutrition_source = "custom" if nutrition else None
-        product.updated_by = current_user.id
-        product.updated_at = datetime.utcnow()
+        payload = {
+            "custom_nutrition_data": nutrition,
+            "custom_nutrition_source": "custom" if nutrition else None,
+            "updated_by": current_user.id,
+        }
 
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db,
+                entity_type="product_nutrition",
+                entity_id=product_id,
+                action="update",
+                payload=payload,
+                admin=current_user,
+            )
+            db.commit()
+            return {
+                "message": "营养数据更新成功（管理员直写）",
+                "custom_nutrition_data": nutrition,
+            }
+
+        has_data = bool(product.custom_nutrition_data)
+        policy = "manual" if has_data else "auto_approve"
+        p = proposal_service.submit(
+            db,
+            entity_type="product_nutrition",
+            entity_id=product_id,
+            action="update",
+            payload=payload,
+            proposer=current_user,
+            policy_override=policy,
+        )
         db.commit()
-
+        if p.status == "applied":
+            return {
+                "message": "营养数据更新成功（补空自动通过）",
+                "custom_nutrition_data": nutrition,
+            }
         return {
-            "message": "营养数据更新成功",
-            "custom_nutrition_data": product.custom_nutrition_data
+            "message": f"营养数据更新提议已提交（status={p.status}，待管理员审核）",
+            "custom_nutrition_data": product.custom_nutrition_data,  # 待审未变，返旧值
         }
     except HTTPException:
         raise

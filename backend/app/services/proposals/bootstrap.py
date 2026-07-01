@@ -18,6 +18,7 @@ from app.services.proposals.executors.entity_density import EntityDensityExecuto
 from app.services.proposals.executors.product import ProductExecutor
 from app.services.proposals.executors.usda_ingredient_match import UsdaIngredientMatchExecutor
 from app.services.proposals.executors.usda_product_match import UsdaProductMatchExecutor
+from app.services.proposals.executors.product_nutrition import ProductNutritionExecutor
 
 
 def register_all(db=None) -> None:
@@ -73,6 +74,9 @@ def register_all(db=None) -> None:
     # USDA 匹配：替换语义（清旧写新），全 manual（覆盖营养数据，用户已确认需审核）
     ExecutorRegistry.register(UsdaIngredientMatchExecutor(), default_policy="manual", default_risk="mid")
     ExecutorRegistry.register(UsdaProductMatchExecutor(), default_policy="manual", default_risk="mid")
+
+    # 商品营养数据：全 manual（补空 auto 由端点 policy_override 覆盖）
+    ExecutorRegistry.register(ProductNutritionExecutor(), default_policy="manual", default_risk="mid")
 
     # 加载持久化策略覆盖默认（system_config）
     if db is not None:

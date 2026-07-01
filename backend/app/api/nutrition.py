@@ -1486,12 +1486,16 @@ async def edit_product_nutrition(
     product_id: int,
     request: NutritionEditRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     编辑商品营养数据
 
-    创建或更新商品的自定义营养数据
+    分流模式（与 edit_ingredient_nutrition 对齐）：
+    - 管理员：apply_as_admin 直写（执行器覆盖 custom_nutrition_data + source）。
+    - 普通用户：submit 提议；已有数据 manual 待审 / 无数据补空 auto_approve 立即生效。
+
+    执行器写用户编辑的 structured_nutrients（payload），不调 matcher。
     """
     try:
         # 验证商品是否存在
@@ -1573,19 +1577,35 @@ async def edit_product_nutrition(
             structured_nutrients["all_nutrients"][key] = info
             structured_nutrients["nutrient_details"][key] = info
 
-        # 更新商品的自定义营养数据
-        product.custom_nutrition_data = structured_nutrients
-        product.custom_nutrition_source = request.source
-        product.updated_by = current_user.id
+        payload = {
+            "custom_nutrition_data": structured_nutrients,
+            "custom_nutrition_source": request.source,
+            "updated_by": current_user.id,
+        }
 
-        db.commit()
-        db.refresh(product)
+        if current_user.is_admin:
+            proposal_service.apply_as_admin(
+                db, entity_type="product_nutrition", entity_id=product_id,
+                action="update", payload=payload, admin=current_user,
+            )
+            db.commit()
+            return NutritionEditResponse(
+                success=True,
+                message="商品营养数据保存成功（管理员直写）",
+                product_id=product_id,
+            )
 
-        return NutritionEditResponse(
-            success=True,
-            message="商品营养数据保存成功",
-            product_id=product_id
+        has_data = bool(product.custom_nutrition_data)
+        policy = "manual" if has_data else "auto_approve"
+        p = proposal_service.submit(
+            db, entity_type="product_nutrition", entity_id=product_id,
+            action="update", payload=payload, proposer=current_user,
+            policy_override=policy,
         )
+        db.commit()
+        msg = ("商品营养数据保存成功（补空自动通过）" if p.status == "applied"
+               else f"商品营养数据提议已提交（status={p.status}，待管理员审核）")
+        return NutritionEditResponse(success=True, message=msg, product_id=product_id)
 
     except HTTPException:
         raise
