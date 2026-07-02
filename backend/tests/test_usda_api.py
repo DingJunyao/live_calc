@@ -101,3 +101,36 @@ def test_match_fdc_not_found(db_with_data):
     db = TestingSessionLocal()
     db.query(Ingredient).filter(Ingredient.id == ing_id).delete()
     db.commit(); db.close()
+
+
+# ---------- 预览端点 ----------
+
+
+def test_preview_nutrition_endpoint(db_with_data):
+    """GET /api/v1/usda/preview-nutrition?fdc_id=... 返回三层结构。"""
+    db = TestingSessionLocal()
+    db.add(UsdaFood(
+        fdc_id=770501,
+        data_type="foundation",
+        description="Preview Food",
+    ))
+    db.add(UsdaFoodNutrient(
+        fdc_id=770501,
+        name="Energy",
+        name_zh="能量",
+        amount=100.0,
+        unit_name="kcal",
+    ))
+    db.commit()
+    db.close()
+
+    resp = client.get("/api/v1/usda/preview-nutrition", params={"fdc_id": 770501})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "core_nutrients" in body
+    assert "能量" in body["core_nutrients"]
+
+
+def test_preview_nutrition_not_found(db_with_data):
+    resp = client.get("/api/v1/usda/preview-nutrition", params={"fdc_id": 770599})
+    assert resp.status_code == 404

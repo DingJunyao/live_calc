@@ -51,6 +51,21 @@ async def search_usda(
     return out
 
 
+@router.get("/preview-nutrition")
+async def preview_usda_nutrition(
+    fdc_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """按 fdc_id 预览 USDA 营养素（只读，供审核台 NutritionDiff 渲染新值）。
+
+    返回三层结构（core_nutrients / all_nutrients / nutrient_details），
+    与 match_ingredient 写入 NutritionData.nutrients 的结构一致。
+    """
+    from app.services.usda.matcher import build_usda_nutrients_by_fdc
+    return build_usda_nutrients_by_fdc(db, fdc_id)
+
+
 @router.get("/{fdc_id}", response_model=UsdaFoodDetail)
 async def get_usda_food(
     fdc_id: int,
