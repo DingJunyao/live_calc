@@ -67,6 +67,11 @@ class RecipeEditExecutor(ProposalExecutor):
             })
         return out
 
+    def _snapshot_scalar_cols(self, recipe) -> dict:
+        """菜谱标量列快照（apply/submit 共用，与 _snapshot_old_ingredients 配对）。"""
+        return {c.name: _json_safe(getattr(recipe, c.name))
+                for c in recipe.__table__.columns}
+
     def build_snapshot(self, db, proposal) -> dict:
         """submit 时预填 before（供 pending 审核看旧食材；apply 时被覆盖）。"""
         recipe_id = proposal.entity_id
@@ -75,8 +80,7 @@ class RecipeEditExecutor(ProposalExecutor):
         recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
         if recipe is None:
             return {}
-        snap = {c.name: _json_safe(getattr(recipe, c.name))
-                for c in recipe.__table__.columns}
+        snap = self._snapshot_scalar_cols(recipe)
         snap["old_ingredients"] = self._snapshot_old_ingredients(db, recipe_id)
         return snap
 
@@ -89,8 +93,7 @@ class RecipeEditExecutor(ProposalExecutor):
         update_data = proposal.payload.get("update_data", {})
 
         # 标量列快照（apply 前最新值）
-        snapshot = {c.name: _json_safe(getattr(recipe, c.name))
-                    for c in recipe.__table__.columns}
+        snapshot = self._snapshot_scalar_cols(recipe)
         # 旧食材快照（在替换前抓全量；审核台 diff + revert 回滚 都用它）
         snapshot["old_ingredients"] = self._snapshot_old_ingredients(db, recipe_id)
 
@@ -101,7 +104,8 @@ class RecipeEditExecutor(ProposalExecutor):
         # 全量替换食材
         if "ingredients" in update_data and update_data["ingredients"] is not None:
             db.query(RecipeIngredient).filter(
-                RecipeIngredient.recipe_id == recipe_id).delete()
+                RecipeIngredient.recipe_id == recipe_id
+            ).delete(synchronize_session=False)
             for ing_data in update_data["ingredients"]:
                 ing = db.query(Ingredient).options(
                     load_only(Ingredient.id, Ingredient.name, Ingredient.is_active)

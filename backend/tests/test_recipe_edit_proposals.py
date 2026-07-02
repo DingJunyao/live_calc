@@ -64,6 +64,8 @@ def test_revert_restores_ingredients(db_session):
     rid, ing_a_id, ing_b_id = _seed_recipe(db_session)
     ex = RecipeEditExecutor()
     p = _proposal(rid, {
+        "name": "改名了",
+        "servings": 5,
         "ingredients": [
             {"ingredient_name": "测试原料B_88001", "quantity": "200"},
         ]
@@ -85,6 +87,11 @@ def test_revert_restores_ingredients(db_session):
     assert len(rows) == 1
     assert rows[0].ingredient_id == ing_a_id
     assert rows[0].quantity == "100"
+
+    # 标量字段回滚（顺带覆盖 DateTime/Date 跳过分支：updated_at/created_at 不回滚）
+    recipe = db_session.query(Recipe).filter(Recipe.id == rid).first()
+    assert recipe.name == "测试菜谱_88001"
+    assert recipe.servings == 2
 
 
 def test_build_snapshot_prefills_old_ingredients(db_session):
