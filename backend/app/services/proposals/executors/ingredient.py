@@ -14,7 +14,8 @@ from sqlalchemy import and_, or_
 from app.services.proposals.base import ApplyResult
 from app.services.proposals.executors._crud_base import CrudExecutorBase
 from app.models.nutrition import Ingredient, IngredientNutritionMapping
-from app.models.recipe import RecipeIngredient
+from app.models.recipe import Recipe, RecipeIngredient
+from app.models.product_entity import Product
 from app.models.product_ingredient_link import ProductIngredientLink
 from app.models.ingredient_hierarchy import IngredientHierarchy
 from app.models.ingredient_merge_record import IngredientMergeRecord
@@ -97,9 +98,31 @@ class IngredientExecutor(CrudExecutorBase):
         # 1. 快照所有受影响行（供 revert）。提前拿到 IngredientMerger 将新建的合并记录 id
         #    （其 _record_merge_history 在 commit 前 flush 不到 id，故 revert 时改为按
         #    (source, target) 条件查询删除）。
+        # 批量取可读名（join 一次，避免逐项查询）
+        recipe_ids = {r.recipe_id for r in db.query(RecipeIngredient)
+                      .filter(RecipeIngredient.ingredient_id.in_(source_ids)).all()}
+        product_ids = {l.product_id for l in db.query(ProductIngredientLink)
+                       .filter(ProductIngredientLink.ingredient_id.in_(source_ids)).all()}
+        nutrition_ids = {m.nutrition_id for m in db.query(IngredientNutritionMapping)
+                         .filter(IngredientNutritionMapping.ingredient_id.in_(source_ids)).all()}
+        recipe_name_map = {r.id: r.name for r in (
+            db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
+        )} if recipe_ids else {}
+        product_name_map = {p.id: p.name for p in (
+            db.query(Product).filter(Product.id.in_(product_ids)).all()
+        )} if product_ids else {}
+        from app.models.nutrition_data import NutritionData
+        nutrition_name_map = {n.id: (n.usda_name or n.source or f"#{n.id}") for n in (
+            db.query(NutritionData).filter(NutritionData.id.in_(nutrition_ids)).all()
+        )} if nutrition_ids else {}
+
+        target = db.query(Ingredient).filter(Ingredient.id == target_id).first()
+
         snapshot = {
+            "target_name": target.name if target else f"#{target_id}",
             "recipe_ingredients": [
                 {"id": r.id, "recipe_id": r.recipe_id, "ingredient_id": r.ingredient_id,
+                 "recipe_name": recipe_name_map.get(r.recipe_id),
                  "quantity": r.quantity, "quantity_range": r.quantity_range,
                  "unit_id": r.unit_id, "is_optional": r.is_optional, "note": r.note,
                  "original_quantity": r.original_quantity}
@@ -107,12 +130,14 @@ class IngredientExecutor(CrudExecutorBase):
                     .filter(RecipeIngredient.ingredient_id.in_(source_ids)).all()
             ],
             "product_links": [
-                {"id": l.id, "product_id": l.product_id, "ingredient_id": l.ingredient_id}
+                {"id": l.id, "product_id": l.product_id, "ingredient_id": l.ingredient_id,
+                 "product_name": product_name_map.get(l.product_id)}
                 for l in db.query(ProductIngredientLink)
                     .filter(ProductIngredientLink.ingredient_id.in_(source_ids)).all()
             ],
             "nutrition_mappings": [
                 {"id": m.id, "ingredient_id": m.ingredient_id, "nutrition_id": m.nutrition_id,
+                 "nutrition_name": nutrition_name_map.get(m.nutrition_id),
                  "priority": m.priority, "confidence": m.confidence}
                 for m in db.query(IngredientNutritionMapping)
                     .filter(IngredientNutritionMapping.ingredient_id.in_(source_ids)).all()
