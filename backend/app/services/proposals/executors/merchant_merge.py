@@ -71,12 +71,26 @@ class MerchantMergeExecutor(ProposalExecutor):
         source_ids: List[int] = list(proposal.payload["source_ids"])
         target_id: int = proposal.payload["target_id"]
 
-        # 1. 快照所有受影响行（供 revert）
+        # 1. 快照所有受影响行（供 revert + 审核台零查询渲染）
+        # 批量取受影响价格记录的商品名 + 目标商家名（冗余名仅供展示，revert 不读）
+        pr_rows = db.query(ProductRecord).filter(
+            ProductRecord.merchant_id.in_(source_ids)).all()
+        product_ids = {r.product_id for r in pr_rows if r.product_id}
+        from app.models.product_entity import Product
+        product_name_map = {
+            p.id: p.name for p in (
+                db.query(Product).filter(Product.id.in_(product_ids)).all()
+            )
+        } if product_ids else {}
+        target = db.query(Merchant).get(target_id)
+
         snapshot = {
+            "target_name": target.name if target else f"#{target_id}",
             "product_records": [
-                {"id": r.id, "merchant_id": r.merchant_id}
-                for r in db.query(ProductRecord)
-                    .filter(ProductRecord.merchant_id.in_(source_ids)).all()
+                {"id": r.id, "merchant_id": r.merchant_id,
+                 "product_id": r.product_id,
+                 "product_name": product_name_map.get(r.product_id)}
+                for r in pr_rows
             ],
             "favorites": [
                 {"id": f.id, "user_id": f.user_id, "merchant_id": f.merchant_id}
