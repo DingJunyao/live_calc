@@ -274,20 +274,10 @@ const handleImageUpload = async (file: File) => {
   }
 }
 
-// 删除配图 — 立即从后端删除
-const handleImageRemove = async (index: number) => {
-  const targetPath = editImages.value[index]
-  if (!targetPath) return
-
-  const filename = targetPath.split('/').pop()
-  if (!filename) return
-
-  try {
-    await api.delete(`/recipes/${props.recipe.id}/images/${filename}`)
-    editImages.value.splice(index, 1)
-  } catch (e: any) {
-    console.error('删除图片失败', e)
-  }
+// 删除配图 — 仅从本地列表移除，实际变更在保存时通过 PUT /recipes/{id} 的 images 字段提交
+// 这样已发布菜谱会走审核提议流程（与菜谱信息编辑一致），未发布菜谱直接生效
+const handleImageRemove = (index: number) => {
+  editImages.value.splice(index, 1)
 }
 
 const handleSave = async () => {
