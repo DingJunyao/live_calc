@@ -14,6 +14,7 @@ from sqlalchemy import and_, or_
 from app.services.proposals.base import ApplyResult
 from app.services.proposals.executors._crud_base import CrudExecutorBase
 from app.models.nutrition import Ingredient, IngredientNutritionMapping
+from app.models.nutrition_data import NutritionData
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.product_entity import Product
 from app.models.product_ingredient_link import ProductIngredientLink
@@ -111,7 +112,6 @@ class IngredientExecutor(CrudExecutorBase):
         product_name_map = {p.id: p.name for p in (
             db.query(Product).filter(Product.id.in_(product_ids)).all()
         )} if product_ids else {}
-        from app.models.nutrition_data import NutritionData
         nutrition_name_map = {n.id: (n.usda_name or n.source or f"#{n.id}") for n in (
             db.query(NutritionData).filter(NutritionData.id.in_(nutrition_ids)).all()
         )} if nutrition_ids else {}
@@ -175,7 +175,6 @@ class IngredientExecutor(CrudExecutorBase):
         )
 
     def _apply_delete(self, db, proposal) -> ApplyResult:
-        from app.models.product_entity import Product
         from app.services.proposals.executors._crud_base import _json_safe
 
         eid = proposal.entity_id
@@ -241,8 +240,6 @@ class IngredientExecutor(CrudExecutorBase):
         )
 
     def _revert_delete(self, db, proposal) -> None:
-        from app.models.product_entity import Product
-
         rp = proposal.revert_payload or {}
         eid = proposal.entity_id
         ing = db.query(Ingredient).get(eid) if eid else None
@@ -276,6 +273,7 @@ class IngredientExecutor(CrudExecutorBase):
         target_id = rp.get("target_id")
 
         # 1. 还原 recipe_ingredients：被改 ingredient_id 的恢复，被删的重新插入
+        ri_cols = {c.name for c in RecipeIngredient.__table__.columns}
         existing_ri = {r.id for r in db.query(RecipeIngredient).all()}
         for item in snap.get("recipe_ingredients", []):
             if item["id"] in existing_ri:
@@ -289,11 +287,12 @@ class IngredientExecutor(CrudExecutorBase):
                     r.note = item["note"]
                     r.original_quantity = item["original_quantity"]
             else:
-                db.add(RecipeIngredient(**item))
+                db.add(RecipeIngredient(**{k: v for k, v in item.items() if k in ri_cols}))
         # 合并过程中 quantity 可能被追加到目标行（"100 + 200"），那部分无法精确还原，
         # revert 依赖快照行重建源行 + 目标行数量变更不在快照内（仅源行快照）——接受此局限。
 
         # 2. 还原 product_links：被删的重新插入（被改 ingredient_id 的恢复）
+        pl_cols = {c.name for c in ProductIngredientLink.__table__.columns}
         existing_pl = {l.id for l in db.query(ProductIngredientLink).all()}
         for item in snap.get("product_links", []):
             if item["id"] in existing_pl:
@@ -301,9 +300,10 @@ class IngredientExecutor(CrudExecutorBase):
                 if l is not None:
                     l.ingredient_id = item["ingredient_id"]
             else:
-                db.add(ProductIngredientLink(**item))
+                db.add(ProductIngredientLink(**{k: v for k, v in item.items() if k in pl_cols}))
 
         # 3. 还原 nutrition_mappings
+        nm_cols = {c.name for c in IngredientNutritionMapping.__table__.columns}
         existing_nm = {m.id for m in db.query(IngredientNutritionMapping).all()}
         for item in snap.get("nutrition_mappings", []):
             if item["id"] in existing_nm:
@@ -313,7 +313,7 @@ class IngredientExecutor(CrudExecutorBase):
                     m.priority = item["priority"]
                     m.confidence = item["confidence"]
             else:
-                db.add(IngredientNutritionMapping(**item))
+                db.add(IngredientNutritionMapping(**{k: v for k, v in item.items() if k in nm_cols}))
 
         # 4. 还原 hierarchies
         existing_h = {h.id for h in db.query(IngredientHierarchy).all()}
