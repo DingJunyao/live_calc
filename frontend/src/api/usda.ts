@@ -14,6 +14,10 @@ export const matchIngredient = (ingredientId: number, fdcId: number) =>
 export const matchProduct = (productId: number, fdcId: number) =>
   api.post(`/usda/match/product/${productId}`, { fdc_id: fdcId })
 
+/** 按 fdc_id 预览 USDA 营养素（三层结构，供审核台 NutritionDiff 渲染新值）。 */
+export const previewUsdaNutrients = (fdcId: number) =>
+  api.get('/usda/preview-nutrition', { params: { fdc_id: fdcId } })
+
 // === 后台：配置 ===
 export const getTranslationConfig = () => api.get('/admin/translation-config')
 export const putTranslationConfig = (config: Record<string, any>) =>
