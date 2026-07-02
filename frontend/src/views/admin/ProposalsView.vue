@@ -343,24 +343,35 @@
               <span v-if="detailItem.action === 'delete'" class="text-caption text-medium-emphasis ms-2">（将删除）</span>
               <span v-else-if="detailItem.action === 'create'" class="text-caption text-medium-emphasis ms-2">（将新增）</span>
             </div>
-            <v-table v-if="diffRows.length" density="compact" class="diff-table">
-              <tbody>
-                <tr v-for="row in diffRows" :key="row.field">
-                  <td class="text-caption text-medium-emphasis" style="width: 28%">{{ row.field }}</td>
-                  <td :class="['diff-cell', 'before', row.kind]">
-                    <span v-if="row.before === null" class="text-medium-emphasis">—</span>
-                    <span v-else>{{ formatValue(row.before) }}</span>
-                  </td>
-                  <td class="text-center text-medium-emphasis" style="width: 32px">→</td>
-                  <td :class="['diff-cell', 'after', row.kind]">
-                    <span v-if="row.kind === 'removed'" class="text-medium-emphasis">（删除）</span>
-                    <span v-else-if="row.after === null" class="text-medium-emphasis">—</span>
-                    <span v-else>{{ formatValue(row.after) }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </v-table>
-            <div v-else class="text-caption text-medium-emphasis">无变更字段（如仅触发动作，无数据变更）</div>
+
+            <!-- 专用渲染器（菜谱 / 营养 / 合并 三类） -->
+            <component
+              v-if="detailRenderer"
+              :is="detailRenderer"
+              :proposal="detailItem"
+            />
+
+            <!-- 兜底：CRUD 类字段 diff 表（现状逻辑，零改动） -->
+            <template v-else>
+              <v-table v-if="diffRows.length" density="compact" class="diff-table">
+                <tbody>
+                  <tr v-for="row in diffRows" :key="row.field">
+                    <td class="text-caption text-medium-emphasis" style="width: 28%">{{ row.field }}</td>
+                    <td :class="['diff-cell', 'before', row.kind]">
+                      <span v-if="row.before === null" class="text-medium-emphasis">—</span>
+                      <span v-else>{{ formatValue(row.before) }}</span>
+                    </td>
+                    <td class="text-center text-medium-emphasis" style="width: 32px">→</td>
+                    <td :class="['diff-cell', 'after', row.kind]">
+                      <span v-if="row.kind === 'removed'" class="text-medium-emphasis">（删除）</span>
+                      <span v-else-if="row.after === null" class="text-medium-emphasis">—</span>
+                      <span v-else>{{ formatValue(row.after) }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </v-table>
+              <div v-else class="text-caption text-medium-emphasis">无变更字段（如仅触发动作，无数据变更）</div>
+            </template>
           </div>
 
           <!-- 影响预览 -->
@@ -556,6 +567,7 @@ import {
   type PolicyItem,
   type ReviewPolicy,
 } from '@/api/proposals'
+import { resolveProposalRenderer } from '@/proposalRenderers'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
@@ -959,6 +971,11 @@ const diffRows = computed<DiffRow[]>(() => {
     else if (JSON.stringify(b) !== JSON.stringify(a)) kind = 'changed'
     return { field: f, before: hasB ? b : null, after: hasA ? a : null, kind }
   })
+})
+
+const detailRenderer = computed(() => {
+  const item = detailItem.value
+  return item ? resolveProposalRenderer(item) : null
 })
 
 function formatValue(v: any): string {
