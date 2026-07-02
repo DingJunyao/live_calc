@@ -356,7 +356,7 @@
               <v-table v-if="diffRows.length" density="compact" class="diff-table">
                 <tbody>
                   <tr v-for="row in diffRows" :key="row.field">
-                    <td class="text-caption text-medium-emphasis" style="width: 28%">{{ row.field }}</td>
+                    <td class="text-caption text-medium-emphasis" style="width: 28%">{{ fieldLabel(row.field) }}</td>
                     <td :class="['diff-cell', 'before', row.kind]">
                       <span v-if="row.before === null" class="text-medium-emphasis">—</span>
                       <span v-else>{{ formatValue(row.before) }}</span>
@@ -923,10 +923,15 @@ function payloadSummary(item: Proposal): string {
   const label = item.entity_label ? `${item.entity_label}` : ''
   const p = item.payload || {}
   // 常见字段优先：name / source / target
-  const candidates = ['name', 'source_name', 'target_name', 'target_id', 'source_id', 'category']
+  // 优先字段：常见名称/密度/单位/层级等
+  const candidates = [
+    'name', 'source_name', 'target_name', 'unit_name', 'density', 'condition',
+    'category', 'parent_id', 'child_id', 'relation_type', 'entity_type', 'entity_id',
+    'target_id', 'source_id',
+  ]
   const parts: string[] = []
   for (const key of candidates) {
-    if (p[key] != null) parts.push(`${key}: ${p[key]}`)
+    if (p[key] != null) parts.push(`${FIELD_LABELS[key] || key}: ${p[key]}`)
   }
   let detail: string
   if (parts.length) {
@@ -978,6 +983,54 @@ const detailRenderer = computed(() => {
   return item ? resolveProposalRenderer(item) : null
 })
 
+const FIELD_LABELS: Record<string, string> = {
+  name: '名称',
+  aliases: '别名',
+  brand: '品牌',
+  barcode: '条码',
+  category: '分类',
+  unit_name: '单位名',
+  density: '密度',
+  confidence: '置信度',
+  condition: '条件',
+  factor: '换算系数',
+  is_standard: '标准单位',
+  parent_id: '父食材',
+  child_id: '子食材',
+  relation_type: '关系类型',
+  strength: '关联强度',
+  entity_type: '实体类型',
+  entity_id: '实体 ID',
+  source_id: '源 ID',
+  target_id: '目标 ID',
+  source_name: '源名称',
+  target_name: '目标名称',
+  is_optional: '可选',
+  quantity: '用量',
+  quantity_range: '用量范围',
+  unit_id: '单位 ID',
+  note: '备注',
+  original_quantity: '原始用量',
+  cooking_steps: '操作步骤',
+  tips: '小贴士',
+  description: '描述',
+  tags: '标签',
+  is_open: '开放状态',
+  is_public: '公开',
+  serving_weight: '份重(g)',
+  review_policy: '审核策略',
+  risk_level: '风险等级',
+  phone: '电话',
+  address: '地址',
+  longitude: '经度',
+  latitude: '纬度',
+  category_id: '分类',
+  default_unit: '默认单位',
+  updated_by: '修改者',
+}
+function fieldLabel(f: string): string {
+  return FIELD_LABELS[f] || f
+}
 function formatValue(v: any): string {
   if (v === null || v === undefined) return '—'
   if (typeof v === 'object') return JSON.stringify(v)
@@ -992,6 +1045,7 @@ function formatJson(obj: any): string {
   }
 }
 
+watch(isAdmin, (v) => { if (v) loadList() })
 onMounted(() => {
   if (isAdmin.value) loadList()
 })

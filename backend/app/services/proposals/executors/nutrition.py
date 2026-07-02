@@ -36,6 +36,18 @@ class NutritionExecutor(ProposalExecutor):
         if "nutrients" not in (proposal.payload or {}):
             raise HTTPException(status_code=400, detail="payload 缺少 nutrients")
 
+    def build_snapshot(self, db: Session, proposal) -> dict:
+        """提交时预填 snapshot，供 pending 审核看旧营养数据。"""
+        eid = proposal.entity_id
+        if eid is None:
+            return {}
+        existing = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == eid).first()
+        if existing is not None:
+            return {"had_data": True, "nutrients": existing.nutrients,
+                    "source": existing.source, "id": existing.id}
+        return {"had_data": False}
+
     def preview(self, db: Session, proposal) -> dict:
         eid = proposal.entity_id
         existing = db.query(NutritionData).filter(

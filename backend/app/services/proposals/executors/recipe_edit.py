@@ -57,13 +57,13 @@ class RecipeEditExecutor(ProposalExecutor):
                 "id": ri.id,
                 "ingredient_id": ri.ingredient_id,
                 "ingredient_name": ing_map.get(ri.ingredient_id),
-                "quantity": ri.quantity,
-                "quantity_range": ri.quantity_range,
+                "quantity": _json_safe(ri.quantity),
+                "quantity_range": _json_safe(ri.quantity_range),
                 "unit_id": ri.unit_id,
                 "unit_name": unit_map.get(ri.unit_id),
                 "is_optional": ri.is_optional,
                 "note": ri.note,
-                "original_quantity": ri.original_quantity,
+                "original_quantity": _json_safe(ri.original_quantity),
             })
         return out
 

@@ -25,6 +25,15 @@ class UsdaProductMatchExecutor(ProposalExecutor):
                                     Product.is_active.is_(True)).first() is None:
             raise HTTPException(status_code=404, detail="商品不存在")
 
+    def build_snapshot(self, db, proposal) -> dict:
+        """提交时预填旧 custom_nutrition_data。"""
+        product_id = proposal.entity_id
+        if product_id is None:
+            return {}
+        prod = db.query(Product).get(product_id)
+        old_cnd = prod.custom_nutrition_data if prod else None
+        return {"old_custom_nutrition_data": _json_safe(old_cnd)}
+
     def preview(self, db, proposal) -> dict:
         product_id = proposal.entity_id
         prod = db.query(Product).get(product_id) if product_id else None

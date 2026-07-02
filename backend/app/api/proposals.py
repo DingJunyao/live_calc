@@ -45,7 +45,7 @@ def _to_response(db: Session, p: ChangeProposal) -> ProposalResponse:
             label = None
     return ProposalResponse(
         id=p.id, entity_type=p.entity_type, entity_id=p.entity_id, action=p.action,
-        payload=p.payload or {}, status=p.status, review_policy=p.review_policy,
+        payload=p.payload or {}, snapshot=p.snapshot, status=p.status, review_policy=p.review_policy,
         risk_level=p.risk_level, proposer_id=p.proposer_id, reviewer_id=p.reviewer_id,
         review_note=p.review_note, revertable_until=p.revertable_until,
         applied_at=p.applied_at, reviewed_at=p.reviewed_at, reverted_at=p.reverted_at,

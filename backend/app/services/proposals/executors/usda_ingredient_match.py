@@ -46,6 +46,20 @@ class UsdaIngredientMatchExecutor(ProposalExecutor):
                                        Ingredient.is_active.is_(True)).first() is None:
             raise HTTPException(status_code=404, detail="原料不存在")
 
+    def build_snapshot(self, db, proposal) -> dict:
+        """提交时预填旧 NutritionData 全行。"""
+        ingredient_id = proposal.entity_id
+        if ingredient_id is None:
+            return {"old_nutrition_data": []}
+        old_rows = db.query(NutritionData).filter(
+            NutritionData.ingredient_id == ingredient_id).all()
+        return {
+            "old_nutrition_data": [
+                {c.name: _json_safe(getattr(r, c.name)) for c in r.__table__.columns}
+                for r in old_rows
+            ],
+        }
+
     def preview(self, db, proposal) -> dict:
         ingredient_id = proposal.entity_id
         existing = db.query(NutritionData).filter(
