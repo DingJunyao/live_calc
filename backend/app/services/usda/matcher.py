@@ -180,6 +180,17 @@ def _get_food_or_404(db: Session, fdc_id: int) -> tuple[UsdaFood, list[UsdaFoodN
     return food, nutrients
 
 
+def build_usda_nutrients_by_fdc(db: Session, fdc_id: int) -> dict:
+    """按 fdc_id 取 USDA 营养素的三层结构（**只读**，不写 NutritionData/Product）。
+
+    供审核台 NutritionDiff 渲染 ``usda_ingredient_match`` / ``usda_product_match``
+    提议的「新值」预览——结构与 ``match_ingredient`` 写入的
+    ``NutritionData.nutrients`` 一致（core_nutrients / all_nutrients / nutrient_details）。
+    """
+    _food, nutrients = _get_food_or_404(db, fdc_id)
+    return _build_nutrition_json(nutrients)
+
+
 def match_ingredient(db: Session, ingredient_id: int, fdc_id: int) -> dict:
     """把 USDA 食材的营养数据写入指定原料（覆盖该原料的所有 NutritionData）。"""
     ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()

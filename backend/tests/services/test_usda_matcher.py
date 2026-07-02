@@ -120,3 +120,29 @@ def test_match_product_no_ingredient_direct_write(db):
     assert data["core_nutrients"]["能量"]["value"] == 52
     # 骨架为空：不应出现任意非 USDA 的项
     assert set(data["core_nutrients"].keys()) == {"能量", "蛋白质"}
+
+
+def test_build_usda_nutrients_by_fdc_readonly(db):
+    """build_usda_nutrients_by_fdc 按 fdc_id 返回三层结构，且不写库。"""
+    from app.services.usda.matcher import build_usda_nutrients_by_fdc
+
+    fdc = 770401
+    db.add(UsdaFood(fdc_id=fdc, data_type="foundation",
+                    description="Test Food 770401"))
+    db.add(UsdaFoodNutrient(fdc_id=fdc, name="Energy", name_zh="能量",
+                            amount=250.0, unit_name="kcal"))
+    db.commit()
+
+    struct = build_usda_nutrients_by_fdc(db, fdc)
+    assert "core_nutrients" in struct and "all_nutrients" in struct
+    # 中文名「能量」落到 core
+    assert "能量" in struct["core_nutrients"]
+    assert struct["core_nutrients"]["能量"]["value"] == 250.0
+
+
+def test_build_usda_nutrients_by_fdc_not_found(db):
+    from fastapi import HTTPException
+    from app.services.usda.matcher import build_usda_nutrients_by_fdc
+    with pytest.raises(HTTPException) as exc:
+        build_usda_nutrients_by_fdc(db, 770499)
+    assert exc.value.status_code == 404
