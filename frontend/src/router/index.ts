@@ -193,10 +193,20 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth !== false)
   const adminOnly = to.matched.some((record) => record.meta.adminOnly === true)
+
+  // 刷新场景：token 在但 user 信息未加载 → 先 await 加载完再判断权限
+  // 否则 user?.is_admin 为 undefined，管理员页会被误判跳首页
+  if (userStore.isLoggedIn && !userStore.user) {
+    await userStore.fetchUser()
+    // 加载后仍无 user（token 失效）→ 登出，让后续 requiresAuth 判断跳 login
+    if (!userStore.user) {
+      userStore.logout()
+    }
+  }
 
   if (requiresAuth && !userStore.isLoggedIn) {
     next('/login')

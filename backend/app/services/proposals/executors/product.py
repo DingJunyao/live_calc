@@ -35,6 +35,20 @@ class ProductExecutor(CrudExecutorBase):
         if obj is None:
             raise HTTPException(status_code=404, detail=f"商品 {eid} 不存在或已删除")
 
+    def build_snapshot(self, db: Session, proposal) -> dict:
+        """覆写：delete 动作额外附带级联价格记录数量（供审核台展示影响范围）。"""
+        snap = super().build_snapshot(db, proposal)
+        if proposal.action == "delete":
+            eid = proposal.entity_id
+            if eid is not None:
+                record_count = (
+                    db.query(ProductRecord)
+                    .filter(ProductRecord.product_id == eid)
+                    .count()
+                )
+                snap["cascade_record_count"] = record_count
+        return snap
+
     def apply(self, db: Session, proposal) -> ApplyResult:
         if proposal.action == "delete":
             return self._apply_delete(db, proposal)
@@ -77,6 +91,7 @@ class ProductExecutor(CrudExecutorBase):
         # 主记录全列快照（**必须在置 is_active=False 之前**，对齐基类 _crud_base.py:81 顺序）
         snapshot = {c.name: _json_safe(getattr(obj, c.name)) for c in obj.__table__.columns}
         snapshot["_cascade_record_ids"] = record_ids
+        snapshot["cascade_record_count"] = len(record_ids)
 
         # 软删 Product + 级联软删 ProductRecord
         obj.is_active = False

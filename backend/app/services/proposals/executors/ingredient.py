@@ -62,6 +62,29 @@ class IngredientExecutor(CrudExecutorBase):
         # 其余走 CRUD 默认校验
         super().validate(db, proposal)
 
+    def build_snapshot(self, db: Session, proposal) -> dict:
+        """覆写：delete 动作额外附带级联商品/层级数量（供审核台展示影响范围）。"""
+        snap = super().build_snapshot(db, proposal)
+        if proposal.action == "delete":
+            eid = proposal.entity_id
+            if eid is not None:
+                product_count = (
+                    db.query(Product)
+                    .filter(Product.ingredient_id == eid, Product.is_active.is_(True))
+                    .count()
+                )
+                hierarchy_count = (
+                    db.query(IngredientHierarchy)
+                    .filter(
+                        or_(IngredientHierarchy.parent_id == eid,
+                            IngredientHierarchy.child_id == eid),
+                    )
+                    .count()
+                )
+                snap["cascade_product_count"] = product_count
+                snap["cascade_hierarchy_count"] = hierarchy_count
+        return snap
+
     def preview(self, db, proposal):
         if proposal.action == "merge":
             source_ids = proposal.payload["source_ids"]
@@ -215,6 +238,8 @@ class IngredientExecutor(CrudExecutorBase):
         snapshot = {c.name: _json_safe(getattr(ing, c.name)) for c in ing.__table__.columns}
         snapshot["_cascade_product_ids"] = product_ids
         snapshot["_cascade_hierarchy_ids"] = hierarchy_ids
+        snapshot["cascade_product_count"] = len(product_ids)
+        snapshot["cascade_hierarchy_count"] = len(hierarchy_ids)
 
         # 级联软删商品
         if product_ids:
