@@ -5,13 +5,7 @@
       <div
         v-for="(img, index) in modelValue"
         :key="index"
-        draggable="true"
         class="image-thumb-wrapper"
-        :class="{ 'drag-over': dragIndex !== null && index === dragIndex }"
-        @dragstart="(e) => onDragStart(e, index)"
-        @dragover.prevent="onDragOver(index)"
-        @dragleave="dragIndex = null"
-        @drop="onDrop(index)"
       >
         <v-img
           :src="getImageUrl(img)"
@@ -48,11 +42,25 @@
           variant="flat"
           class="image-cover-badge"
         >封面</v-chip>
-        <!-- 拖拽排序手柄 -->
-        <v-icon
-          class="image-drag-handle"
-          size="small"
-        >mdi-drag</v-icon>
+        <!-- 左右移动按钮 -->
+        <div class="image-move-btns">
+          <v-btn
+            icon="mdi-chevron-left"
+            size="small"
+            variant="text"
+            density="compact"
+            :disabled="index === 0"
+            @click.stop="moveLeft(index)"
+          />
+          <v-btn
+            icon="mdi-chevron-right"
+            size="small"
+            variant="text"
+            density="compact"
+            :disabled="index === modelValue.length - 1"
+            @click.stop="moveRight(index)"
+          />
+        </div>
       </div>
 
       <!-- 添加上传按钮 -->
@@ -101,25 +109,21 @@ const emit = defineEmits<{
 const fileInputRef = ref<any>(null)
 const dragIndex = ref<number | null>(null)
 
-const onDragStart = (e: DragEvent, index: number) => {
-  e.dataTransfer?.setData('text/plain', String(index))
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-  dragIndex.value = index
-}
-
-const onDragOver = (index: number) => {
-  if (dragIndex.value === null || dragIndex.value === index) return
-  const from = dragIndex.value
+const moveLeft = (index: number) => {
+  if (index <= 0) return
   const items = [...props.modelValue]
-  const item = items.splice(from, 1)[0]
-  items.splice(index, 0, item)
-  dragIndex.value = index
+  const item = items.splice(index, 1)[0]
+  items.splice(index - 1, 0, item)
   emit('update:modelValue', items)
   emit('reorder', items)
 }
-
-const onDrop = () => {
-  dragIndex.value = null
+const moveRight = (index: number) => {
+  if (index >= props.modelValue.length - 1) return
+  const items = [...props.modelValue]
+  const item = items.splice(index, 1)[0]
+  items.splice(index + 1, 0, item)
+  emit('update:modelValue', items)
+  emit('reorder', items)
 }
 
 const triggerUpload = () => {
@@ -169,18 +173,22 @@ const getImageUrl = (path: string) => {
   height: 18px;
 }
 
-.image-drag-handle {
+.image-move-btns {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0;
   z-index: 2;
-  color: white;
-  text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
-  cursor: grab;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
 }
-
-.image-thumb-wrapper.drag-over {
-  border-top: 2px solid rgb(var(--v-theme-primary)) !important;
+.image-move-btns :deep(.v-btn) {
+  color: white;
+}
+.image-move-btns :deep(.v-btn.v-btn--disabled) {
+  opacity: 0.4;
 }
 
 .image-add-btn {

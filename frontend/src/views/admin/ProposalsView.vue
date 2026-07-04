@@ -344,6 +344,17 @@
               <span v-else-if="detailItem.action === 'create'" class="text-caption text-medium-emphasis ms-2">（将新增）</span>
             </div>
 
+            <!-- 级联影响提示（如删除商品时连带的价格记录） -->
+            <v-alert
+              v-if="cascadeEffectInfo"
+              :type="cascadeEffectInfo.type"
+              variant="tonal"
+              density="compact"
+              class="mb-3"
+            >
+              <div class="text-body-2">{{ cascadeEffectInfo.text }}</div>
+            </v-alert>
+
             <!-- 专用渲染器（菜谱 / 营养 / 合并 三类） -->
             <component
               v-if="detailRenderer"
@@ -356,16 +367,16 @@
               <v-table v-if="diffRows.length" density="compact" class="diff-table">
                 <tbody>
                   <tr v-for="row in diffRows" :key="row.field">
-                    <td class="text-caption text-medium-emphasis" style="width: 28%">{{ row.field }}</td>
+                    <td class="text-caption text-medium-emphasis" style="width: 28%">{{ fieldLabel(row.field) }}</td>
                     <td :class="['diff-cell', 'before', row.kind]">
                       <span v-if="row.before === null" class="text-medium-emphasis">—</span>
-                      <span v-else>{{ formatValue(row.before) }}</span>
+                      <span v-else>{{ formatFieldValue(row.field, row.before) }}</span>
                     </td>
                     <td class="text-center text-medium-emphasis" style="width: 32px">→</td>
                     <td :class="['diff-cell', 'after', row.kind]">
                       <span v-if="row.kind === 'removed'" class="text-medium-emphasis">（删除）</span>
                       <span v-else-if="row.after === null" class="text-medium-emphasis">—</span>
-                      <span v-else>{{ formatValue(row.after) }}</span>
+                      <span v-else>{{ formatFieldValue(row.field, row.after) }}</span>
                     </td>
                   </tr>
                 </tbody>
@@ -568,6 +579,7 @@ import {
   type ReviewPolicy,
 } from '@/api/proposals'
 import { resolveProposalRenderer } from '@/proposalRenderers'
+import api from '@/api/client'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
@@ -772,7 +784,7 @@ const reviewCurrent = async (approved: boolean) => {
       /* ignore */
     }
     await loadList()
-    if (!approved) detailDialog.value = false
+    detailDialog.value = false
   } catch (e: any) {
     notify(e?.userMessage || '审核操作失败', 'error')
   } finally {
@@ -923,10 +935,15 @@ function payloadSummary(item: Proposal): string {
   const label = item.entity_label ? `${item.entity_label}` : ''
   const p = item.payload || {}
   // 常见字段优先：name / source / target
-  const candidates = ['name', 'source_name', 'target_name', 'target_id', 'source_id', 'category']
+  // 优先字段：常见名称/密度/单位/层级等
+  const candidates = [
+    'name', 'source_name', 'target_name', 'unit_name', 'density', 'condition',
+    'category', 'parent_id', 'child_id', 'relation_type', 'entity_type', 'entity_id',
+    'target_id', 'source_id',
+  ]
   const parts: string[] = []
   for (const key of candidates) {
-    if (p[key] != null) parts.push(`${key}: ${p[key]}`)
+    if (p[key] != null) parts.push(`${FIELD_LABELS[key] || key}: ${p[key]}`)
   }
   let detail: string
   if (parts.length) {
@@ -978,6 +995,146 @@ const detailRenderer = computed(() => {
   return item ? resolveProposalRenderer(item) : null
 })
 
+/** 级联影响提示：从 snapshot 中提取级联删除信息展示。 */
+const cascadeEffectInfo = computed<{ type: string; text: string } | null>(() => {
+  const item = detailItem.value
+  if (!item || item.action !== 'delete') return null
+  const snap = item.snapshot
+  if (!snap) return null
+  const parts: string[] = []
+  const rc = snap.cascade_record_count
+  if (rc != null && rc > 0) parts.push(`${rc} 条价格记录`)
+  const pc = snap.cascade_product_count
+  if (pc != null && pc > 0) parts.push(`${pc} 个关联商品`)
+  const hc = snap.cascade_hierarchy_count
+  if (hc != null && hc > 0) parts.push(`${hc} 条层级关系`)
+  if (!parts.length) return null
+  return {
+    type: 'warning',
+    text: `此操作将同时级联删除 ${parts.join('、')}。`,
+  }
+})
+
+const FIELD_LABELS: Record<string, string> = {
+  name: '名称',
+  aliases: '别名',
+  brand: '品牌',
+  barcode: '条码',
+  category: '分类',
+  unit_name: '单位名',
+  density: '密度',
+  confidence: '置信度',
+  condition: '条件',
+  factor: '换算系数',
+  is_standard: '标准单位',
+  parent_id: '父食材',
+  child_id: '子食材',
+  relation_type: '关系类型',
+  strength: '关联强度',
+  entity_type: '实体类型',
+  entity_id: '实体 ID',
+  source_id: '源 ID',
+  target_id: '目标 ID',
+  source_name: '源名称',
+  target_name: '目标名称',
+  is_optional: '可选',
+  quantity: '用量',
+  quantity_range: '用量范围',
+  unit_id: '单位 ID',
+  note: '备注',
+  original_quantity: '原始用量',
+  cooking_steps: '操作步骤',
+  tips: '小贴士',
+  description: '描述',
+  tags: '标签',
+  is_open: '开放状态',
+  is_public: '公开',
+  serving_weight: '份重(g)',
+  review_policy: '审核策略',
+  risk_level: '风险等级',
+  phone: '电话',
+  address: '地址',
+  longitude: '经度',
+  latitude: '纬度',
+  category_id: '分类',
+  default_unit: '默认单位',
+  updated_by: '修改者',
+  cascade_record_count: '级联价格记录',
+}
+function fieldLabel(f: string): string {
+  return FIELD_LABELS[f] || f
+}
+
+// ---- ID 字段 → 名称解析（数字 ID 显示为可读名称）----
+const ID_FIELDS: Record<string, 'category' | 'unit' | 'user' | 'ingredient'> = {
+  category_id: 'category',
+  default_unit_id: 'unit',
+  unit_id: 'unit',
+  weight_unit_id: 'unit',
+  updated_by: 'user',
+  created_by: 'user',
+  proposer_id: 'user',
+  reviewer_id: 'user',
+  user_id: 'user',
+  ingredient_id: 'ingredient',
+}
+const nameCache = ref<{
+  category: Record<number, string>
+  unit: Record<number, string>
+  user: Record<number, string>
+  ingredient: Record<number, string>
+}>({ category: {}, unit: {}, user: {}, ingredient: {} })
+
+async function loadNameCache() {
+  if (!isAdmin.value) return
+  try {
+    // 分类可能有多级，递归加载全部，用 display_name（中文名）优先
+    const top = await api.get('/ingredients/categories')
+    const all: any[] = Array.isArray(top) ? [...top] : []
+    async function loadChildren(parentId: number) {
+      const children = await api.get('/ingredients/categories', { params: { parent_id: parentId } })
+      if (Array.isArray(children)) {
+        all.push(...children)
+        for (const c of children) {
+          if (c.id != null) await loadChildren(c.id)
+        }
+      }
+    }
+    for (const c of all.slice()) {
+      if (c.id != null) await loadChildren(c.id)
+    }
+    all.forEach((c: any) => { nameCache.value.category[c.id] = c.display_name || c.name })
+  } catch { /* ignore */ }
+  try {
+    const units = await api.get('/units/', { params: { limit: 500 } })
+    const list: any[] = Array.isArray(units) ? units : (units.items || units.data || [])
+    list.forEach((u: any) => { nameCache.value.unit[u.id] = u.name })
+  } catch { /* ignore */ }
+  try {
+    const users = await api.get('/auth/users', { params: { limit: 500 } })
+    const list: any[] = Array.isArray(users) ? users : (users.items || users.users || users.data || [])
+    list.forEach((u: any) => { nameCache.value.user[u.id] = u.username || u.name || `#${u.id}` })
+  } catch { /* ignore */ }
+  try {
+    const ings = await api.get('/ingredients', { params: { limit: 500 } })
+    const list2: any[] = Array.isArray(ings) ? ings : (ings.items || ings.data || [])
+    list2.forEach((i: any) => { nameCache.value.ingredient[i.id] = i.name })
+  } catch { /* ignore */ }
+}
+
+function formatFieldValue(field: string, v: any): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'object') return JSON.stringify(v)
+  const kind = ID_FIELDS[field]
+  if (kind) {
+    const id = Number(v)
+    const name = nameCache.value[kind][id]
+    if (name) return name
+    return `#${v}`
+  }
+  if (typeof v === 'boolean') return v ? '是' : '否'
+  return String(v)
+}
 function formatValue(v: any): string {
   if (v === null || v === undefined) return '—'
   if (typeof v === 'object') return JSON.stringify(v)
@@ -992,8 +1149,12 @@ function formatJson(obj: any): string {
   }
 }
 
+watch(isAdmin, (v) => { if (v) { loadList(); loadNameCache() } })
 onMounted(() => {
-  if (isAdmin.value) loadList()
+  if (isAdmin.value) {
+    loadList()
+    loadNameCache()
+  }
 })
 </script>
 

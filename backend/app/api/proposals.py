@@ -43,14 +43,52 @@ def _to_response(db: Session, p: ChangeProposal) -> ProposalResponse:
             label = executor.entity_label(db, p)
         except Exception:
             label = None
+
+    # 为 delete 提议实时补充 snapshot 级联信息（兼顾旧提议无此字段 + 当前最新计数）
+    snapshot = (dict(p.snapshot) or {}) if p.snapshot else {}
+    if p.action == "delete":
+        _enrich_cascade_snapshot(db, snapshot, p.entity_type, p.entity_id)
+
     return ProposalResponse(
         id=p.id, entity_type=p.entity_type, entity_id=p.entity_id, action=p.action,
-        payload=p.payload or {}, status=p.status, review_policy=p.review_policy,
+        payload=p.payload or {}, snapshot=snapshot, status=p.status, review_policy=p.review_policy,
         risk_level=p.risk_level, proposer_id=p.proposer_id, reviewer_id=p.reviewer_id,
         review_note=p.review_note, revertable_until=p.revertable_until,
         applied_at=p.applied_at, reviewed_at=p.reviewed_at, reverted_at=p.reverted_at,
         entity_label=label,
     )
+
+
+def _enrich_cascade_snapshot(db: Session, snapshot: dict, entity_type: str, entity_id: Optional[int]) -> None:
+    """向 snapshot 中补充级联删除计数（实时查询，兼容新旧提议）。"""
+    if entity_id is None:
+        return
+    if entity_type == "product":
+        from app.models.product import ProductRecord
+        # 避免重复查询（build_snapshot 可能已写入）
+        if "cascade_record_count" not in snapshot:
+            cnt = db.query(ProductRecord).filter(
+                ProductRecord.product_id == entity_id
+            ).count()
+            if cnt > 0:
+                snapshot["cascade_record_count"] = cnt
+    elif entity_type == "ingredient":
+        from app.models.product_entity import Product
+        from app.models.ingredient_hierarchy import IngredientHierarchy
+        from sqlalchemy import or_
+        if "cascade_product_count" not in snapshot:
+            pc = db.query(Product).filter(
+                Product.ingredient_id == entity_id, Product.is_active.is_(True)
+            ).count()
+            if pc > 0:
+                snapshot["cascade_product_count"] = pc
+        if "cascade_hierarchy_count" not in snapshot:
+            hc = db.query(IngredientHierarchy).filter(
+                or_(IngredientHierarchy.parent_id == entity_id,
+                    IngredientHierarchy.child_id == entity_id),
+            ).count()
+            if hc > 0:
+                snapshot["cascade_hierarchy_count"] = hc
 
 
 @router.post("/proposals", response_model=ProposalResponse)

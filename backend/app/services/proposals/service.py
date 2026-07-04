@@ -5,9 +5,12 @@
 「pending 但已部分执行」的脏数据——FastAPI 的 get_db 在异常路径下不会 commit，天然兜底。
 权限校验统一由 API 层 Depends(get_current_admin_user / get_current_user) 负责。
 """
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 from fastapi import HTTPException
 
 from app.models.change_proposal import ChangeProposal
@@ -61,9 +64,8 @@ def submit(db: Session, *, entity_type: str, entity_id: Optional[int], action: s
     if _build_snapshot is not None:
         try:
             proposal.snapshot = _build_snapshot(db, proposal)
-        except Exception:
-            # 预填失败不阻断提交（snapshot 留空）
-            pass
+        except Exception as e:
+            logger.warning("build_snapshot 失败（snapshot 留空）: %s", e)
 
     if policy == "auto_approve":
         _do_apply(db, proposal, executor)

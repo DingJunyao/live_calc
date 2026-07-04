@@ -75,16 +75,8 @@
       <div
         v-for="(row, index) in editRows"
         :key="row.tempId"
-        draggable="true"
         class="step-edit-item pa-3"
-        :class="{
-          'border-bottom': index < editRows.length - 1,
-          'drag-over': dragIndex !== null && index === dragIndex
-        }"
-        @dragstart="(e) => onDragStart(e, index)"
-        @dragover.prevent="onDragOver(index)"
-        @dragleave="dragIndex = null"
-        @drop="onDrop(index)"
+        :class="{ 'border-bottom': index < editRows.length - 1 }"
       >
         <div class="d-flex align-start ga-2">
           <!-- 序号 -->
@@ -94,8 +86,11 @@
 
           <div class="flex-grow-1">
             <div class="d-flex ga-2 mb-2">
-              <!-- 拖拽手柄 -->
-              <v-icon size="small" class="drag-handle mt-2" color="medium-emphasis">mdi-drag</v-icon>
+              <!-- 上下移动 -->
+              <div class="d-flex flex-column move-btns">
+                <v-btn icon="mdi-chevron-up" size="x-small" variant="text" :disabled="index === 0" @click="moveUp(index)" />
+                <v-btn icon="mdi-chevron-down" size="x-small" variant="text" :disabled="index === editRows.length - 1" @click="moveDown(index)" />
+              </div>
 
               <!-- 描述 -->
               <v-textarea
@@ -183,22 +178,15 @@ const saving = ref(false)
 const editRows = ref<StepEditRow[]>([])
 const dragIndex = ref<number | null>(null)
 
-const onDragStart = (e: DragEvent, index: number) => {
-  e.dataTransfer?.setData('text/plain', String(index))
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-  dragIndex.value = index
+const moveUp = (index: number) => {
+  if (index <= 0) return
+  const item = editRows.value.splice(index, 1)[0]
+  editRows.value.splice(index - 1, 0, item)
 }
-
-const onDragOver = (index: number) => {
-  if (dragIndex.value === null || dragIndex.value === index) return
-  const from = dragIndex.value
-  const item = editRows.value.splice(from, 1)[0]
-  editRows.value.splice(index, 0, item)
-  dragIndex.value = index
-}
-
-const onDrop = () => {
-  dragIndex.value = null
+const moveDown = (index: number) => {
+  if (index >= editRows.value.length - 1) return
+  const item = editRows.value.splice(index, 1)[0]
+  editRows.value.splice(index + 1, 0, item)
 }
 
 const getColorByIndex = (index: number) => {

@@ -155,20 +155,15 @@
         <div
           v-for="(row, index) in editRows"
           :key="row.tempId"
-          draggable="true"
           class="edit-table-row pa-3 pb-2"
-          :class="{
-            'border-bottom': index < editRows.length - 1,
-            'drag-over': dragIndex !== null && index === dragIndex
-          }"
-          @dragstart="(e) => onDragStart(e, index)"
-          @dragover.prevent="onDragOver(index)"
-          @dragleave="dragIndex = null"
-          @drop="onDrop(index)"
+          :class="{ 'border-bottom': index < editRows.length - 1 }"
         >
           <!-- 第1行：原料 + 类型 + 删除 -->
           <div class="d-flex flex-wrap align-start ga-2 mb-1">
-            <v-icon size="small" class="drag-handle mt-2" color="medium-emphasis">mdi-drag</v-icon>
+            <div class="d-flex flex-column move-btns">
+              <v-btn icon="mdi-chevron-up" size="x-small" variant="text" :disabled="index === 0" @click="moveUp(index)" />
+              <v-btn icon="mdi-chevron-down" size="x-small" variant="text" :disabled="index === editRows.length - 1" @click="moveDown(index)" />
+            </div>
 
             <v-autocomplete
               v-model="row.ingredient_name"
@@ -337,22 +332,15 @@ const saving = ref(false)
 const editRows = ref<IngredientEditRow[]>([])
 const dragIndex = ref<number | null>(null)
 
-const onDragStart = (e: DragEvent, index: number) => {
-  e.dataTransfer?.setData('text/plain', String(index))
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-  dragIndex.value = index
+const moveUp = (index: number) => {
+  if (index <= 0) return
+  const item = editRows.value.splice(index, 1)[0]
+  editRows.value.splice(index - 1, 0, item)
 }
-
-const onDragOver = (index: number) => {
-  if (dragIndex.value === null || dragIndex.value === index) return
-  const from = dragIndex.value
-  const item = editRows.value.splice(from, 1)[0]
-  editRows.value.splice(index, 0, item)
-  dragIndex.value = index
-}
-
-const onDrop = () => {
-  dragIndex.value = null
+const moveDown = (index: number) => {
+  if (index >= editRows.value.length - 1) return
+  const item = editRows.value.splice(index, 1)[0]
+  editRows.value.splice(index + 1, 0, item)
 }
 const ingredientSearchResults = ref<IngredientOption[]>([])
 const unitOptions = ref<{ label: string; value: string }[]>([])

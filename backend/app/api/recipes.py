@@ -702,13 +702,9 @@ async def delete_recipe_image(
         recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
-        # 已发布或公共导入菜谱：仅管理员可删图片
-        if getattr(recipe, "is_public", False) or recipe.source:
-            if not current_user.is_admin:
-                raise HTTPException(status_code=403, detail="已发布菜谱仅管理员可删除图片")
-        # 未发布菜谱：仅作者或管理员可删
-        elif recipe.user_id != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权修改此菜谱")
+        # 仅管理员可直接删除图片（常规操作应由前端通过 PUT recipes/{id} 的 images 字段走菜谱编辑审核流程）
+        if not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="仅管理员可删除菜谱图片")
 
         # 从 images 列表中移除
         current_images = recipe.images or []
