@@ -66,6 +66,7 @@ class ProductWithDetails(ProductResponse):
     latest_price: Optional[float] = None
     latest_price_unit: Optional[str] = None
     latest_price_date: Optional[datetime] = None
+    pending_proposal: Optional[dict] = None
 
 
 # ==================== 条码相关 Schema ====================

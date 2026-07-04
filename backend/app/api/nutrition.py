@@ -223,6 +223,7 @@ class NutritionResponse(BaseModel):
     reference_amount: Optional[float] = None
     reference_unit: Optional[str] = None
     match_confidence: Optional[float] = None
+    pending_proposal: Optional[dict] = None
 
 
 class RecipeNutritionResponse(BaseModel):
@@ -756,7 +757,16 @@ async def get_ingredient_nutrition(
             result["match_confidence"] = nutrition_data.match_confidence
 
         # print(f"[营养查询] 返回结果: {result}")
-        return NutritionResponse(**result)
+        response = NutritionResponse(**result)
+
+        # 非管理员追加 pending_proposal
+        if not getattr(current_user, "is_admin", False):
+            from app.services.proposals.pending import get_pending_proposal
+            pp = get_pending_proposal(db, "nutrition", ingredient_id, current_user.id)
+            if pp:
+                response.pending_proposal = {"id": pp.id, "action": pp.action, "payload": pp.payload}
+
+        return response
     except HTTPException as he:
         print(f"[营养查询] HTTP 错误: {he.status_code} - {he.detail}")
         print(f"[营养查询] 调用参数: ingredient_id={ingredient_id}, quantity={quantity}, unit={unit}")
@@ -1329,6 +1339,13 @@ async def get_product_nutrition(
 
         if not result:
             raise HTTPException(status_code=404, detail="商品营养数据不存在")
+
+        # 非管理员追加 pending_proposal
+        if not getattr(current_user, "is_admin", False):
+            from app.services.proposals.pending import get_pending_proposal
+            pp = get_pending_proposal(db, "product_nutrition", product_id, current_user.id)
+            if pp:
+                result["pending_proposal"] = {"id": pp.id, "action": pp.action, "payload": pp.payload}
 
         return result
     except HTTPException:

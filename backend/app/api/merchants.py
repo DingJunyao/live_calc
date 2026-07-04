@@ -327,7 +327,18 @@ async def get_merchant(
         ).first()
         if not merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
-        return merchant
+
+        from app.schemas.merchant import MerchantResponse
+        response = MerchantResponse.model_validate(merchant)
+
+        # 非管理员追加 pending_proposal
+        if not getattr(current_user, "is_admin", False):
+            from app.services.proposals.pending import get_pending_proposal
+            pp = get_pending_proposal(db, "merchant", merchant_id, current_user.id)
+            if pp:
+                response.pending_proposal = {"id": pp.id, "action": pp.action, "payload": pp.payload}
+
+        return response
     except HTTPException:
         raise
     except Exception:

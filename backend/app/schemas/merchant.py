@@ -28,6 +28,7 @@ class MerchantResponse(TimeZoneAwareModel):
     longitude: Optional[float]
     is_open: bool
     created_at: datetime  # 修改为 datetime 类型
+    pending_proposal: Optional[dict] = None
 
     class Config:
         from_attributes = True

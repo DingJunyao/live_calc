@@ -418,7 +418,7 @@ async def get_recipe_detail(
                 nutrition_info=None
             ))
 
-        return RecipeDetailResponse(
+        response = RecipeDetailResponse(
             id=recipe.id,
             name=recipe.name,
             source=recipe.source,
@@ -436,6 +436,15 @@ async def get_recipe_detail(
             updated_at=recipe.updated_at,
             ingredients=ingredients_detail
         )
+
+        # 非管理员追加 pending_proposal
+        if not getattr(current_user, "is_admin", False):
+            from app.services.proposals.pending import get_pending_proposal
+            pp = get_pending_proposal(db, "recipe", recipe_id, current_user.id)
+            if pp:
+                response.pending_proposal = {"id": pp.id, "action": pp.action, "payload": pp.payload}
+
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取菜谱详情失败: {str(e)}")
 

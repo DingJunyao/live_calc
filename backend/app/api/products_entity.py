@@ -351,6 +351,14 @@ def get_product(product_id: int, db: Session = Depends(get_db), current_user: Us
         latest_price_unit=latest_price_unit,
         latest_price_date=latest_price_date
     )
+
+    # 非管理员追加 pending_proposal
+    if not getattr(current_user, "is_admin", False):
+        from app.services.proposals.pending import get_pending_proposal
+        pp = get_pending_proposal(db, "product", product_id, current_user.id)
+        if pp:
+            response.pending_proposal = {"id": pp.id, "action": pp.action, "payload": pp.payload}
+
     return response
 
 
