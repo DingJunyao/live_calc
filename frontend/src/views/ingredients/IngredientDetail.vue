@@ -1352,13 +1352,6 @@
             :custom-filter="() => true"
             return-object
           />
-          <v-checkbox
-            v-model="mergeSameNameProducts"
-            label="合并同名商品（同名商品的价格记录合并、营养数据 mixin）"
-            color="warning"
-            class="mt-2"
-            density="compact"
-          />
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -2296,7 +2289,7 @@ const relationTypeOptions = [
 const mergeTargetId = ref<number | null>(null)
 const mergeTargets = ref<Ingredient[]>([])
 const loadingMergeTargets = ref(false)
-const mergeSameNameProducts = ref(true)  // 是否合并同名商品
+
 
 // 选中的合并目标对象（用于显示名称）
 const selectedMergeTarget = ref<Ingredient | null>(null)
@@ -3915,16 +3908,22 @@ const doMerge = async () => {
   merging.value = true
   try {
     const response = await api.post('/ingredients/merge', {
-      source_id: ingredientId.value,
-      target_id: mergeTargetId.value,
-      merge_same_name_products: mergeSameNameProducts.value
+      source_ingredient_ids: [ingredientId.value],
+      target_ingredient_id: mergeTargetId.value
     })
-    showMessage(response.message || '合并成功', 'success')
+    const msg: string = (response && response.message) || ''
+    if (msg.includes('待管理员审核')) {
+      showMessage('合并提议已提交，待管理员审核', 'info')
+    } else {
+      showMessage(msg || '合并成功', 'success')
+    }
     // 关闭所有对话框
     showMergeDialog.value = false
     showMergeConfirmDialog.value = false
-    // 跳转到目标原料
-    router.push(`/data/ingredients/${mergeTargetId.value}`)
+    // 管理员直写→跳转；普通用户待审→留在当前页
+    if (!msg.includes('待管理员审核')) {
+      router.push(`/data/ingredients/${mergeTargetId.value}`)
+    }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '合并失败', 'error')
   } finally {

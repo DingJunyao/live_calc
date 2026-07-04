@@ -8,23 +8,42 @@ const entityType = computed(() => props.proposal.entity_type)
 const isIngredient = computed(() => entityType.value === 'ingredient')
 const snap = computed(() => props.proposal.snapshot || {})
 const payload = computed(() => props.proposal.payload || {})
+const preview = computed(() => payload.value.preview || {})
 
-const sources = computed(() =>
-  (snap.value.sources || []).map((s: any) => s.name || `#${s.id}`))
-const targetName = computed(() => snap.value.target_name || `#${payload.value.target_id}`)
+// 来源列表：优先 snapshot（已审批），回退 payload.preview（待审）
+const sources = computed<string[]>(() => {
+  const s = snap.value.sources as any[] | undefined
+  if (s?.length) return s.map((x: any) => x.name || `#${x.id}`)
+  const ps = preview.value.sources as any[] | undefined
+  if (ps?.length) return ps.map((x: any) => x.name || `#${x.id}`)
+  return []
+})
+
+const sourceCount = computed(() => sources.value.length || preview.value.source_count || 0)
+
+// 快照里取的优先，pending 时从 payload 取
+const targetName = computed(() =>
+  snap.value.target_name || preview.value.target_name || `#${payload.value.target_id}`
+)
 
 const impactCards = computed(() => {
   if (isIngredient.value) {
+    const ri = (snap.value.recipe_ingredients as any[])?.length ?? preview.value.recipe_ingredients_count ?? 0
+    const pl = (snap.value.product_links as any[])?.length ?? preview.value.product_links_count ?? 0
+    const hi = (snap.value.hierarchies as any[])?.length ?? preview.value.hierarchies_count ?? 0
+    const nm = (snap.value.nutrition_mappings as any[])?.length ?? preview.value.nutrition_mappings_count ?? 0
     return [
-      { label: '菜谱引用', count: (snap.value.recipe_ingredients || []).length },
-      { label: '商品关联', count: (snap.value.product_links || []).length },
-      { label: '层级关系', count: (snap.value.hierarchies || []).length },
-      { label: '营养映射', count: (snap.value.nutrition_mappings || []).length },
+      { label: '菜谱引用', count: ri },
+      { label: '商品关联', count: pl },
+      { label: '层级关系', count: hi },
+      { label: '营养映射', count: nm },
     ]
   }
+  const pr = (snap.value.product_records as any[])?.length ?? preview.value.product_records_count ?? 0
+  const fav = (snap.value.favorites as any[])?.length ?? preview.value.favorites_count ?? 0
   return [
-    { label: '价格记录', count: (snap.value.product_records || []).length },
-    { label: '收藏', count: (snap.value.favorites || []).length },
+    { label: '价格记录', count: pr },
+    { label: '收藏', count: fav },
   ]
 })
 
@@ -67,7 +86,12 @@ const visibleDetails = computed(() =>
 
     <!-- source handling note -->
     <v-alert type="info" variant="tonal" density="compact" class="mb-3">
-      源 {{ sources.length }} 个将软停用（保留名称追溯），所有引用迁至目标「{{ targetName }}」。
+      <template v-if="sources.length">
+        源 <strong>{{ sourceCount }}</strong> 个（{{ sources.join('、') }}）将软停用（保留名称追溯），所有引用迁至目标「<strong>{{ targetName }}</strong>」。
+      </template>
+      <template v-else>
+        无源食材信息（待审批执行后更新）。
+      </template>
     </v-alert>
 
     <!-- impact counts -->

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from app.models.nutrition import Ingredient, IngredientNutritionMapping
 from app.models.recipe import RecipeIngredient
+from app.models.product_entity import Product
 from app.models.product_ingredient_link import ProductIngredientLink  # 修正导入路径
 from app.models.ingredient_merge_record import IngredientMergeRecord  # 从正确的位置导入
 from app.models.ingredient_hierarchy import IngredientHierarchy  # 从正确的位置导入
@@ -51,19 +52,25 @@ class IngredientMerger:
         if missing_ids:
             return {"success": False, "message": f"以下食材ID不存在: {list(missing_ids)}"}
 
-        # 检查目标食材是否已经被合并（即它是其他食材合并的目标）
-        existing_merge = self.db.query(IngredientMergeRecord).filter(
-            IngredientMergeRecord.target_ingredient_id == target_ingredient_id
-        ).first()
-        if existing_merge:
-            return {"success": False, "message": f"目标食材 {target_ingredient_id} 已经是其他食材的合并目标，不能再次作为目标"}
-
-        # 验证所有源食材都没有被其他合并操作使用
+        # 验证源食材没有被其他活跃合并操作使用（revert 后的 inactive 记录不阻拦）
         source_merged = self.db.query(IngredientMergeRecord).filter(
-            IngredientMergeRecord.source_ingredient_id.in_(source_ingredient_ids)
+            and_(
+                IngredientMergeRecord.source_ingredient_id.in_(source_ingredient_ids),
+                IngredientMergeRecord.is_active == True,
+            )
         ).first()
         if source_merged:
             return {"success": False, "message": f"源食材之一已被其他合并操作使用，无法合并"}
+
+        # 验证源食材本身未处于已合并状态（双重防护）
+        already_merged = self.db.query(Ingredient).filter(
+            and_(
+                Ingredient.id.in_(source_ingredient_ids),
+                Ingredient.is_merged == True,
+            )
+        ).first()
+        if already_merged:
+            return {"success": False, "message": f"源食材「{already_merged.name}」已被合并，无法再次合并"}
 
         # 检查目标食材是否已经是其他食材的合并目标（反向检查）
         target_as_source = self.db.query(IngredientMergeRecord).filter(
@@ -106,8 +113,9 @@ class IngredientMerger:
                         else:
                             source_ing.aliases = [source_ing.name.lower()]
 
-                    # 标记为已合并
+                    # 标记为已合并并软删除（保留原名追溯）
                     source_ing.is_merged = True
+                    source_ing.is_active = False
                     source_ing.merged_into_id = target_ingredient_id
 
             # 7. 记录合并历史
@@ -188,10 +196,19 @@ class IngredientMerger:
         return updated_count
 
     def _update_product_ingredients(self, source_ingredient_ids: List[int], target_ingredient_id: int) -> int:
-        """更新商品价格记录中的食材引用"""
+        """更新商品中的食材引用（Product.ingredient_id + ProductIngredientLink）"""
         updated_count = 0
 
-        # 更新ProductIngredientLink表中的引用
+        # 1. 更新 Product.ingredient_id（直接外键）——大多数商品通过此字段关联原料
+        source_products = self.db.query(Product).filter(
+            Product.ingredient_id.in_(source_ingredient_ids)
+        ).all()
+
+        for product in source_products:
+            product.ingredient_id = target_ingredient_id
+            updated_count += 1
+
+        # 2. 更新 ProductIngredientLink 表中的引用（部分商品通过链接表关联）
         product_links = self.db.query(ProductIngredientLink).filter(
             ProductIngredientLink.ingredient_id.in_(source_ingredient_ids)
         ).all()

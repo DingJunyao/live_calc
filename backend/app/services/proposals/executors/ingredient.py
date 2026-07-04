@@ -152,6 +152,12 @@ class IngredientExecutor(CrudExecutorBase):
                 for r in db.query(RecipeIngredient)
                     .filter(RecipeIngredient.ingredient_id.in_(source_ids)).all()
             ],
+            "products": [
+                {"id": p.id, "name": p.name, "ingredient_id": p.ingredient_id,
+                 "is_active": p.is_active}
+                for p in db.query(Product)
+                    .filter(Product.ingredient_id.in_(source_ids)).all()
+            ],
             "product_links": [
                 {"id": l.id, "product_id": l.product_id, "ingredient_id": l.ingredient_id,
                  "product_name": product_name_map.get(l.product_id)}
@@ -174,7 +180,7 @@ class IngredientExecutor(CrudExecutorBase):
             ],
             "sources": [
                 {"id": s.id, "is_merged": s.is_merged, "merged_into_id": s.merged_into_id,
-                 "aliases": s.aliases, "name": s.name}
+                 "aliases": s.aliases, "name": s.name, "is_active": s.is_active}
                 for s in db.query(Ingredient).filter(Ingredient.id.in_(source_ids)).all()
             ],
         }
@@ -316,7 +322,18 @@ class IngredientExecutor(CrudExecutorBase):
         # 合并过程中 quantity 可能被追加到目标行（"100 + 200"），那部分无法精确还原，
         # revert 依赖快照行重建源行 + 目标行数量变更不在快照内（仅源行快照）——接受此局限。
 
-        # 2. 还原 product_links：被删的重新插入（被改 ingredient_id 的恢复）
+        # 2. 还原 products：恢复 Product.ingredient_id 和 is_active
+        existing_products = {p.id for p in db.query(Product).all()}
+        for item in snap.get("products", []):
+            if item["id"] in existing_products:
+                p = db.query(Product).get(item["id"])
+                if p is not None:
+                    p.ingredient_id = item["ingredient_id"]
+                    p.is_active = item.get("is_active", True)
+            # 同名商品合并时源商品被软删，不在 snapshot.products 里
+            # （由 snapshot.sources 中的源食材复活间接处理）
+
+        # 3. 还原 product_links：被删的重新插入（被改 ingredient_id 的恢复）
         pl_cols = {c.name for c in ProductIngredientLink.__table__.columns}
         existing_pl = {l.id for l in db.query(ProductIngredientLink).all()}
         for item in snap.get("product_links", []):
@@ -327,7 +344,7 @@ class IngredientExecutor(CrudExecutorBase):
             else:
                 db.add(ProductIngredientLink(**{k: v for k, v in item.items() if k in pl_cols}))
 
-        # 3. 还原 nutrition_mappings
+        # 4. 还原 nutrition_mappings
         nm_cols = {c.name for c in IngredientNutritionMapping.__table__.columns}
         existing_nm = {m.id for m in db.query(IngredientNutritionMapping).all()}
         for item in snap.get("nutrition_mappings", []):
@@ -340,7 +357,7 @@ class IngredientExecutor(CrudExecutorBase):
             else:
                 db.add(IngredientNutritionMapping(**{k: v for k, v in item.items() if k in nm_cols}))
 
-        # 4. 还原 hierarchies
+        # 5. 还原 hierarchies
         existing_h = {h.id for h in db.query(IngredientHierarchy).all()}
         for item in snap.get("hierarchies", []):
             if item["id"] in existing_h:
@@ -353,10 +370,11 @@ class IngredientExecutor(CrudExecutorBase):
             else:
                 db.add(IngredientHierarchy(**item))
 
-        # 5. 复活源食材：还原 is_merged / merged_into_id / aliases / name
+        # 6. 复活源食材：还原 is_active / is_merged / merged_into_id / aliases / name
         for s in snap.get("sources", []):
             ing = db.query(Ingredient).get(s["id"])
             if ing is not None:
+                ing.is_active = s.get("is_active", True)
                 ing.is_merged = s["is_merged"]
                 ing.merged_into_id = s["merged_into_id"]
                 ing.aliases = s["aliases"]

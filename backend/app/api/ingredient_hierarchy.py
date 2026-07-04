@@ -14,6 +14,7 @@ from app.services.ingredient_merger import IngredientMerger
 from app.services.proposals import service as proposal_service
 from pydantic import BaseModel
 from datetime import datetime
+from sqlalchemy import or_
 
 router = APIRouter()
 
@@ -385,8 +386,7 @@ def merge_ingredients(
 
     分流模式：
     - 管理员：经框架 apply_as_admin 直写（留痕 change_proposals），立即生效。
-    - 普通用户：经框架 submit 提议（治理总表 ingredient.merge = manual → 待审）；
-      仅当涉及食材（源与目标）均由本人创建时方允许提交，否则 403。
+    - 普通用户：经框架 submit 提议（治理总表 ingredient.merge = manual → 待审），不限制所有权。
     """
     if not merge_request.source_ingredient_ids or not merge_request.target_ingredient_id:
         raise HTTPException(status_code=400, detail="缺少必要的参数：源食材ID列表和目标食材ID")
@@ -394,23 +394,44 @@ def merge_ingredients(
     if merge_request.target_ingredient_id in merge_request.source_ingredient_ids:
         raise HTTPException(status_code=400, detail="目标食材不能同时是源食材")
 
-    # 普通用户的所有权预检（提议路径同样要求源与目标均由本人创建，避免提议堆积后仍被拒）
-    if not current_user.is_admin:
-        involved_ids = list(merge_request.source_ingredient_ids) + [merge_request.target_ingredient_id]
-        involved_ingredients = db.query(Ingredient).filter(Ingredient.id.in_(involved_ids)).all()
-        not_owned = [
-            ing.name for ing in involved_ingredients
-            if ing.created_by != current_user.id
-        ]
-        if not_owned:
-            raise HTTPException(
-                status_code=403,
-                detail="只能合并自己创建的食材，以下食材不由你创建：" + "、".join(not_owned)
-            )
+    source_ids = merge_request.source_ingredient_ids
+    target_id = merge_request.target_ingredient_id
+
+    # 预计算影响（供审核台展示 + 响应计数）
+    from app.models.recipe import RecipeIngredient
+    from app.models.product_ingredient_link import ProductIngredientLink
+    from app.models.nutrition import IngredientNutritionMapping
+
+    source_names = [
+        ing.name for ing in
+        db.query(Ingredient).filter(Ingredient.id.in_(source_ids)).all()
+    ]
+    target_ing = db.query(Ingredient).get(target_id)
+    target_name = target_ing.name if target_ing else f"#{target_id}"
+
+    recipe_count = db.query(RecipeIngredient).filter(
+        RecipeIngredient.ingredient_id.in_(source_ids)).count()
+    product_link_count = db.query(ProductIngredientLink).filter(
+        ProductIngredientLink.ingredient_id.in_(source_ids)).count()
+    nutrition_count = db.query(IngredientNutritionMapping).filter(
+        IngredientNutritionMapping.ingredient_id.in_(source_ids)).count()
+    hierarchy_count = db.query(IngredientHierarchy).filter(or_(
+        IngredientHierarchy.parent_id.in_(source_ids),
+        IngredientHierarchy.child_id.in_(source_ids))).count()
+
+    preview = {
+        "sources": [{"id": sid, "name": sn} for sid, sn in zip(source_ids, source_names)],
+        "target_name": target_name,
+        "recipe_ingredients_count": recipe_count,
+        "product_links_count": product_link_count,
+        "nutrition_mappings_count": nutrition_count,
+        "hierarchies_count": hierarchy_count,
+    }
 
     payload = {
-        "source_ids": merge_request.source_ingredient_ids,
-        "target_id": merge_request.target_ingredient_id,
+        "source_ids": source_ids,
+        "target_id": target_id,
+        "preview": preview,
     }
 
     if current_user.is_admin:
@@ -424,10 +445,11 @@ def merge_ingredients(
         return IngredientMergeResponse(
             success=True,
             message="合并完成（管理员直写）",
-            merged_count=len(merge_request.source_ingredient_ids),
-            updated_recipes_count=0,
-            updated_products_count=0,
-            updated_mappings_count=0,
+            merged_count=len(source_ids),
+            updated_recipes_count=recipe_count,
+            updated_products_count=product_link_count,
+            updated_mappings_count=nutrition_count,
+            updated_hierarchies_count=hierarchy_count,
             stats_change={},
         )
 
@@ -440,11 +462,12 @@ def merge_ingredients(
     db.commit()
     return IngredientMergeResponse(
         success=True,
-        message=f"合并提议已提交（proposal_id={p.id}, status={p.status}）",
-        merged_count=0,
-        updated_recipes_count=0,
-        updated_products_count=0,
-        updated_mappings_count=0,
+        message=f"合并提议已提交，待管理员审核（proposal_id={p.id}）",
+        merged_count=len(source_ids),
+        updated_recipes_count=recipe_count,
+        updated_products_count=product_link_count,
+        updated_mappings_count=nutrition_count,
+        updated_hierarchies_count=hierarchy_count,
         stats_change={},
     )
 

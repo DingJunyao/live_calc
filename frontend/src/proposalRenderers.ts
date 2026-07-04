@@ -6,6 +6,7 @@ import MergeMapDiff from '@/components/proposals/MergeMapDiff.vue'
 import HierarchyDiff from '@/components/proposals/HierarchyDiff.vue'
 import EntityDensityDiff from '@/components/proposals/EntityDensityDiff.vue'
 import EntityUnitOverrideDiff from '@/components/proposals/EntityUnitOverrideDiff.vue'
+import MerchantDiff from '@/components/proposals/MerchantDiff.vue'
 
 /**
  * 按 entity_type (+ action) 选专用渲染器。
@@ -21,6 +22,7 @@ export function resolveProposalRenderer(p: Proposal): Component | null {
   if ((t === 'ingredient' && p.action === 'merge') || t === 'merchant_merge') {
     return MergeMapDiff
   }
+  if (t === 'merchant') return MerchantDiff
   if (t === 'hierarchy') return HierarchyDiff
   if (t === 'entity_density') return EntityDensityDiff
   if (t === 'entity_unit_override') return EntityUnitOverrideDiff
