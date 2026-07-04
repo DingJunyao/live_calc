@@ -114,6 +114,12 @@ const router = createRouter({
           meta: { title: '我的常用地点' },
         },
         {
+          path: 'profile/proposals',
+          name: 'profile-proposals',
+          component: () => import('@/views/profile/MyProposalsView.vue'),
+          meta: { title: '我的提议' },
+        },
+        {
           path: 'admin',
           name: 'admin',
           meta: { adminOnly: true, title: '后台管理' },
