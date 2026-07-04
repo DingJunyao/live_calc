@@ -5,7 +5,7 @@
     <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
     <v-app-bar-title class="text-h6">
       <div class="d-flex align-center ga-2">
-        <span class="text-truncate">{{ ingredient?.name || '原料详情' }}</span>
+        <span class="text-truncate">{{ overlaidIngredientName || '原料详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">原料</v-chip>
       </div>
     </v-app-bar-title>
@@ -31,6 +31,9 @@
     </v-alert>
 
     <template v-else-if="ingredient">
+      <div class="px-4 pt-4 pb-0">
+        <PendingProposalBanner :proposal="pendingProposal" />
+      </div>
       <div class="ingredient-layout">
       <!-- 基本信息 -->
       <v-card elevation="0" class="grid-item item-basic-info">
@@ -68,17 +71,17 @@
                 <v-icon size="small" color="medium-emphasis">mdi-folder-outline</v-icon>
               </template>
               <v-list-item-title>分类</v-list-item-title>
-              <v-list-item-subtitle>{{ ingredient.category }}</v-list-item-subtitle>
+              <v-list-item-subtitle>{{ overlaidCategory }}</v-list-item-subtitle>
             </v-list-item>
 
-            <v-list-item v-if="ingredient.aliases?.length" class="aliases-list-item">
+            <v-list-item v-if="overlaidAliases?.length" class="aliases-list-item">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-tag-outline</v-icon>
               </template>
               <v-list-item-title>别名</v-list-item-title>
               <v-list-item-subtitle class="aliases-subtitle">
                 <v-chip
-                  v-for="alias in ingredient.aliases"
+                  v-for="alias in overlaidAliases!"
                   :key="alias"
                   size="small"
                   class="mr-1 mb-1"
@@ -1688,6 +1691,7 @@ import UsdaMatchDialog from '@/components/usda/UsdaMatchDialog.vue'
 import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useUserStore } from '@/stores/user'
+import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.vue'
 
 const { ask } = useConfirmDialog()
 const userStore = useUserStore()
@@ -1779,8 +1783,32 @@ const router = useRouter()
 const ingredientId = computed(() => Number(route.params.id))
 
 const ingredient = ref<Ingredient | null>(null)
+const pendingProposal = ref<{ id: number; action: string; payload: Record<string, any> } | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+// 展示值——如果有待审核的 update 提议，则用提议中的值覆盖原值
+const overlaidIngredientName = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.name) {
+    return pendingProposal.value.payload.name
+  }
+  return ingredient.value?.name || ''
+})
+
+const overlaidCategory = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.category_id !== undefined) {
+    const cat = categories.value.find((c: { id: number; name: string; display_name: string }) => c.id === pendingProposal.value!.payload.category_id)
+    return cat?.display_name || String(pendingProposal.value.payload.category_id)
+  }
+  return ingredient.value?.category
+})
+
+const overlaidAliases = computed(() => {
+  if (pendingProposal.value?.action === 'update' && Array.isArray(pendingProposal.value?.payload?.aliases)) {
+    return pendingProposal.value.payload.aliases
+  }
+  return ingredient.value?.aliases
+})
 
 // 最新价格
 const latestPrice = ref<number | null>(null)
@@ -2884,6 +2912,7 @@ const loadData = async () => {
     // 只加载原料基本信息（名称、别名、默认单位等）
     const response = await api.get(`/nutrition/ingredients/${ingredientId.value}`)
     ingredient.value = response
+    pendingProposal.value = response.pending_proposal || null
     setDetailTitle(response.name, '原料', '原料详情')
     // 基本数据到位，立即渲染页面
     loading.value = false

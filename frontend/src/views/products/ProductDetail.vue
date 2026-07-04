@@ -5,7 +5,7 @@
     <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
     <v-app-bar-title class="text-h6">
       <div class="d-flex align-center ga-2">
-        <span class="text-truncate">{{ product?.name || '商品详情' }}</span>
+        <span class="text-truncate">{{ overlaidProductName || '商品详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">商品</v-chip>
       </div>
     </v-app-bar-title>
@@ -31,6 +31,9 @@
     </v-alert>
 
     <template v-else-if="product">
+      <div class="px-4 pt-4 pb-0">
+        <PendingProposalBanner :proposal="pendingProposal" />
+      </div>
       <div class="product-layout">
       <!-- 基本信息 -->
       <v-card elevation="0" class="grid-item item-basic-info">
@@ -55,20 +58,20 @@
         <v-card-text>
           <!-- 展示模式 -->
           <v-list v-if="!editingBasicInfo" density="compact">
-            <v-list-item v-if="product.brand">
+            <v-list-item v-if="overlaidBrand">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-tag-outline</v-icon>
               </template>
               <v-list-item-title>品牌</v-list-item-title>
-              <v-list-item-subtitle>{{ product.brand }}</v-list-item-subtitle>
+              <v-list-item-subtitle>{{ overlaidBrand }}</v-list-item-subtitle>
             </v-list-item>
 
-            <v-list-item v-if="product.barcode">
+            <v-list-item v-if="overlaidBarcode">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-barcode</v-icon>
               </template>
               <v-list-item-title>条码</v-list-item-title>
-              <v-list-item-subtitle class="font-family-monospace">{{ product.barcode }}</v-list-item-subtitle>
+              <v-list-item-subtitle class="font-family-monospace">{{ overlaidBarcode }}</v-list-item-subtitle>
             </v-list-item>
 
             <v-list-item v-if="product.ingredient_name" @click="goToIngredient" class="cursor-pointer">
@@ -1130,6 +1133,7 @@ import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLa
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
 import { useUserStore } from '@/stores/user'
 import UsdaMatchDialog from '@/components/usda/UsdaMatchDialog.vue'
+import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.vue'
 import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
@@ -1190,8 +1194,31 @@ const router = useRouter()
 const productId = computed(() => Number(route.params.id))
 
 const product = ref<Product | null>(null)
+const pendingProposal = ref<{ id: number; action: string; payload: Record<string, any> } | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+// 展示值——如果有待审核的 update 提议，则用提议中的值覆盖原值
+const overlaidProductName = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.name) {
+    return pendingProposal.value.payload.name
+  }
+  return product.value?.name || ''
+})
+
+const overlaidBrand = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.brand !== undefined) {
+    return pendingProposal.value.payload.brand
+  }
+  return product.value?.brand
+})
+
+const overlaidBarcode = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.barcode !== undefined) {
+    return pendingProposal.value.payload.barcode
+  }
+  return product.value?.barcode
+})
 
 // 按商家分组的最新价格
 interface MerchantPrice {
@@ -2081,6 +2108,7 @@ const loadData = async () => {
     // 只加载商品基本信息（名称、品牌、条码、标签、最新价格等）
     const response = await api.get(`/products/entity/${productId.value}`)
     product.value = response
+    pendingProposal.value = response.pending_proposal || null
     setDetailTitle(response.name, '商品', '商品详情')
     // 基本数据到位，立即渲染页面
     loading.value = false

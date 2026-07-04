@@ -4,7 +4,7 @@
     <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
     <v-app-bar-title class="text-h6">
       <div class="d-flex align-center ga-2">
-        <span class="text-truncate">{{ merchant?.name || '商家详情' }}</span>
+        <span class="text-truncate">{{ overlaidMerchantName || '商家详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">商家</v-chip>
       </div>
     </v-app-bar-title>
@@ -30,6 +30,9 @@
     </v-alert>
 
     <template v-else-if="merchant">
+      <div class="px-4 pt-4 pb-0">
+        <PendingProposalBanner :proposal="pendingProposal" />
+      </div>
       <div class="merchant-layout">
         <!-- 基本信息 -->
         <v-card elevation="0" class="grid-item item-basic-info">
@@ -48,12 +51,12 @@
                 <v-list-item-subtitle>{{ merchant.name }}</v-list-item-subtitle>
               </v-list-item>
 
-              <v-list-item v-if="merchant.address">
+              <v-list-item v-if="overlaidAddress">
                 <template #prepend>
                   <v-icon size="small" color="medium-emphasis">mdi-map-marker</v-icon>
                 </template>
                 <v-list-item-title>地址</v-list-item-title>
-                <v-list-item-subtitle>{{ merchant.address }}</v-list-item-subtitle>
+                <v-list-item-subtitle>{{ overlaidAddress }}</v-list-item-subtitle>
               </v-list-item>
 
               <v-list-item v-if="merchant.latitude != null && merchant.longitude != null">
@@ -302,6 +305,8 @@ import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
 import type { Coordinate } from '@/utils/map/mapTypes'
 import { formatToLocalDateTimeShort } from '@/utils/timezone'
+import { useUserStore } from '@/stores/user'
+import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -331,8 +336,25 @@ interface ProductPrice {
 
 const merchantId = computed(() => Number(route.params.id))
 const merchant = ref<Merchant | null>(null)
+const pendingProposal = ref<{ id: number; action: string; payload: Record<string, any> } | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const userStore = useUserStore()
+
+// 展示值——如果有待审核的 update 提议，则用提议中的值覆盖原值
+const overlaidMerchantName = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.name) {
+    return pendingProposal.value.payload.name
+  }
+  return merchant.value?.name || ''
+})
+
+const overlaidAddress = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.address !== undefined) {
+    return pendingProposal.value.payload.address
+  }
+  return merchant.value?.address
+})
 
 // 各商品最新价格
 const productPrices = ref<ProductPrice[]>([])
@@ -354,6 +376,7 @@ const loadData = async () => {
   error.value = null
   try {
     merchant.value = await api.get(`/merchants/${merchantId.value}`)
+    pendingProposal.value = merchant.value.pending_proposal || null
     setDetailTitle(merchant.value.name, '商家', '商家详情')
     await loadProductPrices()
   } catch (e: any) {
