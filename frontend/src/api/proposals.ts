@@ -41,6 +41,7 @@ export interface Proposal {
   reviewed_at: string | null
   reverted_at: string | null
   preview?: Record<string, any> | null
+  created_at?: string | null
 }
 
 /** 影响预览请求体。 */

@@ -57,7 +57,7 @@ def _to_response(db: Session, p: ChangeProposal) -> ProposalResponse:
         risk_level=p.risk_level, proposer_id=p.proposer_id, reviewer_id=p.reviewer_id,
         review_note=p.review_note, revertable_until=p.revertable_until,
         applied_at=p.applied_at, reviewed_at=p.reviewed_at, reverted_at=p.reverted_at,
-        entity_label=label,
+        entity_label=label, created_at=p.created_at,
     )
 
 

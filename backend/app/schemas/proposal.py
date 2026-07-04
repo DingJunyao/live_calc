@@ -42,5 +42,6 @@ class ProposalResponse(BaseModel):
     reverted_at: Optional[datetime]
     preview: Optional[dict] = None   # 可选附影响预览
     entity_label: Optional[str] = None   # 目标实体可读标签（审核台显示）
+    created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
