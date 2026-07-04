@@ -5,6 +5,7 @@ import type { MapEngineType, MapConfig, MapEngine } from '@/utils/map/mapTypes'
 import { defaultMapConfig, mapEngineNames } from '@/utils/map/mapTypes'
 import { mapEngineManager } from '@/utils/mapEngineManager'
 import { getUserMapPreference } from '@/utils/mapConfig'
+import { convertCoordinate } from '@/utils/coordinateTransform'
 import { api } from '@/api/client'
 import L from 'leaflet'
 
@@ -34,6 +35,8 @@ const isCoordMove = computed(() =>
   (beforeWgs.value.lat !== afterWgs.value.lat || beforeWgs.value.lng !== afterWgs.value.lng)
 )
 const isCoordAdd = computed(() => !hasBeforeCoord.value && hasAfterCoord.value)
+/** 删除操作不显示地图（没有新位置可对比）。 */
+const isDelete = computed(() => props.proposal.action === 'delete')
 
 const FIELD_META: Record<string, { label: string; format: (v: any) => string }> = {
   name: { label: '名称', format: String },
@@ -87,8 +90,124 @@ async function loadConfig() {
   } catch { /* keep defaults */ }
 }
 
+// ── SDK 引擎辅助函数 ──
+function createSDKColoredMarker(engineName: string, nativeMap: any, lat: number, lng: number, color: string, label: string) {
+  if (engineName === 'amap-sdk' && window.AMap) {
+    const dot = `<span style="width:8px;height:8px;border-radius:50%;background:#fff;display:inline-block;margin-right:2px"></span>`
+    const mkr = new window.AMap.Marker({
+      position: [lng, lat],
+      content: `<div style="display:flex;align-items:center;gap:2px;background:${color};color:#fff;padding:2px 7px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);position:relative;">${dot}${label}<div style="position:absolute;top:100%;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid ${color};"></div></div>`,
+      offset: new window.AMap.Pixel(-28, -28),
+      zIndex: 100,
+    })
+    nativeMap.add(mkr)
+    return mkr
+  }
+  if (engineName === 'baidu-sdk') {
+    const BMap = window.BMapGL || window.BMap
+    if (!BMap) return null
+    const pt = new BMap.Point(lng, lat)
+    const mkr = new BMap.Marker(pt)
+    const lbl = new BMap.Label(label, { offset: new BMap.Size(20, -20), position: pt })
+    lbl.setStyle({
+      color: '#fff', backgroundColor: color, border: 'none', borderRadius: '3px',
+      padding: '2px 6px', fontSize: '11px', fontWeight: '500', whiteSpace: 'nowrap', boxShadow: '0 2px 6px rgba(0,0,0,.3)',
+    })
+    mkr.setLabel(lbl)
+    nativeMap.addOverlay(mkr)
+    return mkr
+  }
+  if (engineName === 'tencent-sdk' && window.TMap) {
+    const TMap = window.TMap
+    const pos = new TMap.LatLng(lat, lng)
+    const uid = `diff-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const svg = 'data:image/svg+xml,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"><circle cx="7" cy="7" r="6" fill="${color.replace('#', '%23')}" stroke="white" stroke-width="2"/></svg>`
+    )
+    new TMap.MultiMarker({
+      map: nativeMap,
+      styles: { [uid]: new TMap.MarkerStyle({ width: 14, height: 14, anchor: { x: 7, y: 14 }, src: svg }) },
+      geometries: [{ id: uid, styleId: uid, position: pos }],
+    })
+    new TMap.MultiLabel({
+      map: nativeMap,
+      styles: {
+        [`${uid}-lbl`]: new TMap.LabelStyle({
+          color: '#fff', size: 12, offset: { x: 0, y: -18 }, alignment: 'center',
+          backgroundColor: color, borderColor: color, borderWidth: 0, borderRadius: 3, padding: '2px 6px',
+        }),
+      },
+      geometries: [{ id: `${uid}-lbl`, styleId: `${uid}-lbl`, position: pos, content: label }],
+    })
+    return null
+  }
+  return null
+}
+
+function createSDKDashedLine(engineName: string, nativeMap: any, coords: Array<{ lat: number; lng: number }>) {
+  if (engineName === 'amap-sdk' && window.AMap) {
+    const poly = new window.AMap.Polyline({
+      path: coords.map(c => [c.lng, c.lat]),
+      strokeColor: '#1976d2', strokeWeight: 2, strokeStyle: 'dashed',
+      strokeDasharray: [6, 4], strokeOpacity: 0.7,
+    })
+    nativeMap.add(poly)
+    return poly
+  }
+  if (engineName === 'baidu-sdk') {
+    const BMap = window.BMapGL || window.BMap
+    if (!BMap) return null
+    const path = coords.map(c => new BMap.Point(c.lng, c.lat))
+    const poly = new BMap.Polyline(path, {
+      strokeColor: '#1976d2', strokeWeight: 2, strokeOpacity: 0.7, strokeStyle: 'dashed',
+    })
+    nativeMap.addOverlay(poly)
+    return poly
+  }
+  if (engineName === 'tencent-sdk' && window.TMap) {
+    const TMap = window.TMap
+    const poly = new TMap.MultiPolyline({
+      map: nativeMap,
+      styles: {
+        'diff': new TMap.PolylineStyle({
+          color: '#1976d2', width: 2, borderWidth: 0, lineCap: 'round', lineJoin: 'round',
+          dashArray: [6, 4], opacity: 0.7,
+        }),
+      },
+      geometries: [{ id: 'diff-line', styleId: 'diff', paths: [coords.map(c => new TMap.LatLng(c.lat, c.lng))] }],
+    })
+    return poly
+  }
+  return null
+}
+
+function fitSDKCoordsBounds(engineName: string, nativeMap: any, coords: Array<{ lat: number; lng: number }>) {
+  if (coords.length < 2) return
+  try {
+    if (engineName === 'amap-sdk' && window.AMap?.Bounds) {
+      const lats = coords.map(c => c.lat)
+      const lngs = coords.map(c => c.lng)
+      nativeMap.setBounds(new window.AMap.Bounds(
+        new window.AMap.LngLat(Math.min(...lngs), Math.min(...lats)),
+        new window.AMap.LngLat(Math.max(...lngs), Math.max(...lats)),
+      ))
+    } else if (engineName === 'baidu-sdk') {
+      const BMap = window.BMapGL || window.BMap
+      if (BMap) nativeMap.setViewport(coords.map(c => new BMap.Point(c.lng, c.lat)))
+    } else if (engineName === 'tencent-sdk' && window.TMap) {
+      const latLngs = coords.map(c => new window.TMap.LatLng(c.lat, c.lng))
+      const b = new window.TMap.LatLngBounds(latLngs[0], latLngs[1])
+      latLngs.forEach(l => b.extend(l))
+      nativeMap.fitBounds(b, { padding: 30 })
+    }
+  } catch {
+    // fallback — midpoint
+    engine?.setCenter((coords[0].lat + coords[1].lat) / 2, (coords[0].lng + coords[1].lng) / 2)
+  }
+}
+
 async function initMap(forceEngine?: MapEngineType) {
-  if (!mapContainer.value || !hasAnyCoord.value) return
+  if (!mapContainer.value || !hasAnyCoord.value || isDelete.value) return
   loading.value = true
 
   if (forceEngine) {
@@ -175,12 +294,67 @@ async function initMap(forceEngine?: MapEngineType) {
       map.setView(coords[0], 15)
     }
   } else {
-    // SDK 引擎：标记已由 addMarker 加上，居中即可
-    if (hasAfterCoord.value && isCoordMove.value) {
-      engine.setCenter(
-        (beforeWgs.value.lat + afterWgs.value.lat) / 2,
-        (beforeWgs.value.lng + afterWgs.value.lng) / 2,
-      )
+    // SDK 引擎：WGS84→地图坐标系（高德/腾讯 gcj02，百度 bd09）
+    const engineName = engine?.name || ''
+    const nativeMap = engine?.getMap()
+    const targetSys = engineName === 'baidu-sdk' ? 'bd09' as const : 'gcj02' as const
+
+    // 移除引擎 addMarker 创建的默认标记
+    if (engineMarker1 != null) { engine?.removeMarker(engineMarker1); engineMarker1 = null }
+    if (engineMarker2 != null) { engine?.removeMarker(engineMarker2); engineMarker2 = null }
+
+    if (!nativeMap) return
+
+    // 坐标转换
+    const beforeDisp = hasBeforeCoord.value
+      ? convertCoordinate(beforeWgs.value.lat, beforeWgs.value.lng, 'wgs84', targetSys)
+      : null
+    const afterDisp = hasAfterCoord.value
+      ? convertCoordinate(afterWgs.value.lat, afterWgs.value.lng, 'wgs84', targetSys)
+      : null
+
+    const sdkCoords: Array<{ lat: number; lng: number }> = []
+
+    try {
+      // ── 改前标记（橘色） ──
+      if (hasBeforeCoord.value && beforeDisp) {
+        sdkCoords.push({ lat: beforeDisp.lat, lng: beforeDisp.lng })
+        createSDKColoredMarker(
+          engineName, nativeMap,
+          beforeDisp.lat, beforeDisp.lng,
+          '#fb8c00', isCoordMove.value ? '改前' : '原位置',
+        )
+      }
+
+      // ── 改后标记（绿色） ──
+      if (hasAfterCoord.value && afterDisp && (isCoordMove.value || isCoordAdd.value)) {
+        sdkCoords.push({ lat: afterDisp.lat, lng: afterDisp.lng })
+        createSDKColoredMarker(
+          engineName, nativeMap,
+          afterDisp.lat, afterDisp.lng,
+          '#43a047', isCoordAdd.value ? '新增' : '改后',
+        )
+      }
+
+      // ── 虚线连接 ──
+      if (isCoordMove.value && sdkCoords.length >= 2) {
+        createSDKDashedLine(engineName, nativeMap, sdkCoords)
+      }
+
+      // ── 自适应视野 ──
+      if (sdkCoords.length >= 2) {
+        fitSDKCoordsBounds(engineName, nativeMap, sdkCoords)
+      } else if (sdkCoords.length === 1) {
+        engine?.setCenter(sdkCoords[0].lat, sdkCoords[0].lng)
+        engine?.setZoom(15)
+      }
+    } catch (e) {
+      console.warn('[MerchantDiff] SDK marker render error:', e)
+      if (sdkCoords.length >= 2) {
+        engine?.setCenter((sdkCoords[0].lat + sdkCoords[1].lat) / 2, (sdkCoords[0].lng + sdkCoords[1].lng) / 2)
+      } else if (sdkCoords.length === 1) {
+        engine?.setCenter(sdkCoords[0].lat, sdkCoords[0].lng)
+      }
     }
   }
 }
@@ -205,7 +379,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <div v-if="hasAnyCoord" class="mb-3">
+    <div v-if="!isDelete && hasAnyCoord" class="mb-3">
       <div class="text-subtitle-2 mb-1">
         {{ isCoordAdd ? '位置（新增）' : isCoordMove ? '位置变更' : '位置' }}
       </div>

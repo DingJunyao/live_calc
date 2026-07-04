@@ -1057,129 +1057,85 @@ async def split_product_to_ingredient(
     """
     将商品拆分为新的原料
 
+    分流：管理员提交即执行 / 普通用户提交提议待审。
     逻辑：
     1. 如果商品是当前原料的唯一活跃商品，不允许拆分
     2. 创建同名原料（冲突时需要指定 new_name）
     3. 将商品的营养数据 mixin 写入新原料
     4. 商品关联到新原料，清空商品的自定义营养数据
     """
-    from app.models.nutrition_data import NutritionData
+    # 业务校验（通用：不受审核状态影响）
+    product = db.query(Product).options(
+        joinedload(Product.ingredient)
+    ).filter(
+        Product.id == product_id,
+        Product.is_active == True
+    ).first()
 
-    try:
-        product = db.query(Product).options(
-            joinedload(Product.ingredient)
-        ).filter(
-            Product.id == product_id,
-            Product.is_active == True
-        ).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="商品不存在")
+    if not product.ingredient_id:
+        raise HTTPException(status_code=400, detail="商品未关联原料")
 
-        if not product:
-            raise HTTPException(status_code=404, detail="商品不存在")
+    current_ingredient = product.ingredient
 
-        # 权限校验
-        if product.created_by != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权拆分此商品")
+    # 唯一商品检查
+    active_product_count = db.query(Product).filter(
+        Product.ingredient_id == current_ingredient.id,
+        Product.is_active == True
+    ).count()
+    if active_product_count <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="该商品是当前原料的唯一商品，无法拆分。请先为该原料添加其他商品。"
+        )
 
-        if not product.ingredient_id:
-            raise HTTPException(status_code=400, detail="商品未关联原料")
-
-        current_ingredient = product.ingredient
-
-        # 检查是否为当前原料的唯一活跃商品
-        active_product_count = db.query(Product).filter(
-            Product.ingredient_id == current_ingredient.id,
-            Product.is_active == True
-        ).count()
-
-        if active_product_count <= 1:
-            raise HTTPException(
-                status_code=400,
-                detail="该商品是当前原料的唯一商品，无法拆分。请先为该原料添加其他商品。"
-            )
-
-        # 确定新原料名称
-        ingredient_name = (new_name or product.name).strip()
-        if not ingredient_name:
-            raise HTTPException(status_code=400, detail="原料名称不能为空")
-
-        # 检查同名原料冲突
-        existing_ingredient = db.query(Ingredient).filter(
-            Ingredient.name == ingredient_name,
-            Ingredient.is_active == True
-        ).first()
-
-        if existing_ingredient:
-            if existing_ingredient.id == current_ingredient.id:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"原料「{ingredient_name}」与当前关联原料同名，请指定不同的新原料名称。"
-                )
+    # 同名冲突检查
+    ingredient_name = (new_name or product.name).strip()
+    if not ingredient_name:
+        raise HTTPException(status_code=400, detail="原料名称不能为空")
+    existing_ingredient = db.query(Ingredient).filter(
+        Ingredient.name == ingredient_name,
+        Ingredient.is_active == True
+    ).first()
+    if existing_ingredient:
+        if existing_ingredient.id == current_ingredient.id:
             raise HTTPException(
                 status_code=409,
-                detail=f"原料「{ingredient_name}」已存在（ID: {existing_ingredient.id}），请指定不同的名称。"
+                detail=f"原料「{ingredient_name}」与当前关联原料同名，请指定不同的新原料名称。"
             )
-
-        # 获取当前营养数据 mixin（商品自定义 + 原料营养）
-        product_nutrition = product.custom_nutrition_data or {}
-        ingredient_nutrition = _get_ingredient_nutrition_with_fallback(db, current_ingredient)
-        merged_nutrition = _merge_nutrition_data(product_nutrition, ingredient_nutrition)
-
-        # 获取默认单位（斤）
-        unit_id = None
-        from app.models.unit import Unit
-        jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
-        if jin_unit:
-            unit_id = jin_unit.id
-
-        # 创建新原料
-        new_ingredient = Ingredient(
-            name=ingredient_name,
-            aliases=[],
-            default_unit_id=unit_id,
-            created_by=current_user.id,
-            updated_by=current_user.id
+        raise HTTPException(
+            status_code=409,
+            detail=f"原料「{ingredient_name}」已存在（ID: {existing_ingredient.id}），请指定不同的名称。"
         )
-        db.add(new_ingredient)
-        db.flush()  # 获取 new_ingredient.id
 
-        # 将 mixin 营养数据写入新原料
-        has_nutrition_data = bool(merged_nutrition.get("core_nutrients") or merged_nutrition.get("all_nutrients"))
-        if has_nutrition_data:
-            nutrition_record = NutritionData(
-                ingredient_id=new_ingredient.id,
-                source='custom',
-                nutrients=merged_nutrition,
-                reference_amount=100.0,
-                reference_unit='g',
-                match_confidence=1.0,
-                is_verified=True,
-                created_by=current_user.id,
-                updated_by=current_user.id
-            )
-            db.add(nutrition_record)
+    payload = {"new_name": new_name} if new_name else {}
 
-        # 更新商品：关联到新原料，清空自定义营养数据
-        product.ingredient_id = new_ingredient.id
-        product.custom_nutrition_data = None
-        product.custom_nutrition_source = None
-        product.updated_by = current_user.id
-
+    # 分流：管理员直写 / 普通用户提议
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="product_split", entity_id=product_id,
+            action="split", payload=payload, admin=current_user,
+        )
         db.commit()
 
+        # 重新读取刷新后的商品
+        db.refresh(product)
         return {
             "message": f"商品已拆分为原料「{ingredient_name}」",
-            "ingredient_id": new_ingredient.id,
-            "ingredient_name": ingredient_name
+            "ingredient_id": product.ingredient_id,
+            "ingredient_name": ingredient_name,
         }
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        import traceback
-        print(f"[ERROR] 拆分商品为原料失败: {str(e)}")
-        print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"拆分商品为原料失败: {str(e)}")
+    p = proposal_service.submit(
+        db, entity_type="product_split", entity_id=product_id,
+        action="split", payload=payload, proposer=current_user,
+    )
+    db.commit()
+    return {
+        "message": f"拆分提议已提交，待管理员审核（proposal_id={p.id}）",
+        "proposal_id": p.id,
+    }
 
 
 @router.post("/products/entity/{product_id}/merge-into/{target_product_id}")
@@ -1192,76 +1148,68 @@ def merge_product_into(
     """
     将商品合并到同一原料下的另一个商品
 
+    分流：管理员提交即执行 / 普通用户提交提议待审。
     逻辑：
     1. 源商品和目标商品必须在同一原料下
     2. 源商品的价格记录迁移到目标商品
-    3. 源商品的营养数据丢弃
-    4. 源商品软删除
+    3. 源商品软删除
     """
-    try:
-        # 获取源商品
-        source_product = db.query(Product).filter(
-            Product.id == product_id,
-            Product.is_active == True
-        ).first()
+    # 业务校验（通用）
+    source_product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.is_active == True
+    ).first()
+    if not source_product:
+        raise HTTPException(status_code=404, detail="源商品不存在")
 
-        if not source_product:
-            raise HTTPException(status_code=404, detail="源商品不存在")
+    target_product = db.query(Product).filter(
+        Product.id == target_product_id,
+        Product.is_active == True
+    ).first()
+    if not target_product:
+        raise HTTPException(status_code=404, detail="目标商品不存在")
 
-        # 获取目标商品
-        target_product = db.query(Product).filter(
-            Product.id == target_product_id,
-            Product.is_active == True
-        ).first()
-
-        if not target_product:
-            raise HTTPException(status_code=404, detail="目标商品不存在")
-
-        # 权限校验
-        if source_product.created_by != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="无权操作此商品")
-
-        # 校验同一原料
-        if source_product.ingredient_id != target_product.ingredient_id:
-            raise HTTPException(
-                status_code=400,
-                detail="只能合并同一原料下的商品"
-            )
-
-        # 不能合并到自身
-        if source_product.id == target_product.id:
-            raise HTTPException(status_code=400, detail="不能将商品合并到自身")
-
-        # 迁移价格记录
-        price_record_count = db.query(ProductRecord).filter(
-            ProductRecord.product_id == source_product.id,
-            ProductRecord.is_active == True
-        ).update(
-            {"product_id": target_product.id},
-            synchronize_session=False
+    # 校验同一原料
+    if source_product.ingredient_id != target_product.ingredient_id:
+        raise HTTPException(
+            status_code=400,
+            detail="只能合并同一原料下的商品"
         )
+    if source_product.id == target_product.id:
+        raise HTTPException(status_code=400, detail="不能将商品合并到自身")
 
-        # 软删除源商品
-        source_product.is_active = False
-        source_product.updated_by = current_user.id
+    payload = {"target_product_id": target_product_id}
 
+    # 分流：管理员直写 / 普通用户提议
+    if current_user.is_admin:
+        proposal_service.apply_as_admin(
+            db, entity_type="product_merge", entity_id=product_id,
+            action="merge", payload=payload, admin=current_user,
+        )
         db.commit()
+
+        # 读取合并后数据
+        price_record_count = db.query(ProductRecord).filter(
+            ProductRecord.product_id == target_product_id,
+            ProductRecord.is_active == True
+        ).count()
 
         return {
             "message": f"已合并到「{target_product.name}」",
             "target_id": target_product.id,
             "target_name": target_product.name,
-            "price_record_count": price_record_count
+            "price_record_count": price_record_count,
         }
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        import traceback
-        print(f"[ERROR] 合并商品失败: {str(e)}")
-        print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"合并商品失败: {str(e)}")
+    p = proposal_service.submit(
+        db, entity_type="product_merge", entity_id=product_id,
+        action="merge", payload=payload, proposer=current_user,
+    )
+    db.commit()
+    return {
+        "message": f"合并提议已提交，待管理员审核（proposal_id={p.id}）",
+        "proposal_id": p.id,
+    }
 
 
 @router.post("/products/entity/{product_id}/add-import-alias")

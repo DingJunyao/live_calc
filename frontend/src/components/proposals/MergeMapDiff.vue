@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Proposal } from '@/api/proposals'
+import { api } from '@/api/client'
 
 const props = defineProps<{ proposal: Proposal }>()
 
@@ -8,42 +9,111 @@ const entityType = computed(() => props.proposal.entity_type)
 const isIngredient = computed(() => entityType.value === 'ingredient')
 const snap = computed(() => props.proposal.snapshot || {})
 const payload = computed(() => props.proposal.payload || {})
-const preview = computed(() => payload.value.preview || {})
 
-// 来源列表：优先 snapshot（已审批），回退 payload.preview（待审）
+// ── 自动回填（snapshot 无数据时调用预览 API） ──
+const previewBackfill = ref<Record<string, any> | null>(null)
+const loadingPreview = ref(false)
+
+async function fetchPreview() {
+  // 已有 snapshot 数据 → 不重复加载
+  if (isIngredient.value) {
+    if (snap.value.recipe_ingredients?.length || snap.value.product_links?.length) return
+  } else {
+    if (snap.value.product_records?.length) return
+  }
+  loadingPreview.value = true
+  try {
+    const res = await api.post('/proposals/preview', {
+      entity_type: props.proposal.entity_type,
+      entity_id: props.proposal.entity_id,
+      action: props.proposal.action,
+      payload: props.proposal.payload,
+    })
+    previewBackfill.value = res
+  } catch { /* ignore */ }
+  finally { loadingPreview.value = false }
+}
+
+onMounted(fetchPreview)
+
+// ── 数据源 ──
+// 优先 snapshot，其次预填 payload.preview（旧前端提交式），其次自动回填
+function pv(key: string): any {
+  const pb = previewBackfill.value
+  const pp = (payload.value.preview as Record<string, any>) || {}
+  return pb?.[key] ?? pp?.[key]
+}
+
+// 来源列表
 const sources = computed<string[]>(() => {
   const s = snap.value.sources as any[] | undefined
   if (s?.length) return s.map((x: any) => x.name || `#${x.id}`)
-  const ps = preview.value.sources as any[] | undefined
+  const ps = pv('sources') as any[] | undefined
   if (ps?.length) return ps.map((x: any) => x.name || `#${x.id}`)
   return []
 })
 
-const sourceCount = computed(() => sources.value.length || preview.value.source_count || 0)
-
-// 快照里取的优先，pending 时从 payload 取
+const sourceCount = computed(() => sources.value.length || pv('source_count') || 0)
 const targetName = computed(() =>
-  snap.value.target_name || preview.value.target_name || `#${payload.value.target_id}`
+  snap.value.target_name || pv('target_name') || `#${payload.value.target_id}`
 )
+
+/** 预览 API 字段名与影响范围标签的映射。
+ *  食材合并预览返 affected_recipe_ingredients（数字），
+ *  snapshot 存 recipe_ingredients（数组），统一取数。 */
+const INGREDIENT_PREVIEW_KEYS: Record<string, string> = {
+  recipe_ingredients: 'affected_recipe_ingredients',
+  product_links: 'affected_product_links',
+  hierarchies: 'affected_hierarchies',
+  nutrition_mappings: 'affected_nutrition_mappings',
+}
+const MERCHANT_PREVIEW_KEYS: Record<string, string> = {
+  product_records: 'affected_price_records',
+  favorites: 'affected_favorites',
+}
+
+/** 预制食材合并 5 个影响维度标签，按此顺序渲染。 */
+const INGREDIENT_CARD_LABELS = [
+  { key: 'recipe_ingredients', label: '菜谱引用' },
+  { key: 'product_links', label: '商品关联' },
+  { key: 'hierarchies', label: '层级关系' },
+  { key: 'nutrition_mappings', label: '营养映射' },
+  { key: 'price_records', label: '价格记录' },
+]
+
+function snapCount(key: string): number {
+  // 优先后端实时补充的平字段（如 recipe_ingredients_count）
+  const flat = snap.value[`${key}_count`] as number | undefined
+  if (flat != null) return flat
+  // 其次 snapshot 数组长度（build_snapshot/apply 存了完整数组）
+  const arr = snap.value[key] as any[] | undefined
+  if (arr?.length) return arr.length
+  // 最后回退预览 API
+  const ings = isIngredient.value ? INGREDIENT_PREVIEW_KEYS : MERCHANT_PREVIEW_KEYS
+  const pvKey = ings[key]
+  return pvKey ? (pv(pvKey) as number) ?? 0 : 0
+}
+
+function ingredientPriceCount(): number {
+  // 后端实时补充的平字段
+  const flat = snap.value.affected_price_records as number | undefined
+  if (flat != null) return flat
+  // 预览 API 回填
+  return (pv('affected_price_records') as number) ?? 0
+}
 
 const impactCards = computed(() => {
   if (isIngredient.value) {
-    const ri = (snap.value.recipe_ingredients as any[])?.length ?? preview.value.recipe_ingredients_count ?? 0
-    const pl = (snap.value.product_links as any[])?.length ?? preview.value.product_links_count ?? 0
-    const hi = (snap.value.hierarchies as any[])?.length ?? preview.value.hierarchies_count ?? 0
-    const nm = (snap.value.nutrition_mappings as any[])?.length ?? preview.value.nutrition_mappings_count ?? 0
-    return [
-      { label: '菜谱引用', count: ri },
-      { label: '商品关联', count: pl },
-      { label: '层级关系', count: hi },
-      { label: '营养映射', count: nm },
-    ]
+    return INGREDIENT_CARD_LABELS.map(c => ({
+      label: c.label,
+      count: c.key === 'price_records'
+        ? ingredientPriceCount()
+        : snapCount(c.key),
+    }))
   }
-  const pr = (snap.value.product_records as any[])?.length ?? preview.value.product_records_count ?? 0
-  const fav = (snap.value.favorites as any[])?.length ?? preview.value.favorites_count ?? 0
   return [
-    { label: '价格记录', count: pr },
-    { label: '收藏', count: fav },
+    { label: '价格记录', count: snapCount('product_records') },
+    { label: '收藏', count: snapCount('favorites') },
   ]
 })
 
@@ -82,12 +152,16 @@ const visibleDetails = computed(() =>
       </div>
       <v-icon class="mx-2" size="small">mdi-arrow-right</v-icon>
       <v-chip size="small" color="success" variant="flat">{{ targetName }}</v-chip>
+      <v-progress-circular v-if="loadingPreview" indeterminate size="14" width="2" class="ms-1" />
     </div>
 
     <!-- source handling note -->
     <v-alert type="info" variant="tonal" density="compact" class="mb-3">
       <template v-if="sources.length">
         源 <strong>{{ sourceCount }}</strong> 个（{{ sources.join('、') }}）将软停用（保留名称追溯），所有引用迁至目标「<strong>{{ targetName }}</strong>」。
+      </template>
+      <template v-else-if="loadingPreview">
+        正在加载预览数据…
       </template>
       <template v-else>
         无源食材信息（待审批执行后更新）。
@@ -96,14 +170,14 @@ const visibleDetails = computed(() =>
 
     <!-- impact counts -->
     <div class="text-subtitle-2 mb-2">影响范围</div>
-    <v-row dense class="mb-2">
-      <v-col v-for="card in impactCards" :key="card.label" cols="6" sm="3">
+    <div class="d-flex mb-2" style="gap: 4px">
+      <div v-for="card in impactCards" :key="card.label" style="flex: 1; min-width: 0">
         <v-card variant="outlined" density="compact" class="text-center pa-2">
           <div class="text-h6">{{ card.count }}</div>
           <div class="text-caption text-medium-emphasis">{{ card.label }}</div>
         </v-card>
-      </v-col>
-    </v-row>
+      </div>
+    </div>
 
     <!-- migration details (default expanded) -->
     <div v-if="details.length" class="text-subtitle-2 mb-1">迁移明细</div>

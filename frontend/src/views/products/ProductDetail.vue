@@ -2056,12 +2056,14 @@ const doMerge = async () => {
   try {
     const result = await api.post(`/products/entity/${productId.value}/merge-into/${selectedMergeTarget.value.id}`)
     showMergeDialog.value = false
-    const targetName = selectedMergeTarget.value.name
     selectedMergeTarget.value = null
-    snackbar.value = { show: true, message: `已合并到「${targetName}」`, color: 'success' }
-    // 跳转到目标商品详情页并重新加载数据
-    await router.push(`/data/products/${result.target_id}`)
-    loadData()
+    const hasMergeResult = !!(result.target_id)
+    snackbar.value = { show: true, message: result.message || '合并成功', color: hasMergeResult ? 'success' : 'info' }
+    // 管理员直写：跳转到目标商品；普通用户提议：留在当前页
+    if (result.target_id) {
+      await router.push(`/data/products/${result.target_id}`)
+      loadData()
+    }
   } catch (e: any) {
     const msg = getErrorMessage(e, '合并失败')
     snackbar.value = { show: true, message: msg, color: 'error' }
@@ -2591,8 +2593,11 @@ const handleSplitToIngredient = async () => {
   splitting.value = true
   try {
     const response = await api.post(`/products/entity/${productId.value}/split-to-ingredient`)
-    showMessage(response.message || '拆分成功', 'success')
-    router.push(`/data/ingredients/${response.ingredient_id}`)
+    const isProposal = !!(response.proposal_id)
+    showMessage(response.message || '拆分成功', isProposal ? 'info' : 'success')
+    if (response.ingredient_id) {
+      router.push(`/data/ingredients/${response.ingredient_id}`)
+    }
   } catch (e: any) {
     const detail = e.response?.data?.detail || ''
     // 同名冲突（409）时，打开重命名对话框
@@ -2618,8 +2623,11 @@ const confirmSplitWithNewName = async () => {
       { new_name: splitNewName.value.trim() }
     )
     showSplitRenameDialog.value = false
-    showMessage(response.message || '拆分成功', 'success')
-    router.push(`/data/ingredients/${response.ingredient_id}`)
+    const isProposal = !!(response.proposal_id)
+    showMessage(response.message || '拆分成功', isProposal ? 'info' : 'success')
+    if (response.ingredient_id) {
+      router.push(`/data/ingredients/${response.ingredient_id}`)
+    }
   } catch (e: any) {
     showMessage(getErrorMessage(e, '拆分失败'), 'error')
   } finally {

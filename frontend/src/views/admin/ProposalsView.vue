@@ -911,6 +911,8 @@ function entityTypeLabel(t: string): string {
     hierarchy: '食材层级关系',
     merchant: '商家',
     merchant_merge: '商家合并',
+    product_split: '商品拆分',
+    product_merge: '商品合并',
     product: '商品',
     recipe: '菜谱',
     entity_unit_override: '实体单位覆盖',

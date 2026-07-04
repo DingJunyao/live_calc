@@ -16,6 +16,8 @@ from app.services.proposals.executors.recipe_edit import RecipeEditExecutor
 from app.services.proposals.executors.entity_unit_override import EntityUnitOverrideExecutor
 from app.services.proposals.executors.entity_density import EntityDensityExecutor
 from app.services.proposals.executors.product import ProductExecutor
+from app.services.proposals.executors.product_split import ProductSplitExecutor
+from app.services.proposals.executors.product_merge import ProductMergeExecutor
 from app.services.proposals.executors.usda_ingredient_match import UsdaIngredientMatchExecutor
 from app.services.proposals.executors.usda_product_match import UsdaProductMatchExecutor
 from app.services.proposals.executors.product_nutrition import ProductNutritionExecutor
@@ -70,6 +72,12 @@ def register_all(db=None) -> None:
 
     # 商品实体：全 manual（update/delete 均需审核）
     ExecutorRegistry.register(ProductExecutor(), default_policy="manual", default_risk="mid")
+
+    # 商品拆分：全 manual（创建新原料，迁移营养，高风险）
+    ExecutorRegistry.register(ProductSplitExecutor(), default_policy="manual", default_risk="high")
+
+    # 商品合并：全 manual（迁移价格记录，软删源商品，高风险）
+    ExecutorRegistry.register(ProductMergeExecutor(), default_policy="manual", default_risk="high")
 
     # USDA 匹配：替换语义（清旧写新），全 manual（覆盖营养数据，用户已确认需审核）
     ExecutorRegistry.register(UsdaIngredientMatchExecutor(), default_policy="manual", default_risk="mid")

@@ -48,6 +48,8 @@ def _to_response(db: Session, p: ChangeProposal) -> ProposalResponse:
     snapshot = (dict(p.snapshot) or {}) if p.snapshot else {}
     if p.action == "delete":
         _enrich_cascade_snapshot(db, snapshot, p.entity_type, p.entity_id)
+    elif p.action == "merge":
+        _enrich_merge_snapshot(db, snapshot, p)
 
     return ProposalResponse(
         id=p.id, entity_type=p.entity_type, entity_id=p.entity_id, action=p.action,
@@ -72,6 +74,13 @@ def _enrich_cascade_snapshot(db: Session, snapshot: dict, entity_type: str, enti
             ).count()
             if cnt > 0:
                 snapshot["cascade_record_count"] = cnt
+    elif entity_type == "merchant":
+        from app.models.product import ProductRecord
+        if "cascade_record_count" not in snapshot:
+            snapshot["cascade_record_count"] = db.query(ProductRecord).filter(
+                ProductRecord.merchant_id == entity_id
+            ).count()
+
     elif entity_type == "ingredient":
         from app.models.product_entity import Product
         from app.models.ingredient_hierarchy import IngredientHierarchy
@@ -89,6 +98,71 @@ def _enrich_cascade_snapshot(db: Session, snapshot: dict, entity_type: str, enti
             ).count()
             if hc > 0:
                 snapshot["cascade_hierarchy_count"] = hc
+
+
+def _enrich_merge_snapshot(db: Session, snapshot: dict, p: ChangeProposal) -> None:
+    """为 merge 提议实时补充影响计数（兼顾旧提议无 snapshot + 当前最新数据）。"""
+    payload = p.payload or {}
+    et = p.entity_type
+
+    if et == "ingredient":
+        # 食材合并：实时查影响计数，存平字段供 MergeMapDiff 读取
+        from app.models.recipe import RecipeIngredient
+        from app.models.product_ingredient_link import ProductIngredientLink
+        from app.models.nutrition import IngredientNutritionMapping
+        from app.models.ingredient_hierarchy import IngredientHierarchy
+        from sqlalchemy import or_
+        sids = payload.get("source_ids") or []
+        if sids:
+            if "recipe_ingredients_count" not in snapshot:
+                snapshot["recipe_ingredients_count"] = db.query(RecipeIngredient).filter(
+                    RecipeIngredient.ingredient_id.in_(sids)).count()
+            if "product_links_count" not in snapshot:
+                snapshot["product_links_count"] = db.query(ProductIngredientLink).filter(
+                    ProductIngredientLink.ingredient_id.in_(sids)).count()
+            if "nutrition_mappings_count" not in snapshot:
+                snapshot["nutrition_mappings_count"] = db.query(IngredientNutritionMapping).filter(
+                    IngredientNutritionMapping.ingredient_id.in_(sids)).count()
+            if "hierarchies_count" not in snapshot:
+                snapshot["hierarchies_count"] = db.query(IngredientHierarchy).filter(or_(
+                    IngredientHierarchy.parent_id.in_(sids),
+                    IngredientHierarchy.child_id.in_(sids))).count()
+            if "affected_price_records" not in snapshot:
+                # 通过源食材关联的商品查价格记录数
+                from app.models.product_entity import Product
+                from app.models.product import ProductRecord
+                pid_sub = db.query(Product.id).filter(
+                    Product.ingredient_id.in_(sids),
+                    Product.is_active == True,
+                ).subquery()
+                snapshot["affected_price_records"] = db.query(ProductRecord).filter(
+                    ProductRecord.product_id.in_(db.query(pid_sub.c.id)),
+                    ProductRecord.is_active == True,
+                ).count()
+
+    elif et == "merchant_merge":
+        # 商家合并
+        from app.models.product import ProductRecord
+        from app.models.user_merchant_favorite import UserMerchantFavorite
+        sids = payload.get("source_ids") or []
+        if sids:
+            if "product_records_count" not in snapshot:
+                snapshot["product_records_count"] = db.query(ProductRecord).filter(
+                    ProductRecord.merchant_id.in_(sids)).count()
+            if "favorites_count" not in snapshot:
+                snapshot["favorites_count"] = db.query(UserMerchantFavorite).filter(
+                    UserMerchantFavorite.merchant_id.in_(sids)).count()
+
+    elif et == "product_merge":
+        # 商品合并：source_id = p.entity_id
+        from app.models.product import ProductRecord
+        eid = p.entity_id
+        if eid and "affected_records_count" not in snapshot:
+            cnt = db.query(ProductRecord).filter(
+                ProductRecord.product_id == eid,
+                ProductRecord.is_active == True,
+            ).count()
+            snapshot["affected_records_count"] = cnt
 
 
 @router.post("/proposals", response_model=ProposalResponse)
