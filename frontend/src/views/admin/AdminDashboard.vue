@@ -178,6 +178,17 @@
         </v-list-item>
 
         <v-list-item
+          prepend-icon="mdi-email-cog"
+          title="邮件配置"
+          subtitle="SMTP 设置与邮件模板管理"
+          to="/admin/email-config"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
           prepend-icon="mdi-image-off-outline"
           title="未使用图片清理"
           subtitle="扫描并删除服务器上未被任何菜谱引用的图片"

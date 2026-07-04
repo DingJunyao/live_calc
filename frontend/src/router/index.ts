@@ -188,6 +188,12 @@ const router = createRouter({
           component: () => import('@/views/admin/ProposalsView.vue'),
         },
         {
+          path: 'admin/email-config',
+          name: 'admin-email-config',
+          meta: { adminOnly: true, title: '邮件配置' },
+          component: () => import('@/views/admin/EmailConfigView.vue'),
+        },
+        {
           path: 'admin/images-unused',
           name: 'admin-images-unused',
           meta: { adminOnly: true, title: '未使用图片清理' },
