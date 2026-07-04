@@ -328,7 +328,6 @@ async def get_merchant(
         if not merchant:
             raise HTTPException(status_code=404, detail="商家不存在")
 
-        from app.schemas.merchant import MerchantResponse
         response = MerchantResponse.model_validate(merchant)
 
         # 非管理员追加 pending_proposal
