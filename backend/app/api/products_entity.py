@@ -825,6 +825,7 @@ def product_autocomplete(
                     "ingredient_id": product.ingredient_id,
                     "ingredient_name": product.ingredient.name if product.ingredient else None,
                     "aliases": product.aliases or [],
+                    "ingredient_aliases": product.ingredient.aliases if product.ingredient else [],
                     "match_type": match_type,
                     "matched_alias": matched_alias,
                     "created_at": product.created_at.isoformat() if product.created_at else None,

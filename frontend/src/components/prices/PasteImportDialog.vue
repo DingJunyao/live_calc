@@ -272,14 +272,22 @@ async function tryAutoMatch(row: ImportRow) {
     }
 
     // Priority 3: 商品别名匹配
-    const aliasMatch = list.find((it: any) => it.match_type === 'alias')
+    // 后端 autocomplete 按名字子串判定 name，子串命中时（如「青茄」→「青茄子」）
+    // 会被标成 name 而非 alias，故前端同时用返回的 aliases 数组独立判一次
+    const aliasMatch = list.find((it: any) =>
+      it.match_type === 'alias' ||
+      (Array.isArray(it.aliases) && it.aliases.includes(row.name))
+    )
     if (aliasMatch) {
       setAutoMatched(row, aliasMatch.id)
       return
     }
 
     // Priority 4: 原料别名匹配 → 解析最佳商品
-    const ingAliasMatch = list.find((it: any) => it.match_type === 'ingredient_alias')
+    const ingAliasMatch = list.find((it: any) =>
+      it.match_type === 'ingredient_alias' ||
+      (Array.isArray(it.ingredient_aliases) && it.ingredient_aliases.includes(row.name))
+    )
     if (ingAliasMatch && ingAliasMatch.ingredient_id) {
       const bestId = resolveIngredientProduct(list, ingAliasMatch.ingredient_id, ingAliasMatch.ingredient_name)
       if (bestId) {
