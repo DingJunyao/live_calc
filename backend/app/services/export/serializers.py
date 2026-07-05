@@ -86,7 +86,7 @@ def serialize_ingredient(
         "id": ingredient.id,
         "category_id": ingredient.category_id,
         "density": to_float(ingredient.density),
-        "default_unit_id": ingredient.default_unit_id,
+        "default_unit_id": None,  # 字段已迁移至用户级偏好，留键保 HowToCook 格式对称
         "piece_weight": to_float(ingredient.piece_weight),
         "piece_weight_unit_id": ingredient.piece_weight_unit_id,
         "serving_weight": to_float(ingredient.serving_weight),

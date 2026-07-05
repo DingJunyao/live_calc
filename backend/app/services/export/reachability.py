@@ -107,7 +107,7 @@ def _collect_ingredient_closure(db: Session, seed_ingredient_ids: set) -> tuple[
                 nutritions.add(ing.nutrition_id)
             if ing.category_id:
                 categories.add(ing.category_id)
-            for uid in (ing.default_unit_id, ing.piece_weight_unit_id, ing.serving_weight_unit_id):
+            for uid in (ing.piece_weight_unit_id, ing.serving_weight_unit_id):
                 if uid:
                     units.add(uid)
             # 营养映射回链也可能指向更多 NutritionData

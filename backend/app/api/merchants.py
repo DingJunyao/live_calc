@@ -457,8 +457,6 @@ async def get_merchant_product_prices(
                    l.recorded_at,
                    su.abbreviation AS standard_unit_abbr,
                    su.unit_type     AS standard_unit_type,
-                   du.abbreviation AS default_unit_abbr,
-                   du.unit_type     AS default_unit_type,
                    p.name,
                    ic.id            AS category_id,
                    ic.display_name  AS category_display_name,
@@ -467,7 +465,6 @@ async def get_merchant_product_prices(
             JOIN units su ON su.id = l.standard_unit_id
             JOIN products p ON p.id = l.product_id
             LEFT JOIN ingredients i ON i.id = p.ingredient_id
-            LEFT JOIN units du ON du.id = i.default_unit_id
             LEFT JOIN ingredient_categories ic ON ic.id = i.category_id
             WHERE l.rn = 1
             ORDER BY COALESCE(ic.sort_order, 999999) ASC, p.name ASC
@@ -531,26 +528,7 @@ async def get_merchant_product_prices(
             unit_price = None
             unit_label = None
 
-            # 优先换算到商品/原料的默认单位
-            if std_qty > 0 and r.default_unit_abbr and r.standard_unit_abbr:
-                try:
-                    result = unit_service.convert(
-                        Decimal(str(std_qty)),
-                        r.standard_unit_abbr,
-                        r.default_unit_abbr,
-                        "product",
-                        r.product_id,
-                    )
-                    if result is not None:
-                        target_qty = float(result[0])
-                        if target_qty > 0:
-                            unit_price = price / target_qty
-                            unit_label = f"元/{r.default_unit_abbr}"
-                except Exception:
-                    unit_price = None
-                    unit_label = None
-
-            # 回退：按固定参考单位换算（质量->元/斤，体积->元/L）
+            # 原料默认单位字段已迁移至用户级偏好，直接按固定参考单位换算（质量->元/斤，体积->元/L）
             if unit_price is None and std_qty > 0:
                 if r.standard_unit_type == "mass":
                     unit_price = price / std_qty * 500

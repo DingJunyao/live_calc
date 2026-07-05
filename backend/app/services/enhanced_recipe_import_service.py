@@ -519,12 +519,6 @@ class EnhancedRecipeImportService:
                             if category:
                                 existing.category_id = category.id
                                 updated = True
-                        if existing.default_unit_id is None:
-                            # 默认单位统一为斤，不随导入数据改变
-                            unit_obj = self.unit_matcher.match_or_create_unit("斤")
-                            if unit_obj:
-                                existing.default_unit_id = unit_obj.id
-                                updated = True
                         if updated:
                             self.db.flush()
                         result["skipped"] += 1
@@ -538,15 +532,10 @@ class EnhancedRecipeImportService:
                     mapped_category = self.CATEGORY_MAPPING.get(category_name, category_name)
                     category = categories.get(mapped_category) or categories.get(category_name)
 
-                    # 获取默认单位，统一使用斤
-                    unit_obj = self.unit_matcher.match_or_create_unit("斤")
-                    unit_id = unit_obj.id if unit_obj else None
-
                     ingredient = Ingredient(
                         name=ingredient_name,
                         aliases=item.get("aliases", []),
                         category_id=category.id if category else None,
-                        default_unit_id=unit_id,
                         is_imported=True
                     )
 
@@ -718,11 +707,9 @@ class EnhancedRecipeImportService:
                 unit_id = unit_obj.id if unit_obj else None
 
                 if not ingredient:
-                    default_unit = self.unit_matcher.match_or_create_unit("斤")
                     ingredient = Ingredient(
                         name=ingredient_name,
-                        is_imported=True,
-                        default_unit_id=default_unit.id if default_unit else None
+                        is_imported=True
                     )
                     self.db.add(ingredient)
                     self.db.flush()

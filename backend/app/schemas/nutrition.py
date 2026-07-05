@@ -10,8 +10,6 @@ class IngredientResponse(TimeZoneAwareModel):
     id: int
     name: str
     aliases: Optional[List[str]]
-    default_unit_id: Optional[int] = None
-    default_unit_name: Optional[str] = None
     category_id: Optional[int] = None
     category: Optional[str] = None
     serving_weight: Optional[Decimal] = None

@@ -262,7 +262,6 @@ async def get_ingredients(
                 Ingredient.id,
                 Ingredient.name,
                 Ingredient.aliases,
-                Ingredient.default_unit_id,  # 添加外键以加载单位
                 Ingredient.created_at,
                 Ingredient.is_active
             )
@@ -374,14 +373,12 @@ async def get_ingredient(
     """获取原料详情"""
     try:
         # 明确只加载需要的字段，避免加载 relationship
-        from app.models.unit import Unit
         from app.models.ingredient_category import IngredientCategory
         ingredient = db.query(Ingredient).options(
             load_only(
                 Ingredient.id,
                 Ingredient.name,
                 Ingredient.aliases,
-                Ingredient.default_unit_id,
                 Ingredient.category_id,
                 Ingredient.created_at,
                 Ingredient.updated_at,
@@ -390,13 +387,6 @@ async def get_ingredient(
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
             raise HTTPException(status_code=404, detail="原料不存在")
-
-        # 获取默认单位名称
-        default_unit_name = None
-        if ingredient.default_unit_id:
-            unit = db.query(Unit).filter(Unit.id == ingredient.default_unit_id).first()
-            if unit:
-                default_unit_name = unit.name
 
         # 获取分类显示名
         category_name = None
@@ -409,8 +399,6 @@ async def get_ingredient(
             id=ingredient.id,
             name=ingredient.name,
             aliases=ingredient.aliases or [],
-            default_unit_id=ingredient.default_unit_id,
-            default_unit_name=default_unit_name,
             category_id=ingredient.category_id,
             category=category_name,
             created_at=ingredient.created_at,
@@ -433,7 +421,6 @@ async def get_ingredient(
 async def create_ingredient(
     name: str = Body(..., min_length=1),
     aliases: str = Body(None),
-    default_unit_id: int = Body(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -447,18 +434,9 @@ async def create_ingredient(
         if aliases:
             aliases_list = [alias.strip() for alias in aliases.split(',') if alias.strip()]
 
-        # 未指定默认单位时默认为斤
-        unit_id = default_unit_id
-        if unit_id is None:
-            from app.models.unit import Unit
-            jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
-            if jin_unit:
-                unit_id = jin_unit.id
-
         new_ingredient = Ingredient(
             name=name,
             aliases=aliases_list,
-            default_unit_id=unit_id,
             created_by=current_user.id,
             updated_by=current_user.id
         )
@@ -466,19 +444,10 @@ async def create_ingredient(
         db.commit()
         db.refresh(new_ingredient)
 
-        default_unit_name = None
-        if new_ingredient.default_unit_id:
-            from app.models.unit import Unit
-            unit = db.query(Unit).filter(Unit.id == new_ingredient.default_unit_id).first()
-            if unit:
-                default_unit_name = unit.name
-
         return {
             "id": new_ingredient.id,
             "name": new_ingredient.name,
             "aliases": new_ingredient.aliases or [],
-            "default_unit_id": new_ingredient.default_unit_id,
-            "default_unit_name": default_unit_name,
             "created_at": new_ingredient.created_at
         }
     except HTTPException:
@@ -493,7 +462,6 @@ async def update_ingredient(
     ingredient_id: int,
     name: Optional[str] = Body(None),
     aliases: Optional[List[str]] = Body(None),
-    default_unit_id: Optional[int] = Body(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -516,9 +484,6 @@ async def update_ingredient(
         if aliases is not None:
             ingredient.aliases = [alias.strip() for alias in aliases if alias.strip()]
 
-        if default_unit_id is not None:
-            ingredient.default_unit_id = default_unit_id
-
         ingredient.updated_by = current_user.id
 
         db.commit()
@@ -528,7 +493,6 @@ async def update_ingredient(
             "id": ingredient.id,
             "name": ingredient.name,
             "aliases": ingredient.aliases or [],
-            "default_unit_id": ingredient.default_unit_id,
             "created_at": ingredient.created_at
         }
     except HTTPException:
@@ -972,15 +936,11 @@ async def get_ingredient_latest_price(
         # 初始化单位转换服务
         unit_service = UnitConversionService(db)
 
-        # 获取原料的默认单位缩写（无默认单位时回退到「斤」）
-        target_unit_abbr = None
-        if ingredient.default_unit:
-            target_unit_abbr = ingredient.default_unit.abbreviation
-        if not target_unit_abbr:
-            target_unit_abbr = "斤"
+        # 原料默认单位字段已迁移至用户级偏好，价格折算统一回退到「斤」
+        target_unit_abbr = "斤"
 
 
-        # 计算平均价格 - 转换到原料的默认单位（响应去标识：只产出价格维度，不含 user_id/record_type）
+        # 计算平均价格 - 转换到斤（响应去标识：只产出价格维度，不含 user_id/record_type）
         unit_prices = []
         for i, record in enumerate(recent_records):
             if record.price is not None and record.original_quantity is not None and record.original_quantity > 0 and record.original_unit:
@@ -1066,12 +1026,8 @@ async def get_ingredient_latest_price_by_merchant(
 
         unit_service = UnitConversionService(db)
 
-        # 获取原料的默认单位（无默认单位时回退到「斤」）
-        target_unit_abbr = None
-        if ingredient.default_unit:
-            target_unit_abbr = ingredient.default_unit.abbreviation
-        if not target_unit_abbr:
-            target_unit_abbr = "斤"
+        # 原料默认单位字段已迁移至用户级偏好，价格折算统一回退到「斤」
+        target_unit_abbr = "斤"
 
         def _lookup_merchant_prices(ing: Ingredient) -> list[dict]:
             """对单个食材查找各商家最新价格，返回结果列表。P2：价格跨用户公开，不按 user_id 过滤。"""
@@ -1100,8 +1056,8 @@ async def get_ingredient_latest_price_by_merchant(
                 if mid not in merchant_latest:
                     merchant_latest[mid] = record
 
-            # 计算该食材自己的 target_unit（无默认单位时回退到「斤」）
-            ing_target = ing.default_unit.abbreviation if ing.default_unit else "斤"
+            # 原料默认单位字段已迁移至用户级偏好，价格折算统一回退到「斤」
+            ing_target = "斤"
 
             results = []
             for mid, record in merchant_latest.items():

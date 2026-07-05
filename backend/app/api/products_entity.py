@@ -304,12 +304,8 @@ def get_product(product_id: int, db: Session = Depends(get_db), current_user: Us
             from app.services.unit_conversion_service import UnitConversionService
             unit_service = UnitConversionService(db)
 
-            # 获取原料默认单位作为目标（无默认单位时回退到「斤」）
-            target_unit_abbr = None
-            if product.ingredient and product.ingredient.default_unit:
-                target_unit_abbr = product.ingredient.default_unit.abbreviation
-            if not target_unit_abbr:
-                target_unit_abbr = "斤"
+            # 原料默认单位字段已迁移至用户级偏好，价格折算统一回退到「斤」
+            target_unit_abbr = "斤"
 
             unit_prices = []
             for record in day_records:
@@ -683,10 +679,8 @@ def get_product_latest_price_by_merchant(
         if not product:
             return {"prices": [], "unit": None}
 
-        # 确定目标单位：优先使用关联原料的默认单位
+        # 原料默认单位字段已迁移至用户级偏好；目标单位留空，下游按记录原单位处理
         target_unit_abbr = None
-        if product.ingredient and product.ingredient.default_unit:
-            target_unit_abbr = product.ingredient.default_unit.abbreviation
 
         # P2：跨用户公开查询价格记录（不按 user_id 过滤）
         records = db.query(ProductRecord).options(

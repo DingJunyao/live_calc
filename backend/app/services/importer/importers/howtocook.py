@@ -128,13 +128,10 @@ class HowToCookImporter(Importer):
             mapped = CATEGORY_MAPPING.get(category_name, category_name)
             category = categories.get(mapped) or categories.get(category_name)
 
-            unit_obj = self.unit_matcher.match_or_create_unit("斤")
-
             ingredient = Ingredient(
                 name=ing_name,
                 aliases=item.get("aliases", []),
                 category_id=category.id if category else None,
-                default_unit_id=unit_obj.id if unit_obj else None,
                 is_imported=True,
             )
             self.db.add(ingredient)
@@ -253,11 +250,9 @@ class HowToCookImporter(Importer):
 
         ingredient = self._find_ingredient(ing_name)
         if not ingredient:
-            unit_obj = self.unit_matcher.match_or_create_unit("斤")
             ingredient = Ingredient(
                 name=ing_name,
                 is_imported=True,
-                default_unit_id=unit_obj.id if unit_obj else None,
             )
             self.db.add(ingredient)
             self.db.flush()

@@ -845,7 +845,7 @@ async def get_recipe_merchant_costs(
             原始菜谱食材的用量来计算时传入。
             返回是否至少有一个商家有价格。
             """
-            target_unit = ingredient.default_unit.abbreviation if ingredient.default_unit else None
+            target_unit = None  # 原料默认单位字段已迁移至用户级偏好
 
             products = db.query(Product).filter(
                 Product.ingredient_id == ingredient.id,

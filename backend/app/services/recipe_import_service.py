@@ -903,13 +903,11 @@ class RecipeImportService:
         if ingredient:
             return ingredient.name
 
-        # 如果没有找到，创建新的原料，默认单位为斤
+        # 如果没有找到，创建新的原料
         try:
-            default_unit = self.unit_matcher.match_or_create_unit("斤")
             new_ingredient = Ingredient(
                 name=clean_name,
-                aliases=[],
-                default_unit_id=default_unit.id if default_unit else None
+                aliases=[]
             )
             self.db.add(new_ingredient)
             self.db.flush()  # 确保插入但不提交事务

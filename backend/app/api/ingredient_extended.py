@@ -181,13 +181,10 @@ async def search_ingredients_by_name(
         results = []
         for ingredient, confidence in matches:
             if ingredient.is_active:
-                # 显式加载 default_unit 关系以获取单位信息
+                # 加载 category_obj 以获取分类名
                 ingredient_with_unit = db.query(Ingredient).options(
-                    joinedload(Ingredient.default_unit),
                     joinedload(Ingredient.category_obj)
                 ).filter(Ingredient.id == ingredient.id).first()
-
-                default_unit = ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None
 
                 results.append({
                     "id": ingredient.id,
@@ -195,7 +192,6 @@ async def search_ingredients_by_name(
                     "category_id": ingredient.category_id,
                     "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
                     "density": ingredient.density,
-                    "default_unit": default_unit,
                     "aliases": ingredient.aliases or [],
                     "confidence": float(confidence)
                 })
@@ -216,7 +212,6 @@ async def get_ingredient_hierarchy(
         from app.models.ingredient_hierarchy import IngredientHierarchy
 
         ingredient = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit),
             joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
@@ -243,15 +238,12 @@ async def get_ingredient_hierarchy(
 
         children = []
         for rel in child_relations:
-            child_ing = db.query(Ingredient).options(
-                joinedload(Ingredient.default_unit)
-            ).filter(Ingredient.id == rel.child_id, Ingredient.is_active == True).first()
+            child_ing = db.query(Ingredient).filter(Ingredient.id == rel.child_id, Ingredient.is_active == True).first()
             if child_ing:
                 children.append({
                     "id": child_ing.id,
                     "name": child_ing.name,
                     "relationship_type": rel.relationship_type,
-                    "default_unit": child_ing.default_unit.abbreviation if child_ing.default_unit else None,
                     "confidence": float(rel.confidence) if rel.confidence else 1.0
                 })
 
@@ -262,7 +254,6 @@ async def get_ingredient_hierarchy(
                 "category_id": ingredient.category_id,
                 "category": ingredient.category_obj.display_name if ingredient.category_obj else None,
                 "density": ingredient.density,
-                "default_unit": ingredient.default_unit.abbreviation if ingredient.default_unit else None,
                 "aliases": ingredient.aliases or []
             },
             "parents": parents,
@@ -314,9 +305,8 @@ async def resolve_ingredient_hierarchy(
         ingredient = matcher.resolve_ingredient_hierarchy(base_ingredient, grade_requirement)
 
         if ingredient:
-            # 重新查询以加载 default_unit 关系
+            # 加载 category_obj 以获取分类名
             ingredient_with_unit = db.query(Ingredient).options(
-                joinedload(Ingredient.default_unit),
                 joinedload(Ingredient.category_obj)
             ).filter(Ingredient.id == ingredient.id).first()
 
@@ -326,7 +316,6 @@ async def resolve_ingredient_hierarchy(
                 "category_id": ingredient.category_id,
                 "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
                 "density": ingredient.density,
-                "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
                 "aliases": ingredient.aliases or []
             }
         else:
@@ -344,7 +333,6 @@ async def get_ingredient_alternatives(
     """获取食材替代选项"""
     try:
         ingredient = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit),
             joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
         if not ingredient:
@@ -359,21 +347,10 @@ async def get_ingredient_alternatives(
             "category_id": alt.category_id,
             "category": alt.category_obj.display_name if alt.category_obj else None,
             "density": alt.density,
-            "default_unit": alt.default_unit.abbreviation if alt.default_unit else None,
             "aliases": alt.aliases or []
         } for alt in alternatives]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取替代选项失败: {str(e)}")
-
-
-def _get_default_mass_unit_id(db: Session) -> Optional[int]:
-    """获取默认质量单位（斤）的 ID"""
-    jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
-    if jin_unit:
-        return jin_unit.id
-    # 回退：查找 kg 或 g
-    kg_unit = db.query(Unit).filter(Unit.abbreviation == "kg").first()
-    return kg_unit.id if kg_unit else None
 
 
 @router.post("", response_model=dict)
@@ -382,7 +359,6 @@ async def create_ingredient(
     category_id: Optional[int] = Body(None),
     aliases: Optional[List[str]] = Body(None),
     density: Optional[float] = Body(None),
-    default_unit: Optional[str] = Body(None),
     nutrition: Optional[dict] = Body(None, description="营养素数据，如 {protein: 10, fat: 5}"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -393,22 +369,11 @@ async def create_ingredient(
         if existing:
             raise HTTPException(status_code=400, detail="食材已存在")
 
-        # 使用单位匹配器获取单位 ID，未指定时默认为斤
-        unit_id = None
-        if default_unit:
-            from app.services.unit_matcher import UnitMatcher
-            matcher = UnitMatcher(db)
-            unit_obj = matcher.match_or_create_unit(default_unit)
-            unit_id = unit_obj.id if unit_obj else None
-        else:
-            unit_id = _get_default_mass_unit_id(db)
-
         new_ingredient = Ingredient(
             name=name,
             category_id=category_id,
             aliases=aliases or [],
             density=density,
-            default_unit_id=unit_id,
             created_by=current_user.id
         )
         db.add(new_ingredient)
@@ -501,9 +466,8 @@ async def create_ingredient(
             # 创建商品失败不影响原料创建
             print(f"Warning: Failed to create product for ingredient {new_ingredient.name}: {str(e)}")
 
-        # 重新查询以加载 default_unit 和 category_obj 关系
+        # 加载 category_obj 以获取分类名
         ingredient_with_unit = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit),
             joinedload(Ingredient.category_obj)
         ).filter(Ingredient.id == new_ingredient.id).first()
 
@@ -513,7 +477,6 @@ async def create_ingredient(
             "category_id": new_ingredient.category_id,
             "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
             "density": new_ingredient.density,
-            "default_unit": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
             "aliases": new_ingredient.aliases or [],
             "created_at": new_ingredient.created_at
         }
@@ -531,8 +494,6 @@ async def update_ingredient(
     category_id: Optional[int] = Body(None),
     aliases: Optional[List[str]] = Body(None),
     density: Optional[float] = Body(None),
-    default_unit: Optional[str] = Body(None),
-    default_unit_id: Optional[int] = Body(None),
     serving_weight: Optional[float] = Body(None, description="成品基准量（每份多重），用于制作菜谱成本换算"),
     serving_weight_unit_id: Optional[int] = Body(None, description="成品基准量单位ID"),
     nutrition: Optional[dict] = Body(None, description="营养素数据，如 {protein: 10, fat: 5}"),
@@ -560,13 +521,6 @@ async def update_ingredient(
             payload["aliases"] = aliases
         if density is not None:
             payload["density"] = density
-        if default_unit_id is not None:
-            payload["default_unit_id"] = default_unit_id if default_unit_id > 0 else None
-        elif default_unit is not None:
-            from app.services.unit_matcher import UnitMatcher
-            matcher = UnitMatcher(db)
-            unit_obj = matcher.match_or_create_unit(default_unit)
-            payload["default_unit_id"] = unit_obj.id if unit_obj else None
         if serving_weight is not None:
             payload["serving_weight"] = serving_weight if serving_weight > 0 else None
         if serving_weight_unit_id is not None:
@@ -682,9 +636,8 @@ async def update_ingredient(
         else:
             print(f"[更新原料] 未提供营养素数据")
 
-        # 重新查询以加载 default_unit 和 category_obj 关系
+        # 加载 category_obj / serving_weight_unit 关系
         ingredient_with_unit = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit),
             joinedload(Ingredient.category_obj),
             joinedload(Ingredient.serving_weight_unit)
         ).filter(Ingredient.id == ingredient.id).first()
@@ -695,8 +648,6 @@ async def update_ingredient(
             "category_id": ingredient.category_id,
             "category": ingredient_with_unit.category_obj.display_name if ingredient_with_unit.category_obj else None,
             "density": ingredient.density,
-            "default_unit_id": ingredient.default_unit_id,
-            "default_unit_name": ingredient_with_unit.default_unit.abbreviation if ingredient_with_unit.default_unit else None,
             "serving_weight": float(ingredient.serving_weight) if ingredient.serving_weight is not None else None,
             "serving_weight_unit_id": ingredient.serving_weight_unit_id,
             "serving_weight_unit_name": ingredient_with_unit.serving_weight_unit.abbreviation if ingredient_with_unit.serving_weight_unit else None,
@@ -794,7 +745,6 @@ async def get_ingredients(
 
             # 然后将此子查询与主查询连接，并按记录数量排序
             query = db.query(Ingredient).options(
-                joinedload(Ingredient.default_unit),
                 joinedload(Ingredient.category_obj)
             ).join(
                 subquery, Ingredient.id == subquery.c.ingredient_id
@@ -849,7 +799,6 @@ async def get_ingredients(
         else:
             # 按名称或创建时间排序
             query = db.query(Ingredient).options(
-                joinedload(Ingredient.default_unit),
                 joinedload(Ingredient.category_obj)
             ).filter(Ingredient.is_active == True)
 
@@ -888,7 +837,6 @@ async def get_ingredients(
             "category_id": ing.category_id,
             "category": ing.category_obj.display_name if ing.category_obj else None,
             "density": ing.density,
-            "default_unit": ing.default_unit.abbreviation if ing.default_unit else None,
             "aliases": ing.aliases or [],
             "created_at": ing.created_at
         } for ing in ingredients]
@@ -913,7 +861,6 @@ async def get_ingredient(
     """获取食材详情"""
     try:
         ingredient = db.query(Ingredient).options(
-            joinedload(Ingredient.default_unit),
             joinedload(Ingredient.category_obj),
             joinedload(Ingredient.serving_weight_unit)
         ).filter(Ingredient.id == ingredient_id, Ingredient.is_active == True).first()
@@ -933,7 +880,6 @@ async def get_ingredient(
             "category_id": ingredient.category_id,
             "category": ingredient.category_obj.display_name if ingredient.category_obj else None,
             "density": ingredient.density,
-            "default_unit": ingredient.default_unit.abbreviation if ingredient.default_unit else None,
             "serving_weight": float(ingredient.serving_weight) if ingredient.serving_weight is not None else None,
             "serving_weight_unit_id": ingredient.serving_weight_unit_id,
             "serving_weight_unit_name": ingredient.serving_weight_unit.abbreviation if ingredient.serving_weight_unit else None,

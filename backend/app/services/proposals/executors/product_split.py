@@ -124,18 +124,10 @@ class ProductSplitExecutor(ProposalExecutor):
         ingredient_nutrition = self._get_ingredient_nutrition(db, current_ingredient)
         merged = self._merge_nutrition(product_nutrition, ingredient_nutrition)
 
-        # 默认单位（斤）
-        from app.models.unit import Unit
-        unit_id = None
-        jin_unit = db.query(Unit).filter(Unit.abbreviation == "斤").first()
-        if jin_unit:
-            unit_id = jin_unit.id
-
         # 创建新原料
         new_ingredient = Ingredient(
             name=ingredient_name,
             aliases=[],
-            default_unit_id=unit_id,
             created_by=proposal.proposer_id,
             updated_by=proposal.proposer_id,
         )
