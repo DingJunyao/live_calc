@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -22,6 +22,11 @@ class User(Base):
     daily_carb_target = Column(Float, default=300)
     daily_fat_target = Column(Float, default=65)
     daily_budget = Column(Float, nullable=True, default=None)
+    # 用户默认单位偏好（NULL 时前端 fallback）
+    default_energy_unit = Column(String(10), nullable=True)  # 'kcal' | 'kJ'
+    default_mass_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
+    default_volume_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
+    default_price_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
