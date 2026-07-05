@@ -1398,7 +1398,7 @@ const editingNutrition = ref(false)
 const savingNutrition = ref(false)
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名（能量行跟随用户能量单位偏好）
-const { energyUnit, priceUnitName, massUnitName } = useUserUnits()
+const { energyUnit, priceUnitName, massUnitName, convertFromJin } = useUserUnits()
 const NUTRIENT_DEFINITIONS = computed(() => buildNutrientDefinitions(energyUnit.value))
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
@@ -2032,9 +2032,11 @@ const chartData = computed(() => {
     // 归一化到 ¥/斤（1斤=500g），确保不同单位的记录可比较
     const standardQty = parseFloat(String(record.standard_quantity))
     const price = parseFloat(String(record.price)) || 0
-    const unitPrice = standardQty && standardQty > 0
+    // 先归一化到 ¥/斤，再按用户质量偏好单位折算（convertFromJin 未知单位时保持斤）
+    const unitPriceJin = standardQty && standardQty > 0
       ? price * 500 / standardQty
       : price / (parseFloat(String(record.original_quantity)) || 1)
+    const unitPrice = convertFromJin(unitPriceJin) ?? unitPriceJin
 
     if (!dailyMap.has(dateKey)) {
       dailyMap.set(dateKey, [])

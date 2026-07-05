@@ -2863,7 +2863,8 @@ const hasRelations = computed(() => {
 const chartData = computed(() => {
   if (!chartPriceRecords.value || chartPriceRecords.value.length === 0) return []
 
-  const defaultUnit = priceUnitName.value
+  // 图表按用户质量偏好单位归一化（与 chartUnit 对齐；unitFactors 表覆盖 mass/volume）
+  const defaultUnit = massUnitName.value
   const dailyMap = new Map<string, number[]>()
 
   for (const record of chartPriceRecords.value) {
