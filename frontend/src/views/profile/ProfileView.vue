@@ -102,6 +102,17 @@
           </template>
         </v-list-item>
 
+        <v-list-item @click="openUnitPrefsDialog">
+          <template #prepend>
+            <v-icon>mdi-ruler</v-icon>
+          </template>
+          <v-list-item-title>单位偏好</v-list-item-title>
+          <v-list-item-subtitle>能量 / 质量 / 容积 / 记价默认单位</v-list-item-subtitle>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
         <v-list-item @click="blacklistDialog = true">
           <template #prepend>
             <v-icon>mdi-cancel</v-icon>
@@ -177,13 +188,13 @@
             <v-col cols="6">
               <v-text-field
                 v-model.number="nutritionForm.daily_calorie_target"
-                label="每日热量 (kcal)"
+                :label="`每日热量 (${energyUnit})`"
                 type="number"
                 variant="outlined"
                 density="compact"
                 hide-details="auto"
-                min="500"
-                max="5000"
+                :min="energyUnit === 'kJ' ? 2000 : 500"
+                :max="energyUnit === 'kJ' ? 21000 : 5000"
                 step="50"
               />
             </v-col>
@@ -252,6 +263,69 @@
       </v-card>
     </v-dialog>
 
+    <!-- 单位偏好对话框 -->
+    <v-dialog v-model="unitPrefsDialog" max-width="480">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          单位偏好
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="unitPrefsDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <p class="text-caption text-medium-emphasis mb-4">
+            设置你的默认单位，所有页面将按此显示与填写。
+          </p>
+          <v-select
+            v-model="unitPrefsForm.default_energy_unit"
+            :items="[{ title: '千卡 (kcal)', value: 'kcal' }, { title: '千焦 (kJ)', value: 'kJ' }]"
+            item-title="title"
+            item-value="value"
+            label="能量单位"
+            variant="outlined"
+            density="compact"
+            class="mb-3"
+          />
+          <v-autocomplete
+            v-model="unitPrefsForm.default_mass_unit_id"
+            :items="massUnitOptions"
+            item-title="name"
+            item-value="id"
+            label="默认质量单位"
+            variant="outlined"
+            density="compact"
+            class="mb-3"
+            clearable
+          />
+          <v-autocomplete
+            v-model="unitPrefsForm.default_volume_unit_id"
+            :items="volumeUnitOptions"
+            item-title="name"
+            item-value="id"
+            label="默认容积单位"
+            variant="outlined"
+            density="compact"
+            class="mb-3"
+            clearable
+          />
+          <v-autocomplete
+            v-model="unitPrefsForm.default_price_unit_id"
+            :items="priceUnitOptions"
+            item-title="name"
+            item-value="id"
+            label="默认记价单位（含个/包/瓶）"
+            variant="outlined"
+            density="compact"
+            clearable
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="unitPrefsDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingUnitPrefs" @click="saveUnitPrefs">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- 数据导出对话框 -->
     <v-dialog v-model="exportDialog" max-width="420">
       <v-card>
@@ -312,9 +386,11 @@ import { api } from '@/api/client'
 import { ImportUploadDialog } from '@/components/import'
 import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
+import { useUserUnits } from '@/composables/useUserUnits'
 import { listProposals } from '@/api/proposals'
 
 const { notify } = useGlobalSnackbar()
+const { energyUnit, toDisplayCalorie, fromDisplayCalorie } = useUserUnits()
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
@@ -386,10 +462,11 @@ const nutritionForm = ref({
 })
 
 function openNutritionDialog() {
-  // 从 userStore 读取当前值
+  // 从 userStore 读取当前值（热量按用户能量单位换算显示，库存仍 kcal）
   const u = userStore.user as any
+  const storedKcal = u?.nutrition_goals?.daily_calorie_target ?? 2000
   nutritionForm.value = {
-    daily_calorie_target: u?.nutrition_goals?.daily_calorie_target ?? 2000,
+    daily_calorie_target: toDisplayCalorie(storedKcal) as number,
     daily_protein_target: u?.nutrition_goals?.daily_protein_target ?? 60,
     daily_carb_target: u?.nutrition_goals?.daily_carb_target ?? 300,
     daily_fat_target: u?.nutrition_goals?.daily_fat_target ?? 65,
@@ -402,7 +479,7 @@ async function saveNutrition() {
   savingNutrition.value = true
   try {
     await api.patch('/auth/me', {
-      daily_calorie_target: nutritionForm.value.daily_calorie_target || null,
+      daily_calorie_target: fromDisplayCalorie(nutritionForm.value.daily_calorie_target),
       daily_protein_target: nutritionForm.value.daily_protein_target || null,
       daily_carb_target: nutritionForm.value.daily_carb_target || null,
       daily_fat_target: nutritionForm.value.daily_fat_target || null,
@@ -415,6 +492,56 @@ async function saveNutrition() {
     notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
   } finally {
     savingNutrition.value = false
+  }
+}
+
+// 单位偏好
+const unitPrefsDialog = ref(false)
+const savingUnitPrefs = ref(false)
+const unitOptionsAll = ref<any[]>([])
+const unitPrefsForm = ref({
+  default_energy_unit: 'kcal' as 'kcal' | 'kJ',
+  default_mass_unit_id: null as number | null,
+  default_volume_unit_id: null as number | null,
+  default_price_unit_id: null as number | null,
+})
+
+const massUnitOptions = computed(() => unitOptionsAll.value.filter(u => u.unit_type === 'mass'))
+const volumeUnitOptions = computed(() => unitOptionsAll.value.filter(u => u.unit_type === 'volume'))
+const priceUnitOptions = computed(() => unitOptionsAll.value.filter(u => ['mass', 'volume', 'count'].includes(u.unit_type)))
+
+async function openUnitPrefsDialog() {
+  const u = userStore.user as any
+  unitPrefsForm.value = {
+    default_energy_unit: u?.unit_preferences?.energy_unit ?? 'kcal',
+    default_mass_unit_id: u?.unit_preferences?.mass_unit?.id ?? null,
+    default_volume_unit_id: u?.unit_preferences?.volume_unit?.id ?? null,
+    default_price_unit_id: u?.unit_preferences?.price_unit?.id ?? null,
+  }
+  if (!unitOptionsAll.value.length) {
+    try {
+      const res = await api.get('/units/', { params: { limit: 500 } })
+      unitOptionsAll.value = (res?.items || res || []) as any[]
+    } catch { /* ignore */ }
+  }
+  unitPrefsDialog.value = true
+}
+
+async function saveUnitPrefs() {
+  savingUnitPrefs.value = true
+  try {
+    await api.patch('/auth/me', {
+      default_energy_unit: unitPrefsForm.value.default_energy_unit || null,
+      default_mass_unit_id: unitPrefsForm.value.default_mass_unit_id || null,
+      default_volume_unit_id: unitPrefsForm.value.default_volume_unit_id || null,
+      default_price_unit_id: unitPrefsForm.value.default_price_unit_id || null,
+    })
+    await userStore.fetchUser()
+    unitPrefsDialog.value = false
+  } catch (e: any) {
+    notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
+  } finally {
+    savingUnitPrefs.value = false
   }
 }
 
