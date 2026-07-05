@@ -234,6 +234,8 @@
 </template>
 
 <script setup lang="ts">
+import { useUserUnits } from '@/composables/useUserUnits'
+const { energyUnit, toDisplayCalorie } = useUserUnits()
 import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
@@ -529,7 +531,7 @@ const getDisplayCalories = (recipe: Recipe) => {
   if (cal === null || cal === undefined) return '-'
   const servings = recipe.servings || 1
   const perServing = Math.round(cal / servings)
-  return `${perServing} kcal/份`
+  return `${toDisplayCalorie(perServing)} ${energyUnit.value}/份`
 }
 
 // 页面渲染完后台加载当前页菜谱的成本和卡路里

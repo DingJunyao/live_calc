@@ -106,8 +106,10 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { MealRecommendation } from '@/api/meals'
+import { useUserUnits } from '@/composables/useUserUnits'
 
 const router = useRouter()
+const { energyUnit, toDisplayCalorie } = useUserUnits()
 
 const props = defineProps<{
   recommendation: MealRecommendation
@@ -140,7 +142,7 @@ const costText = computed(() => {
 
 const calorieText = computed(() => {
   const cal = props.recommendation.recipe?.nutrition_per_serving?.calories
-  return cal != null ? `${cal} kcal` : '--'
+  return cal != null ? `${toDisplayCalorie(cal)} ${energyUnit.value}` : '--'
 })
 
 const proteinText = computed(() => {

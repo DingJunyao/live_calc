@@ -34,7 +34,7 @@
                 热量
               </span>
               <span class="font-weight-medium ml-1">
-                {{ totals.calories != null ? `${totals.calories} kcal` : '--' }}
+                {{ totals.calories != null ? `${toDisplayCalorie(totals.calories)} ${energyUnit}` : '--' }}
               </span>
             </div>
 
@@ -96,8 +96,10 @@
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
 import type { DailyTotals } from '@/api/meals'
+import { useUserUnits } from '@/composables/useUserUnits'
 
 const { mdAndUp } = useDisplay()
+const { energyUnit, toDisplayCalorie } = useUserUnits()
 const isDesktop = computed(() => mdAndUp.value)
 
 const props = defineProps<{
@@ -109,10 +111,10 @@ const goalProgress = computed(() => {
   if (!props.totals || props.totals.calories == null) return null
 
   const consumed = props.totals.calories
-  const target = 2000
+  const target = 2000  // 库存 kcal（默认目标；pct 按同单位比例算不受单位影响）
   const pct = Math.min(Math.round((consumed / target) * 100), 100)
   const color = pct > 100 ? 'error' : pct > 80 ? 'warning' : 'success'
-  return { label: `热量目标 ${target} kcal`, pct, color }
+  return { label: `热量目标 ${toDisplayCalorie(target)} ${energyUnit.value}`, pct, color }
 })
 </script>
 

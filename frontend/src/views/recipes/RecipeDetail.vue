@@ -596,7 +596,7 @@ const loadingCostHistory = ref(false)
 const maxDaysLoaded = ref(0)
 
 // 核心营养素配置（默认显示的营养素）——能量单位跟随用户偏好
-const { energyUnit } = useUserUnits()
+const { energyUnit, toDisplayCalorie } = useUserUnits()
 const coreNutritionItems = computed(() => [
   { key: '能量', label: '能量', unit: energyUnit.value },
   { key: '蛋白质', label: '蛋白质', unit: 'g' },
@@ -768,7 +768,10 @@ const getNutritionValue = (item: any) => {
     // 核心营养素从 core_nutrients 获取完整数据（包括 NRP）
     if (!nutritionData.value?.per_serving_nutrition) return null
     const nutrient = nutritionData.value.per_serving_nutrition.core_nutrients?.[item.key]
-    return nutrient?.value
+    const v = nutrient?.value
+    // 能量按用户偏好单位换算显示（库存 kcal）
+    if (item.key === '能量') return toDisplayCalorie(v as number) ?? v
+    return v
   }
 
   // 其他营养素直接使用合并后的值
@@ -776,6 +779,8 @@ const getNutritionValue = (item: any) => {
 }
 
 const getNutritionUnit = (item: any) => {
+  // 能量单位跟随用户偏好（库存 kcal，显示按 energyUnit；覆盖后端返回的 kcal）
+  if (item.key === '能量') return energyUnit.value
   if (item.isCore) {
     // 核心营养素从 core_nutrients 获取完整数据
     if (!nutritionData.value?.per_serving_nutrition) return null
