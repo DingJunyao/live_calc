@@ -304,8 +304,14 @@ def get_product(product_id: int, db: Session = Depends(get_db), current_user: Us
             from app.services.unit_conversion_service import UnitConversionService
             unit_service = UnitConversionService(db)
 
-            # 原料默认单位字段已迁移至用户级偏好，价格折算统一回退到「斤」
+            # 按当前用户的质量偏好单位折算（fallback 斤）
             target_unit_abbr = "斤"
+            _mui = getattr(current_user, "default_mass_unit_id", None)
+            if _mui:
+                from app.models.unit import Unit as _U
+                _mu = db.query(_U).filter(_U.id == _mui).first()
+                if _mu and _mu.abbreviation:
+                    target_unit_abbr = _mu.abbreviation
 
             unit_prices = []
             for record in day_records:
@@ -641,19 +647,28 @@ def get_product_latest_price(
                 "unit": None
             }
 
-        average_price = sum(unit_prices) / len(unit_prices)
+        average_price = sum(unit_prices) / len(unit_prices)  # 元/斤
 
-        # 获取最常见的单位名称（不含 user_id/record_type，去标识）
-        units = [record.original_unit.name if record.original_unit else None for record in recent_records]
-        units = [u for u in units if u is not None]
-        if units:
-            most_common_unit = Counter(units).most_common(1)[0][0]
-        else:
-            most_common_unit = None
+        # 按当前用户的质量偏好单位折算（fallback 斤；跨类不可转则保持斤）
+        target_unit_abbr = "斤"
+        display_price = average_price
+        _mui = getattr(current_user, "default_mass_unit_id", None)
+        if _mui:
+            from app.models.unit import Unit as _U
+            _mu = db.query(_U).filter(_U.id == _mui).first()
+            if _mu and _mu.abbreviation and _mu.abbreviation != "斤":
+                try:
+                    from app.services.unit_conversion_service import UnitConversionService
+                    _conv = UnitConversionService(db).convert(1, "斤", _mu.abbreviation)
+                    if _conv and float(_conv[0]) > 0:
+                        display_price = average_price / float(_conv[0])
+                        target_unit_abbr = _mu.abbreviation
+                except Exception:
+                    pass
 
         return {
-            "average_price": round(average_price, 2),
-            "unit": most_common_unit
+            "average_price": round(display_price, 2),
+            "unit": target_unit_abbr
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取最近价格失败: {str(e)}")

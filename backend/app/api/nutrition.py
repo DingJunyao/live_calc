@@ -936,11 +936,17 @@ async def get_ingredient_latest_price(
         # 初始化单位转换服务
         unit_service = UnitConversionService(db)
 
-        # 原料默认单位字段已迁移至用户级偏好，价格折算统一回退到「斤」
+        # 按当前用户的质量偏好单位折算（fallback 斤）
         target_unit_abbr = "斤"
+        _mui = getattr(current_user, "default_mass_unit_id", None)
+        if _mui:
+            from app.models.unit import Unit as _U
+            _mu = db.query(_U).filter(_U.id == _mui).first()
+            if _mu and _mu.abbreviation:
+                target_unit_abbr = _mu.abbreviation
 
 
-        # 计算平均价格 - 转换到斤（响应去标识：只产出价格维度，不含 user_id/record_type）
+        # 计算平均价格 - 转换到目标单位（响应去标识：只产出价格维度，不含 user_id/record_type）
         unit_prices = []
         for i, record in enumerate(recent_records):
             if record.price is not None and record.original_quantity is not None and record.original_quantity > 0 and record.original_unit:
