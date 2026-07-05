@@ -437,10 +437,12 @@ async def get_recipe_detail(
             ingredients=ingredients_detail
         )
 
-        # 非管理员追加 pending_proposal
+        # 非管理员追加 pending_proposal（查 recipe 和 recipe_edit 两种 entity_type）
         if not getattr(current_user, "is_admin", False):
             from app.services.proposals.pending import get_pending_proposal
             pp = get_pending_proposal(db, "recipe", recipe_id, current_user.id)
+            if not pp:
+                pp = get_pending_proposal(db, "recipe_edit", recipe_id, current_user.id)
             if pp:
                 response.pending_proposal = {"id": pp.id, "action": pp.action, "payload": pp.payload}
 

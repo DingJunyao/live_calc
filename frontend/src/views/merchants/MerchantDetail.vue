@@ -48,7 +48,7 @@
                   <v-icon size="small" color="medium-emphasis">mdi-store</v-icon>
                 </template>
                 <v-list-item-title>名称</v-list-item-title>
-                <v-list-item-subtitle>{{ merchant.name }}</v-list-item-subtitle>
+                <v-list-item-subtitle>{{ overlaidMerchantName }}</v-list-item-subtitle>
               </v-list-item>
 
               <v-list-item v-if="overlaidAddress">
@@ -59,13 +59,13 @@
                 <v-list-item-subtitle>{{ overlaidAddress }}</v-list-item-subtitle>
               </v-list-item>
 
-              <v-list-item v-if="merchant.latitude != null && merchant.longitude != null">
+              <v-list-item v-if="overlaidLatitude != null && overlaidLongitude != null">
                 <template #prepend>
                   <v-icon size="small" color="medium-emphasis">mdi-crosshairs-gps</v-icon>
                 </template>
                 <v-list-item-title>坐标</v-list-item-title>
                 <v-list-item-subtitle class="font-family-monospace">
-                  {{ merchant.latitude.toFixed(4) }}, {{ merchant.longitude.toFixed(4) }}
+                  {{ overlaidLatitude.toFixed(4) }}, {{ overlaidLongitude.toFixed(4) }}
                 </v-list-item-subtitle>
               </v-list-item>
               <v-list-item v-else>
@@ -86,18 +86,18 @@
 
               <v-list-item>
                 <template #prepend>
-                  <v-icon size="small" :color="merchant.is_open !== false ? 'success' : 'warning'">
-                    {{ merchant.is_open !== false ? 'mdi-check-circle' : 'mdi-close-circle' }}
+                  <v-icon size="small" :color="overlaidIsOpen !== false ? 'success' : 'warning'">
+                    {{ overlaidIsOpen !== false ? 'mdi-check-circle' : 'mdi-close-circle' }}
                   </v-icon>
                 </template>
                 <v-list-item-title>营业状态</v-list-item-title>
                 <v-list-item-subtitle>
                   <v-chip
-                    :color="merchant.is_open !== false ? 'success' : 'warning'"
+                    :color="overlaidIsOpen !== false ? 'success' : 'warning'"
                     size="small"
                     variant="tonal"
                   >
-                    {{ merchant.is_open !== false ? '营业中' : '已关闭' }}
+                    {{ overlaidIsOpen !== false ? '营业中' : '已关闭' }}
                   </v-chip>
                 </v-list-item-subtitle>
               </v-list-item>
@@ -115,8 +115,8 @@
           <v-card-text>
             <div class="location-map">
               <MerchantMapView
-                :merchants="merchant ? [merchant] : []"
-                :selected-merchant="merchant"
+                :merchants="overlaidMerchant ? [overlaidMerchant] : []"
+                :selected-merchant="overlaidMerchant"
                 :is-desktop="isDesktop"
               />
             </div>
@@ -307,11 +307,13 @@ import type { Coordinate } from '@/utils/map/mapTypes'
 import { formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useUserStore } from '@/stores/user'
 import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.vue'
+import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 
 const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { setDetailTitle } = usePageTitle()
+const { notify } = useGlobalSnackbar()
 const { smAndDown, md, lgAndUp } = useDisplay()
 
 interface Merchant {
@@ -354,6 +356,45 @@ const overlaidAddress = computed(() => {
     return pendingProposal.value.payload.address
   }
   return merchant.value?.address
+})
+
+const overlaidIsOpen = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.is_open !== undefined) {
+    return pendingProposal.value.payload.is_open
+  }
+  return merchant.value?.is_open
+})
+
+const overlaidLatitude = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.latitude !== undefined) {
+    return pendingProposal.value.payload.latitude
+  }
+  return merchant.value?.latitude
+})
+
+const overlaidLongitude = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.longitude !== undefined) {
+    return pendingProposal.value.payload.longitude
+  }
+  return merchant.value?.longitude
+})
+
+// 合并了待审覆盖的虚拟 merchant 对象，用于传给地图等子组件
+const overlaidMerchant = computed(() => {
+  if (!merchant.value) return null
+  const m = merchant.value
+  if (pendingProposal.value?.action === 'update') {
+    const p = pendingProposal.value.payload
+    return {
+      ...m,
+      name: p.name ?? m.name,
+      address: p.address !== undefined ? p.address : m.address,
+      latitude: p.latitude !== undefined ? p.latitude : m.latitude,
+      longitude: p.longitude !== undefined ? p.longitude : m.longitude,
+      is_open: p.is_open !== undefined ? p.is_open : m.is_open,
+    }
+  }
+  return m
 })
 
 // 各商品最新价格
@@ -449,8 +490,14 @@ const saveItem = async () => {
     }
 
     const response = await api.put(`/merchants/${merchantId.value}`, data)
-    merchant.value = response
     addDialog.value = false
+    if (userStore.user?.is_admin) {
+      merchant.value = response
+    } else {
+      // 普通用户提交提议后返回的是原值（未变），需重新加载详情刷新 pending_proposal
+      notify('已提交，待管理员审核', 'info')
+      await loadData()
+    }
   } catch (e: any) {
     console.error('保存商家失败', e)
   } finally {

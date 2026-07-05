@@ -5,7 +5,7 @@
     <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
     <v-app-bar-title class="text-h6">
       <div class="d-flex align-center ga-2">
-        <span class="text-truncate">{{ recipe?.name || '菜谱详情' }}</span>
+        <span class="text-truncate">{{ displayRecipe?.name || '菜谱详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">菜谱</v-chip>
         <v-chip v-if="isPublished" size="x-small" variant="tonal" color="success">已发布</v-chip>
         <v-chip v-if="proposalStatus === 'pending'" size="x-small" variant="tonal" color="warning">审核中</v-chip>
@@ -69,8 +69,11 @@
     </v-alert>
 
     <template v-else-if="recipe">
+      <div class="px-4 pt-4 pb-0">
+        <PendingProposalBanner :proposal="pendingProposal" />
+      </div>
       <!-- 上部分：图片、菜谱介绍、成本估算、成本趋势 响应式重排 -->
-      <template v-if="recipe.images?.length">
+      <template v-if="displayRecipe?.images?.length">
         <!-- 有图片：左列=图片+介绍，右列=成本+趋势 -->
         <div class="recipe-top-grid has-images">
           <div class="recipe-left-col">
@@ -79,7 +82,7 @@
               <v-card elevation="0" class="ma-4 overflow-hidden">
                 <!-- 主图片 -->
                 <v-img
-                  :src="getImageUrl(recipe.images[selectedImageIndex])"
+                  :src="getImageUrl(displayRecipe?.images[selectedImageIndex])"
                   height="max(320px, 33vh)"
                   cover
                   class="bg-surface-variant cursor-pointer recipe-main-img"
@@ -96,17 +99,17 @@
                     </div>
                   </template>
                   <!-- 图片数量角标 -->
-                  <div v-if="recipe.images.length > 1" class="position-absolute bottom-0 right-0 pa-2">
+                  <div v-if="displayRecipe?.images.length > 1" class="position-absolute bottom-0 right-0 pa-2">
                     <v-chip size="small" color="black" variant="flat" opacity="0.7">
                       <v-icon start size="small">mdi-image-multiple</v-icon>
-                      {{ recipe.images.length }}
+                      {{ displayRecipe?.images.length }}
                     </v-chip>
                   </div>
                 </v-img>
                 <!-- 缩略图列表 -->
-                <div v-if="recipe.images.length > 1" class="d-flex ga-2 pa-2 overflow-x-auto">
+                <div v-if="displayRecipe?.images.length > 1" class="d-flex ga-2 pa-2 overflow-x-auto">
                   <v-img
-                    v-for="(img, index) in recipe.images"
+                    v-for="(img, index) in displayRecipe?.images"
                     :key="index"
                     :src="getImageUrl(img)"
                     width="60"
@@ -134,7 +137,7 @@
             <!-- 菜谱介绍 -->
             <div class="grid-description">
               <RecipeBasicCard
-                :recipe="recipe"
+                :recipe="displayRecipe"
                 @saved="onBasicInfoSaved"
                 @images-changed="onImagesChanged"
               />
@@ -208,7 +211,7 @@
             <!-- 菜谱介绍 -->
             <div class="grid-description">
               <RecipeBasicCard
-                :recipe="recipe"
+                :recipe="displayRecipe"
                 @saved="onBasicInfoSaved"
                 @images-changed="onImagesChanged"
               />
@@ -239,17 +242,17 @@
       <v-row no-gutters>
         <v-col cols="12" md="6">
           <RecipeIngredientCard
-            :recipe="recipe"
+            :recipe="displayRecipe"
             :cost-breakdown="costData?.cost_breakdown as any[]"
             :display-servings="displayServings"
-            :servings="recipe.servings"
+            :servings="displayRecipe?.servings"
             @saved="onRecipeSaved"
             @update:display-servings="displayServings = $event"
           />
         </v-col>
         <v-col cols="12" md="6">
           <RecipeStepCard
-            :recipe="recipe"
+            :recipe="displayRecipe"
             @saved="onRecipeSaved"
           />
         </v-col>
@@ -313,7 +316,7 @@
         </v-col>
         <v-col cols="12" md="6">
           <RecipeTipCard
-            :recipe="recipe"
+            :recipe="displayRecipe"
             @saved="onRecipeSaved"
           />
         </v-col>
@@ -351,20 +354,20 @@
         />
 
         <!-- 图片计数 -->
-        <div v-if="recipe?.images && recipe.images.length > 1" class="lightbox-counter">
-          {{ lightboxIndex + 1 }} / {{ recipe.images.length }}
+        <div v-if="displayRecipe?.images && displayRecipe?.images.length > 1" class="lightbox-counter">
+          {{ lightboxIndex + 1 }} / {{ displayRecipe?.images.length }}
         </div>
 
         <!-- 主图片 -->
         <img
           v-if="recipe?.images?.length"
-          :src="getImageUrl(recipe.images[lightboxIndex])"
+          :src="getImageUrl(displayRecipe?.images[lightboxIndex])"
           class="lightbox-image"
           @click.stop
         />
 
         <!-- 左右切换按钮 -->
-        <template v-if="recipe?.images && recipe.images.length > 1">
+        <template v-if="displayRecipe?.images && displayRecipe?.images.length > 1">
           <v-btn
             icon="mdi-chevron-left"
             variant="flat"
@@ -384,9 +387,9 @@
         </template>
 
         <!-- 缩略图导航 -->
-        <div v-if="recipe?.images && recipe.images.length > 1" class="lightbox-thumbnails">
+        <div v-if="displayRecipe?.images && displayRecipe?.images.length > 1" class="lightbox-thumbnails">
           <v-img
-            v-for="(img, index) in recipe.images"
+            v-for="(img, index) in displayRecipe?.images"
             :key="index"
             :src="getImageUrl(img)"
             width="48"
@@ -452,6 +455,7 @@ import RecipeBasicCard from '@/components/recipes/RecipeBasicCard.vue'
 import RecipeIngredientCard from '@/components/recipes/RecipeIngredientCard.vue'
 import RecipeStepCard from '@/components/recipes/RecipeStepCard.vue'
 import RecipeTipCard from '@/components/recipes/RecipeTipCard.vue'
+import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { setDetailTitle } = usePageTitle()
@@ -799,6 +803,7 @@ const loadData = async () => {
   try {
     const response = await api.get(`/recipes/${recipeId.value}`)
     recipe.value = response
+    pendingProposal.value = response.pending_proposal || null
     setDetailTitle(response.name, '菜谱', '菜谱详情')
     displayServings.value = response.servings || 1
     // 基本数据到位，立即渲染页面
@@ -1063,6 +1068,21 @@ const getColorByIndex = (index: number) => {
 // 保存事件处理：更新本地 recipe 数据并重设标题
 // 当前菜谱是否有待审的编辑提议
 const proposalStatus = ref<string | null>(null)
+
+// 服务端注入的 pending_proposal（详情 API 返回），用于字段覆盖渲染
+const pendingProposal = ref<{ id: number; action: string; payload: Record<string, any> } | null>(null)
+
+// 合并了待审覆盖的虚拟 recipe 对象，用于传给子组件展示
+const displayRecipe = computed(() => {
+  if (!recipe.value) return null
+  const r = recipe.value
+  if (pendingProposal.value?.action === 'update') {
+    // recipe_edit 的 payload 结构为 {"update_data": {...}}
+    const p = pendingProposal.value.payload?.update_data || pendingProposal.value.payload
+    return { ...r, ...p }
+  }
+  return r
+})
 
 // 加载当前菜谱的待审提议状态
 const loadProposalStatus = async () => {

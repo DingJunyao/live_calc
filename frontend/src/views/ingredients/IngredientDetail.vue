@@ -58,12 +58,12 @@
         <v-card-text>
           <!-- 展示模式 -->
           <v-list v-if="!editingBasicInfo" density="compact">
-            <v-list-item v-if="ingredient.default_unit_name">
+            <v-list-item v-if="overlaidDefaultUnitName">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-scale</v-icon>
               </template>
               <v-list-item-title>默认单位</v-list-item-title>
-              <v-list-item-subtitle>{{ ingredient.default_unit_name }}</v-list-item-subtitle>
+              <v-list-item-subtitle>{{ overlaidDefaultUnitName }}</v-list-item-subtitle>
             </v-list-item>
 
             <v-list-item v-if="ingredient.category">
@@ -100,12 +100,12 @@
               <v-list-item-subtitle>由「{{ ingredient.making_recipe_name }}」制作</v-list-item-subtitle>
             </v-list-item>
 
-            <v-list-item v-if="ingredient.serving_weight">
+            <v-list-item v-if="overlaidServingWeight">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-scale-balance</v-icon>
               </template>
               <v-list-item-title>成品基准量</v-list-item-title>
-              <v-list-item-subtitle>{{ ingredient.serving_weight }}{{ ingredient.serving_weight_unit_name || 'g' }}/份</v-list-item-subtitle>
+              <v-list-item-subtitle>{{ overlaidServingWeight }}{{ overlaidServingWeightUnitName || 'g' }}/份</v-list-item-subtitle>
             </v-list-item>
 
             <v-list-item>
@@ -230,7 +230,7 @@
         <v-card-text class="py-6">
           <div class="d-flex align-center ga-4 flex-wrap">
             <div class="text-h3 font-weight-bold text-tertiary">
-              ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ ingredient.default_unit_name || '斤' }}</span>
+              ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ overlaidDefaultUnitName || '斤' }}</span>
             </div>
             <template v-if="latestChartTrend">
               <v-divider vertical class="d-none d-sm-flex" />
@@ -575,6 +575,7 @@
           </template>
         </v-card-title>
         <v-divider />
+        <PendingProposalBanner :proposal="nutritionPendingProposal" class="mx-4 mt-3 mb-0" />
 
         <!-- 展示模式 -->
         <v-card-text v-if="!editingNutrition" class="pa-0">
@@ -961,6 +962,7 @@
 
         <!-- 自定义单位列表 -->
         <v-card-text class="pb-0">
+          <PendingProposalBanner v-if="pendingUnitProposal" :proposal="pendingUnitProposal" class="mb-2" />
           <div class="d-flex align-center mb-2">
             <span class="text-body-2 font-weight-medium">自定义单位</span>
             <v-spacer />
@@ -999,14 +1001,14 @@
             <v-progress-circular indeterminate color="primary" size="24" />
           </div>
 
-          <v-list v-else-if="entityUnits.length > 0" density="compact" class="pa-0">
+          <v-list v-else-if="mergedEntityUnits.length > 0" density="compact" class="pa-0">
             <v-list-item
-              v-for="unit in entityUnits"
+              v-for="unit in mergedEntityUnits"
               :key="unit.id"
               class="px-0"
             >
               <template #prepend>
-                <v-chip size="small" variant="tonal" color="primary" class="mr-3">
+                <v-chip size="small" :variant="(unit as any)._pending ? 'outlined' : 'tonal'" :color="(unit as any)._pending ? 'info' : 'primary'" class="mr-3">
                   {{ unit.unit_name }}
                 </v-chip>
               </template>
@@ -1016,6 +1018,7 @@
                   <v-icon size="x-small">mdi-weight</v-icon>
                   {{ unit.weight_per_unit }}g/个
                 </span>
+                <v-chip v-if="(unit as any)._pending" size="x-small" color="info" variant="tonal" class="ml-1">待审</v-chip>
               </v-list-item-title>
               <v-list-item-subtitle class="text-caption">
                 <template v-if="unit.is_default">
@@ -1026,6 +1029,7 @@
               </v-list-item-subtitle>
               <template #append>
                 <v-btn
+                  v-if="!(unit as any)._pending"
                   icon="mdi-pencil"
                   size="x-small"
                   variant="text"
@@ -1033,6 +1037,7 @@
                   @click.stop="openUnitDialog(unit)"
                 />
                 <v-btn
+                  v-if="!(unit as any)._pending"
                   icon="mdi-delete"
                   size="x-small"
                   variant="text"
@@ -1053,11 +1058,12 @@
 
         <!-- 密度管理 -->
         <v-card-text>
+          <PendingProposalBanner v-if="pendingDensityProposal" :proposal="pendingDensityProposal" class="mb-2" />
           <div class="d-flex align-center mb-2">
             <span class="text-body-2 font-weight-medium">密度信息</span>
             <v-spacer />
             <v-btn
-              v-if="!entityDensity"
+              v-if="!displayDensity"
               size="small"
               variant="text"
               color="primary"
@@ -1066,7 +1072,7 @@
             >
               设置密度
             </v-btn>
-            <template v-else>
+            <template v-else-if="!(displayDensity as any)._pending">
               <v-btn
                 icon="mdi-pencil"
                 size="x-small"
@@ -1080,12 +1086,12 @@
                 size="x-small"
                 variant="text"
                 color="error"
-                @click="deleteDensity(entityDensity.id)"
+                @click="deleteDensity(entityDensity!.id)"
               />
             </template>
           </div>
 
-          <div v-if="entityDensity" class="d-flex align-center py-2">
+          <div v-if="displayDensity" class="d-flex align-center py-2">
             <v-icon size="small" color="medium-emphasis" class="mr-2">mdi-water</v-icon>
             <span class="text-body-2">
               {{ displayDensityValue }}
@@ -1101,11 +1107,12 @@
               {{ densityDisplayUnit === 'g/cm3' ? 'g/cm³' : 'kg/m³' }}
               <v-icon end size="x-small">mdi-swap-horizontal</v-icon>
             </v-chip>
-            <span v-if="entityDensity.temperature" class="text-caption text-medium-emphasis ml-2">
-              ({{ entityDensity.temperature }}°C)
+            <v-chip v-if="(displayDensity as any)._pending" size="x-small" color="info" variant="tonal" class="ml-1">待审</v-chip>
+            <span v-if="displayDensity.temperature" class="text-caption text-medium-emphasis ml-2">
+              ({{ displayDensity.temperature }}°C)
             </span>
-            <span v-if="entityDensity.source" class="text-caption text-medium-emphasis ml-2">
-              来源: {{ entityDensity.source }}
+            <span v-if="displayDensity.source" class="text-caption text-medium-emphasis ml-2">
+              来源: {{ displayDensity.source }}
             </span>
           </div>
           <div v-else class="text-center py-4">
@@ -1692,6 +1699,7 @@ import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useUserStore } from '@/stores/user'
 import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.vue'
+import { usePendingProposals } from '@/composables/usePendingProposals'
 
 const { ask } = useConfirmDialog()
 const userStore = useUserStore()
@@ -1784,6 +1792,57 @@ const ingredientId = computed(() => Number(route.params.id))
 
 const ingredient = ref<Ingredient | null>(null)
 const pendingProposal = ref<{ id: number; action: string; payload: Record<string, any> } | null>(null)
+// 单位/密度的待审提议（create 类，按 payload 内目标实体关联）
+const { load: loadPendingProposals, pendingList, getByPayloadEntity: getPendingByPayload } = usePendingProposals()
+const pendingUnitProposal = computed(() => getPendingByPayload('entity_unit_override', 'ingredient', ingredientId.value))
+const pendingDensityProposal = computed(() => getPendingByPayload('entity_density', 'ingredient', ingredientId.value))
+
+// 待审 create 提议：自定义单位（实体尚未建立，合并到列表显示）
+const pendingUnitItems = computed(() => {
+  return pendingList.value
+    .filter(p => p.entity_type === 'entity_unit_override' &&
+                 p.action === 'create' &&
+                 p.payload?.entity_type === 'ingredient' &&
+                 p.payload?.entity_id === ingredientId.value)
+    .map(p => {
+      const pl = p.payload || {}
+      return {
+        id: -Number(p.id),
+        entity_type: 'ingredient',
+        entity_id: ingredientId.value,
+        unit_name: pl.unit_name || '',
+        base_unit_id: pl.base_unit_id ?? null,
+        conversion_factor: pl.conversion_factor != null ? Number(pl.conversion_factor) : null,
+        weight_per_unit: pl.weight_per_unit != null ? Number(pl.weight_per_unit) : null,
+        weight_unit_id: pl.weight_unit_id ?? null,
+        is_default: pl.is_default ?? false,
+        source: pl.source ?? null,
+        _pending: true,
+      } as EntityUnitOverride & { _pending: boolean }
+    })
+})
+const mergedEntityUnits = computed(() => [...entityUnits.value, ...pendingUnitItems.value])
+
+// 待审 create 提议：密度（实体尚未建立，无 entityDensity 时显示草稿值）
+const pendingDensityItem = computed(() => {
+  const p = pendingList.value.find(x =>
+    x.entity_type === 'entity_density' &&
+    x.action === 'create' &&
+    x.payload?.entity_type === 'ingredient' &&
+    x.payload?.entity_id === ingredientId.value,
+  )
+  if (!p) return null
+  const pl = p.payload || {}
+  return {
+    density: pl.density != null ? Number(pl.density) : null,
+    temperature: pl.temperature ?? null,
+    condition: pl.condition ?? null,
+    source: pl.source ?? null,
+    confidence: pl.confidence != null ? Number(pl.confidence) : 1,
+    _pending: true,
+  } as EntityDensity & { _pending: boolean }
+})
+const displayDensity = computed(() => entityDensity.value || pendingDensityItem.value)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -1808,6 +1867,37 @@ const overlaidAliases = computed(() => {
     return pendingProposal.value.payload.aliases
   }
   return ingredient.value?.aliases
+})
+
+const overlaidDefaultUnitName = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.default_unit_id !== undefined) {
+    const uid = pendingProposal.value.payload.default_unit_id
+    if (uid) {
+      const found = units.value.find((u: any) => u.id === uid)
+      if (found) return found.name
+    }
+    return '' // default_unit_id 可能被设为 null/0（清除默认单位）
+  }
+  return ingredient.value?.default_unit_name
+})
+
+const overlaidServingWeight = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.serving_weight !== undefined) {
+    return pendingProposal.value.payload.serving_weight
+  }
+  return ingredient.value?.serving_weight
+})
+
+const overlaidServingWeightUnitName = computed(() => {
+  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.serving_weight_unit_id !== undefined) {
+    const uid = pendingProposal.value.payload.serving_weight_unit_id
+    if (uid) {
+      const found = units.value.find((u: any) => u.id === uid)
+      if (found) return found.name
+    }
+    return ''
+  }
+  return ingredient.value?.serving_weight_unit_name
 })
 
 // 最新价格
@@ -1966,6 +2056,7 @@ const loadingChartPrices = ref(false)
 
 // 营养数据
 const nutritionData = ref<any>(null)
+const nutritionPendingProposal = ref<{ id: number; action: string; payload: Record<string, any> } | null>(null)
 const loadingNutrition = ref(false)
 
 // 关联菜谱
@@ -2363,8 +2454,8 @@ const densityInputUnitLabel = computed(() => densityInputUnit.value === 'g/cm3' 
 
 // 显示密度值（根据选中的显示单位换算）
 const displayDensityValue = computed(() => {
-  if (!entityDensity.value || entityDensity.value.density === null || entityDensity.value.density === undefined) return ''
-  const val = Number(entityDensity.value.density)
+  if (!displayDensity.value || displayDensity.value.density === null || displayDensity.value.density === undefined) return ''
+  const val = Number(displayDensity.value.density)
   if (isNaN(val)) return ''
   if (densityDisplayUnit.value === 'g/cm3') {
     return (val / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
@@ -2894,9 +2985,9 @@ const latestChartTrend = computed(() => {
   return data[data.length - 1]
 })
 
-// 获取图表使用的单位（始终使用原料的默认单位）
+// 获取图表使用的单位（始终使用原料的默认单位，如果有待审修改则用提议值）
 const chartUnit = computed(() => {
-  return ingredient.value?.default_unit_name || '斤'
+  return overlaidDefaultUnitName.value || '斤'
 })
 
 // 加载数据
@@ -2913,6 +3004,8 @@ const loadData = async () => {
     const response = await api.get(`/nutrition/ingredients/${ingredientId.value}`)
     ingredient.value = response
     pendingProposal.value = response.pending_proposal || null
+    // 加载当前用户所有 pending 提议（用于单位/密度区域按 payload 关联显示横幅）
+    loadPendingProposals()
     setDetailTitle(response.name, '原料', '原料详情')
     // 基本数据到位，立即渲染页面
     loading.value = false
@@ -3151,9 +3244,11 @@ const loadNutritionData = async () => {
   try {
     const response = await api.get(`/nutrition/ingredients/${ingredientId.value}/nutrition`)
     nutritionData.value = response
+    nutritionPendingProposal.value = response.pending_proposal || null
   } catch (e) {
     console.error('加载营养失败', e)
     nutritionData.value = null
+    nutritionPendingProposal.value = null
   } finally {
     loadingNutrition.value = false
   }
@@ -3636,6 +3731,8 @@ const saveBasicInfo = async () => {
     } else {
       editingBasicInfo.value = false
       showMessage('已提交，待管理员审核', 'info')
+      // 重新加载详情，刷新 pending_proposal 以显示草稿覆盖（横幅+字段覆盖）
+      await loadData()
     }
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')

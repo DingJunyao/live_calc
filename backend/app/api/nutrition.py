@@ -405,7 +405,7 @@ async def get_ingredient(
             if category:
                 category_name = category.display_name
 
-        return IngredientResponse(
+        response = IngredientResponse(
             id=ingredient.id,
             name=ingredient.name,
             aliases=ingredient.aliases or [],
@@ -416,6 +416,15 @@ async def get_ingredient(
             created_at=ingredient.created_at,
             updated_at=ingredient.updated_at
         )
+
+        # 非管理员追加 pending_proposal（基本信息修改提议，entity_type=ingredient）
+        if not getattr(current_user, "is_admin", False):
+            from app.services.proposals.pending import get_pending_proposal
+            pp = get_pending_proposal(db, "ingredient", ingredient.id, current_user.id)
+            if pp:
+                response.pending_proposal = {"id": pp.id, "action": pp.action, "payload": pp.payload}
+
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取原料详情失败: {str(e)}")
 

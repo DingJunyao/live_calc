@@ -61,8 +61,8 @@
         >
           <!-- 菜谱图片或占位符 -->
           <v-img
-            v-if="recipe.images && recipe.images.length > 0"
-            :src="getImageUrl(recipe.images[0])"
+            v-if="pendingImages(recipe) && pendingImages(recipe).length > 0"
+            :src="getImageUrl(pendingImages(recipe)[0])"
             height="140"
             cover
           />
@@ -78,7 +78,7 @@
 
           <!-- 菜谱名称（始终显示在图片/占位符下方） -->
           <div class="text-center pa-2 text-subtitle-1">
-            {{ recipe.name }}
+            {{ pendingName(recipe) }}
             <v-chip
               v-if="recipe.user_id === userStore.user?.id && !recipe.is_public && !recipe.source"
               size="x-small"
@@ -86,6 +86,13 @@
               variant="tonal"
               class="ms-1"
             >未发布</v-chip>
+            <v-chip
+              v-if="hasPending(['recipe', 'recipe_edit'], recipe.id)"
+              size="x-small"
+              color="info"
+              variant="tonal"
+              class="ms-1"
+            >修改待审</v-chip>
           </div>
 
           <v-card-text class="text-center pa-2">
@@ -236,6 +243,7 @@ import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useUserStore } from '@/stores/user'
 import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
+import { usePendingProposals } from '@/composables/usePendingProposals'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { smAndDown, mdAndDown, md, lgAndUp } = useDisplay()
@@ -263,6 +271,18 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const recipes = ref<Recipe[]>([])
+// 待审提议标记（菜谱编辑 entity_type=recipe_edit，发布=recipe，两种都查）
+const { load: loadPendingProposals, has: hasPending, getPayload: getPendingPayload } = usePendingProposals()
+// 待审草稿覆盖：普通用户提交后，列表显示提议中的新值（name/images）
+const pendingName = (recipe: Recipe) => {
+  const p = getPendingPayload(['recipe', 'recipe_edit'], recipe.id)
+  return p?.name ?? recipe.name
+}
+const pendingImages = (recipe: Recipe) => {
+  const p = getPendingPayload(['recipe', 'recipe_edit'], recipe.id)
+  if (Array.isArray(p?.images)) return p.images
+  return recipe.images
+}
 const loading = ref(true)
 const error = ref<string | null>(null)
 const searchQuery = ref((route.query.search as string) || '')
@@ -557,6 +577,7 @@ const getImageUrl = (imagePath: string) => {
 onMounted(() => {
   loadRecipes()
   loadIngredients()
+  loadPendingProposals()
   window.addEventListener('app-refresh', loadRecipes)
 })
 

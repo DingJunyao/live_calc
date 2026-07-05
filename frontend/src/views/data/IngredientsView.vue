@@ -58,9 +58,12 @@
               </v-avatar>
             </template>
 
-            <v-list-item-title>{{ item.name }}</v-list-item-title>
+            <v-list-item-title>
+              {{ pendingName(item) }}
+              <v-chip v-if="hasPending('ingredient', item.id)" size="x-small" color="info" variant="tonal" class="ms-1">修改待审</v-chip>
+            </v-list-item-title>
             <v-list-item-subtitle>
-              <span>{{ item.category || '未分类' }}</span>
+              <span>{{ pendingCategory(item) }}</span>
               <span v-if="item.latest_price != null" class="text-tertiary font-weight-bold ms-2">
                 ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
               </span>
@@ -119,10 +122,13 @@
                 <v-avatar color="secondary" size="40" class="mr-3">
                   <span class="text-white font-weight-bold">{{ item.name?.charAt(0) }}</span>
                 </v-avatar>
-                <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
+                <div class="text-body-2 font-weight-medium text-truncate">
+                  {{ pendingName(item) }}
+                  <v-chip v-if="hasPending('ingredient', item.id)" size="x-small" color="info" variant="tonal" class="ms-1">修改待审</v-chip>
+                </div>
               </div>
               <v-chip size="x-small" color="default" variant="outlined">
-                {{ item.category || '未分类' }}
+                {{ pendingCategory(item) }}
               </v-chip>
               <div v-if="item.latest_price != null" class="text-subtitle-1 font-weight-bold text-tertiary mb-1">
                 ¥{{ formatUnitPrice(item.latest_price) }}<span v-if="item.latest_price_unit" class="text-caption font-weight-regular text-medium-emphasis">/{{ item.latest_price_unit }}</span>
@@ -259,6 +265,7 @@ import FilterBar from '@/components/common/FilterBar.vue'
 import type { FilterConfig } from '@/components/common/FilterBar.vue'
 import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
+import { usePendingProposals } from '@/composables/usePendingProposals'
 
 const route = useRoute()
 const router = useRouter()
@@ -281,6 +288,23 @@ interface Category {
 }
 
 const items = ref<Ingredient[]>([])
+
+// 待审提议标记（普通用户：当前用户对该原料有 pending 提议时列表项显示"修改待审"）
+const { load: loadPendingProposals, has: hasPending, getPayload: getPendingPayload } = usePendingProposals()
+
+// 待审草稿覆盖：普通用户提交后，列表显示提议中的新值（name/category）
+const pendingName = (item: Ingredient) => {
+  const p = getPendingPayload('ingredient', item.id)
+  return p?.name ?? item.name
+}
+const pendingCategory = (item: Ingredient) => {
+  const p = getPendingPayload('ingredient', item.id)
+  if (p?.category_id !== undefined) {
+    const cat = categories.value.find(c => c.id === p.category_id)
+    return cat?.display_name || '未分类'
+  }
+  return item.category || '未分类'
+}
 
 // 当天平均单价
 const { load: loadLatestPrices } = useLatestPrices(
@@ -544,6 +568,7 @@ onMounted(() => {
   loadIngredients()
   loadOptions()
   loadCategories()
+  loadPendingProposals()
   window.addEventListener('app-refresh', loadIngredients)
 })
 

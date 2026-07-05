@@ -22,6 +22,7 @@ class IngredientResponse(TimeZoneAwareModel):
     created_at: datetime
     updated_at: Optional[datetime]
     sparkline_data: Optional[List[float]] = None  # 近90天每日平均价格，用于迷你图
+    pending_proposal: Optional[dict] = None  # 非管理员：当前用户对该原料的待审提议
 
     class Config:
         from_attributes = True

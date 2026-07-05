@@ -59,12 +59,13 @@
             </template>
 
             <v-list-item-title>
-              {{ item.name }}
+              {{ pendingName(item) }}
+              <v-chip v-if="hasPending('product', item.id)" size="x-small" color="info" variant="tonal" class="ms-1">修改待审</v-chip>
             </v-list-item-title>
             <v-list-item-subtitle>
-              <template v-if="item.aliases?.length">
+              <template v-if="pendingAliases(item)?.length">
                 <v-chip
-                  v-for="alias in item.aliases"
+                  v-for="alias in pendingAliases(item)"
                   :key="alias"
                   size="x-small"
                   variant="tonal"
@@ -125,11 +126,14 @@
                 <v-avatar color="primary" size="40" class="mr-3">
                   <span class="text-white">{{ item.name?.charAt(0) }}</span>
                 </v-avatar>
-                <div class="text-body-2 font-weight-medium text-truncate">{{ item.name }}</div>
+                <div class="text-body-2 font-weight-medium text-truncate">
+                  {{ pendingName(item) }}
+                  <v-chip v-if="hasPending('product', item.id)" size="x-small" color="info" variant="tonal" class="ms-1">修改待审</v-chip>
+                </div>
               </div>
-              <div v-if="item.aliases?.length" class="text-caption mb-1">
+              <div v-if="pendingAliases(item)?.length" class="text-caption mb-1">
                 <v-chip
-                  v-for="alias in item.aliases"
+                  v-for="alias in pendingAliases(item)"
                   :key="alias"
                   size="x-small"
                   variant="tonal"
@@ -286,6 +290,7 @@ import type { FilterConfig } from '@/components/common/FilterBar.vue'
 import { useLatestPrices, formatUnitPrice } from '@/composables/useLatestPrices'
 import SparklineBackground from '@/components/charts/SparklineBackground.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
+import { usePendingProposals } from '@/composables/usePendingProposals'
 
 const { notify } = useGlobalSnackbar()
 
@@ -312,6 +317,20 @@ interface Ingredient {
 }
 
 const items = ref<Product[]>([])
+
+// 待审提议标记
+const { load: loadPendingProposals, has: hasPending, getPayload: getPendingPayload } = usePendingProposals()
+
+// 待审草稿覆盖：普通用户提交后，列表显示提议中的新值（name/aliases）
+const pendingName = (item: Product) => {
+  const p = getPendingPayload('product', item.id)
+  return p?.name ?? item.name
+}
+const pendingAliases = (item: Product) => {
+  const p = getPendingPayload('product', item.id)
+  if (Array.isArray(p?.aliases)) return p.aliases
+  return item.aliases || []
+}
 
 // 当天平均单价
 const { load: loadLatestPrices } = useLatestPrices(
@@ -586,6 +605,7 @@ onMounted(() => {
   loadIngredients()
   loadCategories()
   loadBrands()
+  loadPendingProposals()
   window.addEventListener('app-refresh', loadProducts)
 })
 

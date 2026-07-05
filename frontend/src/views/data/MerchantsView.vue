@@ -64,17 +64,24 @@
               </template>
 
               <v-list-item-title>
-                {{ item.name }}
+                {{ pendingName(item) }}
                 <v-chip
-                  v-if="item.is_open === false"
+                  v-if="pendingIsOpen(item) === false"
                   size="x-small"
                   color="warning"
                   variant="tonal"
                   class="ms-2"
                 >已关闭</v-chip>
+                <v-chip
+                  v-if="hasPending('merchant', item.id)"
+                  size="x-small"
+                  color="info"
+                  variant="tonal"
+                  class="ms-2"
+                >修改待审</v-chip>
               </v-list-item-title>
               <v-list-item-subtitle>
-                {{ item.address || '暂无地址' }}
+                {{ pendingAddress(item) || '暂无地址' }}
               </v-list-item-subtitle>
               <v-list-item-subtitle v-if="item.latitude && item.longitude" class="text-caption">
                 <v-icon size="x-small" class="mr-1">mdi-map-marker</v-icon>
@@ -242,6 +249,7 @@ import FilterBar, { type FilterConfig } from '@/components/common/FilterBar.vue'
 import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
 import type { Coordinate } from '@/utils/map/mapTypes'
+import { usePendingProposals } from '@/composables/usePendingProposals'
 
 const route = useRoute()
 const router = useRouter()
@@ -261,6 +269,23 @@ interface Merchant {
 }
 
 const items = ref<Merchant[]>([])
+// 待审提议标记
+const { load: loadPendingProposals, has: hasPending, getPayload: getPendingPayload } = usePendingProposals()
+// 待审草稿覆盖：普通用户提交后，列表显示提议中的新值（name/address/is_open）
+const pendingName = (item: Merchant) => {
+  const p = getPendingPayload('merchant', item.id)
+  return p?.name ?? item.name
+}
+const pendingAddress = (item: Merchant) => {
+  const p = getPendingPayload('merchant', item.id)
+  if (p?.address !== undefined) return p.address
+  return item.address
+}
+const pendingIsOpen = (item: Merchant) => {
+  const p = getPendingPayload('merchant', item.id)
+  if (p?.is_open !== undefined) return p.is_open
+  return item.is_open
+}
 const loading = ref(true)
 const error = ref<string | null>(null)
 const search = ref((route.query.search as string) || '')
@@ -652,6 +677,7 @@ onMounted(() => {
   loadPlaces()
   loadAllCoordinates()
   loadFavorites()
+  loadPendingProposals()
   window.addEventListener('app-refresh', loadMerchants)
 })
 
