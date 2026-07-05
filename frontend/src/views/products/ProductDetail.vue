@@ -1842,14 +1842,14 @@ const snackbar = ref({
   color: 'success'
 })
 
-// 营养素配置（默认显示的营养素）
-const coreNutritionItems = [
-  { key: '能量', label: '能量', unit: 'kcal' },
+// 营养素配置（默认显示的营养素）——能量单位跟随用户偏好
+const coreNutritionItems = computed(() => [
+  { key: '能量', label: '能量', unit: energyUnit.value },
   { key: '蛋白质', label: '蛋白质', unit: 'g' },
   { key: '脂肪', label: '脂肪', unit: 'g' },
   { key: '碳水化合物', label: '碳水化合物', unit: 'g' },
   { key: '钠', label: '钠', unit: 'mg' }
-]
+])
 
 // 营养素排序顺序（展开时这些营养素排在前面）
 const nutrientSortOrder = [
@@ -1893,7 +1893,7 @@ const displayNutritionItems = computed(() => {
   const allNutrients = nutritionData.value.nutrition.all_nutrients || {}
 
   // 常用营养素（从 core_nutrients 获取，因为键名是中文）
-  const coreItems = coreNutritionItems
+  const coreItems = coreNutritionItems.value
     .filter(item => coreNutrients[item.key])
     .map(item => ({
       key: item.key,
@@ -1907,7 +1907,7 @@ const displayNutritionItems = computed(() => {
   }
 
   // 获取核心营养素的键集合（用于过滤）
-  const coreKeys = new Set(coreNutritionItems.map(ci => ci.key))
+  const coreKeys = new Set(coreNutritionItems.value.map(ci => ci.key))
 
   // 其他营养素（从 all_nutrients 获取，键已经是中文了）
   const availableKeys = Object.keys(allNutrients).filter(key => {
@@ -1942,7 +1942,7 @@ const otherNutrientsCount = computed(() => {
   const allNutrients = nutritionData.value.nutrition.all_nutrients
 
   // 获取核心营养素的键集合
-  const coreKeys = new Set(coreNutritionItems.map(ci => ci.key))
+  const coreKeys = new Set(coreNutritionItems.value.map(ci => ci.key))
 
   const availableKeys = Object.keys(allNutrients).filter(key => {
     const data = allNutrients[key]
