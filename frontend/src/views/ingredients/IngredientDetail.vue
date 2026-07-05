@@ -1871,17 +1871,9 @@ const overlaidAliases = computed(() => {
   return ingredient.value?.aliases
 })
 
-const overlaidDefaultUnitName = computed(() => {
-  if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.default_unit_id !== undefined) {
-    const uid = pendingProposal.value.payload.default_unit_id
-    if (uid) {
-      const found = units.value.find((u: any) => u.id === uid)
-      if (found) return found.name
-    }
-    return '' // default_unit_id 可能被设为 null/0（清除默认单位）
-  }
-  return ingredient.value?.default_unit_name
-})
+// 原料默认单位字段已迁移至用户级偏好；返回用户记价偏好单位
+// （pendingProposal 不再含 default_unit_id）
+const overlaidDefaultUnitName = computed(() => priceUnitName.value)
 
 const overlaidServingWeight = computed(() => {
   if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.serving_weight !== undefined) {
@@ -2098,7 +2090,7 @@ const savingPrice = ref(false)
 const editPriceForm = ref({
   price: 0,
   quantity: 1,
-  unit: '斤',
+  unit: priceUnitName.value,
   merchant_id: null as number | null
 })
 const showMergeDialog = ref(false)
@@ -2150,7 +2142,7 @@ const editingNutrition = ref(false)
 const savingNutrition = ref(false)
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名（能量行跟随用户能量单位偏好）
-const { energyUnit } = useUserUnits()
+const { energyUnit, priceUnitName, massUnitName } = useUserUnits()
 const NUTRIENT_DEFINITIONS = computed(() => buildNutrientDefinitions(energyUnit.value))
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
@@ -2871,7 +2863,7 @@ const hasRelations = computed(() => {
 const chartData = computed(() => {
   if (!chartPriceRecords.value || chartPriceRecords.value.length === 0) return []
 
-  const defaultUnit = ingredient.value?.default_unit_name || '斤'
+  const defaultUnit = priceUnitName.value
   const dailyMap = new Map<string, number[]>()
 
   for (const record of chartPriceRecords.value) {
@@ -2957,10 +2949,8 @@ const latestChartTrend = computed(() => {
   return data[data.length - 1]
 })
 
-// 获取图表使用的单位（始终使用原料的默认单位，如果有待审修改则用提议值）
-const chartUnit = computed(() => {
-  return overlaidDefaultUnitName.value || '斤'
-})
+// 图表使用用户偏好的质量单位（默认斤）
+const chartUnit = computed(() => massUnitName.value)
 
 // 加载数据
 const loadData = async () => {
@@ -3921,7 +3911,7 @@ const openEditPriceDialog = async (record: PriceRecord) => {
   editPriceForm.value = {
     price: Number(record.price),
     quantity: Number(record.original_quantity),
-    unit: record.original_unit || '斤',
+    unit: record.original_unit || priceUnitName.value,
     merchant_id: merchantId
   }
   // 确保商家列表已加载

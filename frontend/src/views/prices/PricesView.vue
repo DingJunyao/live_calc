@@ -303,6 +303,8 @@
 </template>
 
 <script setup lang="ts">
+import { useUserUnits } from '@/composables/useUserUnits'
+const { priceUnitName } = useUserUnits()
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
@@ -703,7 +705,7 @@ const openAddDialog = () => {
     product_name: '',
     price: null,
     original_quantity: 1,  // 默认数量为 1
-    original_unit: '斤',   // 默认单位为斤
+    original_unit: priceUnitName.value,   // 默认单位为斤
     merchant_id: sessionMemory.merchantId,
     recorded_at: getCurrentLocalDateTime(),  // 默认为当前时间
     notes: '',

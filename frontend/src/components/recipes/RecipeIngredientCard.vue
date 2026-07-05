@@ -97,8 +97,17 @@
               <v-chip v-if="ingredient.is_optional" size="x-small" color="info" variant="flat" class="ml-1">可选</v-chip>
               <v-icon size="x-small" class="ml-1">mdi-chevron-right</v-icon>
             </div>
-            <div class="ingredient-quantity text-body-2 text-right mr-4" style="min-width: 80px">
-              <template v-if="ingredient.quantity && ingredient.quantity_range">
+            <div
+              class="ingredient-quantity text-body-2 text-right mr-4 ingredient-clickable"
+              style="min-width: 80px"
+              @click="toggleConvert(ingredient)"
+              :title="convertState[ingredient.id] === 'converted' ? '点击切回原始单位' : '点击转换为我偏好的单位'"
+            >
+              <v-icon v-if="converting[ingredient.id]" size="small" class="mr-1">mdi-loading</v-icon>
+              <template v-if="convertState[ingredient.id] === 'converted' && convertedDisplay[ingredient.id]">
+                {{ convertedDisplay[ingredient.id].value }} {{ convertedDisplay[ingredient.id].unit }}
+              </template>
+              <template v-else-if="ingredient.quantity && ingredient.quantity_range">
                 {{ ingredient.quantity_range.min }}~{{ ingredient.quantity_range.max }} {{ ingredient.unit }}
                 <span class="text-medium-emphasis">（推荐 {{ ingredient.quantity }} {{ ingredient.unit }}）</span>
               </template>
@@ -294,6 +303,7 @@ import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { RecipeDetail, RecipeIngredient, IngredientEditRow, IngredientOption, UnitOption } from './types'
+import { useUserUnits, type UnitPref } from '@/composables/useUserUnits'
 
 const props = defineProps<{
   recipe: RecipeDetail
@@ -365,6 +375,70 @@ const scaleQuantity = (quantity: string | number | undefined, origServings: numb
   const scaled = num * ratio
   if (Number.isInteger(scaled)) return scaled.toString()
   return scaled.toFixed(1).replace(/\.0$/, '')
+}
+
+// 点击转换单位：每行独立 original | converted
+const { massUnit, volumeUnit } = useUserUnits()
+const convertState = ref<Record<number, 'original' | 'converted'>>({})
+const convertedDisplay = ref<Record<number, { value: string; unit: string }>>({})
+const converting = ref<Record<number, boolean>>({})
+
+const formatQty = (n: number): string => {
+  if (!Number.isFinite(n)) return ''
+  if (Number.isInteger(n)) return n.toString()
+  return n.toFixed(2).replace(/\.?0+$/, '')
+}
+
+// 调 POST /units/convert 把原料数量转到用户偏好单位（先质量后体积，跨类走密度）。成功缓存并返回 true。
+const ensureConverted = async (ingredient: RecipeIngredient): Promise<boolean> => {
+  const fromUnit = ingredient.unit
+  if (!fromUnit || ingredient.quantity === undefined || ingredient.quantity === null) return false
+  if (convertedDisplay.value[ingredient.id]) return true
+  const targets = [massUnit.value, volumeUnit.value].filter(Boolean) as UnitPref[]
+  const ratio = displayServings.value / (originalServings.value || 1)
+  for (const target of targets) {
+    if (target.abbreviation === fromUnit) {
+      convertedDisplay.value[ingredient.id] = {
+        value: formatQty(Number(ingredient.quantity) * ratio),
+        unit: target.name,
+      }
+      return true
+    }
+    try {
+      const res = await api.post('/units/convert', {
+        value: Number(ingredient.quantity),
+        from_unit: fromUnit,
+        to_unit: target.abbreviation,
+      })
+      if (res?.value !== undefined && res?.value !== null) {
+        convertedDisplay.value[ingredient.id] = {
+          value: formatQty(Number(res.value) * ratio),
+          unit: target.name,
+        }
+        return true
+      }
+    } catch {
+      // 该方向不可转，试下一个目标
+    }
+  }
+  return false
+}
+
+const toggleConvert = async (ingredient: RecipeIngredient) => {
+  if (convertState.value[ingredient.id] === 'converted') {
+    convertState.value[ingredient.id] = 'original'
+    return
+  }
+  const orig = String(ingredient.original_quantity || '')
+  if (['适量', '少许'].includes(orig)) return
+  if (!ingredient.unit || ingredient.quantity === undefined || ingredient.quantity === null) return
+  converting.value[ingredient.id] = true
+  try {
+    const ok = await ensureConverted(ingredient)
+    if (ok) convertState.value[ingredient.id] = 'converted'
+  } finally {
+    converting.value[ingredient.id] = false
+  }
 }
 
 // 获取原料成本

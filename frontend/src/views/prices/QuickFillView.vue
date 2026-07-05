@@ -222,6 +222,8 @@
 </template>
 
 <script setup lang="ts">
+import { useUserUnits } from '@/composables/useUserUnits'
+const { priceUnitName } = useUserUnits()
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
@@ -433,7 +435,7 @@ const onMerchantChange = async (val: number | null) => {
       productName: item.product_name,
       price: '',
       quantity: 1,
-      unit: '斤',
+      unit: priceUnitName.value,
       isEditingQuantity: false,
       isNew: false,
       categoryId: item.category_id ?? null,
@@ -454,7 +456,7 @@ function addNewRow() {
     productName: '',
     price: '',
     quantity: 1,
-    unit: '斤',
+    unit: priceUnitName.value,
     isEditingQuantity: false,
     isNew: true,
     searchText: '',

@@ -104,6 +104,8 @@
 </template>
 
 <script setup lang="ts">
+import { useUserUnits } from '@/composables/useUserUnits'
+const { priceUnitName } = useUserUnits()
 import { ref, computed, watch, nextTick } from 'vue'
 import { api } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
@@ -152,7 +154,7 @@ const displayProductName = computed(() => {
 const form = ref({
   price: null as number | null,
   original_quantity: 1 as number,
-  original_unit: '斤',
+  original_unit: priceUnitName.value,
   merchant_id: null as number | null,
   recorded_at: '',
   notes: '',
@@ -247,7 +249,7 @@ const resetForm = () => {
   form.value = {
     price: null,
     original_quantity: 1,
-    original_unit: props.defaultUnit || '斤',
+    original_unit: props.defaultUnit || priceUnitName.value,
     merchant_id: sessionMemory.merchantId,
     recorded_at: getLocalDateTimeString(),
     notes: '',

@@ -116,6 +116,8 @@
 </template>
 
 <script setup lang="ts">
+import { useUserUnits } from '@/composables/useUserUnits'
+const { priceUnitName } = useUserUnits()
 import { ref, reactive, watch, computed, onMounted } from 'vue'
 import { api } from '@/api/client'
 import type { PriceRecord } from '@/types'
@@ -140,7 +142,7 @@ const form = reactive({
   product_name: '',
   price: '',
   quantity: 1,
-  unit: '斤',
+  unit: priceUnitName.value,
   merchant_name: '',
   is_purchase: true,
   record_date: getLocalDateString(),
@@ -192,7 +194,7 @@ const resetForm = () => {
   form.product_name = ''
   form.price = ''
   form.quantity = 1
-  form.unit = '斤'
+  form.unit = priceUnitName.value
   form.merchant_name = ''
   form.is_purchase = true
   form.record_date = getLocalDateString()

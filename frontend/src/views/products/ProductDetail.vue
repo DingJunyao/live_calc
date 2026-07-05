@@ -979,8 +979,8 @@
                   label="单位"
                   variant="outlined"
                   required
-                  :hint="currentIngredientDefaultUnit ? `原料默认单位: ${currentIngredientDefaultUnit}` : ''"
-                  :persistent-hint="!!currentIngredientDefaultUnit"
+                  :hint="`你的默认记价单位: ${priceUnitName}`"
+                  persistent-hint
                 />
               </v-col>
             </v-row>
@@ -1398,7 +1398,7 @@ const editingNutrition = ref(false)
 const savingNutrition = ref(false)
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名（能量行跟随用户能量单位偏好）
-const { energyUnit } = useUserUnits()
+const { energyUnit, priceUnitName, massUnitName } = useUserUnits()
 const NUTRIENT_DEFINITIONS = computed(() => buildNutrientDefinitions(energyUnit.value))
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
@@ -1526,7 +1526,7 @@ const getNutrientOptionsForRow = (currentKey: string) => {
 const priceForm = ref({
   price: 0,
   quantity: 1,
-  unit: '斤',
+  unit: priceUnitName.value,
   merchant_id: null as number | null
 })
 
@@ -1540,7 +1540,7 @@ const openAddPriceDialog = () => {
   priceForm.value = {
     price: 0,
     quantity: 1,
-    unit: currentIngredientDefaultUnit.value || '斤',
+    unit: priceUnitName.value,
     merchant_id: null
   }
   showAddPriceDialog.value = true
@@ -1552,7 +1552,7 @@ const openEditPriceDialog = (record: PriceRecord) => {
   priceForm.value = {
     price: Number(record.price),
     quantity: Number(record.original_quantity),
-    unit: record.original_unit || '斤',
+    unit: record.original_unit || priceUnitName.value,
     merchant_id: null
   }
   showAddPriceDialog.value = true
@@ -2064,17 +2064,8 @@ const latestChartTrend = computed(() => {
   return data[data.length - 1]
 })
 
-// 图表使用归一化后的统一单位（斤），确保跨单位数据可比较
-const chartUnit = computed(() => '斤')
-
-// 获取当前商品关联的原料的默认单位
-const currentIngredientDefaultUnit = computed(() => {
-  // 从 nutritionData 或 product 中获取原料的默认单位
-  if (nutritionData.value?.ingredient?.default_unit) {
-    return nutritionData.value.ingredient.default_unit
-  }
-  return null
-})
+// 图表使用用户偏好的质量单位（默认斤）
+const chartUnit = computed(() => massUnitName.value)
 
 // 单位选项
 const unitOptions = [
@@ -2655,7 +2646,7 @@ const savePriceRecord = async () => {
       })
       showAddPriceDialog.value = false
       // 重置表单
-      priceForm.value = { price: 0, quantity: 1, unit: '斤', merchant_id: null }
+      priceForm.value = { price: 0, quantity: 1, unit: priceUnitName.value, merchant_id: null }
       // 重新加载数据
       await loadData()
       refreshChart()

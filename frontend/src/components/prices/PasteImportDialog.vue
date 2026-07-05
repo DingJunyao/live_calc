@@ -147,6 +147,8 @@ import { api } from '@/api/client'
 import { getLocalDateTimeString } from '@/utils/timezone'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { parsePasteText, type ParsedPriceLine } from '@/utils/pastePriceParser'
+import { useUserUnits } from '@/composables/useUserUnits'
+const { priceUnitName } = useUserUnits()
 
 interface ImportRow extends ParsedPriceLine {
   status: 'matched' | 'unmatched' | 'invalid'
@@ -227,7 +229,7 @@ async function doParse() {
       const it = ingredientTimers.get(r)
       if (it) clearTimeout(it)
     }
-    const parsed = parsePasteText(rawText.value)
+    const parsed = parsePasteText(rawText.value, priceUnitName.value)
     rows.value = parsed.map(p => ({
       ...p,
       status: p.ok ? 'unmatched' : 'invalid',

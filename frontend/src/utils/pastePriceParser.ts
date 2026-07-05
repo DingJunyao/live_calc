@@ -33,7 +33,7 @@ function normalizeUnit(raw: string): string {
   return UNIT_ALIASES[raw] ?? raw
 }
 
-export function parsePasteLine(line: string): ParsedPriceLine {
+export function parsePasteLine(line: string, defaultUnit: string = '斤'): ParsedPriceLine {
   const trimmed = line.trim()
 
   if (trimmed === '') {
@@ -54,7 +54,7 @@ export function parsePasteLine(line: string): ParsedPriceLine {
   const unitStr = m[4]          // 可能为 undefined
 
   const quantity = qtyStr !== '' ? parseFloat(qtyStr) : 1
-  const unit = unitStr ? normalizeUnit(unitStr) : '斤'
+  const unit = unitStr ? normalizeUnit(unitStr) : defaultUnit
 
   if (!name) {
     return { raw: line, name: '', price, quantity, unit, ok: false, error: '商品名为空' }
@@ -66,6 +66,6 @@ export function parsePasteLine(line: string): ParsedPriceLine {
   return { raw: line, name, price, quantity, unit, ok: true }
 }
 
-export function parsePasteText(text: string): ParsedPriceLine[] {
-  return text.split(/\r?\n/).map(parsePasteLine)
+export function parsePasteText(text: string, defaultUnit: string = '斤'): ParsedPriceLine[] {
+  return text.split(/\r?\n/).map(l => parsePasteLine(l, defaultUnit))
 }
