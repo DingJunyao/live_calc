@@ -1144,6 +1144,8 @@ import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.
 import { usePendingProposals } from '@/composables/usePendingProposals'
 import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { useUserUnits } from '@/composables/useUserUnits'
+import { buildNutrientDefinitions } from '@/composables/nutrientDefinitions'
 
 const { ask } = useConfirmDialog()
 const userStore = useUserStore()
@@ -1395,39 +1397,9 @@ const basicEditForm = ref({
 const editingNutrition = ref(false)
 const savingNutrition = ref(false)
 
-// 营养素定义：key 匹配后端 all_nutrients 的英文键名
-const NUTRIENT_DEFINITIONS = [
-  { key: 'energy', label: '能量', units: ['kcal', 'kJ'], defaultUnit: 'kcal' },
-  { key: 'protein', label: '蛋白质', units: ['g', 'mg'], defaultUnit: 'g' },
-  { key: 'fat', label: '脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
-  { key: 'carbohydrate', label: '碳水化合物', units: ['g', 'mg'], defaultUnit: 'g' },
-  { key: 'fiber', label: '膳食纤维', units: ['g'], defaultUnit: 'g' },
-  { key: 'calcium', label: '钙', units: ['mg', 'μg', 'g'], defaultUnit: 'mg' },
-  { key: 'iron', label: '铁', units: ['mg', 'μg'], defaultUnit: 'mg' },
-  { key: 'sodium', label: '钠', units: ['mg', 'g'], defaultUnit: 'mg' },
-  { key: 'potassium', label: '钾', units: ['mg', 'g'], defaultUnit: 'mg' },
-  { key: 'vitamin_a_rae', label: '维生素A', units: ['μg', 'IU', 'mg'], defaultUnit: 'μg' },
-  { key: 'vitamin_c', label: '维生素C', units: ['mg', 'g'], defaultUnit: 'mg' },
-  { key: 'vitamin_b1', label: '维生素B1', units: ['mg', 'μg'], defaultUnit: 'mg' },
-  { key: 'vitamin_b2', label: '维生素B2', units: ['mg', 'μg'], defaultUnit: 'mg' },
-  { key: 'vitamin_b12', label: '维生素B12', units: ['μg', 'mg'], defaultUnit: 'μg' },
-  { key: 'vitamin_d', label: '维生素D', units: ['μg', 'IU'], defaultUnit: 'μg' },
-  { key: 'vitamin_e', label: '维生素E', units: ['mg', 'IU'], defaultUnit: 'mg' },
-  { key: 'vitamin_k', label: '维生素K', units: ['μg', 'mg'], defaultUnit: 'μg' },
-  { key: 'magnesium', label: '镁', units: ['mg', 'g'], defaultUnit: 'mg' },
-  { key: 'zinc', label: '锌', units: ['mg', 'μg'], defaultUnit: 'mg' },
-  { key: 'selenium', label: '硒', units: ['μg', 'mg'], defaultUnit: 'μg' },
-  { key: 'cholesterol', label: '胆固醇', units: ['mg', 'g'], defaultUnit: 'mg' },
-  { key: 'saturated_fat', label: '饱和脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
-  { key: 'folate', label: '叶酸', units: ['μg', 'mg'], defaultUnit: 'μg' },
-  { key: 'phosphorus', label: '磷', units: ['mg', 'g'], defaultUnit: 'mg' },
-  { key: 'copper', label: '铜', units: ['mg', 'μg'], defaultUnit: 'mg' },
-  { key: 'manganese', label: '锰', units: ['mg', 'μg'], defaultUnit: 'mg' },
-  { key: 'vitamin_b6', label: '维生素B6', units: ['mg', 'μg'], defaultUnit: 'mg' },
-  { key: 'pantothenic_acid', label: '维生素B5', units: ['mg'], defaultUnit: 'mg' },
-  { key: 'monounsaturated_fat', label: '单不饱和脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
-  { key: 'polyunsaturated_fat', label: '多不饱和脂肪', units: ['g', 'mg'], defaultUnit: 'g' },
-]
+// 营养素定义：key 匹配后端 all_nutrients 的英文键名（能量行跟随用户能量单位偏好）
+const { energyUnit } = useUserUnits()
+const NUTRIENT_DEFINITIONS = computed(() => buildNutrientDefinitions(energyUnit.value))
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
 const NUTRIENT_PARENT_MAP: Record<string, string> = {
@@ -1454,7 +1426,7 @@ const ENERGY_FACTORS: Record<string, number> = {
 
 // 查找营养素定义
 const findNutrientDef = (key: string) => {
-  const def = NUTRIENT_DEFINITIONS.find(n => n.key === key)
+  const def = NUTRIENT_DEFINITIONS.value.find(n => n.key === key)
   if (def) return def
   return buildDynamicDef(key)
 }
@@ -1482,8 +1454,8 @@ const buildDynamicDef = (key: string) => {
 }
 
 const getAllNutrientDefs = () => {
-  const defs = [...NUTRIENT_DEFINITIONS]
-  const existingKeys = new Set(NUTRIENT_DEFINITIONS.map(d => d.key))
+  const defs = [...NUTRIENT_DEFINITIONS.value]
+  const existingKeys = new Set(NUTRIENT_DEFINITIONS.value.map(d => d.key))
   for (const key of Object.keys(ENGLISH_TO_CHINESE_MAP)) {
     if (existingKeys.has(key)) continue
     const parentKey = NUTRIENT_PARENT_MAP[key]
@@ -2513,7 +2485,7 @@ const startEditNutrition = () => {
   }
 
   // 按核心顺序排序
-  const orderMap = new Map(NUTRIENT_DEFINITIONS.map((n, i) => [n.key, i]))
+  const orderMap = new Map(NUTRIENT_DEFINITIONS.value.map((n, i) => [n.key, i]))
   items.sort((a, b) => {
     const oa = orderMap.get(a.key) ?? 999
     const ob = orderMap.get(b.key) ?? 999

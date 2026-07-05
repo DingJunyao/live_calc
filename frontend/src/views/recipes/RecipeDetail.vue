@@ -450,6 +450,7 @@ import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { usePageTitle } from '@/composables/usePageTitle'
+import { useUserUnits } from '@/composables/useUserUnits'
 import { NUTRITION_LABEL_MAP, ENGLISH_TO_CHINESE_MAP } from '@/utils/nutritionLabels'
 import RecipeBasicCard from '@/components/recipes/RecipeBasicCard.vue'
 import RecipeIngredientCard from '@/components/recipes/RecipeIngredientCard.vue'
@@ -594,14 +595,15 @@ const loadingCostHistory = ref(false)
 // 已加载的最大天数（从 0 开始，每次加载成功后更新）
 const maxDaysLoaded = ref(0)
 
-// 核心营养素配置（默认显示的营养素）
-const coreNutritionItems = [
-  { key: '能量', label: '能量', unit: 'kcal' },
+// 核心营养素配置（默认显示的营养素）——能量单位跟随用户偏好
+const { energyUnit } = useUserUnits()
+const coreNutritionItems = computed(() => [
+  { key: '能量', label: '能量', unit: energyUnit.value },
   { key: '蛋白质', label: '蛋白质', unit: 'g' },
   { key: '脂肪', label: '脂肪', unit: 'g' },
   { key: '碳水化合物', label: '碳水化合物', unit: 'g' },
   { key: '钠', label: '钠', unit: 'mg' }
-]
+])
 
 // 营养素排序顺序（展开时这些营养素排在前面）
 const nutrientSortOrder = [
@@ -645,7 +647,7 @@ const displayNutritionItems = computed(() => {
   const allNutrients = nutritionData.value.per_serving_nutrition.all_nutrients || {}
 
   // 默认显示的5个营养素
-  const defaultItems = coreNutritionItems
+  const defaultItems = coreNutritionItems.value
     .filter(item => coreNutrients[item.key])
     .map(item => ({
       key: item.key,
@@ -659,7 +661,7 @@ const displayNutritionItems = computed(() => {
   }
 
   // 获取默认显示的5个营养素的键集合
-  const defaultKeys = new Set(coreNutritionItems.map(ci => ci.key))
+  const defaultKeys = new Set(coreNutritionItems.value.map(ci => ci.key))
 
   // 获取 core_nutrients 中的其他营养素（如膳食纤维、钙、铁等）
   const otherCoreNutrients = Object.keys(coreNutrients)
@@ -737,7 +739,7 @@ const otherNutrientsCount = computed(() => {
   const allNutrients = nutritionData.value.per_serving_nutrition.all_nutrients || {}
 
   // 获取默认显示的5个营养素的键集合
-  const defaultKeys = new Set(coreNutritionItems.map(ci => ci.key))
+  const defaultKeys = new Set(coreNutritionItems.value.map(ci => ci.key))
 
   // 计算 core_nutrients 中的其他营养素数量（如膳食纤维、钙、铁等）
   const otherCoreCount = Object.keys(coreNutrients).filter(key => !defaultKeys.has(key)).length
