@@ -13,6 +13,7 @@ from app.core.security import (
     get_current_admin_user,
 )
 from app.models.user import User
+from app.models.unit import Unit
 from app.models.invite_code import InviteCode
 from app.models.system_config import SystemConfig
 from app.schemas.auth import (
@@ -27,6 +28,8 @@ from app.schemas.auth import (
     UserAdminUpdate,
     UserAdminStatusUpdate,
     UserProfileUpdate,
+    UnitPreference,
+    UnitPreferences,
 )
 from app.schemas.common import PaginatedResponse
 from typing import List, Optional
@@ -45,6 +48,24 @@ def _get_bool_config(db: Session, key: str, default: bool = False) -> bool:
     """从数据库读取布尔型动态配置。"""
     val = _get_dynamic_config(db, key, "true" if default else "false")
     return val.lower() in ("true", "1", "yes")
+
+
+def _build_unit_preferences(user: User, db: Session) -> UnitPreferences:
+    """从 User 的 4 个单位字段构造 unit_preferences，解析单位名。"""
+    def _pref(uid):
+        if uid is None:
+            return None
+        u = db.query(Unit).filter(Unit.id == uid).first()
+        if not u:
+            return None
+        return UnitPreference(id=u.id, name=u.name, abbreviation=u.abbreviation)
+
+    return UnitPreferences(
+        energy_unit=user.default_energy_unit,
+        mass_unit=_pref(user.default_mass_unit_id),
+        volume_unit=_pref(user.default_volume_unit_id),
+        price_unit=_pref(user.default_price_unit_id),
+    )
 
 
 def validate_invite_code(code: str, db: Session) -> InviteCode:
@@ -239,8 +260,9 @@ async def refresh_token(
 @router.get("/me", response_model=UserResponse)
 async def get_me(
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """获取当前用户信息（含营养目标和预算）。"""
+    """获取当前用户信息（含营养目标、预算、单位偏好）。"""
     return UserResponse(
         id=current_user.id,
         username=current_user.username,
@@ -257,6 +279,7 @@ async def get_me(
             "daily_fat_target": current_user.daily_fat_target,
         },
         daily_budget=current_user.daily_budget,
+        unit_preferences=_build_unit_preferences(current_user, db),
     )
 
 
@@ -266,7 +289,7 @@ async def patch_me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """用户更新自己的营养目标和预算设置。"""
+    """用户更新自己的营养目标、预算、单位偏好设置。"""
     update_data = profile_update.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(
@@ -274,28 +297,74 @@ async def patch_me(
             detail="没有需要更新的字段",
         )
 
+    # 单位偏好校验
+    if "default_energy_unit" in update_data:
+        val = update_data["default_energy_unit"]
+        if val is not None and val not in ("kcal", "kJ"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="default_energy_unit 必须是 kcal 或 kJ",
+            )
+
+    _UNIT_TYPE_EXPECT = {
+        "default_mass_unit_id": "mass",
+        "default_volume_unit_id": "volume",
+        "default_price_unit_id": None,  # 允许 mass/volume/count
+    }
+    _PRICE_ALLOWED = {"mass", "volume", "count"}
+    for field, expected_type in _UNIT_TYPE_EXPECT.items():
+        if field in update_data and update_data[field] is not None:
+            uid = update_data[field]
+            u = db.query(Unit).filter(Unit.id == uid).first()
+            if not u:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{field}={uid} 不存在",
+                )
+            if expected_type is None:
+                if u.unit_type not in _PRICE_ALLOWED:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"价格记录单位必须是 mass/volume/count，得到 {u.unit_type}",
+                    )
+            elif u.unit_type != expected_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{field} 必须是 {expected_type} 类型单位，得到 {u.unit_type}",
+                )
+
+    # current_user 由 get_current_user 从独立 session 解析（detached），
+    # 在本请求 db 内重新加载，保证 setattr + commit + refresh 生效。
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在",
+        )
+
     for field, value in update_data.items():
-        setattr(current_user, field, value)
+        setattr(user, field, value)
 
     db.commit()
-    db.refresh(current_user)
+    db.refresh(user)
 
     return UserResponse(
-        id=current_user.id,
-        username=current_user.username,
-        email=current_user.email,
-        phone=current_user.phone,
-        is_admin=current_user.is_admin,
-        is_active=current_user.is_active,
-        email_verified=current_user.email_verified,
-        created_at=serialize_datetime(current_user.created_at) if current_user.created_at else None,
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        phone=user.phone,
+        is_admin=user.is_admin,
+        is_active=user.is_active,
+        email_verified=user.email_verified,
+        created_at=serialize_datetime(user.created_at) if user.created_at else None,
         nutrition_goals={
-            "daily_calorie_target": current_user.daily_calorie_target,
-            "daily_protein_target": current_user.daily_protein_target,
-            "daily_carb_target": current_user.daily_carb_target,
-            "daily_fat_target": current_user.daily_fat_target,
+            "daily_calorie_target": user.daily_calorie_target,
+            "daily_protein_target": user.daily_protein_target,
+            "daily_carb_target": user.daily_carb_target,
+            "daily_fat_target": user.daily_fat_target,
         },
-        daily_budget=current_user.daily_budget,
+        daily_budget=user.daily_budget,
+        unit_preferences=_build_unit_preferences(user, db),
     )
 
 

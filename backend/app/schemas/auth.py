@@ -42,6 +42,19 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class UnitPreference(BaseModel):
+    id: int
+    name: str
+    abbreviation: str
+
+
+class UnitPreferences(BaseModel):
+    energy_unit: Optional[str] = None
+    mass_unit: Optional[UnitPreference] = None
+    volume_unit: Optional[UnitPreference] = None
+    price_unit: Optional[UnitPreference] = None
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -53,6 +66,7 @@ class UserResponse(BaseModel):
     created_at: Optional[str] = None
     nutrition_goals: Optional[dict] = None
     daily_budget: Optional[float] = None
+    unit_preferences: Optional[UnitPreferences] = None
 
     class Config:
         from_attributes = True
@@ -105,9 +119,13 @@ class UserAdminStatusUpdate(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    """用户自行更新个人设置（仅允许修改营养目标和预算）。"""
+    """用户自行更新个人设置（营养目标、预算、单位偏好）。"""
     daily_calorie_target: Optional[float] = None
     daily_protein_target: Optional[float] = None
     daily_carb_target: Optional[float] = None
     daily_fat_target: Optional[float] = None
     daily_budget: Optional[float] = None
+    default_energy_unit: Optional[str] = None
+    default_mass_unit_id: Optional[int] = None
+    default_volume_unit_id: Optional[int] = None
+    default_price_unit_id: Optional[int] = None
