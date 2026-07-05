@@ -13,7 +13,7 @@
       <!-- 面板一：SMTP 配置 -->
       <v-expansion-panel :value="0">
         <v-expansion-panel-title>
-          <v-icon start class="mr-2">mdi-email-cog</v-icon>
+          <v-icon start class="mr-2">mdi-server-network-outline</v-icon>
           SMTP 配置
         </v-expansion-panel-title>
         <v-expansion-panel-text>

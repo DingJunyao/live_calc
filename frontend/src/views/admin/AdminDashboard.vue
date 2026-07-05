@@ -178,7 +178,7 @@
         </v-list-item>
 
         <v-list-item
-          prepend-icon="mdi-email-cog"
+          prepend-icon="mdi-email-sync-outline"
           title="邮件配置"
           subtitle="SMTP 设置与邮件模板管理"
           to="/admin/email-config"
