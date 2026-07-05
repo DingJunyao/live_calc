@@ -83,6 +83,15 @@ def submit(db: Session, *, entity_type: str, entity_id: Optional[int], action: s
             proposal.reviewed_at = _now()
         # escalate → 保持 pending
     # manual → 保持 pending
+
+    # 邮件通知管理员（统一出口，覆盖所有调用方）
+    if proposal.review_policy == "manual" and proposal.status == "pending":
+        try:
+            from app.services.email_notifications import notify_admins_on_submit
+            notify_admins_on_submit(db, proposal)
+        except Exception as e:
+            logger.warning("管理员邮件通知失败（不阻断提议提交）: %s", e)
+
     return proposal
 
 

@@ -15,9 +15,6 @@ from app.schemas.proposal import (
     ProposalPreviewRequest,
     ReviewDecision,
 )
-from app.models.smtp_config import SmtpConfig
-from app.services.email_service import EmailService
-
 router = APIRouter()
 
 
@@ -177,11 +174,6 @@ def submit_proposal(body: ProposalCreate,
         action=body.action, payload=body.payload, proposer=current_user,
     )
     db.commit()
-
-    # 邮件通知管理员
-    if p.review_policy == "manual" and p.status == "pending":
-        _notify_admins_on_submit(db, p)
-
     return _to_response(db, p)
 
 
@@ -291,9 +283,9 @@ def review_proposal(proposal_id: int, body: ReviewDecision,
 
     # 邮件通知发起者
     if p.status == "applied":
-        _notify_proposer(db, p, "proposal_approved")
+        notify_proposer(db, p, "proposal_approved")
     elif p.status == "rejected":
-        _notify_proposer(db, p, "proposal_rejected", {"review_note": body.note or ""})
+        notify_proposer(db, p, "proposal_rejected", {"review_note": body.note or ""})
 
     return _to_response(db, p)
 
@@ -309,56 +301,5 @@ def revert_proposal(proposal_id: int,
 
 
 # ========== 邮件通知辅助 ==========
-
-def _entity_label_for_email(db, proposal) -> str:
-    """获取实体的可读标签用于邮件。"""
-    executor = ExecutorRegistry.get(proposal.entity_type)
-    if executor is not None:
-        try:
-            label = executor.entity_label(db, proposal)
-            if label:
-                return label
-        except Exception:
-            pass
-    return f"{proposal.entity_type}#{proposal.entity_id}" if proposal.entity_id else proposal.entity_type
-
-
-def _notify_admins_on_submit(db, proposal):
-    """有新的 manual 提议时通知所有管理员。"""
-    from app.models.user import User
-    config = db.query(SmtpConfig).first()
-    service = EmailService(config)
-    if not service.ready:
-        return
-    admins = db.query(User).filter(User.is_admin.is_(True)).all()
-    variables = {
-        "proposer_name": f"#{proposal.proposer_id}",
-        "proposal_id": str(proposal.id),
-        "entity_type_label": proposal.entity_type,
-        "action_label": proposal.action,
-        "entity_label": _entity_label_for_email(db, proposal),
-    }
-    for admin in admins:
-        if admin.email:
-            service.send_template_async("proposal_submitted", admin.email, variables, db)
-
-
-def _notify_proposer(db, proposal, template_key, extra_vars=None):
-    """审核完成后通知提议发起者。"""
-    from app.models.user import User
-    config = db.query(SmtpConfig).first()
-    service = EmailService(config)
-    if not service.ready:
-        return
-    proposer = db.query(User).filter(User.id == proposal.proposer_id).first()
-    if not proposer or not proposer.email:
-        return
-    variables = {
-        "proposal_id": str(proposal.id),
-        "entity_type_label": proposal.entity_type,
-        "action_label": proposal.action,
-        "entity_label": _entity_label_for_email(db, proposal),
-    }
-    if extra_vars:
-        variables.update(extra_vars)
-    service.send_template_async(template_key, proposer.email, variables, db)
+# （通知逻辑统一在 app/services/email_notifications.py，此处仅暴露便捷函数给 review 端点使用）
+from app.services.email_notifications import notify_proposer

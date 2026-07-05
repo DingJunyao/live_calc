@@ -649,15 +649,24 @@ async def upload_recipe_image(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """上传菜谱配图"""
+    """上传菜谱配图。
+
+    - 管理员/作者 + 未发布菜谱：直接写入 recipe.images（立即生效）
+    - 非管理员编辑已发布/公共菜谱：仅存文件到磁盘，返回路径由前端纳入编辑提议 payload，统一走审核
+    """
     try:
         recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
-        if recipe.user_id != current_user.id and not current_user.is_admin:
-            # 已发布或公共导入菜谱允许任何人上传图片（图片直接生效）
-            if not getattr(recipe, "is_public", False) and not recipe.source:
-                raise HTTPException(status_code=403, detail="无权修改此菜谱")
+
+        is_public_or_source = getattr(recipe, "is_public", False) or recipe.source
+        is_owner_or_admin = recipe.user_id == current_user.id or current_user.is_admin
+
+        if not is_owner_or_admin and not is_public_or_source:
+            raise HTTPException(status_code=403, detail="无权修改此菜谱")
+
+        # 管理员始终直写；非管理员编辑已发布/来源菜谱 → 不走直写，交由审核流程
+        direct_write = current_user.is_admin or not is_public_or_source
 
         # 验证文件类型
         allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -680,15 +689,20 @@ async def upload_recipe_image(
         with open(file_path, "wb") as f:
             f.write(content)
 
-        # 更新菜谱的 images 列表
         image_rel_path = f"/static/images/recipes/{filename}"
-        current_images = recipe.images or []
-        current_images.append(image_rel_path)
-        recipe.images = current_images
 
-        from datetime import datetime, timezone
-        recipe.updated_at = datetime.now(timezone.utc)
-        db.commit()
+        if direct_write:
+            # 管理员/作者编辑未发布菜谱：直接写入（无审核流程）
+            current_images = recipe.images or []
+            current_images.append(image_rel_path)
+            recipe.images = current_images
+            from datetime import datetime, timezone
+            recipe.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        else:
+            # 已发布/公共菜谱 + 非管理员：仅存文件，不更新 DB
+            # 前端在 handleSave 时会把图片路径放进 PUT payload 统一走审核
+            pass
 
         return {"image_path": image_rel_path, "image_url": f"/api/v1{image_rel_path}"}
 

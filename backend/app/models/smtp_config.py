@@ -13,6 +13,7 @@ class SmtpConfig(Base):
     username = Column(String(255), nullable=False, default="")
     password = Column(String(255), nullable=False, default="")
     use_tls = Column(Boolean, nullable=False, default=True)
+    use_ssl = Column(Boolean, nullable=False, default=False)
     from_address = Column(String(255), nullable=False, default="")
     from_name = Column(String(100), nullable=False, default="LiveCalc")
     enabled = Column(Boolean, nullable=False, default=False)

@@ -8,6 +8,7 @@ class SmtpConfigResponse(BaseModel):
     port: int
     username: str
     use_tls: bool
+    use_ssl: bool
     from_address: str
     from_name: str
     enabled: bool
@@ -21,6 +22,7 @@ class SmtpConfigUpdate(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     use_tls: Optional[bool] = None
+    use_ssl: Optional[bool] = None
     from_address: Optional[str] = None
     from_name: Optional[str] = None
     enabled: Optional[bool] = None

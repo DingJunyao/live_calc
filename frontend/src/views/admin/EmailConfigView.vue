@@ -22,12 +22,17 @@
               <v-text-field v-model="smtp.host" label="SMTP 服务器" placeholder="smtp.example.com"
                 variant="outlined" density="compact" hide-details="auto" />
             </v-col>
-            <v-col cols="6" sm="3">
+            <v-col cols="6" sm="2">
               <v-text-field v-model.number="smtp.port" label="端口" type="number"
                 variant="outlined" density="compact" hide-details="auto" />
             </v-col>
-            <v-col cols="6" sm="3" class="d-flex align-center">
-              <v-switch v-model="smtp.use_tls" label="TLS" density="compact" hide-details />
+            <v-col cols="6" sm="2" class="d-flex align-center">
+              <v-switch v-model="smtp.use_ssl" label="SSL" density="compact" hide-details
+                @update:model-value="onSslChanged" />
+            </v-col>
+            <v-col cols="6" sm="2" class="d-flex align-center">
+              <v-switch v-model="smtp.use_tls" label="STARTTLS" density="compact" hide-details
+                @update:model-value="onTlsChanged" />
             </v-col>
             <v-col cols="12" sm="6">
               <v-text-field v-model="smtp.username" label="用户名"
@@ -140,11 +145,25 @@ const { notify } = useGlobalSnackbar()
 const goBack = () => router.back()
 
 const smtp = reactive<SmtpConfig>({
-  host: '', port: 587, username: '', use_tls: true,
+  host: '', port: 587, username: '', use_tls: true, use_ssl: false,
   from_address: '', from_name: 'LiveCalc', enabled: false,
 })
 const passwordField = ref('')
 const savingSmtp = ref(false)
+
+const onSslChanged = (val: boolean) => {
+  if (val) {
+    smtp.use_tls = false
+    if (smtp.port === 587 || smtp.port === 25) smtp.port = 465
+  }
+}
+
+const onTlsChanged = (val: boolean) => {
+  if (val) {
+    smtp.use_ssl = false
+    if (smtp.port === 465 || smtp.port === 25) smtp.port = 587
+  }
+}
 
 const saveSmtp = async () => {
   savingSmtp.value = true

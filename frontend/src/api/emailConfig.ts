@@ -5,6 +5,7 @@ export interface SmtpConfig {
   port: number
   username: string
   use_tls: boolean
+  use_ssl: boolean
   from_address: string
   from_name: string
   enabled: boolean
@@ -16,6 +17,7 @@ export interface SmtpConfigUpdate {
   username?: string
   password?: string
   use_tls?: boolean
+  use_ssl?: boolean
   from_address?: string
   from_name?: string
   enabled?: boolean
