@@ -249,6 +249,23 @@
           <div v-if="latestPriceDate" class="text-caption text-medium-emphasis mt-2">
             {{ formatToLocalDate(latestPriceDate) }}
           </div>
+          <!-- 加权来源明细（透明追溯） -->
+          <v-expansion-panels v-if="latestPriceParticipants.length" variant="accordion" class="mt-2">
+            <v-expansion-panel>
+              <v-expansion-panel-title class="text-caption">
+                加权明细（{{ latestPriceParticipants.length }} 个商品参与）
+              </v-expansion-panel-title>
+              <v-expansion-panel-text>
+                <div v-for="p in latestPriceParticipants" :key="p.product_id" class="text-caption d-flex justify-space-between">
+                  <span>{{ p.name }} <v-chip size="x-small" :color="p.weight === 0 ? 'grey' : 'default'">权重 {{ p.weight }}</v-chip></span>
+                  <span class="text-medium-emphasis">¥{{ Number(p.unit_price).toFixed(4) }}（{{ p.weight_source === 'override' ? '我的' : '全局' }}）</span>
+                </div>
+                <div v-for="e in latestPriceExcluded" :key="'ex_' + e.product_id" class="text-caption text-medium-emphasis">
+                  已排除：{{ e.name }}（{{ e.reason === 'weight_zero' ? '权重为0' : '当日无记录' }}）
+                </div>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
         </v-card-text>
 
         <!-- 各商家最新价格 -->
@@ -1638,6 +1655,35 @@
               hint="输入后回车添加多个别名"
               persistent-hint
             />
+            <!-- 全局价格权重：仅管理员可改 -->
+            <v-text-field
+              v-if="userStore.user?.is_admin"
+              v-model.number="productForm.priceWeight"
+              label="全局价格权重 (0-100)"
+              type="number"
+              variant="outlined"
+              :rules="[v => (v >= 0 && v <= 100) || '0-100']"
+              hint="原料加权平均用；50=等权，0=排除该商品"
+              persistent-hint
+            />
+            <v-text-field
+              v-else
+              :model-value="productForm.globalWeightReadOnly"
+              label="全局价格权重（仅管理员可改）"
+              variant="outlined"
+              readonly
+            />
+            <!-- 我的权重覆盖（所有人可设） -->
+            <v-text-field
+              v-model.number="productForm.myWeight"
+              label="我的权重覆盖 (0-100，留空用全局)"
+              type="number"
+              variant="outlined"
+              :rules="[v => v === null || v === undefined || (v >= 0 && v <= 100) || '0-100']"
+              clearable
+              hint="覆盖全局权重，仅影响你自己"
+              persistent-hint
+            />
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -1686,6 +1732,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
+import { getProductMyWeight, setProductMyWeight, deleteProductMyWeight } from '@/api/productWeight'
 import { getErrorMessage } from '@/utils/errorHandler'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import HierarchyGraph from '@/components/charts/HierarchyGraph.vue'
@@ -1901,6 +1948,8 @@ const overlaidServingWeightUnitName = computed(() => {
 const latestPrice = ref<number | null>(null)
 const latestPriceDate = ref<string | null>(null)
 const loadingLatestPrice = ref(false)
+const latestPriceParticipants = ref<any[]>([])
+const latestPriceExcluded = ref<any[]>([])
 
 // 按商家分组的最新价格
 interface MerchantPrice {
@@ -1932,6 +1981,9 @@ const productForm = ref({
   brand: '',
   barcode: '',
   aliases: [] as string[],
+  priceWeight: 50 as number,
+  myWeight: null as number | null,
+  globalWeightReadOnly: 50 as number,
 })
 // 删除商品
 const showDeleteProductDialog = ref(false)
@@ -1942,7 +1994,7 @@ const deletingProductLoading = ref(false)
 const openAddProductDialog = () => {
   isEditingProduct.value = false
   editingProductId.value = null
-  productForm.value = { name: '', brand: '', barcode: '', aliases: [] }
+  productForm.value = { name: '', brand: '', barcode: '', aliases: [], priceWeight: 50, myWeight: null, globalWeightReadOnly: 50 }
   showProductDialog.value = true
 }
 
@@ -1955,7 +2007,16 @@ const openEditProductDialog = (product: Product) => {
     brand: product.brand || '',
     barcode: (product as any).barcode || '',
     aliases: [...((product as any).aliases || [])],
+    priceWeight: (product as any).price_weight ?? 50,
+    myWeight: null,
+    globalWeightReadOnly: (product as any).price_weight ?? 50,
   }
+  // 拉取当前用户生效权重（覆盖 > 全局）
+  getProductMyWeight(product.id).then((res: any) => {
+    productForm.value.myWeight = res.source === 'override' ? res.override_weight : null
+    productForm.value.globalWeightReadOnly = res.global_weight
+    productForm.value.priceWeight = res.global_weight
+  }).catch(() => {})
   showProductDialog.value = true
 }
 
@@ -1969,13 +2030,24 @@ const saveProduct = async () => {
   try {
     if (isEditingProduct.value && editingProductId.value) {
       // 编辑
-      const response = await api.put(`/products/entity/${editingProductId.value}`, {
+      const _payload: any = {
         name: productForm.value.name,
         brand: productForm.value.brand || null,
         barcode: productForm.value.barcode || null,
         ingredient_id: ingredientId.value,
         aliases: productForm.value.aliases,
-      })
+      }
+      // 全局 price_weight 仅管理员可改
+      if (userStore.user?.is_admin) {
+        _payload.price_weight = productForm.value.priceWeight
+      }
+      const response = await api.put(`/products/entity/${editingProductId.value}`, _payload)
+      // 我的权重覆盖（独立端点，所有人可用）
+      if (productForm.value.myWeight !== null && productForm.value.myWeight !== undefined) {
+        await setProductMyWeight(editingProductId.value, productForm.value.myWeight).catch(() => {})
+      } else {
+        await deleteProductMyWeight(editingProductId.value).catch(() => {})
+      }
       if (userStore.user?.is_admin) {
         // 更新本地列表
         const idx = products.value.findIndex(p => p.id === editingProductId.value)
@@ -3002,9 +3074,13 @@ const loadLatestPrice = async () => {
     const response = await api.get(`/nutrition/ingredients/${ingredientId.value}/latest-price`)
     latestPrice.value = response.average_price
     latestPriceDate.value = response.latest_date
+    latestPriceParticipants.value = response.participants || []
+    latestPriceExcluded.value = response.excluded || []
   } catch (e) {
     latestPrice.value = null
     latestPriceDate.value = null
+    latestPriceParticipants.value = []
+    latestPriceExcluded.value = []
   } finally {
     loadingLatestPrice.value = false
   }

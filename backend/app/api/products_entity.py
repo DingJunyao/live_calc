@@ -397,6 +397,10 @@ def update_product(
 
     update_data["updated_by"] = current_user.id
 
+    # 全局 price_weight 仅管理员可改；普通用户提交时剔除（连同审核提议都不开）
+    if not current_user.is_admin and "price_weight" in update_data:
+        update_data.pop("price_weight", None)
+
     # 分流：管理员直写 / 普通用户提议（全 manual）
     if current_user.is_admin:
         proposal_service.apply_as_admin(

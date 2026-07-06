@@ -761,29 +761,20 @@ async def calculate_recipe_cost(
         recipe_chain = None  # 制作菜谱链信息（半成品成本传递）
         original_ingredient_name = ingredient.name  # 保存原始食材名称
         product = None
+        weighted_participants = None  # 直接商品加权明细（透明追溯）
 
-        # 遍历所有商品，找到第一个有价格记录的
+        # 直接商品：加权平均（取代「遍历取第一个有记录商品 + 前向填充」）
         if products:
-            for p in products:
-                day_records = _get_price_records_for_date(db, user_id, ingredient.id, now, product_id=p.id)
-                if day_records:
-                    product = p
-                    break
-
-            # 如果所有商品都没有当天记录，尝试前向填充和回退机制
-            if not day_records:
-                # 先尝试直接商品的前向填充（与趋势函数 calculate_recipe_cost_range_trend
-                # 中的 _find_forward_fill_records 保持一致的优先级）
-                for p in products:
-                    day_records = _get_price_records_with_fallback(
-                        db=db,
-                        user_id=user_id,
-                        product_id=p.id,
-                        as_of_date=now
-                    )
-                    if day_records:
-                        product = p
-                        break
+            from app.services.ingredient_price_service import resolve_direct_weighted_for_cost
+            _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=now)
+            if _dw is not None:
+                unit_price, weighted_participants, _std_uid = _dw
+                # 构造占位 day_records 供下方单位转换段读 standard_unit_id
+                class _StdHolder:
+                    def __init__(self, uid):
+                        self.standard_unit_id = uid
+                day_records = [_StdHolder(_std_uid)] if _std_uid else []
+            # 加权无价时 day_records 仍空，由下方食材回退链接管（保留原回退链）
 
             # 如果直接商品的前向填充也没找到，再尝试食材回退机制
             if not day_records:
@@ -875,8 +866,9 @@ async def calculate_recipe_cost(
                 unit_price, aggregation_chain = child_agg
                 # unit_price 已经是元/克
 
-        if day_records or aggregation_chain is not None or recipe_chain is not None:
+        if unit_price is None and (day_records or aggregation_chain is not None or recipe_chain is not None):
             # 计算当天所有记录的平均单价（仅在 day_records 有真实记录时计算）
+            # 加权直取时 unit_price 已设，跳过本段（避免对占位 day_records 重算）
             unit_prices = []
             for record in day_records:
                 record_price = Decimal(str(record.price))
@@ -1047,6 +1039,22 @@ def calculate_recipe_cost_range_as_of(
         if not products:
             continue
 
+        # 直接商品：加权平均（取代「遍历取第一个有记录商品」）
+        # 加权成功：min/max 取参与商品单价范围，avg 取加权价；跳过原区间遍历逻辑
+        from app.services.ingredient_price_service import resolve_direct_weighted_for_cost
+        _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=as_of_date)
+        if _dw is not None:
+            _wp_avg, _wp_parts, _ = _dw
+            quantity, _eff_uid = _get_effective_quantity(recipe_ingredient)
+            if quantity:
+                _pcts = [Decimal(str(p["unit_price"])) for p in _wp_parts]
+                _q = Decimal(str(quantity))
+                total_min_cost += min(_pcts) * _q
+                total_max_cost += max(_pcts) * _q
+                total_avg_cost += Decimal(str(_wp_avg)) * _q
+                valid_ingredients += 1
+            continue
+        # 加权无价，回退到原「遍历取第一个 + 区间」逻辑
         # 遍历所有商品，查找当天有价格记录的商品
         day_records = []
         product = None
@@ -2102,19 +2110,31 @@ def calculate_recipe_cost_as_of(
         recipe_chain = None  # 制作菜谱链信息（半成品成本传递）
         original_ingredient_name = ingredient.name  # 保存原始食材名称
         product = None
+        weighted_participants = None  # 直接商品加权明细（透明追溯）
 
         if products:
-            # 遍历所有商品，找到第一个有价格记录的
-            for p in products:
-                latest_record = _get_price_record_with_fallback(
-                    db=db,
-                    user_id=user_id,
-                    product_id=p.id,
-                    as_of_date=as_of_date
-                )
-                if latest_record:
-                    product = p
-                    break
+            # 直接商品：加权平均（取代「遍历取第一个有记录商品」）
+            from app.services.ingredient_price_service import resolve_direct_weighted_for_cost
+            _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=as_of_date)
+            if _dw is not None:
+                unit_price, weighted_participants, _std_uid = _dw
+                # 构造占位 latest_record 供下方单位转换段读 standard_unit_id
+                class _StdHolder:
+                    def __init__(self, uid):
+                        self.standard_unit_id = uid
+                latest_record = _StdHolder(_std_uid) if _std_uid else None
+            else:
+                # 加权无价，回退到原「遍历取第一个」
+                for p in products:
+                    latest_record = _get_price_record_with_fallback(
+                        db=db,
+                        user_id=user_id,
+                        product_id=p.id,
+                        as_of_date=as_of_date,
+                    )
+                    if latest_record:
+                        product = p
+                        break
 
             # 如果找不到价格记录，尝试使用回退食材
             if not latest_record:
@@ -2126,8 +2146,8 @@ def calculate_recipe_cost_as_of(
                     # 更新ingredient为回退食材，用于成本计算
                     ingredient = fallback_ingredient
 
-            if latest_record:
-                # 计算单价：总价 ÷ 数量
+            if latest_record and unit_price is None:
+                # 计算单价：总价 ÷ 数量（加权直取时 unit_price 已设，跳过）
                 record_price = Decimal(str(latest_record.price))
 
                 # 修复：检查 standard_quantity 是否为 None 或 0，避免除零错误

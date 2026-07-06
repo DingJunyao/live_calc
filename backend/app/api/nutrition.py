@@ -945,52 +945,76 @@ async def get_ingredient_latest_price(
             if _mu and _mu.abbreviation:
                 target_unit_abbr = _mu.abbreviation
 
+        # 预取用户权重覆盖（一次查询）
+        from app.models.user_product_weight_override import UserProductWeightOverride
+        overrides = {}
+        if products:
+            _ov_rows = db.query(UserProductWeightOverride).filter(
+                UserProductWeightOverride.user_id == current_user.id,
+                UserProductWeightOverride.product_id.in_([p.id for p in products]),
+                UserProductWeightOverride.is_active == True,  # noqa: E712
+            ).all()
+            overrides = {r.product_id: r.weight for r in _ov_rows}
 
-        # 计算平均价格 - 转换到目标单位（响应去标识：只产出价格维度，不含 user_id/record_type）
-        unit_prices = []
-        for i, record in enumerate(recent_records):
-            if record.price is not None and record.original_quantity is not None and record.original_quantity > 0 and record.original_unit:
-                total_price = float(record.price)
-                original_quantity = float(record.original_quantity)
-                original_unit_abbr = record.original_unit.abbreviation
+        # 按商品分组最近记录
+        from collections import defaultdict
+        by_product = defaultdict(list)
+        for r in recent_records:
+            by_product[r.product_id].append(r)
 
-                # 如果原料有默认单位，且与记录单位不同，则转换数量到目标单位
-                if target_unit_abbr and original_unit_abbr != target_unit_abbr:
-                    convert_result = unit_service.convert(
-                        original_quantity,
-                        original_unit_abbr,
-                        target_unit_abbr,
-                        entity_type="ingredient",
-                        entity_id=ingredient_id,
+        # 每商品逐条折算到目标单位 → 构造伪记录 → 商品级加权聚合
+        # （用 _aggregate_weighted 取代旧的「全部记录简单平均」，修正记录数偏置：
+        #   旧逻辑下记录多的商品被无形放大；新逻辑下先商品内均价、再商品间按权重加权）
+        from app.services.ingredient_price_service import _aggregate_weighted
+
+        class _PseudoRecord:
+            __slots__ = ("price", "standard_quantity")
+
+        product_records = {}
+        for p in products:
+            recs = by_product.get(p.id, [])
+            if p.id in overrides:
+                w, src = overrides[p.id], "override"
+            else:
+                w = p.price_weight if p.price_weight is not None else 50
+                src = "global"
+            pseudo = []
+            for r in recs:
+                if r.price is None or r.original_quantity is None or float(r.original_quantity) <= 0:
+                    continue
+                original_unit_abbr = r.original_unit.abbreviation if r.original_unit else None
+                if original_unit_abbr and original_unit_abbr != target_unit_abbr:
+                    cr = unit_service.convert(
+                        float(r.original_quantity), original_unit_abbr, target_unit_abbr,
+                        entity_type="ingredient", entity_id=ingredient_id,
                     )
-                    if convert_result is not None:
-                        converted_quantity, _ = convert_result
-                    else:
-                        converted_quantity = None
-
-                    if converted_quantity is not None and converted_quantity > 0:
-                        unit_price = float(total_price) / float(converted_quantity)
-                        unit_prices.append(unit_price)
-                    else:
+                    if cr is None:
                         continue
+                    converted_qty = float(cr[0])
                 else:
-                    unit_price = total_price / original_quantity
-                    unit_prices.append(unit_price)
+                    converted_qty = float(r.original_quantity)
+                if converted_qty <= 0:
+                    continue
+                ps = _PseudoRecord()
+                ps.price = r.price
+                ps.standard_quantity = converted_qty
+                pseudo.append(ps)
+            product_records[p.id] = (pseudo, w, {"product_id": p.id, "name": p.name, "weight_source": src})
 
+        weighted = _aggregate_weighted(product_records)
 
-        if not unit_prices:
-            return {"average_price": None, "unit": None}
+        if weighted["unit_price"] is None:
+            return {"average_price": None, "unit": None, "participants": [], "mode": "none"}
 
-        average_price = sum(unit_prices) / len(unit_prices)
-
-        # 返回原料的默认单位（如果有）
         latest_date = max(r.recorded_at for r in recent_records)
-        result = {
-            "average_price": round(average_price, 2),
+        return {
+            "average_price": round(weighted["unit_price"], 2),
             "unit": target_unit_abbr,
             "latest_date": serialize_datetime(latest_date) if latest_date else None,
+            "participants": weighted["participants"],
+            "excluded": weighted["excluded"],
+            "mode": weighted["mode"],
         }
-        return result
     except Exception as e:
         import traceback
         print(f"[ERROR] 获取最近价格失败: {str(e)}")

@@ -22,6 +22,9 @@ class Product(Base, AuditMixin):
     custom_nutrition_data = Column(JSON, nullable=True)
     custom_nutrition_source = Column(String(50), default="custom")  # custom, ai_match
 
+    # 价格权重 0-100，参与原料加权平均（默认 50 等权）；仅管理员可改
+    price_weight = Column(Integer, nullable=False, default=50)
+
     # 关系
     ingredient = relationship("Ingredient", back_populates="products")
     price_records = relationship("ProductRecord", back_populates="product")

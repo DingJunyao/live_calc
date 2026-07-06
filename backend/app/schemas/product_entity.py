@@ -11,6 +11,7 @@ class ProductBase(BaseModel):
     barcode: Optional[str] = Field(None, max_length=50)
     image_url: Optional[str] = Field(None, max_length=500)
     ingredient_id: int
+    price_weight: int = Field(default=50, ge=0, le=100, description="原料加权平均权重（0-100，默认等权）")
     tags: List[str] = Field(default_factory=list)
     aliases: List[str] = Field(default_factory=list, description="别名列表")
 
@@ -46,6 +47,7 @@ class ProductUpdate(BaseModel):
     barcode: Optional[str] = Field(None, max_length=50)
     image_url: Optional[str] = Field(None, max_length=500)
     ingredient_id: Optional[int] = None
+    price_weight: Optional[int] = Field(None, ge=0, le=100, description="全局价格权重（仅管理员可改）")
     tags: Optional[List[str]] = None
     aliases: Optional[List[str]] = None
 

@@ -14,6 +14,7 @@ from app.models.region_unit_setting import RegionUnitSetting, UserUnitPreference
 from app.models.ingredient_density import IngredientDensity
 from app.models.ingredient_hierarchy import IngredientHierarchy
 from app.models.product_ingredient_link import ProductIngredientLink
+from app.models.user_product_weight_override import UserProductWeightOverride
 from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
 from app.models.user_ingredient_preference import UserIngredientPreference
@@ -41,6 +42,7 @@ __all__ = [
     "IngredientDensity",
     "IngredientHierarchy",
     "ProductIngredientLink",
+    "UserProductWeightOverride",
     "Product",
     "ProductBarcode",
     "UserIngredientPreference",

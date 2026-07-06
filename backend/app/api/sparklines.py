@@ -26,8 +26,16 @@ def _daily_avg_for_product_ids(
     db: Session,
     product_ids: List[int],
     days: int = 90,
+    ingredient_id: Optional[int] = None,
+    user_id: Optional[int] = None,
 ) -> List[float]:
-    """计算一组商品在近N天内的每日平均价格"""
+    """计算一组商品在近N天内的每日平均价格。
+
+    - 传 ingredient_id：商品内日均 → 商品间按 price_weight 加权（原料 sparkline 用，
+      修正「记录多的商品被放大」的偏置）。
+    - 不传：退化为记录级日均（旧行为，商品 sparkline 用）。
+    归一化到 ¥/斤（1斤=500g），按 standard_quantity 确保跨单位可比。
+    """
     if not product_ids:
         return []
 
@@ -43,19 +51,46 @@ def _daily_avg_for_product_ids(
         ProductRecord.price.isnot(None),
     ).order_by(ProductRecord.recorded_at).all()
 
-    daily_totals: dict = defaultdict(lambda: {"sum": 0.0, "count": 0})
+    # 权重表：全局 price_weight
+    pw: dict = {pid: w for pid, w in db.query(Product.id, Product.price_weight)
+                .filter(Product.id.in_(product_ids)).all()}
+    # 用户覆盖（优先于全局）
+    if user_id is not None:
+        from app.models.user_product_weight_override import UserProductWeightOverride
+        ov = {r.product_id: r.weight for r in db.query(UserProductWeightOverride).filter(
+            UserProductWeightOverride.user_id == user_id,
+            UserProductWeightOverride.product_id.in_(product_ids),
+            UserProductWeightOverride.is_active == True,  # noqa: E712
+        ).all()}
+        pw = {k: ov.get(k, v) for k, v in pw.items()}
+
+    # 按日 + 按商品：{date: {product_id: [unit_price,...]}}
+    by_day_product: dict = defaultdict(dict)
     for prod_id, price, std_qty, recorded_at in records:
         std_qty_f = float(std_qty) if std_qty and float(std_qty) > 0 else 500.0
-        # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
         unit_price = float(price) * 500.0 / std_qty_f
-        date_key = recorded_at.strftime("%Y-%m-%d")
-        daily_totals[date_key]["sum"] += unit_price
-        daily_totals[date_key]["count"] += 1
+        dkey = recorded_at.strftime("%Y-%m-%d")
+        by_day_product[dkey].setdefault(prod_id, []).append(unit_price)
 
-    return [
-        round(daily_totals[d]["sum"] / daily_totals[d]["count"], 2)
-        for d in sorted(daily_totals.keys())
-    ]
+    result: List[float] = []
+    for dkey in sorted(by_day_product.keys()):
+        prods = by_day_product[dkey]
+        if ingredient_id is not None:
+            # 商品级加权：每商品先均价，再按权重加权
+            num = den = 0.0
+            for pid, ups in prods.items():
+                w = pw.get(pid, 50)
+                if w <= 0 or not ups:
+                    continue
+                num += (sum(ups) / len(ups)) * w
+                den += w
+            avg = num / den if den > 0 else None
+        else:
+            all_up = [up for ups in prods.values() for up in ups]
+            avg = sum(all_up) / len(all_up) if all_up else None
+        if avg is not None:
+            result.append(round(avg, 2))
+    return result
 
 
 @router.get("/sparklines/recipes")
@@ -126,7 +161,7 @@ async def get_ingredients_sparklines(
         result: dict = {}
         for ing_id in id_list:
             prod_ids = ing_to_prods.get(ing_id, [])
-            data = _daily_avg_for_product_ids(db, prod_ids, days=days)
+            data = _daily_avg_for_product_ids(db, prod_ids, days=days, ingredient_id=ing_id, user_id=_current_user.id)
             result[str(ing_id)] = data if data else None
 
         return result

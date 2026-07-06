@@ -200,6 +200,38 @@
               hint="输入后回车添加多个别名"
               persistent-hint
             />
+            <!-- 全局价格权重：仅管理员可改 -->
+            <v-text-field
+              v-if="userStore.user?.is_admin"
+              v-model.number="basicEditForm.priceWeight"
+              label="全局价格权重 (0-100)"
+              type="number"
+              variant="outlined"
+              density="compact"
+              :rules="[v => (v >= 0 && v <= 100) || '0-100']"
+              hint="原料加权平均用；50=等权，0=排除该商品"
+              persistent-hint
+            />
+            <v-text-field
+              v-else
+              :model-value="basicEditForm.globalWeightReadOnly"
+              label="全局价格权重（仅管理员可改）"
+              variant="outlined"
+              density="compact"
+              readonly
+            />
+            <!-- 我的权重覆盖（所有人可设） -->
+            <v-text-field
+              v-model.number="basicEditForm.myWeight"
+              label="我的权重覆盖 (0-100，留空用全局)"
+              type="number"
+              variant="outlined"
+              density="compact"
+              :rules="[v => v === null || v === undefined || (v >= 0 && v <= 100) || '0-100']"
+              clearable
+              hint="覆盖全局权重，仅影响你自己"
+              persistent-hint
+            />
           </v-form>
         </v-card-text>
       </v-card>
@@ -1131,6 +1163,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
+import { getProductMyWeight, setProductMyWeight, deleteProductMyWeight } from '@/api/productWeight'
 import { getErrorMessage } from '@/utils/errorHandler'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
@@ -1391,6 +1424,9 @@ const basicEditForm = ref({
   ingredient_id: null as number | null,
   tags: [] as string[],
   aliases: [] as string[],
+  priceWeight: 50 as number,        // 全局权重（仅管理员可改）
+  myWeight: null as number | null,  // 我的覆盖
+  globalWeightReadOnly: 50 as number, // 详情态展示用
 })
 
 // 营养成分内联编辑
@@ -2375,7 +2411,16 @@ const startEditBasicInfo = () => {
     ingredient_id: product.value.ingredient_id || null,
     tags: [...(product.value.tags || [])],
     aliases: [...(product.value.aliases || [])],
+    priceWeight: (product.value as any).price_weight ?? 50,
+    myWeight: null,
+    globalWeightReadOnly: (product.value as any).price_weight ?? 50,
   }
+  // 拉取当前用户生效权重（覆盖 > 全局）
+  getProductMyWeight(product.value.id).then((res: any) => {
+    basicEditForm.value.myWeight = res.source === 'override' ? res.override_weight : null
+    basicEditForm.value.globalWeightReadOnly = res.global_weight
+    basicEditForm.value.priceWeight = res.global_weight
+  }).catch(() => {})
   // 加载原料列表
   if (product.value.ingredient_id) {
     loadIngredients().then(() => {
@@ -2420,14 +2465,25 @@ const saveBasicInfo = async () => {
 
   saving.value = true
   try {
-    const response = await api.put(`/products/entity/${productId.value}`, {
+    const payload: any = {
       name: basicEditForm.value.name,
       brand: basicEditForm.value.brand || null,
       barcode: basicEditForm.value.barcode || null,
       ingredient_id: basicEditForm.value.ingredient_id,
       tags: basicEditForm.value.tags,
       aliases: basicEditForm.value.aliases,
-    })
+    }
+    // 全局 price_weight 仅管理员可改（后端也会剔除普通用户的）
+    if (userStore.user?.is_admin) {
+      payload.price_weight = basicEditForm.value.priceWeight
+    }
+    const response = await api.put(`/products/entity/${productId.value}`, payload)
+    // 我的权重覆盖（独立端点，所有人可用）
+    if (basicEditForm.value.myWeight !== null && basicEditForm.value.myWeight !== undefined) {
+      await setProductMyWeight(productId.value, basicEditForm.value.myWeight).catch(() => {})
+    } else {
+      await deleteProductMyWeight(productId.value).catch(() => {})
+    }
     if (userStore.user?.is_admin) {
       product.value = response
       // 重新加载营养数据（原料变更可能影响营养数据）
