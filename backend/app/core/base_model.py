@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, DateTime, String, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, DateTime, String, Boolean
 from sqlalchemy.sql import func
 
 
@@ -10,8 +10,8 @@ class AuditMixin:
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # 创建者和修改者（外键关联到用户表）
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # 使用nullable=True避免现有数据问题
-    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # 使用nullable=True避免现有数据问题
+    created_by = Column(Integer, nullable=True)  # 约定 0=系统/导入数据；不设外键，避免空库导入时 users 无对应记录触发外键违反
+    updated_by = Column(Integer, nullable=True)  # 同 created_by
 
     # 软删除标志
     is_active = Column(Boolean, default=True, nullable=False)
@@ -27,8 +27,8 @@ class BaseModel:
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # 创建者和修改者（外键关联到用户表）
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # 使用nullable=True避免现有数据问题
-    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # 使用nullable=True避免现有数据问题
+    created_by = Column(Integer, nullable=True)  # 约定 0=系统/导入数据；不设外键，避免空库导入时 users 无对应记录触发外键违反
+    updated_by = Column(Integer, nullable=True)  # 同 created_by
 
     # 软删除标志
     is_active = Column(Boolean, default=True, nullable=False)

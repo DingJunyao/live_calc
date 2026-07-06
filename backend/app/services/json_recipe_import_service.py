@@ -62,8 +62,7 @@ class JsonRecipeImportService:
 
         # 按别名查找：用 LIKE 粗筛后在 Python 层精确匹配
         candidates = self.db.query(Ingredient).filter(
-            Ingredient.aliases.isnot(None),
-            Ingredient.aliases != "[]"
+            Ingredient.aliases.isnot(None)  # 空数组由 Python 层 if c.aliases 过滤（JSON 列 SQL 比较跨库不兼容）
         ).all()
         for c in candidates:
             if c.aliases and name in c.aliases:

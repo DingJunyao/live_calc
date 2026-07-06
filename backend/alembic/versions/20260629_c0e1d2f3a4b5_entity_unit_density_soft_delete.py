@@ -172,7 +172,7 @@ def upgrade():
         with op.batch_alter_table("entity_unit_overrides") as batch_op:
             batch_op.add_column(
                 sa.Column("is_active", sa.Boolean(), nullable=False,
-                          server_default=sa.text("1"))
+                          server_default=sa.text("true"))
             )
             batch_op.drop_constraint("uq_entity_unit", type_="unique")
         op.create_index(
@@ -187,7 +187,7 @@ def upgrade():
         with op.batch_alter_table("entity_densities") as batch_op:
             batch_op.add_column(
                 sa.Column("is_active", sa.Boolean(), nullable=False,
-                          server_default=sa.text("1"))
+                          server_default=sa.text("true"))
             )
             batch_op.drop_constraint("uq_entity_density", type_="unique")
         op.create_index(

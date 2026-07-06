@@ -24,10 +24,10 @@ def upgrade():
         sa.Column("port", sa.Integer(), nullable=False, server_default="587"),
         sa.Column("username", sa.String(255), nullable=False, server_default=""),
         sa.Column("password", sa.String(255), nullable=False, server_default=""),
-        sa.Column("use_tls", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("use_tls", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("from_address", sa.String(255), nullable=False, server_default=""),
         sa.Column("from_name", sa.String(100), nullable=False, server_default="LiveCalc"),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )

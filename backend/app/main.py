@@ -233,14 +233,14 @@ async def lifespan(app: FastAPI):
                     logger.info(f"检测到本地数据路径配置: {local_path}")
                     if os.path.isdir(local_path):
                         from app.services.importer.api_service import import_from_local_dir as local_import
-                        local_result = local_import(db, local_path, user_id=1)
+                        local_result = local_import(db, local_path, user_id=0)
                         logger.info(f"本地数据导入结果: {local_result.stats}")
                     else:
                         logger.warning(f"本地数据路径不存在或不是目录: {local_path}")
                 else:
                     # 未配置本地路径时，从远程仓库导入初始数据
                     from app.services.importer.api_service import import_from_git_repo
-                    result = import_from_git_repo(db, user_id=1)
+                    result = import_from_git_repo(db, user_id=0)
                     logger.info(f"远程数据导入结果: {result.stats}")
 
         # 检查是否需要为现有原料批量创建商品
@@ -267,8 +267,8 @@ async def lifespan(app: FastAPI):
                         new_product = Product(
                             name=ingredient.name,
                             ingredient_id=ingredient.id,
-                            created_by=1,
-                            updated_by=1,
+                            created_by=0,
+                            updated_by=0,
                             is_active=True
                         )
                         db.add(new_product)

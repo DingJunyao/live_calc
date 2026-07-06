@@ -21,7 +21,7 @@ class EntityDensity(Base):
     source = Column(String(200))  # 数据来源
     confidence = Column(Numeric(3, 2), default=1.0)  # 数据可信度
     is_active = Column(Boolean, default=True, nullable=False, index=True,
-                       server_default=sa.text("1"))  # 软删标记
+                       server_default=sa.text("true"))  # 软删标记（true/false 跨库兼容）
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

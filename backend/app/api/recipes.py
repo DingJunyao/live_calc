@@ -174,9 +174,11 @@ async def get_recipes(
         )
 
         # 获取公共菜谱（排除当前用户自己的，排除软删除）：导入来源 OR 显式发布
+        # 注：导入的公共菜谱 user_id 为 NULL（无主），SQL 三值逻辑下 NULL != me 为 NULL 而非 True，
+        # 需显式 IS NULL 才能让其落入公共可见集合
         public_imported_recipes = db.query(Recipe).filter(
             or_(Recipe.source != None, Recipe.is_public == True),
-            Recipe.user_id != current_user.id,
+            or_(Recipe.user_id != current_user.id, Recipe.user_id.is_(None)),
             Recipe.is_active == True
         )
 

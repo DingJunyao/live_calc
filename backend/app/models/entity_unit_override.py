@@ -25,7 +25,7 @@ class EntityUnitOverride(Base):
     is_default = Column(Boolean, default=False)  # 是否为该实体的默认单位
     source = Column(String(20), default="manual")  # import / manual / agent
     is_active = Column(Boolean, default=True, nullable=False, index=True,
-                       server_default=sa.text("1"))  # 软删标记
+                       server_default=sa.text("true"))  # 软删标记（true/false 跨库兼容）
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
