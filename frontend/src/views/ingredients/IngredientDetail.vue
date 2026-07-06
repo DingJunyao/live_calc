@@ -1871,6 +1871,9 @@ const overlaidAliases = computed(() => {
   return ingredient.value?.aliases
 })
 
+// 用户级单位偏好（能量/质量/记价单位）——须在 overlaidDefaultUnitName / editPriceForm 等引用前声明，否则触发 TDZ
+const { energyUnit, priceUnitName, massUnitName } = useUserUnits()
+
 // 原料默认单位字段已迁移至用户级偏好；返回用户记价偏好单位
 // （pendingProposal 不再含 default_unit_id）
 const overlaidDefaultUnitName = computed(() => priceUnitName.value)
@@ -2142,7 +2145,7 @@ const editingNutrition = ref(false)
 const savingNutrition = ref(false)
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名（能量行跟随用户能量单位偏好）
-const { energyUnit, priceUnitName, massUnitName } = useUserUnits()
+// （useUserUnits 解构已前置到 overlaidDefaultUnitName 之前）
 const NUTRIENT_DEFINITIONS = computed(() => buildNutrientDefinitions(energyUnit.value))
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
