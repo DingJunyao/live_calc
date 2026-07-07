@@ -66,6 +66,10 @@ class HowToCookImporter(Importer):
         self._import_recipes(collection)
 
         self.db.commit()
+
+        # 4. 导入营养数据（独立提交，失败不回滚已导入的原料/菜谱）
+        self._import_nutrition(collection)
+
         logger.info("导入完成: %s", self.result.stats)
         return self.result
 
@@ -226,6 +230,41 @@ class HowToCookImporter(Importer):
 
         self.result.stats["recipes"] = imported
         logger.info("菜谱导入完成: %d 个新菜谱", imported)
+
+    def _import_nutrition(self, collection: FileCollection):
+        """导入营养数据（nutritions.json → nutrition_data / ai_ingredient_matches）。
+
+        HowToCook_json 仓库的 nutritions.json 与 ingredients.json 同目录，
+        委托 NutritionImportService 处理（含 USDA 字段归一化、核心营养素归类、
+        AI 匹配记录）。该步骤独立提交，失败只记 warning，不影响已导入的原料/菜谱。
+        """
+        nutrition_file = collection.find_one("nutritions.json")
+        if not nutrition_file:
+            logger.info("nutritions.json 不存在，跳过营养数据导入")
+            self.result.stats["nutrition"] = {"imported": 0, "skipped": 0, "failed": 0}
+            return
+
+        # NutritionImportService 按 <repo_dir>/<data_dir>/nutritions.json 查找文件，
+        # 数据文件位于 <data_dir>/nutritions.json，故取其父目录作为 repo_dir。
+        data_dir = os.path.dirname(nutrition_file.absolute_path)
+        repo_dir = os.path.dirname(data_dir)
+
+        try:
+            from app.services.nutrition_import_service import check_and_import_nutrition
+            result = check_and_import_nutrition(
+                self.db, mode="incremental", force_update=False, repo_dir=repo_dir
+            )
+            self.result.stats["nutrition"] = {
+                "imported": result.get("imported", 0),
+                "updated": result.get("updated", 0),
+                "skipped": result.get("skipped", 0),
+                "failed": result.get("failed", 0),
+            }
+            logger.info("营养数据导入完成: %s", result.get("message", ""))
+        except Exception as e:
+            logger.warning("营养数据导入失败: %s", e)
+            self.result.warnings.append(f"营养数据导入失败: {e}")
+            self.result.stats["nutrition"] = {"imported": 0, "skipped": 0, "failed": 1}
 
     def _download_image(self, image_path: str, recipe_dir: str) -> Optional[str]:
         """从本地文件复制图片到 static 目录。"""
