@@ -58,14 +58,6 @@
         <v-card-text>
           <!-- 展示模式 -->
           <v-list v-if="!editingBasicInfo" density="compact">
-            <v-list-item v-if="overlaidDefaultUnitName">
-              <template #prepend>
-                <v-icon size="small" color="medium-emphasis">mdi-scale</v-icon>
-              </template>
-              <v-list-item-title>默认单位</v-list-item-title>
-              <v-list-item-subtitle>{{ overlaidDefaultUnitName }}</v-list-item-subtitle>
-            </v-list-item>
-
             <v-list-item v-if="ingredient.category">
               <template #prepend>
                 <v-icon size="small" color="medium-emphasis">mdi-folder-outline</v-icon>
@@ -125,17 +117,6 @@
               variant="outlined"
               density="compact"
               required
-              class="mb-3"
-            />
-            <v-autocomplete
-              v-model="basicEditForm.default_unit_id"
-              :items="units"
-              item-title="name"
-              item-value="id"
-              label="默认单位"
-              variant="outlined"
-              density="compact"
-              clearable
               class="mb-3"
             />
             <v-autocomplete
@@ -230,7 +211,7 @@
         <v-card-text class="py-6">
           <div class="d-flex align-center ga-4 flex-wrap">
             <div class="text-h3 font-weight-bold text-tertiary">
-              ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ overlaidDefaultUnitName || '斤' }}</span>
+              ¥{{ formatPrice(latestPrice) }}<span class="text-h6 font-weight-regular">/{{ massUnitName }}</span>
             </div>
             <template v-if="latestChartTrend">
               <v-divider vertical class="d-none d-sm-flex" />
@@ -312,7 +293,7 @@
             <div v-if="latestPrice" class="d-flex justify-space-between align-center px-1 pt-2">
               <span class="text-caption text-medium-emphasis">商品加权综合价</span>
               <span class="font-weight-bold text-tertiary">
-                ¥{{ formatPrice(latestPrice) }}<span class="text-caption font-weight-regular">/{{ overlaidDefaultUnitName || '斤' }}</span>
+                ¥{{ formatPrice(latestPrice) }}<span class="text-caption font-weight-regular">/{{ massUnitName }}</span>
               </span>
             </div>
           </v-card-text>
@@ -1792,8 +1773,6 @@ interface Ingredient {
   id: number
   name: string
   aliases?: string[]
-  default_unit_id?: number
-  default_unit_name?: string
   category_id?: number
   category?: string
   serving_weight?: number | null
@@ -1945,12 +1924,8 @@ const overlaidAliases = computed(() => {
   return ingredient.value?.aliases
 })
 
-// 用户级单位偏好（能量/质量/记价单位）——须在 overlaidDefaultUnitName / editPriceForm 等引用前声明，否则触发 TDZ
-const { energyUnit, priceUnitName, massUnitName } = useUserUnits()
-
-// 原料默认单位字段已迁移至用户级偏好；返回用户记价偏好单位
-// （pendingProposal 不再含 default_unit_id）
-const overlaidDefaultUnitName = computed(() => priceUnitName.value)
+// 用户级单位偏好（能量/质量/记价单位）——须在 editPriceForm 等引用前声明，否则触发 TDZ
+const { energyUnit, priceUnitName, massUnitName, massUnit } = useUserUnits()
 
 const overlaidServingWeight = computed(() => {
   if (pendingProposal.value?.action === 'update' && pendingProposal.value?.payload?.serving_weight !== undefined) {
@@ -2183,7 +2158,6 @@ const recipeTotalPages = computed(() => Math.ceil(recipeTotal.value / recipePage
 
 // 单位列表
 const units = ref<Unit[]>([])
-const jinUnitId = ref<number | null>(null)  // 默认质量单位（斤）的 ID
 const categories = ref<{ id: number; name: string; display_name: string }[]>([])
 
 // 层级关系数据
@@ -2228,7 +2202,6 @@ const deleting = ref(false)
 const editingBasicInfo = ref(false)
 const basicEditForm = ref({
   name: '',
-  default_unit_id: null as number | null,
   category_id: null as number | null,
   aliases: [] as string[],
   serving_weight: null as number | null,
@@ -2263,7 +2236,7 @@ const editingNutrition = ref(false)
 const savingNutrition = ref(false)
 
 // 营养素定义：key 匹配后端 all_nutrients 的英文键名（能量行跟随用户能量单位偏好）
-// （useUserUnits 解构已前置到 overlaidDefaultUnitName 之前）
+// （useUserUnits 解构前置，供 editPriceForm / 价格显示等引用）
 const NUTRIENT_DEFINITIONS = computed(() => buildNutrientDefinitions(energyUnit.value))
 
 // 营养素同义键映射：将别名 key 映射到标准 key，避免编辑时重复
@@ -2985,7 +2958,9 @@ const chartData = computed(() => {
   if (!chartPriceRecords.value || chartPriceRecords.value.length === 0) return []
 
   // 图表按用户质量偏好单位归一化（与 chartUnit 对齐；unitFactors 表覆盖 mass/volume）
-  const defaultUnit = massUnitName.value
+  // ⚠️ 用单位缩写（abbr）作 key 查 unitFactors，不能用 name——
+  // 表里是 'kg':1000 而非 '千克':1000，用 name 会命中不到→toFactor=1→单价少算 1000 倍
+  const defaultUnit = massUnit.value?.abbreviation ?? '斤'
   const dailyAll = new Map<string, number[]>()
   const dailyByProduct = new Map<string, Map<number, number[]>>()
 
@@ -3772,11 +3747,6 @@ const loadUnits = async () => {
   try {
     const response = await api.get('/units/', { params: { limit: 100 } })
     units.value = response.items || response || []
-    // 找到默认质量单位（斤）
-    const jinUnit = units.value.find((u: Unit) => u.abbreviation === '斤')
-    if (jinUnit) {
-      jinUnitId.value = jinUnit.id
-    }
   } catch (e) {
     units.value = []
   }
@@ -3796,7 +3766,6 @@ const startEditBasicInfo = () => {
   if (!ingredient.value) return
   basicEditForm.value = {
     name: ingredient.value.name || '',
-    default_unit_id: ingredient.value.default_unit_id || jinUnitId.value,
     category_id: ingredient.value.category_id ?? null,
     aliases: [...(ingredient.value.aliases || [])],
     serving_weight: ingredient.value.serving_weight ?? null,
@@ -3826,7 +3795,6 @@ const saveBasicInfo = async () => {
   try {
     const payload = {
       name: basicEditForm.value.name,
-      default_unit_id: basicEditForm.value.default_unit_id,
       category_id: basicEditForm.value.category_id,
       aliases: basicEditForm.value.aliases,
       serving_weight: basicEditForm.value.serving_weight,

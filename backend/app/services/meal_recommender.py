@@ -7,6 +7,7 @@
 import asyncio
 import datetime
 import logging
+import random
 import threading
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -184,7 +185,7 @@ async def _pick_best_recipe(
     exclude_recipe_ids: Optional[Set[int]] = None,
     db: Optional[Session] = None,
 ) -> Tuple[Optional[Recipe], Optional[Dict], Optional[Dict], float]:
-    """从候选池中选取最优菜谱。"""
+    """从候选池中按分数加权随机选取一道菜谱。"""
     candidates = _get_candidate_pool(db, meal_type, exclude_recipe_ids, user_id=user.id)
     # 释放候选池查询的读事务（SHARED 锁），避免 generate 后台长读事务阻塞并发写
     # （SQLite 写 commit 需 EXCLUSIVE 锁，被 SHARED 阻塞至 busy_timeout 超时）
@@ -193,21 +194,28 @@ async def _pick_best_recipe(
         return (None, None, None, 0.0)
 
     targets = _get_meal_targets(user, meal_type)
-    best_recipe = None
-    best_nutrition = None
-    best_cost = None
-    best_score = -1.0
 
+    # 收集全部候选的打分（读 + 计算，不持写锁）
+    scored: List[Tuple[Recipe, float, Optional[Dict], Optional[Dict]]] = []
     for recipe in candidates:
         score, nutrition, cost = await _score_recipe(db, user, recipe, meal_type, targets)
         # 每个候选打分后释放读事务（SHARED 锁），让并发写（如 POST /products）
         # 能在候选间隙拿到 EXCLUSIVE 锁，避免等至 busy_timeout 超时
         db.rollback()
-        if score > best_score:
-            best_score = score
-            best_recipe = recipe
-            best_nutrition = nutrition
-            best_cost = cost
+        scored.append((recipe, score, nutrition, cost))
+
+    if not scored:
+        return (None, None, None, 0.0)
+
+    # 加权随机：权重 = score + epsilon。
+    # 直接用分数做权重（不放大幂次）——高分更易中、低分也有机会，
+    # 让每天生成与每次「换一个」都能推出不同菜，避免确定性 argmax 导致天天老三样。
+    # epsilon 保证 score=0（营养/成本都算不出）的菜也有微机会，且 weights 不全零。
+    epsilon = 0.05
+    weights = [s + epsilon for (_, s, _, _) in scored]
+    best_recipe, best_score, best_nutrition, best_cost = random.choices(
+        scored, weights=weights, k=1
+    )[0]
 
     return (best_recipe, best_nutrition, best_cost, best_score)
 
