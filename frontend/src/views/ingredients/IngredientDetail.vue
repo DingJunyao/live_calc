@@ -308,6 +308,13 @@
                 </div>
               </div>
             </div>
+            <v-divider class="mt-1" />
+            <div v-if="latestPrice" class="d-flex justify-space-between align-center px-1 pt-2">
+              <span class="text-caption text-medium-emphasis">商品加权综合价</span>
+              <span class="font-weight-bold text-tertiary">
+                ¥{{ formatPrice(latestPrice) }}<span class="text-caption font-weight-regular">/{{ overlaidDefaultUnitName || '斤' }}</span>
+              </span>
+            </div>
           </v-card-text>
         </template>
       </v-card>
@@ -323,6 +330,7 @@
         :data="chartData"
         :loading="loadingChartPrices"
         color="#ff9800"
+        avg-label="加权平均"
         class="grid-item item-price-trend"
         @filter-change="onPriceTrendFilterChange"
       />
@@ -1653,37 +1661,56 @@
               chips
               closable-chips
               hint="输入后回车添加多个别名"
-              persistent-hint
             />
-            <!-- 全局价格权重：仅管理员可改 -->
-            <v-text-field
-              v-if="userStore.user?.is_admin"
-              v-model.number="productForm.priceWeight"
-              label="全局价格权重 (0-100)"
-              type="number"
-              variant="outlined"
-              :rules="[v => (v >= 0 && v <= 100) || '0-100']"
-              hint="原料加权平均用；50=等权，0=排除该商品"
-              persistent-hint
-            />
-            <v-text-field
-              v-else
-              :model-value="productForm.globalWeightReadOnly"
-              label="全局价格权重（仅管理员可改）"
-              variant="outlined"
-              readonly
-            />
-            <!-- 我的权重覆盖（所有人可设） -->
-            <v-text-field
-              v-model.number="productForm.myWeight"
-              label="我的权重覆盖 (0-100，留空用全局)"
-              type="number"
-              variant="outlined"
-              :rules="[v => v === null || v === undefined || (v >= 0 && v <= 100) || '0-100']"
-              clearable
-              hint="覆盖全局权重，仅影响你自己"
-              persistent-hint
-            />
+            <!-- 价格权重区（与上方分隔，避免 hint 贴连） -->
+            <div class="mt-4">
+              <!-- 全局权重：仅管理员可改；普通用户整块不渲染 -->
+              <div v-if="userStore.user?.is_admin" class="mb-4">
+                <div class="text-caption text-medium-emphasis mb-1">
+                  全局价格权重 <span class="text-disabled">（原料加权平均用；50=等权，0=排除该商品）</span>
+                </div>
+                <v-slider
+                  v-model="productForm.priceWeight"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  thumb-label
+                  color="primary"
+                >
+                  <template #thumb-label="{ modelValue }">{{ modelValue }}</template>
+                  <template #append>
+                    <v-chip size="small" label>{{ productForm.priceWeight }}</v-chip>
+                  </template>
+                </v-slider>
+              </div>
+              <!-- 我的权重覆盖：开关 + 滑块（所有人可设） -->
+              <div>
+                <v-switch
+                  v-model="productForm.myWeightEnabled"
+                  label="覆盖全局权重（仅影响我）"
+                  density="compact"
+                  color="tertiary"
+                  hide-details
+                />
+                <div class="text-caption text-medium-emphasis mb-1">
+                  全局默认：{{ productForm.globalWeightReadOnly }}（不覆盖即用此值）
+                </div>
+                <v-slider
+                  v-if="productForm.myWeightEnabled"
+                  v-model="productForm.myWeight"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  thumb-label
+                  color="tertiary"
+                >
+                  <template #thumb-label="{ modelValue }">{{ modelValue }}</template>
+                  <template #append>
+                    <v-chip size="small" label color="tertiary">{{ productForm.myWeight }}</v-chip>
+                  </template>
+                </v-slider>
+              </div>
+            </div>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -1950,6 +1977,8 @@ const latestPriceDate = ref<string | null>(null)
 const loadingLatestPrice = ref(false)
 const latestPriceParticipants = ref<any[]>([])
 const latestPriceExcluded = ref<any[]>([])
+// 原料下各商品生效权重（覆盖>全局>50），供价格趋势加权 avg 用
+const productWeights = ref<Map<number, number>>(new Map())
 
 // 按商家分组的最新价格
 interface MerchantPrice {
@@ -1982,7 +2011,8 @@ const productForm = ref({
   barcode: '',
   aliases: [] as string[],
   priceWeight: 50 as number,
-  myWeight: null as number | null,
+  myWeight: 50 as number,
+  myWeightEnabled: false as boolean,
   globalWeightReadOnly: 50 as number,
 })
 // 删除商品
@@ -1994,7 +2024,7 @@ const deletingProductLoading = ref(false)
 const openAddProductDialog = () => {
   isEditingProduct.value = false
   editingProductId.value = null
-  productForm.value = { name: '', brand: '', barcode: '', aliases: [], priceWeight: 50, myWeight: null, globalWeightReadOnly: 50 }
+  productForm.value = { name: '', brand: '', barcode: '', aliases: [], priceWeight: 50, myWeight: 50, myWeightEnabled: false, globalWeightReadOnly: 50 }
   showProductDialog.value = true
 }
 
@@ -2008,14 +2038,21 @@ const openEditProductDialog = (product: Product) => {
     barcode: (product as any).barcode || '',
     aliases: [...((product as any).aliases || [])],
     priceWeight: (product as any).price_weight ?? 50,
-    myWeight: null,
+    myWeight: (product as any).price_weight ?? 50,
+    myWeightEnabled: false,
     globalWeightReadOnly: (product as any).price_weight ?? 50,
   }
   // 拉取当前用户生效权重（覆盖 > 全局）
   getProductMyWeight(product.id).then((res: any) => {
-    productForm.value.myWeight = res.source === 'override' ? res.override_weight : null
     productForm.value.globalWeightReadOnly = res.global_weight
     productForm.value.priceWeight = res.global_weight
+    if (res.source === 'override') {
+      productForm.value.myWeightEnabled = true
+      productForm.value.myWeight = res.override_weight
+    } else {
+      productForm.value.myWeightEnabled = false
+      productForm.value.myWeight = res.global_weight
+    }
   }).catch(() => {})
   showProductDialog.value = true
 }
@@ -2042,8 +2079,8 @@ const saveProduct = async () => {
         _payload.price_weight = productForm.value.priceWeight
       }
       const response = await api.put(`/products/entity/${editingProductId.value}`, _payload)
-      // 我的权重覆盖（独立端点，所有人可用）
-      if (productForm.value.myWeight !== null && productForm.value.myWeight !== undefined) {
+      // 我的权重覆盖：开关开 → set；关 → delete（用回全局）
+      if (productForm.value.myWeightEnabled) {
         await setProductMyWeight(editingProductId.value, productForm.value.myWeight).catch(() => {})
       } else {
         await deleteProductMyWeight(editingProductId.value).catch(() => {})
@@ -2071,6 +2108,11 @@ const saveProduct = async () => {
       showMessage('商品已添加', 'success')
     }
     showProductDialog.value = false
+    // 权重/商品变更后刷新依赖加权的数据：最新价、各商家代表价、趋势权重
+    // （我的覆盖对所有人立即生效；admin 全局立即生效；新增/删除商品改变加权分母）
+    loadLatestPrice()
+    loadMerchantPrices()
+    loadProductWeights()
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '保存失败', 'error')
   } finally {
@@ -2102,6 +2144,10 @@ const deleteProduct = async () => {
     }
     showDeleteProductDialog.value = false
     deletingProduct.value = null
+    // 删除商品改变加权分母，刷新依赖加权的数据
+    loadLatestPrice()
+    loadMerchantPrices()
+    loadProductWeights()
   } catch (e: any) {
     showMessage(e.response?.data?.detail || e.message || '删除失败', 'error')
   } finally {
@@ -2940,7 +2986,8 @@ const chartData = computed(() => {
 
   // 图表按用户质量偏好单位归一化（与 chartUnit 对齐；unitFactors 表覆盖 mass/volume）
   const defaultUnit = massUnitName.value
-  const dailyMap = new Map<string, number[]>()
+  const dailyAll = new Map<string, number[]>()
+  const dailyByProduct = new Map<string, Map<number, number[]>>()
 
   for (const record of chartPriceRecords.value) {
     if (!record.recorded_at) continue
@@ -2997,21 +3044,45 @@ const chartData = computed(() => {
       convertedUnitPrice = originalUnitPrice * (toFactor / fromFactor)
     }
 
-    if (!dailyMap.has(dateKey)) {
-      dailyMap.set(dateKey, [])
+    if (!dailyAll.has(dateKey)) {
+      dailyAll.set(dateKey, [])
     }
-    dailyMap.get(dateKey)!.push(convertedUnitPrice)
+    dailyAll.get(dateKey)!.push(convertedUnitPrice)
+
+    // 按商品分组（仅用于加权 avg；权重只作用于平均值）
+    const pid = (record as any).product_id
+    if (pid != null) {
+      if (!dailyByProduct.has(dateKey)) dailyByProduct.set(dateKey, new Map())
+      const pm = dailyByProduct.get(dateKey)!
+      if (!pm.has(pid)) pm.set(pid, [])
+      pm.get(pid)!.push(convertedUnitPrice)
+    }
   }
 
-  // 计算每日统计值
-  return Array.from(dailyMap.entries())
+  // 计算每日统计值：min/max/count 用记录级（不动），avg 按商品权重加权
+  return Array.from(dailyAll.entries())
     .map(([date, prices]) => {
-      const sorted = prices.sort((a, b) => a - b)
+      const sorted = [...prices].sort((a, b) => a - b)
+      // 加权 avg：每商品当日均价 × 生效权重（覆盖>全局>50），权重 0 排除
+      const pm = dailyByProduct.get(date)
+      let avg: number
+      if (pm && pm.size > 0) {
+        let num = 0, den = 0
+        for (const [pid, ups] of pm) {
+          const w = productWeights.value.get(pid) ?? 50
+          if (w <= 0 || !ups.length) continue
+          num += (ups.reduce((a, b) => a + b, 0) / ups.length) * w
+          den += w
+        }
+        avg = den > 0 ? num / den : (prices.reduce((a, b) => a + b, 0) / prices.length)
+      } else {
+        avg = prices.reduce((a, b) => a + b, 0) / prices.length
+      }
       return {
         date,
         min: sorted[0] || 0,
         max: sorted[sorted.length - 1] || 0,
-        avg: prices.reduce((a, b) => a + b, 0) / prices.length,
+        avg,
         count: prices.length
       }
     })
@@ -3052,6 +3123,7 @@ const loadData = async () => {
     loadLatestPrice()
     loadMerchantPrices()
     loadProducts()
+    loadProductWeights()
     loadPriceRecords()
     loadChartPriceRecords(daysAgo(30))  // 图表默认加载近 30 天（月）
     loadNutritionData()
@@ -3083,6 +3155,19 @@ const loadLatestPrice = async () => {
     latestPriceExcluded.value = []
   } finally {
     loadingLatestPrice.value = false
+  }
+}
+
+// 加载原料下各商品生效权重（覆盖>全局>50），供价格趋势加权 avg
+const loadProductWeights = async () => {
+  if (!ingredientId.value) return
+  try {
+    const res = await api.get(`/nutrition/ingredients/${ingredientId.value}/product-weights`)
+    productWeights.value = new Map(
+      (res.items || []).map((p: any) => [p.product_id, p.effective_weight as number])
+    )
+  } catch {
+    productWeights.value = new Map()
   }
 }
 

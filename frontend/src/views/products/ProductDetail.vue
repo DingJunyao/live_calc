@@ -198,40 +198,56 @@
               chips
               closable-chips
               hint="输入后回车添加多个别名"
-              persistent-hint
             />
-            <!-- 全局价格权重：仅管理员可改 -->
-            <v-text-field
-              v-if="userStore.user?.is_admin"
-              v-model.number="basicEditForm.priceWeight"
-              label="全局价格权重 (0-100)"
-              type="number"
-              variant="outlined"
-              density="compact"
-              :rules="[v => (v >= 0 && v <= 100) || '0-100']"
-              hint="原料加权平均用；50=等权，0=排除该商品"
-              persistent-hint
-            />
-            <v-text-field
-              v-else
-              :model-value="basicEditForm.globalWeightReadOnly"
-              label="全局价格权重（仅管理员可改）"
-              variant="outlined"
-              density="compact"
-              readonly
-            />
-            <!-- 我的权重覆盖（所有人可设） -->
-            <v-text-field
-              v-model.number="basicEditForm.myWeight"
-              label="我的权重覆盖 (0-100，留空用全局)"
-              type="number"
-              variant="outlined"
-              density="compact"
-              :rules="[v => v === null || v === undefined || (v >= 0 && v <= 100) || '0-100']"
-              clearable
-              hint="覆盖全局权重，仅影响你自己"
-              persistent-hint
-            />
+            <!-- 价格权重区（与上方分隔，避免 hint 贴连） -->
+            <div class="mt-4">
+              <!-- 全局权重：仅管理员可改；普通用户整块不渲染 -->
+              <div v-if="userStore.user?.is_admin" class="mb-4">
+                <div class="text-caption text-medium-emphasis mb-1">
+                  全局价格权重 <span class="text-disabled">（原料加权平均用；50=等权，0=排除该商品）</span>
+                </div>
+                <v-slider
+                  v-model="basicEditForm.priceWeight"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  thumb-label
+                  color="primary"
+                >
+                  <template #thumb-label="{ modelValue }">{{ modelValue }}</template>
+                  <template #append>
+                    <v-chip size="small" label>{{ basicEditForm.priceWeight }}</v-chip>
+                  </template>
+                </v-slider>
+              </div>
+              <!-- 我的权重覆盖：开关 + 滑块（所有人可设） -->
+              <div>
+                <v-switch
+                  v-model="basicEditForm.myWeightEnabled"
+                  label="覆盖全局权重（仅影响我）"
+                  density="compact"
+                  color="tertiary"
+                  hide-details
+                />
+                <div class="text-caption text-medium-emphasis mb-1">
+                  全局默认：{{ basicEditForm.globalWeightReadOnly }}（不覆盖即用此值）
+                </div>
+                <v-slider
+                  v-if="basicEditForm.myWeightEnabled"
+                  v-model="basicEditForm.myWeight"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  thumb-label
+                  color="tertiary"
+                >
+                  <template #thumb-label="{ modelValue }">{{ modelValue }}</template>
+                  <template #append>
+                    <v-chip size="small" label color="tertiary">{{ basicEditForm.myWeight }}</v-chip>
+                  </template>
+                </v-slider>
+              </div>
+            </div>
           </v-form>
         </v-card-text>
       </v-card>
@@ -1425,7 +1441,8 @@ const basicEditForm = ref({
   tags: [] as string[],
   aliases: [] as string[],
   priceWeight: 50 as number,        // 全局权重（仅管理员可改）
-  myWeight: null as number | null,  // 我的覆盖
+  myWeight: 50 as number,           // 我的覆盖滑块值；myWeightEnabled=false 时不提交
+  myWeightEnabled: false as boolean, // 是否启用我的覆盖（false=用全局）
   globalWeightReadOnly: 50 as number, // 详情态展示用
 })
 
@@ -2417,9 +2434,15 @@ const startEditBasicInfo = () => {
   }
   // 拉取当前用户生效权重（覆盖 > 全局）
   getProductMyWeight(product.value.id).then((res: any) => {
-    basicEditForm.value.myWeight = res.source === 'override' ? res.override_weight : null
     basicEditForm.value.globalWeightReadOnly = res.global_weight
     basicEditForm.value.priceWeight = res.global_weight
+    if (res.source === 'override') {
+      basicEditForm.value.myWeightEnabled = true
+      basicEditForm.value.myWeight = res.override_weight
+    } else {
+      basicEditForm.value.myWeightEnabled = false
+      basicEditForm.value.myWeight = res.global_weight  // 滑块初值跟全局，勾选时从这开始
+    }
   }).catch(() => {})
   // 加载原料列表
   if (product.value.ingredient_id) {
@@ -2478,8 +2501,8 @@ const saveBasicInfo = async () => {
       payload.price_weight = basicEditForm.value.priceWeight
     }
     const response = await api.put(`/products/entity/${productId.value}`, payload)
-    // 我的权重覆盖（独立端点，所有人可用）
-    if (basicEditForm.value.myWeight !== null && basicEditForm.value.myWeight !== undefined) {
+    // 我的权重覆盖：开关开 → set；关 → delete（用回全局）
+    if (basicEditForm.value.myWeightEnabled) {
       await setProductMyWeight(productId.value, basicEditForm.value.myWeight).catch(() => {})
     } else {
       await deleteProductMyWeight(productId.value).catch(() => {})

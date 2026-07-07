@@ -88,6 +88,7 @@ const props = withDefaults(defineProps<{
   data: DataPoint[]
   loading?: boolean
   color?: string
+  avgLabel?: string
 }>(), {
   title: '价格趋势',
   icon: 'mdi-chart-line',
@@ -95,7 +96,8 @@ const props = withDefaults(defineProps<{
   unit: '',
   emptyText: '暂无数据',
   loading: false,
-  color: '#42b883'
+  color: '#42b883',
+  avgLabel: '平均'
 })
 
 const emit = defineEmits<{
@@ -215,7 +217,7 @@ function updateChart() {
             <div style="font-weight: 600; margin-bottom: 8px;">${dateStr}</div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${props.color};"></span>
-              <span>平均: ¥${item.avg.toFixed(2)}${unitSuffix.value}</span>
+              <span>${props.avgLabel}: ¥${item.avg.toFixed(2)}${unitSuffix.value}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
               <span style="display: inline-block; width: 12px; height: 12px; background-color: ${props.color}33; border-radius: 2px;"></span>
@@ -301,7 +303,7 @@ function updateChart() {
       },
       // 平均值线
       {
-        name: '平均',
+        name: props.avgLabel,
         type: 'line',
         data: data.map(d => d.avg),
         smooth: true,

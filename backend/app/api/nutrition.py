@@ -1060,12 +1060,19 @@ async def get_ingredient_latest_price_by_merchant(
         target_unit_abbr = "斤"
 
         def _lookup_merchant_prices(ing: Ingredient) -> list[dict]:
-            """对单个食材查找各商家最新价格，返回结果列表。P2：价格跨用户公开，不按 user_id 过滤。"""
+            """对单个食材查找各商家代表价。同商家多商品时按商品权重加权（覆盖>全局>50）。
+
+            P2：价格跨用户公开，不按 user_id 过滤。权重仅作用于「商家代表价」这一平均语义，
+            不影响极值/计数/原始记录。
+            """
+            from app.services.ingredient_price_service import _resolve_weight
+
             products = db.query(Product).filter(
                 Product.ingredient_id == ing.id,
-                Product.is_active == True
+                Product.is_active == True  # noqa: E712
             ).all()
-            product_ids = [p.id for p in products if p.id]
+            product_map = {p.id: p for p in products if p.id}
+            product_ids = list(product_map.keys())
             if not product_ids:
                 return []
 
@@ -1077,49 +1084,71 @@ async def get_ingredient_latest_price_by_merchant(
             ).filter(
                 ProductRecord.product_id.in_(product_ids),
                 ProductRecord.merchant_id.isnot(None),
-                Merchant.is_open == True,
+                Merchant.is_open == True,  # noqa: E712
             ).order_by(ProductRecord.recorded_at.desc()).all()
 
-            merchant_latest: dict = {}
+            # 按 (商家, 商品) 各留最新一条 —— 同商家多商品都保留，后续按权重加权
+            mp_latest: dict = {}
             for record in records:
-                mid = record.merchant_id
-                if mid not in merchant_latest:
-                    merchant_latest[mid] = record
+                key = (record.merchant_id, record.product_id)
+                if key not in mp_latest:
+                    mp_latest[key] = record
+
+            # 按商家分组：mid -> {pid: record}
+            by_merchant: dict = defaultdict(dict)
+            for (mid, pid), record in mp_latest.items():
+                by_merchant[mid][pid] = record
 
             # 原料默认单位字段已迁移至用户级偏好，价格折算统一回退到「斤」
             ing_target = "斤"
+            uid = current_user.id if current_user else None
 
             results = []
-            for mid, record in merchant_latest.items():
-                if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
+            for mid, prod_records in by_merchant.items():
+                # 每商品折算单价 + 权重（>0 才参与），加权得该商家代表价
+                weighted: list = []  # [(unit_price, weight)]
+                sample_record = None
+                for pid, record in prod_records.items():
+                    if record.price is None or record.original_quantity is None or record.original_quantity <= 0 or not record.original_unit:
+                        continue
+                    total_price = float(record.price)
+                    original_quantity = float(record.original_quantity)
+                    original_unit_abbr = record.original_unit.abbreviation
+
+                    unit_price = None
+                    if ing_target and original_unit_abbr != ing_target:
+                        convert_result = unit_service.convert(
+                            original_quantity, original_unit_abbr, ing_target,
+                            entity_type="ingredient", entity_id=ing.id,
+                        )
+                        if convert_result is not None:
+                            converted_quantity, _ = convert_result
+                            if converted_quantity and float(converted_quantity) > 0:
+                                unit_price = total_price / float(converted_quantity)
+                    if unit_price is None:
+                        unit_price = total_price / original_quantity
+
+                    w = _resolve_weight(db, user_id=uid, product=product_map.get(pid))
+                    if w <= 0:
+                        continue
+                    weighted.append((unit_price, w))
+                    if sample_record is None:
+                        sample_record = record
+
+                if not weighted or sample_record is None:
                     continue
 
-                total_price = float(record.price)
-                original_quantity = float(record.original_quantity)
-                original_unit_abbr = record.original_unit.abbreviation
-
-                unit_price = None
-                if ing_target and original_unit_abbr != ing_target:
-                    convert_result = unit_service.convert(
-                        original_quantity,
-                        original_unit_abbr,
-                        ing_target,
-                        entity_type="ingredient",
-                        entity_id=ing.id,
-                    )
-                    if convert_result is not None:
-                        converted_quantity, _ = convert_result
-                        if converted_quantity and float(converted_quantity) > 0:
-                            unit_price = total_price / float(converted_quantity)
-
-                if unit_price is None:
-                    unit_price = total_price / original_quantity
+                num = sum(up * w for up, w in weighted)
+                den = sum(w for up, w in weighted)
+                merchant_price = round(num / den, 2) if den > 0 else None
+                if merchant_price is None:
+                    continue
 
                 # total_cost 用原始请求食材的单位来计算（如果传入了）
                 total_cost = None
                 if quantity is not None and quantity > 0 and quantity_unit:
                     qty = quantity
-                    price_unit_abbr = ing_target or original_unit_abbr
+                    price_unit_abbr = ing_target or sample_record.original_unit.abbreviation
                     if quantity_unit != price_unit_abbr:
                         qty_convert = unit_service.convert(
                             quantity, quantity_unit, price_unit_abbr,
@@ -1133,17 +1162,17 @@ async def get_ingredient_latest_price_by_merchant(
                         else:
                             qty = None
                     if qty is not None:
-                        total_cost = round(unit_price * qty, 2)
+                        total_cost = round(merchant_price * qty, 2)
 
                 # 响应去标识：只保留价格维度信息，不含 user_id/record_type
                 results.append({
                     "merchant_id": mid,
-                    "merchant_name": record.merchant.name if record.merchant else f"商家#{mid}",
-                    "price": round(unit_price, 2),
-                    "unit": ing_target or original_unit_abbr,
+                    "merchant_name": sample_record.merchant.name if sample_record.merchant else f"商家#{mid}",
+                    "price": merchant_price,
+                    "unit": ing_target or sample_record.original_unit.abbreviation,
                     "total_cost": total_cost,
-                    "recorded_at": serialize_datetime(record.recorded_at) if record.recorded_at else None,
-                    "product_name": record.product_name,
+                    "recorded_at": serialize_datetime(sample_record.recorded_at) if sample_record.recorded_at else None,
+                    "product_name": sample_record.product_name,
                 })
 
             return results
@@ -1242,6 +1271,54 @@ async def get_ingredient_latest_price_by_merchant(
         print(f"[ERROR] 获取商家价格失败: {str(e)}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"获取商家价格失败: {str(e)}")
+
+
+@router.get("/ingredients/{ingredient_id}/product-weights")
+async def get_ingredient_product_weights(
+    ingredient_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """原料下各有效商品的生效价格权重（覆盖 > 全局 > 50）。
+
+    供前端加权均价计算用（价格趋势加权 avg）。返回每个商品的
+    global_weight / override_weight / effective_weight / source。
+    """
+    from app.models.user_product_weight_override import UserProductWeightOverride
+
+    products = db.query(Product).filter(
+        Product.ingredient_id == ingredient_id,
+        Product.is_active == True,  # noqa: E712
+    ).all()
+
+    uid = current_user.id if current_user else None
+    overrides = {}
+    if uid is not None and products:
+        pid_list = [p.id for p in products]
+        rows = db.query(UserProductWeightOverride).filter(
+            UserProductWeightOverride.user_id == uid,
+            UserProductWeightOverride.product_id.in_(pid_list),
+            UserProductWeightOverride.is_active == True,  # noqa: E712
+        ).all()
+        overrides = {r.product_id: r.weight for r in rows}
+
+    items = []
+    for p in products:
+        gw = int(p.price_weight) if p.price_weight is not None else 50
+        ov = overrides.get(p.id)
+        if ov is not None:
+            eff, src = int(ov), "override"
+        else:
+            eff, src = gw, "global"
+        items.append({
+            "product_id": p.id,
+            "name": p.name,
+            "global_weight": gw,
+            "override_weight": ov,
+            "effective_weight": eff,
+            "source": src,
+        })
+    return {"items": items}
 
 
 @router.get("/recipes/{recipe_id}/nutrition", response_model=RecipeNutritionResponse)
