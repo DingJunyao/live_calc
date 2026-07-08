@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Proposal } from '@/api/proposals'
+import { resolveImageUrl } from '@/utils/image'
 
 const props = defineProps<{ proposal: Proposal }>()
 
@@ -104,13 +105,7 @@ const hasOldIngredients = computed(() => Array.isArray((snap.value as any).old_i
 const hasIngredientsChange = computed(() => 'ingredients' in updateData.value && updateData.value.ingredients !== null)
 
 // ---- 图片列表 diff（缩略图对比）----
-function getImageUrl(p: string): string {
-  if (!p) return ''
-  if (p.startsWith('http')) return p
-  if (p.startsWith('/static/images/')) return `/api/v1${p}`
-  const base = import.meta.env.VITE_DATA_REPO_IMAGE_BASE || 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out'
-  return `${base}/${p}`
-}
+const getImageUrl = resolveImageUrl
 const hasImagesChange = computed(() =>
   'images' in updateData.value && updateData.value.images !== null)
 const oldImgs = computed<string[]>(() => {

@@ -360,9 +360,8 @@ class JsonRecipeImportService:
                     local_path = self._download_image(normalized_path, out_dir)
                     if local_path:
                         processed_images.append(local_path)
-                    else:
-                        # 下载失败，保留原始路径
-                        processed_images.append(normalized_path)
+                    # 下载失败则跳过——不保留残缺的仓库相对路径（images/xxx），
+                    # 否则前端无法解析、图片永远显示不了（详见 BUGFIX_配图路径残缺）。
 
                 images = processed_images
 

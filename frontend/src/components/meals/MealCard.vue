@@ -107,6 +107,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { MealRecommendation } from '@/api/meals'
 import { useUserUnits } from '@/composables/useUserUnits'
+import { resolveImageUrl } from '@/utils/image'
 
 const router = useRouter()
 const { energyUnit, toDisplayCalorie } = useUserUnits()
@@ -123,14 +124,7 @@ const emit = defineEmits<{
 const recipeImage = computed(() => {
   const images = props.recommendation.recipe?.images
   if (images && images.length > 0) {
-    const raw = images[0]
-    if (!raw) return null
-    // 如果是相对路径，补上 API 前缀
-    if (raw.startsWith('/')) {
-      const base = import.meta.env.VITE_API_URL || '/api/v1'
-      return base + raw
-    }
-    return raw
+    return resolveImageUrl(images[0]) || null
   }
   return null
 })

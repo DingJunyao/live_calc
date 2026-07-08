@@ -445,6 +445,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
+import { resolveImageUrl } from '@/utils/image'
 import { useUserStore } from '@/stores/user'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'
@@ -1005,11 +1006,7 @@ const chartData = computed(() => {
   }))
 })
 
-const getImageUrl = (imagePath: string) => {
-  if (imagePath.startsWith('http')) return imagePath
-  if (imagePath.startsWith('/static/images/')) return `/api/v1${imagePath}`
-  return `${import.meta.env.VITE_DATA_REPO_IMAGE_BASE || 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out'}/${imagePath}`
-}
+const getImageUrl = resolveImageUrl
 
 // 灯箱相关方法
 const openLightbox = (index: number) => {

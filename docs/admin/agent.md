@@ -15,7 +15,7 @@ Agent 拿到任务模板后，自主读数据库、分析、写 SQL 修正。关
 
 ## 支持的 Agent 引擎
 
-- **Claude Code**（subprocess，stream-json 协议）
+- **Claude Code**（subprocess，stream-json 协议；需自行安装、配置，本系统仅调用其 CLI）
 - **LangChain Agent**（OpenAI 兼容 / Anthropic 兼容，`create_agent`）
 
 两者共用 `run_agent_loop` + `sql_guard` + 任务模板，在任务台选 provider 分流。

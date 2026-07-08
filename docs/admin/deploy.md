@@ -59,6 +59,8 @@ npm run build
 
 > 自定义端口时，前端的 `VITE_DEV_BACKEND_URL` 必须指向后端实际端口（默认 `http://localhost:8000`），否则 dev proxy 打不到后端。改了 `.env` 要重启服务才生效。
 
+然后**立即**注册一个账号，该账号作为创建者和管理员。
+
 ## 数据库
 
 默认 SQLite（`backend/data/livecalc.db`，零配置，适合开发）。生产建议 MySQL 或 PostgreSQL：

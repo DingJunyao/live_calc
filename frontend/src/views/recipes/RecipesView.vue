@@ -241,6 +241,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { api } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
+import { resolveImageUrl } from '@/utils/image'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useUserStore } from '@/stores/user'
 import FilterBar from '@/components/common/FilterBar.vue'
@@ -569,12 +570,8 @@ const loadIngredients = async () => {
   }
 }
 
-// 处理图片路径
-const getImageUrl = (imagePath: string) => {
-  if (imagePath.startsWith('http')) return imagePath
-  if (imagePath.startsWith('/static/images/')) return `/api/v1${imagePath}`
-  return `${import.meta.env.VITE_DATA_REPO_IMAGE_BASE || 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out'}/${imagePath}`
-}
+// 处理图片路径（统一走 utils/image，含仓库兜底）
+const getImageUrl = resolveImageUrl
 
 onMounted(() => {
   loadRecipes()

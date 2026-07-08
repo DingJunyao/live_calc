@@ -92,6 +92,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { api } from '@/api/client'
+import { resolveImageUrl } from '@/utils/image'
 
 const props = defineProps<{
   modelValue: string[]
@@ -140,11 +141,7 @@ const onFileSelected = (event: any) => {
   }
 }
 
-const getImageUrl = (path: string) => {
-  if (path.startsWith('http')) return path
-  if (path.startsWith('/static/images/')) return `/api/v1${path}`
-  return `${import.meta.env.VITE_DATA_REPO_IMAGE_BASE || 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out'}/${path}`
-}
+const getImageUrl = resolveImageUrl
 </script>
 
 <style scoped>
