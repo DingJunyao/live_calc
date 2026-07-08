@@ -23,7 +23,7 @@
         @click="handlePublish"
       />
       <v-btn
-        v-if="!isPublished || !canManage"
+        v-if="canManage || !isPublished"
         icon="mdi-delete"
         variant="text"
         color="error"
@@ -559,7 +559,7 @@ const isPublished = computed(() => {
   return r.is_public === true || !!r.source
 })
 
-// 是否可管理（删除/撤回）：管理员始终可；否则需为未发布状态
+// 是否为管理员（可管理任意状态菜谱；普通用户仅未发布可管理，见删除按钮 v-if 的 canManage || !isPublished）
 const canManage = computed(() => !!userStore.user?.is_admin)
 
 // 是否显示「发布」按钮：未发布时显示，由后端校验仅作者可发（非作者点会 403）
