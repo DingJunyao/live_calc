@@ -1,0 +1,45 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    # 前端静态资源根目录
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # gzip 压缩
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+
+    # 上传/请求体大小（菜谱图片、数据导出等）
+    client_max_body_size 50m;
+
+    # API 反代到后端（BACKEND_URL 由 entrypoint envsubst 注入）
+    location /api/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        # 长任务支持（成本计算、全部历史趋势、Agent SSE 流等）
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_buffering off;  # SSE 流式必须关缓冲
+    }
+
+    # 带哈希的静态资源长缓存
+    location ~* \.(?:js|css|woff2?|ttf|eot|otf|png|jpg|jpeg|gif|svg|ico|webp|wasm)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA history 模式兜底：未命中路由回 index.html，避免刷新 404
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
