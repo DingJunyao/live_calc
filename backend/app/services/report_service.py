@@ -16,7 +16,7 @@ async def generate_expense_report(
     category: str = "all",
     granularity: str = "daily",
     db: Session = None,
-    user_timezone_offset: Optional[int] = None
+    tz: str = "UTC"
 ) -> Dict:
     """生成支出报告（时区感知版本）
 
@@ -27,7 +27,7 @@ async def generate_expense_report(
         category: 类别筛选
         granularity: 粒度
         db: 数据库会话
-        user_timezone_offset: 用户时区偏移（秒），东八区为 28800
+        tz: IANA 时区名，默认 UTC
     """
     total_expense = Decimal("0.00")
     time_series = []
@@ -37,20 +37,7 @@ async def generate_expense_report(
     total_transport = Decimal("0.00")
     total_utility = Decimal("0.00")
 
-    # 将本地日期范围转换为UTC时间范围
-    utc_start, utc_end = local_date_range_to_utc_range(start_date, end_date, user_timezone_offset)
-
-    # 查询日期范围内的所有商品记录（一次性查询，提高性能）
-    if category in ["all", "food"]:
-        food_records = db.query(
-            ProductRecord.recorded_at,
-            func.sum(ProductRecord.price).label('total')
-        ).filter(
-            ProductRecord.user_id == user_id,
-            ProductRecord.record_type == "purchase",
-            ProductRecord.recorded_at >= utc_start,
-            ProductRecord.recorded_at <= utc_end
-        ).group_by(func.date(ProductRecord.recorded_at)).all()
+    # 商品支出的范围查询在下方逐本地日循环中进行（时区感知），此处无需整体范围预查询。
 
     # 其他费用使用本地日期（Expense.date存储的是本地日期）
     current_date = start_date
@@ -62,7 +49,7 @@ async def generate_expense_report(
         # 商品支出 - 从预查询的结果中匹配
         if category in ["all", "food"]:
             # 将当前本地日期转换为UTC日期范围
-            day_utc_start, day_utc_end = local_date_range_to_utc_range(current_date, current_date, user_timezone_offset)
+            day_utc_start, day_utc_end = local_date_range_to_utc_range(current_date, current_date, tz)
 
             # 查询当天的商品支出
             food_total = db.query(
@@ -121,26 +108,3 @@ async def generate_expense_report(
     }
 
 
-async def generate_price_trend(
-    user_id: int,
-    product_name: str,
-    db: Session = None
-) -> Dict:
-    """生成价格趋势"""
-    records = db.query(ProductRecord).filter(
-        ProductRecord.user_id == user_id,
-        ProductRecord.product_name.contains(product_name)
-    ).order_by(ProductRecord.recorded_at.asc()).all()
-
-    time_series = []
-    for record in records:
-        time_series.append({
-            "date": record.recorded_at.strftime("%Y-%m-%d"),
-            "price": float(record.price),
-            "currency": record.currency
-        })
-
-    return {
-        "product_name": product_name,
-        "time_series": time_series
-    }

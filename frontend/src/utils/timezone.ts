@@ -1,68 +1,10 @@
 /**
  * 时区处理工具
  *
- * 统一处理前端时区相关的计算和转换
+ * 统一处理前端时区相关的计算和转换。
+ * 注：用户时区由 api/client.ts 的请求拦截器统一以 X-Timezone 头注入，
+ * 这里只保留客户端显示/输入用的转换工具。
  */
-
-/**
- * 获取当前时区偏移（秒）
- * @returns 时区偏移（秒），东八区返回 28800
- */
-export function getTimezoneOffsetSeconds(): number {
-  return -new Date().getTimezoneOffset() * 60
-}
-
-/**
- * 获取当前时区偏移（小时）
- * @returns 时区偏移（小时），东八区返回 8
- */
-export function getTimezoneOffsetHours(): number {
-  return -new Date().getTimezoneOffset() / 60
-}
-
-/**
- * 将本地日期转换为UTC时间范围（用于API查询）
- * @param localDate 本地日期（如 '2026-03-29'）
- * @returns [utcStart, utcEnd] ISO格式的UTC时间范围
- *
- * @example
- * const [start, end] = localDateToUTCRange('2026-03-29')
- * // start: '2026-03-28T16:00:00.000Z'
- * // end: '2026-03-29T15:59:59.999Z'
- * // 对应北京时间的 2026-03-29 00:00:00 到 23:59:59
- */
-export function localDateToUTCRange(localDate: string): [string, string] {
-  const date = new Date(localDate)
-
-  // 本地日期的开始时间（00:00:00）
-  const localStart = new Date(date)
-  localStart.setHours(0, 0, 0, 0)
-
-  // 本地日期的结束时间（23:59:59.999）
-  const localEnd = new Date(date)
-  localEnd.setHours(23, 59, 59, 999)
-
-  // 转换为UTC时间
-  const utcStart = new Date(localStart.getTime() - localStart.getTimezoneOffset() * 60 * 1000)
-  const utcEnd = new Date(localEnd.getTime() - localEnd.getTimezoneOffset() * 60 * 1000)
-
-  return [
-    utcStart.toISOString(),
-    utcEnd.toISOString()
-  ]
-}
-
-/**
- * 将本地日期范围转换为UTC时间范围（用于API查询）
- * @param startDate 开始日期（如 '2026-03-01'）
- * @param endDate 结束日期（如 '2026-03-31'）
- * @returns [utcStart, utcEnd] ISO格式的UTC时间范围
- */
-export function localDateRangeToUTCRange(startDate: string, endDate: string): [string, string] {
-  const [start] = localDateToUTCRange(startDate)
-  const [, end] = localDateToUTCRange(endDate)
-  return [start, end]
-}
 
 /**
  * 将UTC时间转换为本地日期字符串（YYYY-MM-DD格式）

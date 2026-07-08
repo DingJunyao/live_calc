@@ -6,6 +6,8 @@ from typing import List, Optional
 import json
 from app.core.database import get_db
 from app.core.security import get_current_user, get_current_admin_user
+from app.api.deps import get_timezone
+from app.utils.date_range_utils import utc_datetime_to_local_date, local_date_range_to_utc_range
 from app.models.user import User
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
@@ -31,6 +33,7 @@ def _compute_sparkline_for_entity(
     db: Session,
     product_ids: List[int],
     days: int = 90,
+    tz: str = "UTC",
 ) -> List[float]:
     """计算指定商品列表的近N天每日平均价格（聚合所有商品）
 
@@ -55,7 +58,7 @@ def _compute_sparkline_for_entity(
         std_qty = float(r.standard_quantity) if r.standard_quantity and float(r.standard_quantity) > 0 else 500.0
         # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
         unit_price = float(r.price) * 500.0 / std_qty
-        date_key = r.recorded_at.strftime("%Y-%m-%d")
+        date_key = utc_datetime_to_local_date(r.recorded_at, tz).isoformat()
         daily_totals[date_key]["sum"] += unit_price
         daily_totals[date_key]["count"] += 1
 
@@ -71,6 +74,7 @@ def _inject_ingredient_sparklines(
     items: list,
     db: Session,
     days: int = 90,
+    tz: str = "UTC",
 ) -> None:
     """为原料列表批量注入迷你图数据"""
     from collections import defaultdict
@@ -119,7 +123,7 @@ def _inject_ingredient_sparklines(
         std_qty_f = float(std_qty) if std_qty and float(std_qty) > 0 else 500.0
         # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
         unit_price = float(price) * 500.0 / std_qty_f
-        date_key = recorded_at.strftime("%Y-%m-%d")
+        date_key = utc_datetime_to_local_date(recorded_at, tz).isoformat()
         ing_date_prices[ing_id][date_key]["sum"] += unit_price
         ing_date_prices[ing_id][date_key]["count"] += 1
 
@@ -139,6 +143,7 @@ def _inject_merchant_sparklines(
     product_ids: List[int],
     db: Session,
     days: int = 90,
+    tz: str = "UTC",
 ) -> None:
     """为商家价格列表批量注入迷你图数据（每个商家近N天每日均价）"""
     from collections import defaultdict
@@ -168,7 +173,7 @@ def _inject_merchant_sparklines(
         std_qty_f = float(std_qty) if std_qty and float(std_qty) > 0 else 500.0
         # 归一化到 ¥/斤 (1斤=500g), 使用 standard_quantity 确保跨单位可比较
         unit_price = float(price) * 500.0 / std_qty_f
-        date_key = recorded_at.strftime("%Y-%m-%d")
+        date_key = utc_datetime_to_local_date(recorded_at, tz).isoformat()
         merchant_date_prices[mid][date_key]["sum"] += unit_price
         merchant_date_prices[mid][date_key]["count"] += 1
 
@@ -865,7 +870,8 @@ async def get_ingredient_recipes(
 async def get_ingredient_latest_price(
     ingredient_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tz: str = Depends(get_timezone),
 ):
     """
     获取原料的最近一天平均价格
@@ -921,12 +927,14 @@ async def get_ingredient_latest_price(
             if not latest_record:
                 return {"average_price": None, "unit": None}
 
-            latest_date = latest_record.recorded_at.date()
+            latest_date = utc_datetime_to_local_date(latest_record.recorded_at, tz)
+            day_start, day_end = local_date_range_to_utc_range(latest_date, latest_date, tz)
             recent_records = db.query(ProductRecord).options(
                 joinedload(ProductRecord.original_unit)
             ).filter(
                 ProductRecord.product_id.in_(product_ids),
-                func.date(ProductRecord.recorded_at) == latest_date,
+                ProductRecord.recorded_at >= day_start,
+                ProductRecord.recorded_at <= day_end,
             ).all()
 
 

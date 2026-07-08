@@ -18,6 +18,9 @@ langchain-openai>=1.0.0,<2.0.0
 langchain-anthropic>=1.0.0,<2.0.0
 requests>=2.31.0,<3.0.0
 
+# 时区数据（Windows 上 zoneinfo 需要此包提供 IANA 时区）
+tzdata>=2024.1
+
 # 数据库驱动（根据需要选择）
 # PostgreSQL
 psycopg2-binary>=2.9.9,<3.0.0

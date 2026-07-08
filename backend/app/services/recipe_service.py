@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional, Tuple
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.product import ProductRecord
@@ -12,6 +12,7 @@ from app.models.ingredient_hierarchy import IngredientHierarchy, HierarchyRelati
 from app.services.unit_conversion_service import UnitConversionService
 from app.models.unit import Unit
 from decimal import Decimal
+from app.utils.date_range_utils import local_date_range_to_utc_range, utc_datetime_to_local_date
 
 
 def _get_price_record_with_fallback(
@@ -19,7 +20,8 @@ def _get_price_record_with_fallback(
     user_id: int,
     product_id: int = None,
     as_of_date: datetime = None,
-    product_name_contains: str = None
+    product_name_contains: str = None,
+    tz: str = "UTC"
 ) -> Optional[ProductRecord]:
     """
     获取价格记录，带前向填充（Forward Fill）机制
@@ -69,7 +71,8 @@ def _get_price_records_with_fallback(
     db: Session,
     user_id: int,
     product_id: int,
-    as_of_date: datetime
+    as_of_date: datetime,
+    tz: str = "UTC"
 ) -> List[ProductRecord]:
     """
     获取前向填充日期的所有价格记录（而非仅一条）。
@@ -93,10 +96,9 @@ def _get_price_records_with_fallback(
     ).order_by(ProductRecord.recorded_at.desc()).first()
 
     if latest_record:
-        # 获取同一天的所有记录
-        fill_date = latest_record.recorded_at.date()
-        day_start = datetime.combine(fill_date, datetime.min.time())
-        day_end = datetime.combine(fill_date, datetime.max.time())
+        # 获取同一天的所有记录（按用户本地日归属）
+        fill_date = utc_datetime_to_local_date(latest_record.recorded_at, tz)
+        day_start, day_end = local_date_range_to_utc_range(fill_date, fill_date, tz)
         return db.query(ProductRecord).filter(
             ProductRecord.product_id == product_id,
             ProductRecord.recorded_at >= day_start,
@@ -109,9 +111,8 @@ def _get_price_records_with_fallback(
     ).order_by(ProductRecord.recorded_at.asc()).first()
 
     if earliest_record:
-        fill_date = earliest_record.recorded_at.date()
-        day_start = datetime.combine(fill_date, datetime.min.time())
-        day_end = datetime.combine(fill_date, datetime.max.time())
+        fill_date = utc_datetime_to_local_date(earliest_record.recorded_at, tz)
+        day_start, day_end = local_date_range_to_utc_range(fill_date, fill_date, tz)
         return db.query(ProductRecord).filter(
             ProductRecord.product_id == product_id,
             ProductRecord.recorded_at >= day_start,
@@ -126,7 +127,8 @@ def _get_price_records_for_date(
     user_id: int,
     ingredient_id: int,
     as_of_date: datetime,
-    product_id: int = None
+    product_id: int = None,
+    tz: str = "UTC"
 ) -> List[ProductRecord]:
     """
     获取某食材在指定日期的所有价格记录
@@ -141,9 +143,9 @@ def _get_price_records_for_date(
     Returns:
         当天的所有价格记录列表
     """
-    # 计算当天的开始和结束时间
-    day_start = as_of_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    day_end = day_start + timedelta(days=1) - timedelta(microseconds=1)
+    # 计算当天（用户本地日）的 UTC 起止时间
+    _local_date = utc_datetime_to_local_date(as_of_date, tz)
+    day_start, day_end = local_date_range_to_utc_range(_local_date, _local_date, tz)
 
     if product_id is not None:
         # 使用指定的商品ID查询
@@ -318,7 +320,8 @@ def _get_child_price_per_gram(
     ingredient: Ingredient,
     user_id: int,
     as_of_date: datetime,
-    visited: Optional[List[int]] = None
+    visited: Optional[List[int]] = None,
+    tz: str = "UTC"
 ) -> Optional[Decimal]:
     """
     获取食材的每克价格（元/克），通过所有可能的途径依次尝试：
@@ -358,7 +361,8 @@ def _get_child_price_per_gram(
             db=db,
             user_id=user_id,
             product_id=p.id,
-            as_of_date=as_of_date
+            as_of_date=as_of_date,
+            tz=tz
         )
         if record:
             ppg = _convert_record_to_price_per_gram(db, record, ingredient.id)
@@ -374,7 +378,7 @@ def _get_child_price_per_gram(
             return ppg
 
     # 3. 尝试 CONTAINS 子食材聚合（递归）
-    agg_result = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date, visited)
+    agg_result = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date, visited, tz=tz)
     if agg_result:
         ppg, _ = agg_result
         return ppg
@@ -387,7 +391,8 @@ def _get_aggregated_cost_from_children(
     ingredient: Ingredient,
     user_id: int,
     as_of_date: datetime,
-    visited: Optional[List[int]] = None
+    visited: Optional[List[int]] = None,
+    tz: str = "UTC"
 ) -> Optional[tuple[Decimal, str]]:
     """
     从包含关系的子食材中聚合加权平均成本
@@ -428,7 +433,7 @@ def _get_aggregated_cost_from_children(
             continue
 
         child_ppg = _get_child_price_per_gram(
-            db, hierarchy.child, user_id, as_of_date, visited
+            db, hierarchy.child, user_id, as_of_date, visited, tz=tz
         )
         if child_ppg is not None:
             strength = hierarchy.strength or 50  # 默认 strength 为 50
@@ -488,7 +493,8 @@ def _get_cost_from_recipe(
     ingredient: Ingredient,
     user_id: int,
     as_of_date: datetime,
-    visited: Optional[set] = None
+    visited: Optional[set] = None,
+    tz: str = "UTC"
 ) -> Optional[tuple[Decimal, "Recipe", str]]:
     """
     从制作菜谱推导原料的每克成本（半成品成本传递）。
@@ -525,7 +531,7 @@ def _get_cost_from_recipe(
         return None
     # 递归算制作菜谱成本（支持套娃），把 recipe.id 纳入 visited 透传
     recipe_cost = calculate_recipe_cost_as_of(
-        recipe.id, user_id, as_of_date, db, visited=visited | {recipe.id}
+        recipe.id, user_id, as_of_date, db, visited=visited | {recipe.id}, tz=tz
     )
     if not recipe_cost:
         return None
@@ -720,7 +726,8 @@ async def calculate_recipe_cost(
     recipe_id: int,
     user_id: int,
     db: Session = None,
-    visited: Optional[set] = None
+    visited: Optional[set] = None,
+    tz: str = "UTC"
 ) -> Dict:
     """计算菜谱成本，使用当天价格区间的平均值"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
@@ -733,8 +740,8 @@ async def calculate_recipe_cost(
     total_cost = Decimal("0.00")
     cost_breakdown = []
 
-    # 获取当前日期
-    now = datetime.now()
+    # 获取当前日期（UTC naive，与 recorded_at 口径一致）
+    now = datetime.now(timezone.utc)
 
     for recipe_ingredient in recipe.ingredients:
         ingredient = recipe_ingredient.ingredient
@@ -766,7 +773,7 @@ async def calculate_recipe_cost(
         # 直接商品：加权平均（取代「遍历取第一个有记录商品 + 前向填充」）
         if products:
             from app.services.ingredient_price_service import resolve_direct_weighted_for_cost
-            _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=now)
+            _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=now, tz=tz)
             if _dw is not None:
                 unit_price, weighted_participants, _std_uid = _dw
                 # 构造占位 day_records 供下方单位转换段读 standard_unit_id
@@ -790,7 +797,7 @@ async def calculate_recipe_cost(
                     if fallback_products:
                         # 查找回退食材当天的价格记录（遍历所有商品）
                         for fp in fallback_products:
-                            day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now, product_id=fp.id)
+                            day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now, product_id=fp.id, tz=tz)
                             if day_records:
                                 product = fp
                                 break
@@ -802,7 +809,8 @@ async def calculate_recipe_cost(
                                     db=db,
                                     user_id=user_id,
                                     product_id=fp.id,
-                                    as_of_date=now
+                                    as_of_date=now,
+                                    tz=tz
                                 )
                                 if day_records:
                                     product = fp
@@ -825,7 +833,7 @@ async def calculate_recipe_cost(
                 if fallback_products:
                     # 遍历所有商品，查找当天的价格记录
                     for fp in fallback_products:
-                        day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now, product_id=fp.id)
+                        day_records = _get_price_records_for_date(db, user_id, fallback_ingredient.id, now, product_id=fp.id, tz=tz)
                         if day_records:
                             break
 
@@ -854,14 +862,14 @@ async def calculate_recipe_cost(
 
         # 尝试从制作菜谱推导成本（半成品，优先于子食材聚合）
         if not day_records and unit_price is None:
-            recipe_result = _get_cost_from_recipe(db, ingredient, user_id, now, visited)
+            recipe_result = _get_cost_from_recipe(db, ingredient, user_id, now, visited, tz=tz)
             if recipe_result:
                 unit_price, _mk_recipe, recipe_chain = recipe_result
                 # unit_price 已经是元/克
 
         # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
         if not day_records and unit_price is None:
-            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, now)
+            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, now, tz=tz)
             if child_agg:
                 unit_price, aggregation_chain = child_agg
                 # unit_price 已经是元/克
@@ -994,7 +1002,8 @@ def calculate_recipe_cost_range_as_of(
     recipe_id: int,
     user_id: int,
     as_of_date: datetime,
-    db: Session
+    db: Session,
+    tz: str = "UTC"
 ) -> Dict:
     """
     计算菜谱在指定日期的成本区间
@@ -1042,7 +1051,7 @@ def calculate_recipe_cost_range_as_of(
         # 直接商品：加权平均（取代「遍历取第一个有记录商品」）
         # 加权成功：min/max 取参与商品单价范围，avg 取加权价；跳过原区间遍历逻辑
         from app.services.ingredient_price_service import resolve_direct_weighted_for_cost
-        _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=as_of_date)
+        _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=as_of_date, tz=tz)
         if _dw is not None:
             _wp_avg, _wp_parts, _ = _dw
             quantity, _eff_uid = _get_effective_quantity(recipe_ingredient)
@@ -1059,7 +1068,7 @@ def calculate_recipe_cost_range_as_of(
         day_records = []
         product = None
         for p in products:
-            day_records = _get_price_records_for_date(db, user_id, ingredient.id, as_of_date, product_id=p.id)
+            day_records = _get_price_records_for_date(db, user_id, ingredient.id, as_of_date, product_id=p.id, tz=tz)
             if day_records:
                 product = p
                 break
@@ -1083,7 +1092,7 @@ def calculate_recipe_cost_range_as_of(
                             db=db,
                             user_id=user_id,
                             product_id=fp.id,
-                            as_of_date=as_of_date
+                            as_of_date=as_of_date, tz=tz
                         )
                         if fallback_record:
                             day_records = [fallback_record]
@@ -1096,7 +1105,7 @@ def calculate_recipe_cost_range_as_of(
                         db=db,
                         user_id=user_id,
                         product_id=p.id,
-                        as_of_date=as_of_date
+                        as_of_date=as_of_date, tz=tz
                     )
                     if fallback_record:
                         day_records = [fallback_record]
@@ -1105,7 +1114,7 @@ def calculate_recipe_cost_range_as_of(
 
         # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
         if not day_records:
-            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date)
+            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date, tz=tz)
             if child_agg:
                 child_unit_price, aggregation_chain = child_agg
                 # child_unit_price 是元/克，将菜谱用量转换为克后计算成本
@@ -1184,7 +1193,8 @@ def calculate_recipe_cost_range_trend(
     user_id: int,
     db: Session,
     days: int = 90,
-    offset_days: int = 0
+    offset_days: int = 0,
+    tz: str = "UTC"
 ) -> List[Dict]:
     """
     计算菜谱的成本区间趋势（批量优化版）
@@ -1221,8 +1231,8 @@ def calculate_recipe_cost_range_trend(
         return []
 
     # 确定日期范围（带 offset_days 支持分批加载）
-    end_date = datetime.now().date() - timedelta(days=offset_days)
-    start_date = max(earliest_record.recorded_at.date(), end_date - timedelta(days=days))
+    end_date = utc_datetime_to_local_date(datetime.now(timezone.utc), tz) - timedelta(days=offset_days)
+    start_date = max(utc_datetime_to_local_date(earliest_record.recorded_at, tz), end_date - timedelta(days=days))
 
     # ========== 批量预加载所有数据 ==========
 
@@ -1448,8 +1458,7 @@ def calculate_recipe_cost_range_trend(
 
     def _find_day_records(records_list, target_date):
         """找出某天的所有记录（二分查找），如果没有则返回 None（由调用方做前向填充）"""
-        day_start = datetime.combine(target_date, datetime.min.time())
-        day_end = datetime.combine(target_date, datetime.max.time())
+        day_start, day_end = local_date_range_to_utc_range(target_date, target_date, tz)
         # PostgreSQL 返回 aware datetime，统一转 naive 比较
         record_dates = [
             r.recorded_at.replace(tzinfo=None) if r.recorded_at and r.recorded_at.tzinfo
@@ -1472,7 +1481,7 @@ def calculate_recipe_cost_range_trend(
         """
         from itertools import filterfalse
 
-        as_of_datetime = datetime.combine(target_date, datetime.max.time())
+        _, as_of_datetime = local_date_range_to_utc_range(target_date, target_date, tz)
         # PostgreSQL 返回 aware datetime，统一转 naive 比较，过滤 None
         valid_records = [r for r in records_list if r.recorded_at is not None]
         if not valid_records:
@@ -1485,9 +1494,9 @@ def calculate_recipe_cost_range_trend(
         idx = bisect.bisect_right(record_dates, as_of_datetime) - 1
         if idx < 0:
             # 没有该日期之前的记录，使用最早记录所在日期的所有记录
-            fill_date = valid_records[0].recorded_at.date()
+            fill_date = utc_datetime_to_local_date(valid_records[0].recorded_at, tz)
         else:
-            fill_date = valid_records[idx].recorded_at.date()
+            fill_date = utc_datetime_to_local_date(valid_records[idx].recorded_at, tz)
         # 获取 fill_date 当天的所有记录
         return _find_day_records(valid_records, fill_date) or [valid_records[idx] if idx >= 0 else valid_records[0]]
 
@@ -1523,7 +1532,7 @@ def calculate_recipe_cost_range_trend(
                             else r.recorded_at
                             for r in child_records if r.recorded_at is not None
                         ]
-                        child_idx = bisect.bisect_right(child_record_dates, datetime.combine(date, datetime.max.time())) - 1
+                        child_idx = bisect.bisect_right(child_record_dates, local_date_range_to_utc_range(date, date, tz)[1]) - 1
                         if child_idx < 0:
                             child_latest = child_records[0]
                         else:
@@ -1619,8 +1628,7 @@ def calculate_recipe_cost_range_trend(
                 continue
 
         if total_avg_cost > 0:
-            recorded_at_dt = datetime.combine(date, datetime.min.time()) + timedelta(hours=12)
-            recorded_at = int(recorded_at_dt.timestamp())
+            recorded_at = int((local_date_range_to_utc_range(date, date, tz)[0] + timedelta(hours=12)).replace(tzinfo=timezone.utc).timestamp())
 
             cost_range_trend.append({
                 "date": date.strftime("%Y-%m-%d"),
@@ -2069,7 +2077,8 @@ def calculate_recipe_cost_as_of(
     user_id: int,
     as_of_date: datetime,
     db: Session,
-    visited: Optional[set] = None
+    visited: Optional[set] = None,
+    tz: str = "UTC"
 ) -> Dict:
     """
     计算菜谱在指定日期的成本
@@ -2115,7 +2124,7 @@ def calculate_recipe_cost_as_of(
         if products:
             # 直接商品：加权平均（取代「遍历取第一个有记录商品」）
             from app.services.ingredient_price_service import resolve_direct_weighted_for_cost
-            _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=as_of_date)
+            _dw = resolve_direct_weighted_for_cost(db, ingredient.id, user_id=user_id, as_of_date=as_of_date, tz=tz)
             if _dw is not None:
                 unit_price, weighted_participants, _std_uid = _dw
                 # 构造占位 latest_record 供下方单位转换段读 standard_unit_id
@@ -2130,7 +2139,7 @@ def calculate_recipe_cost_as_of(
                         db=db,
                         user_id=user_id,
                         product_id=p.id,
-                        as_of_date=as_of_date,
+                        as_of_date=as_of_date, tz=tz,
                     )
                     if latest_record:
                         product = p
@@ -2176,7 +2185,7 @@ def calculate_recipe_cost_as_of(
                             db=db,
                             user_id=user_id,
                             product_id=fp.id,
-                            as_of_date=as_of_date
+                            as_of_date=as_of_date, tz=tz
                         )
                         if latest_record:
                             product = fp
@@ -2191,7 +2200,7 @@ def calculate_recipe_cost_as_of(
                     db=db,
                     user_id=user_id,
                     product_name_contains=original_ingredient_name,
-                    as_of_date=as_of_date
+                    as_of_date=as_of_date, tz=tz
                 )
 
             if latest_record:
@@ -2209,14 +2218,14 @@ def calculate_recipe_cost_as_of(
 
         # 尝试从制作菜谱推导成本（半成品，优先于子食材聚合）
         if not latest_record and unit_price is None:
-            recipe_result = _get_cost_from_recipe(db, ingredient, user_id, as_of_date, visited)
+            recipe_result = _get_cost_from_recipe(db, ingredient, user_id, as_of_date, visited, tz=tz)
             if recipe_result:
                 unit_price, _mk_recipe, recipe_chain = recipe_result
                 # unit_price 已经是元/克
 
         # 如果上述途径全部失败，尝试从包含关系的子食材中聚合成本
         if not latest_record and unit_price is None:
-            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date)
+            child_agg = _get_aggregated_cost_from_children(db, ingredient, user_id, as_of_date, tz=tz)
             if child_agg:
                 unit_price, aggregation_chain = child_agg
                 # unit_price 已经是元/克
@@ -2329,7 +2338,8 @@ def calculate_recipe_cost_trend(
     recipe_id: int,
     user_id: int,
     db: Session,
-    days: int = 90
+    days: int = 90,
+    tz: str = "UTC"
 ) -> List[Dict]:
     """
     计算菜谱的成本趋势
@@ -2372,8 +2382,8 @@ def calculate_recipe_cost_trend(
         return []
 
     # 确定日期范围
-    end_date = datetime.now().date()
-    start_date = max(earliest_record.recorded_at.date(), end_date - timedelta(days=days))
+    end_date = utc_datetime_to_local_date(datetime.now(timezone.utc), tz)
+    start_date = max(utc_datetime_to_local_date(earliest_record.recorded_at, tz), end_date - timedelta(days=days))
 
     # 生成日期列表
     date_list = []
@@ -2386,7 +2396,7 @@ def calculate_recipe_cost_trend(
     cost_trend = []
     for date in date_list:
         # 计算该日期 23:59:59 的成本（使用截至当天的最新价格）
-        as_of_datetime = datetime.combine(date, datetime.max.time()) - timedelta(seconds=1)
+        _, as_of_datetime = local_date_range_to_utc_range(date, date, tz)
 
         # 调用成本计算函数（不是 async）
         cost_result = calculate_recipe_cost_as_of(
@@ -2400,8 +2410,7 @@ def calculate_recipe_cost_trend(
             total_cost_cents = int(total_cost * 100)
 
             # 转换为 Unix 时间戳（使用当天 12:00）
-            recorded_at_dt = datetime.combine(date, datetime.min.time()) + timedelta(hours=12)
-            recorded_at = int(recorded_at_dt.timestamp())
+            recorded_at = int((local_date_range_to_utc_range(date, date, tz)[0] + timedelta(hours=12)).replace(tzinfo=timezone.utc).timestamp())
 
             cost_trend.append({
                 "date": date.strftime("%Y-%m-%d"),

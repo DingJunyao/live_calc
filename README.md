@@ -1,15 +1,17 @@
-# 生计 - 生活成本计算器
+# 生计 · 生活成本计算器
 
-记录商品价格，计算烹饪成本，优化生活开支
+记录商品价格，计算烹饪成本与营养，优化生活开支。
 
-## 功能特性
+## 文档
 
-- 📝 商品价格记录 - 记录不同时间、不同商家的商品价格
-- 🍳 菜谱成本计算 - 根据价格记录计算菜谱成本
-- 🥗 营养成分分析 - 基于 USDA 数据库的营养分析
-- 🌏 多单位转换 - 支持公制/市制/英制转换
+完整文档在 [docs/](docs/)，建议从下面任一篇开始：
+
+- **第一次用** → [入门](docs/getting-started.md)
+- **想搞懂系统怎么算账** → [核心概念与计算逻辑](docs/concepts.md)
+- **普通用户功能** → [文档首页](docs/README.md)
+- **管理员 / 自部署** → [后台管理与运维](docs/admin/)
 
 ## 致谢
 
-- 菜谱参考: [HowToCook](https://github.com/Anduin2017/HowToCook)
-- 营养数据: [USDA FoodData Central](https://fdc.nal.usda.gov/)
+- 菜谱参考：[HowToCook](https://github.com/Anduin2017/HowToCook)
+- 营养数据：[USDA FoodData Central](https://fdc.nal.usda.gov/)

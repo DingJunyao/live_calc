@@ -6,6 +6,7 @@ from typing import List, Optional
 from decimal import Decimal
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.api.deps import get_timezone
 from app.models.recipe import Recipe, RecipeIngredient, RecipeCostHistory
 from app.models.nutrition import Ingredient
 from app.models.unit import Unit
@@ -1329,7 +1330,8 @@ async def get_recipe_cost_history(
     recipe_id: int,
     days: int = Query(90, ge=7, le=365, description="查询天数"),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tz: str = Depends(get_timezone)
 ):
     """获取菜谱成本趋势
 
@@ -1354,7 +1356,7 @@ async def get_recipe_cost_history(
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
         # 实时计算成本趋势
-        cost_trend = calculate_recipe_cost_trend(recipe_id, current_user.id, db, days)
+        cost_trend = calculate_recipe_cost_trend(recipe_id, current_user.id, db, days, tz=tz)
 
         # 转换为响应模型（按时间倒序）
         return [
@@ -1380,7 +1382,8 @@ async def get_recipe_cost_history_range(
     days: int = Query(90, ge=7, le=365, description="查询天数"),
     offset_days: int = Query(0, ge=0, description="偏移天数（从 offset_days 天前开始算）"),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tz: str = Depends(get_timezone)
 ):
     """获取菜谱成本区间趋势
 
@@ -1414,7 +1417,7 @@ async def get_recipe_cost_history_range(
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
         # 计算成本区间趋势
-        cost_range_trend = calculate_recipe_cost_range_trend(recipe_id, current_user.id, db, days, offset_days)
+        cost_range_trend = calculate_recipe_cost_range_trend(recipe_id, current_user.id, db, days, offset_days, tz=tz)
 
         # 转换为响应模型（按时间顺序）
         return [

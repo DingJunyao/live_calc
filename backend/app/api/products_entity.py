@@ -7,6 +7,8 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.core.security import get_current_user, get_current_admin_user
+from app.api.deps import get_timezone
+from app.utils.date_range_utils import utc_datetime_to_local_date, local_date_range_to_utc_range
 from app.models.user import User
 from app.models.product_entity import Product
 from app.models.product_barcode import ProductBarcode
@@ -261,7 +263,7 @@ def list_products(
 
 @router.get("/products/entity/{product_id}", response_model=ProductWithDetails)
 @router.get("/products/entity/{product_id}/", response_model=ProductWithDetails)
-def get_product(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_product(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), tz: str = Depends(get_timezone)):
     """获取商品详情"""
     product = db.query(Product).options(
         joinedload(Product.ingredient)
@@ -278,24 +280,25 @@ def get_product(product_id: int, db: Session = Depends(get_db), current_user: Us
     from sqlalchemy import func
 
     # 获取最近有记录的日期
-    latest_date = db.query(
-        func.max(func.date(ProductRecord.recorded_at))
-    ).filter(
+    all_dates = db.query(ProductRecord.recorded_at).filter(
         ProductRecord.product_id == product_id,
-        ProductRecord.is_active == True
-    ).scalar()
+        ProductRecord.is_active == True,
+    ).all()
+    latest_date = max((utc_datetime_to_local_date(d[0], tz) for d in all_dates), default=None)
 
     latest_price = None
     latest_price_unit = None
     latest_price_date = None
 
     if latest_date:
-        # 取最近一天的所有记录
+        # 取最近一天（用户本地日）的所有记录
+        day_start, day_end = local_date_range_to_utc_range(latest_date, latest_date, tz)
         day_records = db.query(ProductRecord).options(
             joinedload(ProductRecord.original_unit)
         ).filter(
             ProductRecord.product_id == product_id,
-            func.date(ProductRecord.recorded_at) == latest_date,
+            ProductRecord.recorded_at >= day_start,
+            ProductRecord.recorded_at <= day_end,
             ProductRecord.is_active == True
         ).all()
 

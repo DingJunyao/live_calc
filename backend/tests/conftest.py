@@ -22,6 +22,13 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.core.security import get_current_user
+from app.api.deps import get_timezone
+
+# 默认时区 override：既有端点测试无需逐个带 X-Timezone 头
+# （get_timezone 只影响时区参数，不影响数据库/鉴权，故模块级 override 安全）。
+# 需测试缺失/非法时区的场景（tests/api/test_deps_timezone.py）用独立 FastAPI app，
+# 不走主 app 的 override，校验覆盖仍在。
+app.dependency_overrides[get_timezone] = lambda: "UTC"
 
 # 共享内存 engine：StaticPool 让 TestClient 跨线程与 fixture 共享同一内存库
 engine = create_engine(

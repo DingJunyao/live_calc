@@ -18,6 +18,8 @@ passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 python-multipart = "^0.0.6"
 apscheduler = "^3.10.4"
 requests = "^2.31.0"
+# Windows 上 zoneinfo 无系统时区数据，需 tzdata 提供 IANA 时区
+tzdata = ">=2024.1"
 celery = {extras = ["redis"], version = "^5.3.6", optional = true}
 redis = {extras = ["hiredis"], version = "^5.0.1", optional = true}
 	# Agent 维护任务台。mcp 在 Python >=3.14 下要求 starlette>=0.48。

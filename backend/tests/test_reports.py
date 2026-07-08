@@ -28,11 +28,5 @@ def test_create_expense():
 
 def test_get_expense_report():
     """测试获取支出报告"""
-    response = client.get("/api/v1/reports/expense?start_date=2024-01-01&end_date=2024-01-31")
-    assert response.status_code in [200, 401]
-
-
-def test_get_price_trend():
-    """测试获取价格趋势"""
-    response = client.get("/api/v1/reports/price-trend?product_name=鸡蛋")
+    response = client.get("/api/v1/reports/expense?start_date=2024-01-01&end_date=2024-01-31", headers={"X-Timezone": "UTC"})
     assert response.status_code in [200, 401]

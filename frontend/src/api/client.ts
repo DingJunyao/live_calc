@@ -20,6 +20,8 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    // 统一注入用户时区（IANA 名），后端用于按用户本地日聚合
+    config.headers['X-Timezone'] = Intl.DateTimeFormat().resolvedOptions().timeZone
     return config
   },
   (error) => {

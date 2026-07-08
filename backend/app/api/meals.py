@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.api.deps import get_timezone
+from app.utils.date_range_utils import utc_datetime_to_local_date
 from app.models.user import User
 from app.schemas.meal import MealRecommendationsResponse, RefreshMealRequest
 from app.services.meal_recommender import (
@@ -26,6 +28,7 @@ router = APIRouter()
 async def get_daily_recommendations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tz: str = Depends(get_timezone),
 ):
     """
     获取今日三餐推荐（轻量，不触发计算）。
@@ -37,18 +40,19 @@ async def get_daily_recommendations(
     耗时计算通过 POST /recommendations/generate 在后台线程中完成。
     """
     try:
-        status_info = check_today_status(db, current_user.id)
+        status_info = check_today_status(db, current_user.id, tz)
 
         if status_info["status"] == "ready":
             return await _build_response_from_records(
                 db, status_info["existing_records"], current_user,
                 refreshing_meals=status_info.get("refreshing_meals", []),
+                tz=tz,
             )
 
         # not_generated 或 generating
         return MealRecommendationsResponse(
             status=status_info["status"],
-            date=datetime.date.today().isoformat(),
+            date=utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz).isoformat(),
             recommendations=[],
             totals=None,
             refreshing_meals=status_info.get("refreshing_meals", []),
@@ -65,6 +69,7 @@ async def get_daily_recommendations(
 async def trigger_recommendation_generation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tz: str = Depends(get_timezone),
 ):
     """
     触发后台生成今日推荐。
@@ -74,19 +79,20 @@ async def trigger_recommendation_generation(
     - 未生成 → 启动后台线程生成，返回 status="generating"
     """
     try:
-        status_info = check_today_status(db, current_user.id)
+        status_info = check_today_status(db, current_user.id, tz)
 
         if status_info["status"] == "ready":
             return await _build_response_from_records(
                 db, status_info["existing_records"], current_user,
                 refreshing_meals=status_info.get("refreshing_meals", []),
+                tz=tz,
             )
 
-        started = trigger_background_generation(current_user.id)
+        started = trigger_background_generation(current_user.id, tz)
 
         return MealRecommendationsResponse(
             status="generating",
-            date=datetime.date.today().isoformat(),
+            date=utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz).isoformat(),
             recommendations=[],
             totals=None,
             refreshing_meals=[],
@@ -104,6 +110,7 @@ async def refresh_recommendation(
     request: RefreshMealRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tz: str = Depends(get_timezone),
 ):
     """
     刷新某一餐的推荐（后台异步模式）。
@@ -118,7 +125,7 @@ async def refresh_recommendation(
 
     try:
         # 先检查刷新次数
-        today = datetime.date.today()
+        today = utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz)
         counts = _count_today_refreshes(db, current_user.id, today)
         current_count = counts.get(request.meal_type, 0)
         if current_count >= 5:
@@ -130,7 +137,7 @@ async def refresh_recommendation(
         # 检查是否已在刷新
         if is_refreshing(current_user.id, request.meal_type):
             # 返回当前推荐，frontend 可以继续轮询
-            status_info = check_today_status(db, current_user.id)
+            status_info = check_today_status(db, current_user.id, tz)
             if status_info["status"] == "ready":
                 return await _build_response_from_records(
                     db, status_info["existing_records"], current_user,
@@ -145,7 +152,7 @@ async def refresh_recommendation(
             )
 
         # 确保推荐已存在（否则应该先走 generate）
-        status_info = check_today_status(db, current_user.id)
+        status_info = check_today_status(db, current_user.id, tz)
         if status_info["status"] != "ready":
             return MealRecommendationsResponse(
                 status="not_generated",
@@ -156,7 +163,7 @@ async def refresh_recommendation(
 
         # 触发后台刷新
         started, error = trigger_background_refresh(
-            current_user.id, request.meal_type
+            current_user.id, request.meal_type, tz
         )
         if not started:
             raise HTTPException(status_code=409, detail=error)
@@ -165,6 +172,7 @@ async def refresh_recommendation(
         return await _build_response_from_records(
             db, status_info["existing_records"], current_user,
             refreshing_meals=[request.meal_type],
+            tz=tz,
         )
     except HTTPException:
         raise

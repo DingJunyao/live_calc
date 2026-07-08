@@ -10,6 +10,8 @@ import logging
 import random
 import threading
 from typing import Dict, List, Optional, Set, Tuple
+from zoneinfo import ZoneInfo
+from app.utils.date_range_utils import utc_datetime_to_local_date
 
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text
@@ -285,11 +287,12 @@ def _get_current_meal(hour: int) -> Optional[str]:
 async def _build_response_from_records(
     db: Session, records: List[DailyRecommendation], user: User,
     refreshing_meals: Optional[List[str]] = None,
+    tz: str = "UTC",
 ) -> Dict:
     """从 daily_recommendations 记录构建完整响应。"""
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(ZoneInfo(tz))
     current_meal = _get_current_meal(now.hour)
-    today = datetime.date.today()
+    today = utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz)
 
     refresh_counts = _count_today_refreshes(db, user.id, today)
 
@@ -396,7 +399,7 @@ async def _build_response_from_records(
     }
 
 
-async def generate_recommendations(db: Session, user: User) -> Dict:
+async def generate_recommendations(db: Session, user: User, tz: str = "UTC") -> Dict:
     """
     为指定用户生成今日三餐推荐。
 
@@ -406,7 +409,7 @@ async def generate_recommendations(db: Session, user: User) -> Dict:
     3. 写入 daily_recommendations
     4. 返回结果
     """
-    today = datetime.date.today()
+    today = utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz)
 
     existing = (
         db.query(DailyRecommendation)
@@ -512,7 +515,7 @@ async def generate_recommendations(db: Session, user: User) -> Dict:
 
 
 async def refresh_meal_recommendation(
-    db: Session, user: User, meal_type: str
+    db: Session, user: User, meal_type: str, tz: str = "UTC"
 ) -> Tuple[Optional[Dict], Optional[str]]:
     """
     刷新某一餐的推荐。
@@ -520,7 +523,7 @@ async def refresh_meal_recommendation(
     返回 (response_dict, error_message)。
     成功时 error_message 为 None；失败时 response_dict 为 None。
     """
-    today = datetime.date.today()
+    today = utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz)
 
     refresh_counts = _count_today_refreshes(db, user.id, today)
     current_count = refresh_counts.get(meal_type, 0)
@@ -602,14 +605,14 @@ def is_generating(user_id: int) -> bool:
         return user_id in _generating_users
 
 
-def check_today_status(db: Session, user_id: int) -> Dict:
+def check_today_status(db: Session, user_id: int, tz: str = "UTC") -> Dict:
     """快速检查今日推荐状态，不触发耗时计算。
 
     返回 {"status": ..., "existing_records": [...], "refreshing_meals": [...]}，
     status 为 "ready"（已有）+ records、"not_generated"（无）、"generating"（生成中）。
     refreshing_meals 为当前正在后台刷新的餐类列表（仅在 ready 时有意义）。
     """
-    today = datetime.date.today()
+    today = utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz)
 
     existing = (
         db.query(DailyRecommendation)
@@ -631,7 +634,7 @@ def check_today_status(db: Session, user_id: int) -> Dict:
     return {"status": "not_generated", "existing_records": [], "refreshing_meals": refreshing}
 
 
-def _generate_in_background(user_id: int):
+def _generate_in_background(user_id: int, tz: str = "UTC"):
     """在独立线程中运行推荐生成，不阻塞 HTTP 响应。"""
     from app.core.database import SessionLocal
 
@@ -642,7 +645,7 @@ def _generate_in_background(user_id: int):
             logger.warning(f"后台生成：用户 {user_id} 不存在")
             return
         # 在新线程中跑独立的 event loop
-        asyncio.run(generate_recommendations(db, user))
+        asyncio.run(generate_recommendations(db, user, tz))
         logger.info(f"后台生成：用户 {user_id} 推荐已就绪")
     except Exception:
         logger.exception(f"后台生成：用户 {user_id} 推荐失败")
@@ -652,7 +655,7 @@ def _generate_in_background(user_id: int):
             _generating_users.discard(user_id)
 
 
-def trigger_background_generation(user_id: int) -> bool:
+def trigger_background_generation(user_id: int, tz: str = "UTC") -> bool:
     """触发后台生成。如果已在生成中返回 False，否则启动线程并返回 True。"""
     with _generation_lock:
         if user_id in _generating_users:
@@ -661,7 +664,7 @@ def trigger_background_generation(user_id: int) -> bool:
 
     thread = threading.Thread(
         target=_generate_in_background,
-        args=(user_id,),
+        args=(user_id, tz),
         daemon=True,
         name=f"meal-gen-{user_id}",
     )
@@ -677,7 +680,7 @@ def is_refreshing(user_id: int, meal_type: str) -> bool:
         return meal_type in _refreshing_meals.get(user_id, set())
 
 
-def _refresh_in_background(user_id: int, meal_type: str):
+def _refresh_in_background(user_id: int, meal_type: str, tz: str = "UTC"):
     """在独立线程中运行单餐刷新。"""
     from app.core.database import SessionLocal
 
@@ -687,7 +690,7 @@ def _refresh_in_background(user_id: int, meal_type: str):
         if user is None:
             logger.warning(f"后台刷新：用户 {user_id} 不存在")
             return
-        result, error = asyncio.run(refresh_meal_recommendation(db, user, meal_type))
+        result, error = asyncio.run(refresh_meal_recommendation(db, user, meal_type, tz))
         if error:
             logger.warning(f"后台刷新：用户 {user_id} {meal_type} 刷新失败: {error}")
         else:
@@ -703,7 +706,7 @@ def _refresh_in_background(user_id: int, meal_type: str):
                 _refreshing_meals.pop(user_id, None)
 
 
-def trigger_background_refresh(user_id: int, meal_type: str) -> Tuple[bool, Optional[str]]:
+def trigger_background_refresh(user_id: int, meal_type: str, tz: str = "UTC") -> Tuple[bool, Optional[str]]:
     """触发后台刷新某餐。返回 (started, error_message)。
 
     - 已在刷新中 → (False, "该餐正在刷新中")
@@ -717,7 +720,7 @@ def trigger_background_refresh(user_id: int, meal_type: str) -> Tuple[bool, Opti
 
     thread = threading.Thread(
         target=_refresh_in_background,
-        args=(user_id, meal_type),
+        args=(user_id, meal_type, tz),
         daemon=True,
         name=f"meal-refresh-{user_id}-{meal_type}",
     )

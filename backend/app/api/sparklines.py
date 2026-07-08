@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.api.deps import get_timezone
+from app.utils.date_range_utils import utc_datetime_to_local_date
 from app.models.product import ProductRecord
 from app.models.product_entity import Product
 from app.models.nutrition import Ingredient
@@ -28,6 +30,7 @@ def _daily_avg_for_product_ids(
     days: int = 90,
     ingredient_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    tz: str = "UTC",
 ) -> List[float]:
     """计算一组商品在近N天内的每日平均价格。
 
@@ -69,7 +72,7 @@ def _daily_avg_for_product_ids(
     for prod_id, price, std_qty, recorded_at in records:
         std_qty_f = float(std_qty) if std_qty and float(std_qty) > 0 else 500.0
         unit_price = float(price) * 500.0 / std_qty_f
-        dkey = recorded_at.strftime("%Y-%m-%d")
+        dkey = utc_datetime_to_local_date(recorded_at, tz).isoformat()
         by_day_product[dkey].setdefault(prod_id, []).append(unit_price)
 
     result: List[float] = []
@@ -99,6 +102,7 @@ async def get_recipes_sparklines(
     days: int = Query(90, ge=7, le=365, description="查询天数"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    tz: str = Depends(get_timezone),
 ) -> Dict[str, Optional[List[float]]]:
     """批量获取菜谱迷你图数据（多线程并发）"""
     try:
@@ -113,7 +117,7 @@ async def get_recipes_sparklines(
             """在独立 DB session 中计算单个菜谱的成本趋势"""
             session = SessionLocal()
             try:
-                trend = calculate_recipe_cost_range_trend(rid, current_user.id, session, days=days)
+                trend = calculate_recipe_cost_range_trend(rid, current_user.id, session, days=days, tz=tz)
                 if trend:
                     data = [t["avg_cost"] for t in trend if t.get("avg_cost") is not None]
                     return (str(rid), data if data else None)
@@ -140,6 +144,7 @@ async def get_ingredients_sparklines(
     days: int = Query(90, ge=7, le=365, description="查询天数"),
     db: Session = Depends(get_db),
     _current_user=Depends(get_current_user),
+    tz: str = Depends(get_timezone),
 ) -> Dict[str, Optional[List[float]]]:
     """批量获取原料迷你图数据（跨所有关联商品聚合）"""
     try:
@@ -161,7 +166,7 @@ async def get_ingredients_sparklines(
         result: dict = {}
         for ing_id in id_list:
             prod_ids = ing_to_prods.get(ing_id, [])
-            data = _daily_avg_for_product_ids(db, prod_ids, days=days, ingredient_id=ing_id, user_id=_current_user.id)
+            data = _daily_avg_for_product_ids(db, prod_ids, days=days, ingredient_id=ing_id, user_id=_current_user.id, tz=tz)
             result[str(ing_id)] = data if data else None
 
         return result
@@ -175,6 +180,7 @@ async def get_products_sparklines(
     days: int = Query(90, ge=7, le=365, description="查询天数"),
     db: Session = Depends(get_db),
     _current_user=Depends(get_current_user),
+    tz: str = Depends(get_timezone),
 ) -> Dict[str, Optional[List[float]]]:
     """批量获取商品迷你图数据"""
     try:
@@ -184,7 +190,7 @@ async def get_products_sparklines(
 
         result: dict = {}
         for pid in id_list:
-            data = _daily_avg_for_product_ids(db, [pid], days=days)
+            data = _daily_avg_for_product_ids(db, [pid], days=days, tz=tz)
             result[str(pid)] = data if data else None
 
         return result
