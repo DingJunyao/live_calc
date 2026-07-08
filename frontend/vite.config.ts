@@ -13,6 +13,10 @@ export default defineConfig(({ mode }) => {
 
   console.log('Allowed hosts:', allowedHostsArray) // 调试信息
 
+  // 开发服务器端口与后端地址走环境变量，便于自定义（见 .env：VITE_DEV_PORT / VITE_DEV_BACKEND_URL）
+  const devPort = Number(env.VITE_DEV_PORT) || 5173
+  const devBackendUrl = env.VITE_DEV_BACKEND_URL || 'http://localhost:8000'
+
   return {
   plugins: [
     vue(),
@@ -21,10 +25,10 @@ export default defineConfig(({ mode }) => {
   ],
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: devPort,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: devBackendUrl,
         changeOrigin: true,
       },
     },

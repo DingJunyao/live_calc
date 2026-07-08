@@ -8,6 +8,9 @@
 VITE_API_URL=/api/v1
 # 允许的域名。做反代时加上准备反代的域名
 VITE_ALLOWED_HOSTS=example,localhost,127.0.0.1,::1
+# 开发服务器端口与后端地址（vite.config.ts 读取；改后端端口时 VITE_DEV_BACKEND_URL 要同步）
+VITE_DEV_PORT=5173
+VITE_DEV_BACKEND_URL=http://localhost:8000
 # 数据仓库图片回退地址（本地图片不存在时用远程地址）
 VITE_DATA_REPO_IMAGE_BASE=https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out
 # 请求超时（毫秒）
@@ -23,6 +26,9 @@ DATABASE_URL=sqlite:///./data/livecalc.db
 
 # 应用
 DEBUG=true
+# 开发服务器监听地址与端口（`python -m app.main` 启动时生效）
+APP_HOST=0.0.0.0
+APP_PORT=8000
 
 # JWT
 JWT_SECRET_KEY=your-jwt-secret-key-change-in-production

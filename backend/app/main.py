@@ -601,3 +601,18 @@ async def root():
 async def health_check():
     """健康检查"""
     return {"status": "healthy"}
+
+
+if __name__ == "__main__":
+    # 支持以 `python -m app.main`（或 `uv run python -m app.main`）启动，
+    # 监听地址与端口由 .env 的 APP_HOST / APP_PORT 控制（见 app.config.settings）。
+    import uvicorn
+
+    from app.config import settings
+
+    uvicorn.run(
+        "app.main:app",
+        host=settings.app_host,
+        port=settings.app_port,
+        reload=True,
+    )

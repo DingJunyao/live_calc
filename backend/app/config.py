@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     # 应用配置
     debug: bool = True
+    app_host: str = "0.0.0.0"  # uvicorn 监听地址（python -m app.main 启动时生效）
+    app_port: int = 8000       # uvicorn 监听端口（python -m app.main 启动时生效）
 
     # JWT 配置
     jwt_secret_key: str = "dev-jwt-secret-change-in-production"  # 开发环境默认值，生产环境必须修改

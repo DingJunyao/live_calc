@@ -26,7 +26,13 @@ uv sync
 #   或：pip install -r requirements.txt
 ```
 
-启动：
+启动（推荐——地址与端口读 `backend/.env` 的 `APP_HOST` / `APP_PORT`，默认 `0.0.0.0:8000`）：
+
+```bash
+uv run python -m app.main
+```
+
+也可沿用 uvicorn 直起（端口需命令行指定，不读 `.env`）：
 
 ```bash
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -42,14 +48,16 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 cd frontend
 npm install
 
-# 开发模式（热重载，端口 5173）
+# 开发模式（热重载，默认端口 5173，由 .env 的 VITE_DEV_PORT 控制）
 npm run dev
 
 # 生产构建（产物在 dist/）
 npm run build
 ```
 
-开发访问 `http://localhost:5173/`，后端 API 默认 `http://localhost:8000/`。
+开发访问 `http://localhost:5173/`（端口由 `frontend/.env` 的 `VITE_DEV_PORT` 控制），后端 API 默认 `http://localhost:8000/`。
+
+> 自定义端口时，前端的 `VITE_DEV_BACKEND_URL` 必须指向后端实际端口（默认 `http://localhost:8000`），否则 dev proxy 打不到后端。改了 `.env` 要重启服务才生效。
 
 ## 数据库
 
@@ -72,7 +80,7 @@ npm run build
 ## 生产部署建议
 
 - 前端 `npm run build`，`dist/` 交给 **Nginx** 托管
-- 后端 uvicorn（生产建议多 worker，如 `--workers 4`）跑 8000，Nginx 把 `/api` 反代到后端
+- 后端 uvicorn（生产建议多 worker，如 `--workers 4`，端口见 `.env` 的 `APP_PORT`，默认 8000），Nginx 把 `/api` 反代到后端
 - 启用 **HTTPS**
 - `.env` 里 `DEBUG=false`，改掉 `JWT_SECRET_KEY` 的默认值
 - 前端 `.env` 的 `VITE_ALLOWED_HOSTS` 加上你反代的域名
@@ -81,7 +89,7 @@ npm run build
 
 后端启动后自带交互式文档：
 
-- Swagger UI：`http://host:8000/docs`
+- Swagger UI：`http://host:8000/docs`（端口同 `APP_PORT`）
 - ReDoc：`http://host:8000/redoc`
 
 ## 下一步
