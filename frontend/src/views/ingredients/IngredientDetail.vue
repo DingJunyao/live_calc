@@ -517,7 +517,7 @@
                 <v-icon color="white">mdi-food</v-icon>
               </v-avatar>
             </template>
-            <v-list-item-title>{{ recipe.name }}</v-list-item-title>
+            <v-list-item-title>{{ recipe.name }}<v-chip v-if="!recipe.is_public" size="x-small" color="warning" variant="tonal" class="ml-2">未发布</v-chip></v-list-item-title>
             <v-list-item-subtitle v-if="recipe.category">{{ recipe.category }}</v-list-item-subtitle>
             <template #append>
               <v-icon>mdi-chevron-right</v-icon>
@@ -1816,6 +1816,7 @@ interface Recipe {
   id: number
   name: string
   category?: string
+  is_public?: boolean
 }
 
 interface Unit {

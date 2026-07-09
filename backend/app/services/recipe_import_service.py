@@ -836,6 +836,7 @@ class RecipeImportService:
             db_recipe = Recipe(
                 name=recipe_create.name,
                 source=recipe_create.source,
+                is_public=True,  # 导入菜谱默认公共
                 category=recipe_create.category,
                 user_id=1,  # 使用默认用户ID，稍后可以根据需要调整
                 tags=recipe_create.tags,

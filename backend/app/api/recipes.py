@@ -108,9 +108,7 @@ async def create_recipe(
             tips=recipe.tips,
             images=recipe.images or []
         )
-        # 管理员创建即发布（公共）；普通用户私有
-        if getattr(current_user, "is_admin", False):
-            db_recipe.is_public = True
+        # 创建默认私有（is_public=False）；作者点「发布」按钮才公开
         db.add(db_recipe)
         db.flush()
 
@@ -178,7 +176,7 @@ async def get_recipes(
         # 注：导入的公共菜谱 user_id 为 NULL（无主），SQL 三值逻辑下 NULL != me 为 NULL 而非 True，
         # 需显式 IS NULL 才能让其落入公共可见集合
         public_imported_recipes = db.query(Recipe).filter(
-            or_(Recipe.source != None, Recipe.is_public == True),
+            Recipe.is_public == True,
             or_(Recipe.user_id != current_user.id, Recipe.user_id.is_(None)),
             Recipe.is_active == True
         )
@@ -377,15 +375,15 @@ async def get_recipe_detail(
             Recipe.id == recipe_id,
             or_(
                 Recipe.user_id == current_user.id,
-                Recipe.source != None
+                Recipe.is_public == True
             )
         ).first()
 
-        # 如果没有找到，尝试只通过 source 查询（公共菜谱）
+        # 如果没有找到，尝试只通过 is_public 查询（公共菜谱）
         if not recipe:
             recipe = db.query(Recipe).filter(
                 Recipe.id == recipe_id,
-                Recipe.source != None
+                Recipe.is_public == True
             ).first()
 
         if not recipe:
@@ -450,6 +448,8 @@ async def get_recipe_detail(
                 response.pending_proposal = {"id": pp.id, "action": pp.action, "payload": pp.payload}
 
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取菜谱详情失败: {str(e)}")
 
@@ -470,14 +470,14 @@ async def update_recipe(
 
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
-        is_public_or_source = getattr(recipe, "is_public", False) or recipe.source
+        is_public_recipe = getattr(recipe, "is_public", False)
 
         # 未发布且非作者的私有菜谱 → 拒绝
-        if not is_public_or_source and recipe.user_id != current_user.id and not current_user.is_admin:
+        if not is_public_recipe and recipe.user_id != current_user.id and not current_user.is_admin:
             raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         # 已发布/公共菜谱 + 非管理员 → 提交提议待审核
-        if is_public_or_source and not current_user.is_admin:
+        if is_public_recipe and not current_user.is_admin:
             from app.services.proposals import service as proposal_service
             update_payload = update_data.model_dump(exclude_unset=True)
             p = proposal_service.submit(
@@ -664,14 +664,14 @@ async def upload_recipe_image(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
-        is_public_or_source = getattr(recipe, "is_public", False) or recipe.source
+        is_public_recipe = getattr(recipe, "is_public", False)
         is_owner_or_admin = recipe.user_id == current_user.id or current_user.is_admin
 
-        if not is_owner_or_admin and not is_public_or_source:
+        if not is_owner_or_admin and not is_public_recipe:
             raise HTTPException(status_code=403, detail="无权修改此菜谱")
 
         # 管理员始终直写；非管理员编辑已发布/来源菜谱 → 不走直写，交由审核流程
-        direct_write = current_user.is_admin or not is_public_or_source
+        direct_write = current_user.is_admin or not is_public_recipe
 
         # 验证文件类型
         allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -804,7 +804,7 @@ async def get_recipe_merchant_costs(
     try:
         recipe = db.query(Recipe).filter(
             Recipe.id == recipe_id,
-            or_(Recipe.user_id == current_user.id, Recipe.source != None)
+            or_(Recipe.user_id == current_user.id, Recipe.is_public == True)
         ).first()
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
@@ -1295,10 +1295,9 @@ async def get_recipe_images(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
-        # 可见性校验：本人 / 公开来源（source 非空） / 公开菜谱（is_public） / 管理员
+        # 可见性校验：本人 / 公开菜谱（is_public） / 管理员
         is_visible = (
             recipe.user_id == current_user.id
-            or recipe.source is not None
             or getattr(recipe, "is_public", False)
             or current_user.is_admin
         )
@@ -1345,10 +1344,9 @@ async def get_recipe_cost_history(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
-        # 可见性校验：本人 / 公开来源（source 非空） / 公开菜谱（is_public） / 管理员
+        # 可见性校验：本人 / 公开菜谱（is_public） / 管理员
         is_visible = (
             recipe.user_id == current_user.id
-            or recipe.source is not None
             or getattr(recipe, "is_public", False)
             or current_user.is_admin
         )
@@ -1406,10 +1404,9 @@ async def get_recipe_cost_history_range(
         if not recipe:
             raise HTTPException(status_code=404, detail="菜谱不存在")
 
-        # 可见性校验：本人 / 公开来源（source 非空） / 公开菜谱（is_public） / 管理员
+        # 可见性校验：本人 / 公开菜谱（is_public） / 管理员
         is_visible = (
             recipe.user_id == current_user.id
-            or recipe.source is not None
             or getattr(recipe, "is_public", False)
             or current_user.is_admin
         )

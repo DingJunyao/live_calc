@@ -7,8 +7,8 @@
       <div class="d-flex align-center ga-2">
         <span class="text-truncate">{{ displayRecipe?.name || '菜谱详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">菜谱</v-chip>
-        <v-chip v-if="isPublished" size="x-small" variant="tonal" color="success">已发布</v-chip>
         <v-chip v-if="proposalStatus === 'pending'" size="x-small" variant="tonal" color="warning">审核中</v-chip>
+        <v-chip v-else-if="!isPublished" size="x-small" variant="tonal" color="warning">未发布</v-chip>
       </div>
     </v-app-bar-title>
     <template #append>
@@ -437,6 +437,28 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- 发布二次确认（发布对作者不可逆） -->
+    <v-dialog v-model="showPublishConfirm" max-width="420">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon start color="success">mdi-cloud-upload-outline</v-icon>
+          发布菜谱
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pt-4">
+          <p>确定要发布「{{ recipe?.name }}」吗？</p>
+          <p class="text-caption text-medium-emphasis mt-1">
+            发布后菜谱将对其他用户公开，且你无法自行撤回（管理员审核通过后生效）。
+          </p>
+        </v-card-text>
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn variant="text" @click="showPublishConfirm = false" :disabled="publishing">取消</v-btn>
+          <v-btn color="success" variant="tonal" :loading="publishing" @click="confirmPublish">确认发布</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 </v-container>
 </template>
 
@@ -552,11 +574,11 @@ const recipeId = computed(() => {
   return Number.isFinite(id) ? id : 0
 })
 
-// 已发布：is_public=True 或 source 非空（公共导入来源）
+// 已发布：is_public=True（方案 A：source 不再参与发布判断）
 const isPublished = computed(() => {
   const r = recipe.value
   if (!r) return false
-  return r.is_public === true || !!r.source
+  return r.is_public === true
 })
 
 // 是否为管理员（可管理任意状态菜谱；普通用户仅未发布可管理，见删除按钮 v-if 的 canManage || !isPublished）
@@ -1165,14 +1187,23 @@ const handleDelete = async () => {
   }
 }
 
-// 发布菜谱：管理员直写生效；普通用户提交审核提议
+// 发布菜谱：点按钮先弹二次确认（发布对作者不可逆），确认后才提交。
+// 管理员直写生效；普通用户提交审核提议。
 const publishing = ref(false)
-const handlePublish = async () => {
+const showPublishConfirm = ref(false)
+
+const handlePublish = () => {
+  if (!recipe.value) return
+  showPublishConfirm.value = true
+}
+
+const confirmPublish = async () => {
   if (!recipe.value) return
   publishing.value = true
   try {
     const result = await api.post(`/recipes/${recipeId.value}/publish`)
     // 后端返回 {proposal_id, status, is_public}
+    showPublishConfirm.value = false
     if (result?.is_public) {
       notify('菜谱已发布', 'success')
       // 管理员直写：刷新详情反映 is_public

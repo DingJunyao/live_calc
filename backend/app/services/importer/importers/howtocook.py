@@ -207,6 +207,7 @@ class HowToCookImporter(Importer):
             recipe = Recipe(
                 name=name,
                 source="json_repo",
+                is_public=True,  # 导入菜谱默认公共
                 category=data.get("category"),
                 tags=[data.get("category")] if data.get("category") else [],
                 cooking_steps=steps,

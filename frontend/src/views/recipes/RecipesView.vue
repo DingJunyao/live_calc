@@ -80,7 +80,7 @@
           <div class="text-center pa-2 text-subtitle-1">
             {{ pendingName(recipe) }}
             <v-chip
-              v-if="recipe.user_id === userStore.user?.id && !recipe.is_public && !recipe.source"
+              v-if="!recipe.is_public"
               size="x-small"
               color="warning"
               variant="tonal"

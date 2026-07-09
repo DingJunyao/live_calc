@@ -327,6 +327,7 @@ class ExportImporter(Importer):
             recipe = Recipe(
                 name=name,
                 source="import",
+                is_public=True,  # 导入菜谱默认公共
                 category=data.get("category"),
                 user_id=self.user_id,
                 tags=data.get("tags", []),

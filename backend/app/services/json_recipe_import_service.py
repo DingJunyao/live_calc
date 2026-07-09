@@ -369,6 +369,7 @@ class JsonRecipeImportService:
             recipe = Recipe(
                 name=name,
                 source="json_repo",
+                is_public=True,  # 导入菜谱默认公共
                 category=recipe_data.get("category"),
                 tags=[recipe_data.get("category")] if recipe_data.get("category") else [],
                 cooking_steps=steps,

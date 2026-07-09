@@ -836,7 +836,7 @@ async def get_ingredient_recipes(
             Recipe.id.in_(recipe_ids),
             or_(
                 Recipe.user_id == current_user.id,
-                Recipe.source != None
+                Recipe.is_public == True
             )
         ).all()
 
@@ -847,6 +847,7 @@ async def get_ingredient_recipes(
                 "id": recipe.id,
                 "name": recipe.name,
                 "source": recipe.source,
+                "is_public": getattr(recipe, "is_public", False),
                 "category": recipe.category,
                 "servings": recipe.servings,
                 "total_time_minutes": recipe.total_time_minutes,
