@@ -285,6 +285,13 @@ async def lifespan(app: FastAPI):
         elif product_count > 0:
             logger.info(f"商品已存在，跳过批量创建（原料: {ingredient_count}, 商品: {product_count}）")
 
+        # 确保过敏原黑名单分组存在（空表才创建，幂等，失败不阻断启动）
+        try:
+            from app.services.allergen_seed import ensure_allergen_groups
+            ensure_allergen_groups(db)
+        except Exception as e:
+            logger.warning(f"过敏原分组初始化失败: {e}")
+
         # 加载 USDA 搜索索引（表可能尚未迁移或为空，容错处理）
         try:
             from app.services.usda.index_manager import build_usda_index
