@@ -2,6 +2,7 @@
   <v-container fluid>
     <v-app-bar elevation="0" color="background" density="comfortable" fixed>
       <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+      <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
       <v-app-bar-title>原料黑名单分组管理</v-app-bar-title>
       <template #append>
         <v-btn color="primary" prepend-icon="mdi-plus" size="small" @click="openCreate">新建分组</v-btn>
@@ -129,9 +130,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 const { toggleSidebar, isDesktop } = useMobileDrawerControl()
+const router = useRouter()
+
+const goBack = () => {
+  router.back()
+}
 
 interface GroupIngredient {
   id: number
