@@ -79,6 +79,17 @@
     <v-card class="ma-4" elevation="0">
       <v-list>
         <v-list-item
+          prepend-icon="mdi-clipboard-check-multiple"
+          title="提议审核台"
+          subtitle="审核多用户提议、影响预览、回滚与反垃圾回退"
+          to="/admin/proposals"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
           prepend-icon="mdi-account-cog"
           title="用户管理"
           subtitle="管理用户账户、权限和状态"
@@ -101,6 +112,17 @@
         </v-list-item>
 
         <v-list-item
+          prepend-icon="mdi-shield-alert"
+          title="原料黑名单分组"
+          subtitle="管理原料黑名单分类与原料映射"
+          to="/admin/blacklist-groups"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
           prepend-icon="mdi-ruler"
           title="单位管理"
           subtitle="管理计量单位和换算关系"
@@ -113,9 +135,20 @@
 
         <v-list-item
           prepend-icon="mdi-map-marker-path"
-          title="地图设置"
+          title="地图配置"
           subtitle="配置地图服务 API 密钥"
           to="/admin/map-settings"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-email-sync-outline"
+          title="邮件配置"
+          subtitle="SMTP 设置与邮件模板管理"
+          to="/admin/email-config"
         >
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>
@@ -127,6 +160,17 @@
           title="AI 与机翻配置"
           subtitle="AI 服务与机器翻译密钥设置"
           to="/admin/ai-config"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
+          prepend-icon="mdi-image-off-outline"
+          title="未使用图片清理"
+          subtitle="扫描并删除服务器上未被任何菜谱引用的图片"
+          to="/admin/images-unused"
         >
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>
@@ -149,50 +193,6 @@
           title="Agent 任务台"
           subtitle="发起 Agent 维护任务、审批 SQL、对话流"
           to="/admin/agent-console"
-        >
-          <template #append>
-            <v-icon>mdi-chevron-right</v-icon>
-          </template>
-        </v-list-item>
-
-        <v-list-item
-          prepend-icon="mdi-shield-alert"
-          title="原料黑名单分组"
-          subtitle="管理原料黑名单分类与原料映射"
-          to="/admin/blacklist-groups"
-        >
-          <template #append>
-            <v-icon>mdi-chevron-right</v-icon>
-          </template>
-        </v-list-item>
-
-        <v-list-item
-          prepend-icon="mdi-clipboard-check-multiple"
-          title="提议审核台"
-          subtitle="审核多用户提议、影响预览、回滚与反垃圾回退"
-          to="/admin/proposals"
-        >
-          <template #append>
-            <v-icon>mdi-chevron-right</v-icon>
-          </template>
-        </v-list-item>
-
-        <v-list-item
-          prepend-icon="mdi-email-sync-outline"
-          title="邮件配置"
-          subtitle="SMTP 设置与邮件模板管理"
-          to="/admin/email-config"
-        >
-          <template #append>
-            <v-icon>mdi-chevron-right</v-icon>
-          </template>
-        </v-list-item>
-
-        <v-list-item
-          prepend-icon="mdi-image-off-outline"
-          title="未使用图片清理"
-          subtitle="扫描并删除服务器上未被任何菜谱引用的图片"
-          to="/admin/images-unused"
         >
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>

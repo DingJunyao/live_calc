@@ -44,15 +44,9 @@ USDA FoodData Central 是营养数据的来源（见 [营养分析](../nutrition
 
 > 注意：强制重推在 Agent 路径下有几个历史 bug 已修（指令清晰、传 force、行数护栏放宽），但仍建议先用小批量试。
 
-## AI 与机翻配置
-
 合并的配置页 `/admin/ai-config`（原 AI 配置 + 机翻配置两页合一）：
 
-- **AI provider**：Claude Code / OpenAI / Anthropic（三个面板）
-- **机翻 provider**：百度 / 阿里云 / DeepL（三个面板）
-- 每个 provider 一张卡片，填 API 密钥等，统一保存
-
-> 配置改完保存即生效，不用重启。USDA 数据页已并入数据维护中心，不再单独存在。
+USDA 数据页已并入数据维护中心，不再单独存在。
 
 ## 任务列表
 

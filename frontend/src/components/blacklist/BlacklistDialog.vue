@@ -10,14 +10,13 @@
         <!-- 快速选择：原料黑名单分组（订阅/取消订阅） -->
         <div v-if="blacklistGroups.length > 0" class="mb-4">
           <div class="text-caption text-medium-emphasis mb-2">快速选择</div>
-          <v-chip-group>
+          <v-chip-group column>
             <v-chip
               v-for="group in blacklistGroups"
               :key="group.id"
               :color="isGroupSubscribed(group.id) ? 'primary' : undefined"
               :variant="isGroupSubscribed(group.id) ? 'tonal' : 'outlined'"
               size="small"
-              filter
               @click="toggleGroup(group.id)"
             >
               {{ group.name }}
@@ -85,24 +84,28 @@
         <div v-else-if="manualBlacklistItems.length === 0" class="text-center pa-4 text-medium-emphasis">
           暂无手动添加的原料
         </div>
-        <v-list v-else density="compact">
-          <v-list-item
+        <div v-else class="d-flex flex-wrap">
+          <v-tooltip
             v-for="item in manualBlacklistItems"
             :key="item.id"
-            :title="item.ingredient_name"
-            :subtitle="item.reason || ''"
+            :text="item.reason || ''"
+            :disabled="!item.reason"
+            location="top"
           >
-            <template #append>
-              <v-btn
-                icon="mdi-close"
-                variant="text"
+            <template #activator="{ props }">
+              <v-chip
+                v-bind="props"
+                closable
                 size="small"
-                color="error"
-                @click="removeItem(item)"
-              />
+                class="mr-1 mb-1"
+                label
+                @click:close="removeItem(item)"
+              >
+                {{ item.ingredient_name }}
+              </v-chip>
             </template>
-          </v-list-item>
-        </v-list>
+          </v-tooltip>
+        </div>
       </v-card-text>
     </v-card>
 
