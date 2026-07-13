@@ -130,7 +130,7 @@ async function save() {
 
   <v-container v-if="config" class="pa-4">
     <p class="text-caption mb-2">
-      用于 USDA 食材名翻译。AI 走 Claude Code / OpenAI 兼容 / Anthropic 兼容；机翻走 百度 / 阿里云 / DeepL。
+      AI 走 Claude Code / OpenAI 兼容 / Anthropic 兼容；机翻走 百度 / 阿里云 / DeepL。
     </p>
 
     <v-expansion-panels multiple v-model="openPanels" class="my-3">

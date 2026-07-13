@@ -292,6 +292,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"过敏原分组初始化失败: {e}")
 
+        # 确保默认邮件模板存在（按 key 幂等补齐缺失项，不覆盖管理员已编辑模板，失败不阻断启动）
+        try:
+            from app.services.email_template_seed import ensure_email_templates
+            ensure_email_templates(db)
+        except Exception as e:
+            logger.warning(f"邮件模板初始化失败: {e}")
+
         # 加载 USDA 搜索索引（表可能尚未迁移或为空，容错处理）
         try:
             from app.services.usda.index_manager import build_usda_index

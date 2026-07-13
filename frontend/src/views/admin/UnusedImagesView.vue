@@ -1,6 +1,7 @@
 <template>
   <v-app-bar elevation="0" color="background" density="comfortable" fixed>
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
+    <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
     <v-app-bar-title class="text-h6">未使用图片清理</v-app-bar-title>
     <template #append>
       <v-btn
@@ -109,10 +110,16 @@
 import { ref, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { smAndDown } = useDisplay()
+const router = useRouter()
+
+const goBack = () => {
+  router.back()
+}
 
 const images = ref<any[]>([])
 const selected = ref<string[]>([])
