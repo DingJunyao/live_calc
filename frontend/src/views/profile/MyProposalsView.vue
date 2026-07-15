@@ -223,7 +223,7 @@ const loadList = async () => {
   loading.value = true
   try {
     const status = statusFilter.value === 'all' ? undefined : statusFilter.value
-    proposals.value = await listProposals(status as any, 100)
+    proposals.value = await listProposals(status as any, 100, 'mine')
   } catch (e: any) {
     console.error('加载提议列表失败', e)
   } finally {

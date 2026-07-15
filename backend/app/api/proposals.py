@@ -193,12 +193,17 @@ def preview_proposal(body: ProposalPreviewRequest,
 
 @router.get("/proposals", response_model=List[ProposalResponse])
 def list_proposals(status_filter: Optional[str] = Query(None, alias="status"),
+                   scope: Optional[str] = Query(None),
                    limit: int = Query(50, ge=1, le=200),
                    db: Session = Depends(get_db),
                    current_user: User = Depends(get_current_user)):
-    """管理员看全部；普通用户只看自己提交的。"""
+    """管理员默认看全部；普通用户只看自己提交的。
+
+    scope=mine 时无论角色都只看自己提交的（用于「我的提议」页），避免管理员的
+    「我的提议」混入他人提交的提议——「我的提议」与审核台共用本端点，靠此参数区分。
+    """
     q = db.query(ChangeProposal)
-    if not current_user.is_admin:
+    if scope == "mine" or not current_user.is_admin:
         q = q.filter(ChangeProposal.proposer_id == current_user.id)
     if status_filter:
         q = q.filter(ChangeProposal.status == status_filter)

@@ -35,12 +35,10 @@
 | 主题 | 内容 |
 |---|---|
 | [后台导航](admin/) | 后台功能总览 |
-| [部署](admin/deploy.md) | 安装（uv+npm）、配置、首次启动与数据导入 |
-| [升级与备份](admin/upgrade-backup.md) | 升级、备份恢复、日志与排障 |
-| [提议审核台](admin/review.md) | 提议-审核框架、审核台操作、回滚 |
-| [Agent 任务台](admin/agent.md) | Agent 维护任务台 |
-| [数据维护中心](admin/data-maintenance.md) | 数据维护中心、USDA、AI 与机翻配置 |
-| [用户/单位/地图](admin/users-units-map.md) | 用户与邀请码、单位管理、地图配置 |
+| [部署](admin/deploy.md) | 安装、数据库、首次启动、生产部署 |
+| [配置与首次启动](admin/config-init.md) | 环境变量逐项详解、首次启动的数据导入 |
+| [升级与备份](admin/upgrade-backup.md) | 升级流程、备份恢复、日志与排障 |
+| [后台管理](admin/admin-pages.md) | 后台管理页面的详细介绍 |
 
 ## 角色与权限
 

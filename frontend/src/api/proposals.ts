@@ -58,13 +58,16 @@ export interface ReviewRequest {
   note?: string
 }
 
-/** 列出提议（管理员看全部；普通用户仅自己）。 */
+/** 列出提议。
+ * scope='mine' 时无论角色都只看自己提交的（用于「我的提议」页，避免管理员看到他人提议）；
+ * 不传时管理员看全部、普通用户看自己（审核台语义）。 */
 export function listProposals(
   status?: ProposalStatus,
   limit = 50,
+  scope?: 'mine',
 ): Promise<Proposal[]> {
   return api.get('/proposals', {
-    params: { ...(status ? { status } : {}), limit },
+    params: { ...(status ? { status } : {}), limit, ...(scope ? { scope } : {}) },
   })
 }
 

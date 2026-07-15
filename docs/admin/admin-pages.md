@@ -6,6 +6,8 @@
 
 ## 提议审核台
 
+![提议审核台](../img/admin_proposals.png)
+
 本页面审核普通用户修改系统数据的提议。详见 [提议审核台](review.md)。
 
 ## 用户管理
@@ -141,5 +143,7 @@
 详见 [数据维护中心](data-maintenance.md)。
 
 ## Agent 任务台
+
+![Agent 任务台](../img/admin_agent.png)
 
 本页面能够查看 AI Agent 任务的执行输出。详见 [Agent 任务台](agent.md)。
