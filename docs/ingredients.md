@@ -77,7 +77,7 @@
 
 ## 商品合并
 
-[商品合并](img/product_merge.jpeg)
+![商品合并](img/product_merge.jpeg)
 
 可以将商品合并到相同原料下另一个商品。执行后：
 

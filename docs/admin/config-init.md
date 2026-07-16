@@ -32,7 +32,7 @@ APP_PORT=8000
 
 # JWT
 JWT_SECRET_KEY=your-jwt-secret-key-change-in-production
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=10080  # access token 有效期（分钟），默认 7 天
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
 
 # 日志
@@ -63,9 +63,6 @@ AGENT_APPROVAL_TIMEOUT=3600
 
 # 导入超时
 IMPORT_DOWNLOAD_TIMEOUT=300
-
-# 注册是否需要邀请码
-REGISTRATION_REQUIRE_INVITE_CODE=true
 ```
 
 > 生产环境务必改掉 `JWT_SECRET_KEY` 的默认值，并设 `DEBUG=false`。
@@ -83,7 +80,7 @@ REGISTRATION_REQUIRE_INVITE_CODE=true
 
 ## 邀请码注册
 
-`REGISTRATION_REQUIRE_INVITE_CODE=true` 时，新用户注册必须填邀请码。邀请码由管理员在后台创建（见 [用户/单位/地图](users-units-map.md#邀请码)）。设为 `false` 则开放注册。
+是否需要邀请码由管理员在后台「邀请码管理」页面开关控制（存 `system_config` 表，见 [后台管理 · 邀请码管理](admin-pages.md#邀请码管理)），**不是环境变量**。开启时新用户注册必须填邀请码，关闭则开放注册。
 
 ## 下一步
 

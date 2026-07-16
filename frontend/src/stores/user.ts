@@ -20,11 +20,15 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  function setTokens(access: string, refresh: string) {
+    token.value = access
+    localStorage.setItem('access_token', access)
+    localStorage.setItem('refresh_token', refresh)
+  }
+
   async function login(username: string, passwordHash: string) {
     const data = await api.post('/auth/login', { username, password_hash: passwordHash })
-    token.value = data.access_token
-    localStorage.setItem('access_token', data.access_token)
-    localStorage.setItem('refresh_token', data.refresh_token)
+    setTokens(data.access_token, data.refresh_token)
     await fetchUser()
   }
 
@@ -35,9 +39,7 @@ export const useUserStore = defineStore('user', () => {
       password_hash: passwordHash,
       invite_code: inviteCode,
     })
-    token.value = data.access_token
-    localStorage.setItem('access_token', data.access_token)
-    localStorage.setItem('refresh_token', data.refresh_token)
+    setTokens(data.access_token, data.refresh_token)
     await fetchUser()
   }
 
@@ -53,6 +55,7 @@ export const useUserStore = defineStore('user', () => {
     token,
     isLoggedIn,
     fetchUser,
+    setTokens,
     login,
     register,
     logout,

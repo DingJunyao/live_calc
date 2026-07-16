@@ -28,6 +28,8 @@ from app.schemas.auth import (
     UserAdminUpdate,
     UserAdminStatusUpdate,
     UserProfileUpdate,
+    UserAccountUpdate,
+    UserAccountResponse,
     UnitPreference,
     UnitPreferences,
 )
@@ -257,30 +259,38 @@ async def refresh_token(
     )
 
 
+def _user_to_response(user: "User", db: Session) -> UserResponse:
+    """统一构造 UserResponse（含 nutrition_goals / unit_preferences）。
+
+    get_me / patch_me / update_my_account 共用，避免三份重复构造。
+    """
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        phone=user.phone,
+        is_admin=user.is_admin,
+        is_active=user.is_active,
+        email_verified=user.email_verified,
+        created_at=serialize_datetime(user.created_at) if user.created_at else None,
+        nutrition_goals={
+            "daily_calorie_target": user.daily_calorie_target,
+            "daily_protein_target": user.daily_protein_target,
+            "daily_carb_target": user.daily_carb_target,
+            "daily_fat_target": user.daily_fat_target,
+        },
+        daily_budget=user.daily_budget,
+        unit_preferences=_build_unit_preferences(user, db),
+    )
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """获取当前用户信息（含营养目标、预算、单位偏好）。"""
-    return UserResponse(
-        id=current_user.id,
-        username=current_user.username,
-        email=current_user.email,
-        phone=current_user.phone,
-        is_admin=current_user.is_admin,
-        is_active=current_user.is_active,
-        email_verified=current_user.email_verified,
-        created_at=serialize_datetime(current_user.created_at) if current_user.created_at else None,
-        nutrition_goals={
-            "daily_calorie_target": current_user.daily_calorie_target,
-            "daily_protein_target": current_user.daily_protein_target,
-            "daily_carb_target": current_user.daily_carb_target,
-            "daily_fat_target": current_user.daily_fat_target,
-        },
-        daily_budget=current_user.daily_budget,
-        unit_preferences=_build_unit_preferences(current_user, db),
-    )
+    return _user_to_response(current_user, db)
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -348,23 +358,77 @@ async def patch_me(
     db.commit()
     db.refresh(user)
 
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        phone=user.phone,
-        is_admin=user.is_admin,
-        is_active=user.is_active,
-        email_verified=user.email_verified,
-        created_at=serialize_datetime(user.created_at) if user.created_at else None,
-        nutrition_goals={
-            "daily_calorie_target": user.daily_calorie_target,
-            "daily_protein_target": user.daily_protein_target,
-            "daily_carb_target": user.daily_carb_target,
-            "daily_fat_target": user.daily_fat_target,
-        },
-        daily_budget=user.daily_budget,
-        unit_preferences=_build_unit_preferences(user, db),
+    return _user_to_response(user, db)
+
+
+@router.put("/me/account", response_model=UserAccountResponse)
+async def update_my_account(
+    payload: UserAccountUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """当前用户自行更新账号信息（用户名/邮箱/手机/密码）。
+
+    - 用户名/邮箱/手机：传了且与当前不同才改，查重（排除自己），命中 400。
+    - 密码：new_password 非空时必须校验 current_password；成功后 token_version+1
+      并签发新 token 返回（发起方无缝续登，其他设备旧 token 失效）。
+      不改密码时 token_version 不动，不签发 token。
+    """
+    # current_user 来自 get_current_user 的独立 session（detached），
+    # 在本请求 db 内重新加载，保证 setattr + commit + refresh 生效（与 patch_me 一致）。
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    # 用户名
+    if payload.username is not None and payload.username != user.username:
+        if db.query(User).filter(
+            User.username == payload.username, User.id != user.id
+        ).first():
+            raise HTTPException(status_code=400, detail="用户名已被占用")
+        user.username = payload.username
+
+    # 邮箱
+    if payload.email is not None and payload.email != user.email:
+        if db.query(User).filter(
+            User.email == payload.email, User.id != user.id
+        ).first():
+            raise HTTPException(status_code=400, detail="邮箱已被占用")
+        user.email = payload.email
+
+    # 手机（phone 允许 NULL，查重时 NULL 不算冲突）
+    if payload.phone is not None and payload.phone != user.phone:
+        if payload.phone and db.query(User).filter(
+            User.phone == payload.phone, User.id != user.id
+        ).first():
+            raise HTTPException(status_code=400, detail="手机号已被占用")
+        user.phone = payload.phone
+
+    # 密码
+    changed_password = False
+    if payload.new_password is not None:
+        if not payload.current_password:
+            raise HTTPException(status_code=400, detail="修改密码需提供当前密码")
+        if not verify_password(payload.current_password, user.password_hash):
+            raise HTTPException(status_code=401, detail="当前密码错误")
+        user.password_hash = get_password_hash(payload.new_password)
+        user.token_version += 1
+        changed_password = True
+
+    db.commit()
+    db.refresh(user)
+
+    access_token = None
+    refresh_token = None
+    if changed_password:
+        token_data = {"sub": str(user.id), "ver": user.token_version}
+        access_token = create_access_token(token_data)
+        refresh_token = create_refresh_token(token_data)
+
+    return UserAccountResponse(
+        user=_user_to_response(user, db),
+        access_token=access_token,
+        refresh_token=refresh_token,
     )
 
 

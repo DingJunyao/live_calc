@@ -53,6 +53,17 @@
     <!-- 设置列表 -->
     <v-card class="ma-4" elevation="0">
       <v-list>
+        <v-list-item @click="openAccountDialog">
+          <template #prepend>
+            <v-icon>mdi-account-edit</v-icon>
+          </template>
+          <v-list-item-title>用户信息编辑</v-list-item-title>
+          <v-list-item-subtitle>用户名、邮箱、密码</v-list-item-subtitle>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
         <v-list-item @click="toggleTheme">
           <template #prepend>
             <v-icon>mdi-theme-light-dark</v-icon>
@@ -164,6 +175,104 @@
         退出登录
       </v-btn>
     </v-card>
+
+    <!-- 用户信息编辑对话框 -->
+    <v-dialog v-model="accountDialog" max-width="520">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          用户信息编辑
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="accountDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <div class="text-caption text-medium-emphasis mb-2">基本信息</div>
+          <v-text-field
+            v-model="accountForm.username"
+            label="用户名"
+            variant="outlined"
+            density="compact"
+            :error-messages="accountErrors.username"
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="accountForm.email"
+            label="邮箱"
+            type="email"
+            variant="outlined"
+            density="compact"
+            :error-messages="accountErrors.email"
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="accountForm.phone"
+            label="手机号（可清空）"
+            variant="outlined"
+            density="compact"
+            :error-messages="accountErrors.phone"
+            class="mb-4"
+          />
+
+          <v-btn
+            variant="outlined"
+            block
+            prepend-icon="mdi-lock-reset"
+            class="mt-2"
+            @click="openChangePasswordDialog"
+          >
+            修改密码
+          </v-btn>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="savingAccount" @click="accountDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingAccount" @click="saveAccount">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 修改密码对话框 -->
+    <v-dialog v-model="changePasswordDialog" max-width="460">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          修改密码
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="changePasswordDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="changePasswordForm.currentPassword"
+            label="当前密码"
+            type="password"
+            variant="outlined"
+            density="compact"
+            :error-messages="changePasswordErrors.currentPassword"
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="changePasswordForm.newPassword"
+            label="新密码"
+            type="password"
+            variant="outlined"
+            density="compact"
+            :error-messages="changePasswordErrors.newPassword"
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="changePasswordForm.confirmPassword"
+            label="确认新密码"
+            type="password"
+            variant="outlined"
+            density="compact"
+            :error-messages="changePasswordErrors.confirmPassword"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="savingPassword" @click="changePasswordDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingPassword" @click="saveChangePassword">修改</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 数据导入对话框 -->
     <ImportUploadDialog v-model="importDialog" />
@@ -376,7 +485,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import axios from 'axios'
@@ -387,6 +496,7 @@ import { ImportUploadDialog } from '@/components/import'
 import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import { useUserUnits } from '@/composables/useUserUnits'
+import { hashPassword } from '@/utils/crypto'
 import { listProposals } from '@/api/proposals'
 
 const { notify } = useGlobalSnackbar()
@@ -405,6 +515,34 @@ const importDialog = ref(false)
 const exportDialog = ref(false)
 const exportScope = ref<'full' | 'mine'>('full')
 const exporting = ref(false)
+
+// 用户信息编辑
+const accountDialog = ref(false)
+const savingAccount = ref(false)
+const accountForm = ref({
+  username: '',
+  email: '',
+  phone: '',
+})
+const accountErrors = reactive({
+  username: '',
+  email: '',
+  phone: '',
+})
+
+// 修改密码（独立对话框）
+const changePasswordDialog = ref(false)
+const savingPassword = ref(false)
+const changePasswordForm = ref({
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+const changePasswordErrors = reactive({
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
 
 const doExport = async () => {
   exporting.value = true
@@ -547,6 +685,92 @@ async function saveUnitPrefs() {
 
 const toggleTheme = () => {
   theme.global.name.value = isDark.value ? 'light' : 'dark'
+}
+
+function openAccountDialog() {
+  const u = userStore.user as any
+  accountForm.value = {
+    username: u?.username ?? '',
+    email: u?.email ?? '',
+    phone: u?.phone ?? '',
+  }
+  Object.keys(accountErrors).forEach(k => (accountErrors[k as keyof typeof accountErrors] = ''))
+  accountDialog.value = true
+}
+
+function openChangePasswordDialog() {
+  changePasswordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' }
+  Object.keys(changePasswordErrors).forEach(k => (changePasswordErrors[k as keyof typeof changePasswordErrors] = ''))
+  changePasswordDialog.value = true
+}
+
+async function saveAccount() {
+  Object.keys(accountErrors).forEach(k => (accountErrors[k as keyof typeof accountErrors] = ''))
+  const f = accountForm.value
+  let hasError = false
+  if (!f.username || f.username.length < 3 || f.username.length > 50) {
+    accountErrors.username = '用户名需 3-50 个字符'; hasError = true
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) {
+    accountErrors.email = '邮箱格式不正确'; hasError = true
+  }
+  if (f.phone && !/^1[3-9]\d{9}$/.test(f.phone)) {
+    accountErrors.phone = '手机号格式不正确'; hasError = true
+  }
+  if (hasError) return
+
+  savingAccount.value = true
+  try {
+    const u = userStore.user as any
+    const payload: Record<string, any> = {}
+    if (f.username !== u?.username) payload.username = f.username
+    if (f.email !== u?.email) payload.email = f.email
+    if ((f.phone || null) !== (u?.phone || null)) payload.phone = f.phone || null
+    if (Object.keys(payload).length === 0) {
+      accountDialog.value = false
+      return
+    }
+    await api.put('/auth/me/account', payload)
+    await userStore.fetchUser()
+    accountDialog.value = false
+    notify('已更新', 'success')
+  } catch (e: any) {
+    notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
+  } finally {
+    savingAccount.value = false
+  }
+}
+
+async function saveChangePassword() {
+  Object.keys(changePasswordErrors).forEach(k => (changePasswordErrors[k as keyof typeof changePasswordErrors] = ''))
+  const f = changePasswordForm.value
+  let hasError = false
+  if (!f.currentPassword) { changePasswordErrors.currentPassword = '请输入当前密码'; hasError = true }
+  if (!f.newPassword || f.newPassword.length < 6) {
+    changePasswordErrors.newPassword = '新密码至少 6 个字符'; hasError = true
+  }
+  if (f.newPassword !== f.confirmPassword) {
+    changePasswordErrors.confirmPassword = '两次输入的新密码不一致'; hasError = true
+  }
+  if (hasError) return
+
+  savingPassword.value = true
+  try {
+    const data: any = await api.put('/auth/me/account', {
+      current_password: hashPassword(f.currentPassword),
+      new_password: hashPassword(f.newPassword),
+    })
+    if (data.access_token && data.refresh_token) {
+      userStore.setTokens(data.access_token, data.refresh_token)
+    }
+    await userStore.fetchUser()
+    changePasswordDialog.value = false
+    notify('密码已修改，登录态已刷新', 'success')
+  } catch (e: any) {
+    notify('修改失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
+  } finally {
+    savingPassword.value = false
+  }
 }
 
 const logout = () => {

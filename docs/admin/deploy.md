@@ -1,6 +1,6 @@
 # 部署
 
-生计是前后端分离 monorepo：后端 FastAPI（uv 管理依赖），前端 Vue 3 + Vite（npm）。**没有 Docker 部署**——直接 uvicorn 跑后端，Nginx 托管前端静态文件并反代。
+生计是前后端分离 monorepo：后端 FastAPI（uv 管理依赖），前端 Vue 3 + Vite（npm）。支持两种部署方式：**Docker 容器化部署**（推荐，开箱即用）和**手动部署**（uvicorn 跑后端 + Nginx 托管前端静态文件并反代）。下面的步骤是手动部署；想用 Docker 直接跳到 [Docker 部署](#docker-部署)。
 
 ## 环境要求
 
@@ -78,6 +78,26 @@ npm run build
 3. 跑 `backend/scripts/sql/` 下对应引擎的脚本初始化/迁移表结构
 
 > 表结构由 SQLAlchemy 的 `create_all` 自动创建（不走 alembic）。表结构变更时，用 `scripts/sql/` 下的迁移脚本——每个变更都提供 SQLite / MySQL / PostgreSQL（含 PostGIS 版本）四套。
+
+## Docker 部署
+
+项目自带容器化部署，开箱即用。根目录提供：
+
+- `Dockerfile`：multi-stage 构建，三个 target——`frontend`（仅前端 + nginx）、`backend`（仅后端）、`all-in-one`（前后端合一，nginx + uvicorn 由 supervisord 编排）
+- `docker-compose.yml`：统一部署（单容器 all-in-one）
+- `docker-compose.split.yml`：分开部署（前端、后端独立容器，便于横向扩展）
+- `deploy/`：nginx 配置模板、supervisord 配置、entrypoint 脚本
+
+快速启动（统一部署，默认 SQLite，映射 80 端口）：
+
+```bash
+docker compose up -d --build
+# 访问 http://localhost
+```
+
+切换数据库改 `backend/.env` 的 `DATABASE_URL`（PG/MySQL 驱动已在镜像内）。生产务必改 `JWT_SECRET_KEY`、设 `DEBUG=false`。前端构建时 `VITE_API_URL` 走相对路径 `/api/v1`，由 nginx 反代后端，部署时不必改。
+
+> Docker 版本未封装 Claude Code（Agent 任务台用到时请自行安装配置）。
 
 ## 生产部署建议
 

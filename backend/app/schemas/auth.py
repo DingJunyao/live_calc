@@ -129,3 +129,27 @@ class UserProfileUpdate(BaseModel):
     default_mass_unit_id: Optional[int] = None
     default_volume_unit_id: Optional[int] = None
     default_price_unit_id: Optional[int] = None
+
+
+class UserAccountUpdate(BaseModel):
+    """用户自行更新账号信息（用户名/邮箱/手机/密码）。字段全部可选，传了才改。"""
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(None, pattern=r"^1[3-9]\d{9}$")
+    current_password: Optional[str] = None   # 前端 SHA256 后传
+    new_password: Optional[str] = None       # 前端 SHA256 后传
+
+    @field_validator('phone', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        """空字符串转为 None，避免与 NULL 语义冲突。"""
+        if v == '' or v is None:
+            return None
+        return v
+
+
+class UserAccountResponse(BaseModel):
+    """账号更新响应：user + 可选新 token（仅改密码时返回）。"""
+    user: UserResponse
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
