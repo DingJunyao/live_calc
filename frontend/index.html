@@ -5,6 +5,29 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>生计 - 生活成本计算器</title>
+    <style>
+      /* 防刷新闪白：在 Vue/Vuetify 起来之前，按初始主题先把 body 底色调对 */
+      html[data-theme="light"] body { background: #FDFCF8; }
+      html[data-theme="dark"] body { background: #1B1C18; }
+    </style>
+    <script>
+      // 主题 bootstrap：读 localStorage 用户选择 + 系统偏好，解析出初始主题，
+      // 供 Vuetify 实例 defaultTheme 读取，并给 html 打标记驱动上面的防闪样式。
+      // 解析逻辑须与 composables/useTheme.ts 的 actualTheme 保持一致。
+      (function () {
+        try {
+          var mode = localStorage.getItem('theme-mode') || 'system';
+          var dark = mode === 'dark' ||
+            (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var resolved = dark ? 'dark' : 'light';
+          window.__INITIAL_THEME__ = resolved;
+          document.documentElement.setAttribute('data-theme', resolved);
+        } catch (e) {
+          window.__INITIAL_THEME__ = 'light';
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

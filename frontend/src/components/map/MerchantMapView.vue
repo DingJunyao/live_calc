@@ -1042,7 +1042,7 @@ onUnmounted(() => {
 }
 
 .desktop-layer-selector {
-  background: white;
+  background: rgb(var(--v-theme-surface));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 

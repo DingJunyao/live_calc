@@ -64,17 +64,34 @@
           </template>
         </v-list-item>
 
-        <v-list-item @click="toggleTheme">
+        <v-list-item class="theme-mode-item">
           <template #prepend>
             <v-icon>mdi-theme-light-dark</v-icon>
           </template>
-          <v-list-item-title>主题切换</v-list-item-title>
-          <v-list-item-subtitle>
-            {{ isDark ? '深色' : '浅色' }}模式
-          </v-list-item-subtitle>
-          <template #append>
-            <v-icon>mdi-chevron-right</v-icon>
-          </template>
+          <div class="theme-mode-content w-100">
+            <div class="d-flex align-center justify-space-between">
+              <span class="text-body-2">外观主题</span>
+              <span class="text-caption text-medium-emphasis">{{ themeModeLabel }}</span>
+            </div>
+            <v-btn-toggle
+              v-model="themeMode"
+              mandatory
+              color="primary"
+              density="comfortable"
+              divided
+              class="mt-2 w-100"
+            >
+              <v-btn value="light" size="small" class="flex-grow-1">
+                <v-icon start>mdi-weather-sunny</v-icon>浅色
+              </v-btn>
+              <v-btn value="dark" size="small" class="flex-grow-1">
+                <v-icon start>mdi-weather-night</v-icon>深色
+              </v-btn>
+              <v-btn value="system" size="small" class="flex-grow-1">
+                <v-icon start>mdi-monitor</v-icon>自动
+              </v-btn>
+            </v-btn-toggle>
+          </div>
         </v-list-item>
 
         <v-list-item @click="router.push('/profile/places')">
@@ -484,7 +501,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useTheme } from 'vuetify'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
@@ -493,6 +509,7 @@ import { ImportUploadDialog } from '@/components/import'
 import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import { useUserUnits } from '@/composables/useUserUnits'
+import { useThemeToggle } from '@/composables/useTheme'
 import { hashPassword } from '@/utils/crypto'
 
 const { notify } = useGlobalSnackbar()
@@ -501,8 +518,21 @@ const { energyUnit, toDisplayCalorie, fromDisplayCalorie } = useUserUnits()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 
 const router = useRouter()
-const theme = useTheme()
 const userStore = useUserStore()
+const { themeMode } = useThemeToggle()
+// 当前主题模式的中文标签
+const themeModeLabel = computed(() => {
+  switch (themeMode.value) {
+    case 'light':
+      return '浅色模式'
+    case 'dark':
+      return '深色模式'
+    case 'system':
+      return '自动跟随系统'
+    default:
+      return ''
+  }
+})
 
 const search = ref('')
 
@@ -581,8 +611,6 @@ const monthlyExpense = ref<number | null>(null)
 const totalRecords = ref(0)
 const totalRecipes = ref(0)
 const loadingStats = ref(false)
-
-const isDark = computed(() => theme.global.current.value.dark)
 
 // 饮食偏好
 const nutritionDialog = ref(false)
@@ -677,10 +705,6 @@ async function saveUnitPrefs() {
   } finally {
     savingUnitPrefs.value = false
   }
-}
-
-const toggleTheme = () => {
-  theme.global.name.value = isDark.value ? 'light' : 'dark'
 }
 
 function openAccountDialog() {

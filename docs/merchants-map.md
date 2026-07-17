@@ -2,7 +2,7 @@
 
 生计把商家放在地图上管理，方便你记价时选商家、看哪家近。这篇讲商家怎么管、地图怎么用。
 
-[商家列表](img/merchant_list_desktop.jpeg)
+![商家列表](img/merchant_desktop.png)
 
 ## 商家管理
 

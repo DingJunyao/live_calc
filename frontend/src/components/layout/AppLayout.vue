@@ -34,9 +34,26 @@
 
       <template #append>
         <v-list density="compact" nav>
+          <!-- 展开模式：三态图标按钮组 -->
+          <div v-if="desktopSidebar" class="theme-switch pa-2">
+            <div class="text-caption text-medium-emphasis px-1 pb-1">外观主题</div>
+            <v-btn-toggle
+              v-model="themeMode"
+              mandatory
+              color="primary"
+              density="compact"
+              divided
+              class="w-100"
+            >
+              <v-btn value="light" size="small" class="flex-grow-1"><v-icon>mdi-weather-sunny</v-icon></v-btn>
+              <v-btn value="dark" size="small" class="flex-grow-1"><v-icon>mdi-weather-night</v-icon></v-btn>
+              <v-btn value="system" size="small" class="flex-grow-1"><v-icon>mdi-monitor</v-icon></v-btn>
+            </v-btn-toggle>
+          </div>
+          <!-- 收起（rail）模式：退化为单图标，单击三态循环 -->
           <v-list-item
-            :prepend-icon="isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
-            :title="isDark ? '浅色' : '深色'"
+            v-else
+            :prepend-icon="themeIcon"
             @click="toggleTheme"
           />
           <v-list-item
@@ -92,11 +109,21 @@
 
       <template #append>
         <v-list density="compact" nav>
-          <v-list-item
-            :prepend-icon="isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
-            :title="isDark ? '浅色' : '深色'"
-            @click="toggleTheme"
-          />
+          <div class="theme-switch pa-2">
+            <div class="text-caption text-medium-emphasis px-1 pb-1">外观主题</div>
+            <v-btn-toggle
+              v-model="themeMode"
+              mandatory
+              color="primary"
+              density="compact"
+              divided
+              class="w-100"
+            >
+              <v-btn value="light" size="small" class="flex-grow-1"><v-icon>mdi-weather-sunny</v-icon></v-btn>
+              <v-btn value="dark" size="small" class="flex-grow-1"><v-icon>mdi-weather-night</v-icon></v-btn>
+              <v-btn value="system" size="small" class="flex-grow-1"><v-icon>mdi-monitor</v-icon></v-btn>
+            </v-btn-toggle>
+          </div>
           <v-list-item
             prepend-icon="mdi-logout"
             title="退出登录"
@@ -117,16 +144,26 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useTheme } from 'vuetify'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawer } from '@/composables/useMobileDrawer'
+import { useThemeToggle } from '@/composables/useTheme'
 
 const userStore = useUserStore()
 const router = useRouter()
-const theme = useTheme()
 const { mobileDrawer, desktopSidebar, isDesktop, closeDrawer } = useMobileDrawer()
+const { themeMode, toggleTheme } = useThemeToggle()
 
-const isDark = computed(() => theme.global.current.value.dark)
+// rail（侧边栏收起）模式下，主题切换退化为单图标，单击三态循环
+const themeIcon = computed(() => {
+  switch (themeMode.value) {
+    case 'light':
+      return 'mdi-weather-sunny'
+    case 'dark':
+      return 'mdi-weather-night'
+    default:
+      return 'mdi-monitor'
+  }
+})
 
 // 监听桌面端状态变化，切换到桌面端时关闭移动端抽屉
 watch(isDesktop, (value) => {
@@ -134,10 +171,6 @@ watch(isDesktop, (value) => {
     closeDrawer()
   }
 })
-
-const toggleTheme = () => {
-  theme.global.name.value = isDark.value ? 'light' : 'dark'
-}
 
 const logout = () => {
   userStore.logout()

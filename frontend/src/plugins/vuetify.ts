@@ -82,11 +82,18 @@ const darkTheme = {
   },
 }
 
+// 初始主题：由 index.html 的 bootstrap 脚本根据 localStorage + 系统偏好解析，
+// 避免刷新时主题回退到浅色（解析逻辑与 composables/useTheme.ts 保持一致）。
+const initialTheme =
+  typeof window !== 'undefined' && (window as any).__INITIAL_THEME__ === 'dark'
+    ? 'dark'
+    : 'light'
+
 export default createVuetify({
   components,
   directives,
   theme: {
-    defaultTheme: 'light',
+    defaultTheme: initialTheme,
     themes: {
       light: lightTheme,
       dark: darkTheme,
