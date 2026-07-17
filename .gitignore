@@ -8,3 +8,10 @@ debug_*.js
 verify_*.py
 tmp/
 .superpowers
+node_modules
+
+# PWA logo 生成用的思源黑体（仅生成时用，转曲后不入仓库）
+scripts/.fonts/
+
+# vite-plugin-pwa dev 模式生成的 service worker 产物（开发产物，不入库）
+frontend/dev-dist/

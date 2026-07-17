@@ -107,6 +107,44 @@ docker compose up -d --build
 - `.env` 里 `DEBUG=false`，改掉 `JWT_SECRET_KEY` 的默认值
 - 前端 `.env` 的 `VITE_ALLOWED_HOSTS` 加上你反代的域名
 
+## PWA / HTTPS 部署
+
+前端已适配 PWA，可安装到桌面与移动端主屏。PWA 生效需注意以下几点。
+
+### 1. 必须 HTTPS
+
+service worker 仅在**安全上下文**下注册。开发环境 `localhost` 视为安全上下文，可直接测试安装；**生产环境必须 HTTPS**。
+
+- Caddy 自动 TLS（最省事）：Caddyfile 配域名，Caddy 自动申请 Let's Encrypt 证书
+- Nginx + Let's Encrypt：用 certbot 申请证书，Nginx 监听 443 并启用 ssl，80 跳转 443
+
+Docker 部署如需 HTTPS，在容器外（宿主机或前置反代）终止 TLS，或自行改 nginx 模板加证书。
+
+### 2. service worker / manifest 不可长缓存
+
+`sw.js` 与 `manifest.webmanifest` 必须设为不缓存，否则浏览器死缓存旧 SW，新版本更新机制失效——用户拿不到新版本，也弹不出更新提示。Docker 部署的 nginx 模板（`deploy/nginx/default.conf.template`）已内置以下配置；手动 Nginx 部署需自行添加：
+
+```nginx
+location = /sw.js {
+    add_header Cache-Control "no-cache, no-store, must-revalidate";
+    expires off;
+}
+location = /manifest.webmanifest {
+    add_header Cache-Control "no-cache";
+    expires off;
+}
+```
+
+> 这两个 `location =`（精确匹配）要排在 `*.js` 的正则长缓存规则之前——精确匹配优先级更高，能盖过 `sw.js` 被 `.js` 规则误长缓存。
+
+### 3. 静态资源长缓存不变
+
+带 hash 的 JS/CSS/图标仍走现有 30 天 immutable 长缓存规则，无需调整。`workbox-<hash>.js`、`pwa-*.png`、`assets/index-<hash>.js` 等都带 hash，长缓存安全。
+
+### 4. 验收
+
+部署后用 Chrome / Edge DevTools → Lighthouse → 仅勾选 PWA 类别 → 生成报告，确认 **Installable**（可安装）通过。
+
 ## API 文档
 
 后端启动后自带交互式文档：

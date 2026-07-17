@@ -16,6 +16,17 @@ server {
     # 上传/请求体大小（菜谱图片、数据导出等）
     client_max_body_size 50m;
 
+    # service worker 与 manifest 绝不能被长缓存，否则 SW 更新永远不生效
+    # （= 精确匹配优先级高于下方 *.js 的正则长缓存规则）
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        expires off;
+    }
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache";
+        expires off;
+    }
+
     # API 反代到后端（BACKEND_URL 由 entrypoint envsubst 注入）
     location /api/ {
         proxy_pass ${BACKEND_URL};

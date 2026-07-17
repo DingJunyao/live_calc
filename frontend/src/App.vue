@@ -1,6 +1,7 @@
 <template>
   <v-app>
     <router-view />
+    <PWAUpdatePrompt />
     <GlobalConfirmDialog />
     <GlobalSnackbar />
   </v-app>
@@ -11,6 +12,7 @@ import { onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import GlobalConfirmDialog from '@/components/common/GlobalConfirmDialog.vue'
 import GlobalSnackbar from '@/components/common/GlobalSnackbar.vue'
+import PWAUpdatePrompt from '@/components/common/PWAUpdatePrompt.vue'
 
 const userStore = useUserStore()
 
