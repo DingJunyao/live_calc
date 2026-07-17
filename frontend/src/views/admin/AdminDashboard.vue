@@ -85,6 +85,9 @@
           to="/admin/proposals"
         >
           <template #append>
+            <v-chip v-if="pendingProposalCount > 0" color="warning" size="small" class="me-1">
+              {{ pendingProposalCount }} 条待审
+            </v-chip>
             <v-icon>mdi-chevron-right</v-icon>
           </template>
         </v-list-item>
@@ -207,6 +210,7 @@
 import { ref, onMounted } from 'vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import api from '@/api/client'
+import { listProposals } from '@/api/proposals'
 
 interface AdminStats {
   users: number
@@ -231,8 +235,20 @@ const fetchStats = async () => {
   }
 }
 
+// 待审提议数（全表、管理员视角）——展示在「提议审核台」入口，提示有未处理提议
+const pendingProposalCount = ref(0)
+const loadPendingCount = async () => {
+  try {
+    const items = await listProposals('pending', 100)
+    pendingProposalCount.value = items.length
+  } catch {
+    pendingProposalCount.value = 0
+  }
+}
+
 onMounted(() => {
   fetchStats()
+  loadPendingCount()
 })
 </script>
 

@@ -95,9 +95,6 @@
           <v-list-item-title>我的提议</v-list-item-title>
           <v-list-item-subtitle>查看提交的变更提议及审核状态</v-list-item-subtitle>
           <template #append>
-            <v-chip v-if="pendingProposalCount > 0" color="warning" size="small">
-              {{ pendingProposalCount }} 条待审
-            </v-chip>
             <v-icon>mdi-chevron-right</v-icon>
           </template>
         </v-list-item>
@@ -497,7 +494,6 @@ import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import { useUserUnits } from '@/composables/useUserUnits'
 import { hashPassword } from '@/utils/crypto'
-import { listProposals } from '@/api/proposals'
 
 const { notify } = useGlobalSnackbar()
 const { energyUnit, toDisplayCalorie, fromDisplayCalorie } = useUserUnits()
@@ -832,7 +828,6 @@ const loadStats = async () => {
 // 黑名单
 const blacklistDialog = ref(false)
 const blacklistCount = ref(0)
-const pendingProposalCount = ref(0)
 
 async function loadBlacklistCount() {
   try {
@@ -848,18 +843,8 @@ watch(blacklistDialog, (val) => {
   if (!val) loadBlacklistCount()
 })
 
-const loadPendingCount = async () => {
-  try {
-    const items = await listProposals('pending', 1)
-    pendingProposalCount.value = items.length
-  } catch {
-    pendingProposalCount.value = 0
-  }
-}
-
 onMounted(() => {
   loadStats()
   loadBlacklistCount()
-  loadPendingCount()
 })
 </script>
