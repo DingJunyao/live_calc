@@ -44,6 +44,37 @@ export default defineConfig(({ mode }) => {
         start_url: '/',
         theme_color: '#558B2F',
         background_color: '#FDFCF8',
+        shortcuts : [
+            {
+                name: "今日推荐",
+                url: "/",
+                description: "为你的早 / 午 / 晚各选一道菜"
+            },
+            {
+                name: "价格记录",
+                url: "/prices"
+            },
+            {
+                name: "菜谱管理",
+                url: "/recipes"
+            },
+            {
+                name: "商品管理",
+                url: "/data/products"
+            },
+            {
+                name: "原料管理",
+                url: "/data/ingredients"
+            },
+            {
+                name: "商家管理",
+                url: "/data/merchants"
+            },
+            {
+                name: "个人中心",
+                url: "/profile"
+            }
+        ],
         // 安装弹窗展示应用截图：桌面 wide + 移动 narrow 各一张
         screenshots: [
           {

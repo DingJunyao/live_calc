@@ -89,15 +89,8 @@
               </v-list-item-subtitle>
 
               <template #append>
-                <div class="d-flex ga-1">
-                  <v-btn
-                    :icon="favoriteIds.has(item.id) ? 'mdi-heart' : 'mdi-heart-outline'"
-                    size="small"
-                    variant="text"
-                    :color="favoriteIds.has(item.id) ? 'error' : 'default'"
-                    :title="favoriteIds.has(item.id) ? '取消收藏' : '收藏'"
-                    @click.stop="toggleFavorite(item.id)"
-                  />
+                <div class="d-flex ga-1 align-center">
+                  <!-- 定位按钮：高频操作，留在列表项上 -->
                   <v-btn
                     icon="mdi-crosshairs-gps"
                     size="small"
@@ -107,20 +100,32 @@
                     :title="isValidCoordinate(item.latitude, item.longitude) ? '在地图上定位' : '未设置位置'"
                     @click.stop="locateMerchant(item)"
                   />
-                  <v-btn
-                    icon="mdi-pencil"
-                    size="small"
-                    variant="text"
-                    color="primary"
-                    @click.stop="openEditDialog(item)"
-                  />
-                  <v-btn
-                    icon="mdi-delete"
-                    size="small"
-                    variant="text"
-                    color="error"
-                    @click.stop="deleteItem(item.id)"
-                  />
+                  <!-- 收藏 / 编辑 / 删除 收进三点溢出菜单 -->
+                  <v-menu :close-on-content-click="true" location="bottom end">
+                    <template #activator="{ props: menuProps }">
+                      <v-btn icon="mdi-dots-vertical" size="small" variant="text" v-bind="menuProps" />
+                    </template>
+                    <v-list density="compact" nav>
+                      <v-list-item
+                        :prepend-icon="favoriteIds.has(item.id) ? 'mdi-heart' : 'mdi-heart-outline'"
+                        :base-color="favoriteIds.has(item.id) ? 'error' : undefined"
+                        :title="favoriteIds.has(item.id) ? '取消收藏' : '收藏'"
+                        @click="toggleFavorite(item.id)"
+                      />
+                      <v-list-item
+                        prepend-icon="mdi-pencil"
+                        base-color="primary"
+                        title="编辑"
+                        @click="openEditDialog(item)"
+                      />
+                      <v-list-item
+                        prepend-icon="mdi-delete"
+                        base-color="error"
+                        title="删除"
+                        @click="deleteItem(item.id)"
+                      />
+                    </v-list>
+                  </v-menu>
                 </div>
               </template>
             </v-list-item>

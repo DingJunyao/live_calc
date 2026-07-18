@@ -12,44 +12,89 @@
       </div>
     </v-app-bar-title>
     <template #append>
-      <v-btn
-        v-if="canPublish"
-        icon="mdi-cloud-upload-outline"
-        variant="text"
-        color="success"
-        :loading="publishing"
-        :disabled="!recipe"
-        title="发布菜谱"
-        @click="handlePublish"
-      />
-      <v-btn
-        v-if="canManage || !isPublished"
-        icon="mdi-delete"
-        variant="text"
-        color="error"
-        :disabled="!recipe || deleting"
-        @click="showDeleteDialog = true"
-      />
-      <v-tooltip v-else location="bottom">
-        <template #activator="{ props }">
-          <span v-bind="props">
-            <v-btn
-              icon="mdi-delete-off-outline"
-              variant="text"
-              color="error"
-              disabled
-            />
-          </span>
+      <!-- 桌面端：按钮平铺 -->
+      <template v-if="isDesktop">
+        <v-btn
+          v-if="canPublish"
+          icon="mdi-cloud-upload-outline"
+          variant="text"
+          color="success"
+          :loading="publishing"
+          :disabled="!recipe"
+          title="发布菜谱"
+          @click="handlePublish"
+        />
+        <v-btn
+          v-if="canManage || !isPublished"
+          icon="mdi-delete"
+          variant="text"
+          color="error"
+          :disabled="!recipe || deleting"
+          @click="showDeleteDialog = true"
+        />
+        <v-tooltip v-else location="bottom">
+          <template #activator="{ props }">
+            <span v-bind="props">
+              <v-btn
+                icon="mdi-delete-off-outline"
+                variant="text"
+                color="error"
+                disabled
+              />
+            </span>
+          </template>
+          已发布菜谱不可删除，请联系管理员
+        </v-tooltip>
+        <v-btn
+          icon="mdi-chart-box-outline"
+          variant="text"
+          color="tertiary"
+          @click="$router.push(`/recipes/${recipe?.id}/analysis`)"
+        />
+        <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
+      </template>
+      <!-- 移动端：三点溢出菜单 -->
+      <v-menu v-else :close-on-content-click="true" location="bottom end">
+        <template #activator="{ props: menuProps }">
+          <v-btn icon="mdi-dots-vertical" variant="text" v-bind="menuProps" :loading="anyLoading" />
         </template>
-        已发布菜谱不可删除，请联系管理员
-      </v-tooltip>
-      <v-btn
-        icon="mdi-chart-box-outline"
-        variant="text"
-        color="tertiary"
-        @click="$router.push(`/recipes/${recipe?.id}/analysis`)"
-      />
-      <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
+        <v-list density="compact" nav>
+          <v-list-item
+            v-if="canPublish"
+            prepend-icon="mdi-cloud-upload-outline"
+            base-color="success"
+            title="发布菜谱"
+            :disabled="!recipe"
+            @click="handlePublish"
+          />
+          <v-list-item
+            v-if="canManage || !isPublished"
+            prepend-icon="mdi-delete"
+            base-color="error"
+            title="删除菜谱"
+            :disabled="!recipe || deleting"
+            @click="showDeleteDialog = true"
+          />
+          <v-list-item
+            v-else
+            prepend-icon="mdi-delete-off-outline"
+            base-color="error"
+            title="删除菜谱"
+            subtitle="已发布菜谱不可删除，请联系管理员"
+            disabled
+          />
+          <v-list-item
+            prepend-icon="mdi-chart-box-outline"
+            title="菜谱分析"
+            @click="$router.push(`/recipes/${recipe?.id}/analysis`)"
+          />
+          <v-list-item
+            prepend-icon="mdi-refresh"
+            title="刷新"
+            @click="loadData"
+          />
+        </v-list>
+      </v-menu>
     </template>
   </v-app-bar>
 
@@ -1191,6 +1236,9 @@ const handleDelete = async () => {
 // 管理员直写生效；普通用户提交审核提议。
 const publishing = ref(false)
 const showPublishConfirm = ref(false)
+
+// 移动端三点溢出菜单的 loading 汇总：发布/删除/刷新任一进行时，三点按钮转圈
+const anyLoading = computed(() => publishing.value || loading.value || deleting.value)
 
 const handlePublish = () => {
   if (!recipe.value) return

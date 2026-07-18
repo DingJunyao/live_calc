@@ -63,7 +63,11 @@ api.interceptors.response.use(
       // 登录请求的 401 = 凭证错误，不刷新 token、不跳登录页（用户本就在登录页），
       // 交给调用方 Login.vue 的 catch 显示错误；否则整页刷新会冲掉刚设的错误提示
       const isLoginRequest = error.config?.url?.includes('/auth/login')
-      if (!isLoginRequest) {
+      // _retry 标志位：同一次请求最多 refresh 重试一次。
+      // 业务校验型 401（如改密码时「当前密码错误」）refresh 救不了——重放照样 401，
+      // 不拦就会无限 refresh→重放→401 死循环，前端一直转圈、调用方 catch 也收不到错误。
+      // 已重试仍 401 说明不是 token 过期，直接透传给下面 extractErrorDetail + reject 显示。
+      if (!isLoginRequest && !(error.config as any)?._retry) {
         const refreshToken = localStorage.getItem('refresh_token')
         if (refreshToken) {
           try {
@@ -71,7 +75,8 @@ api.interceptors.response.use(
               refresh_token: refreshToken,
             })
             localStorage.setItem('access_token', response.data.access_token)
-            // 重试原请求
+            // 重试原请求（仅此一次，_retry 防二次 401 再入 refresh 死循环）
+            ;(error.config as any)._retry = true
             error.config.headers.Authorization = `Bearer ${response.data.access_token}`
             return api.request(error.config)
           } catch {

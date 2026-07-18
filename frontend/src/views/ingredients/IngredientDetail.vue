@@ -10,8 +10,21 @@
       </div>
     </v-app-bar-title>
     <template #append>
-      <v-btn icon="mdi-tag-plus" variant="text" @click="openQuickPriceDialog" />
-      <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
+      <!-- 桌面端：按钮平铺 -->
+      <template v-if="isDesktop">
+        <v-btn icon="mdi-tag-plus" variant="text" @click="openQuickPriceDialog" />
+        <v-btn icon="mdi-refresh" variant="text" :loading="loading" @click="loadData" />
+      </template>
+      <!-- 移动端：三点溢出菜单 -->
+      <v-menu v-else :close-on-content-click="true" location="bottom end">
+        <template #activator="{ props: menuProps }">
+          <v-btn icon="mdi-dots-vertical" variant="text" v-bind="menuProps" :loading="loading" />
+        </template>
+        <v-list density="compact" nav>
+          <v-list-item prepend-icon="mdi-tag-plus" title="记录价格" @click="openQuickPriceDialog" />
+          <v-list-item prepend-icon="mdi-refresh" title="刷新" @click="loadData" />
+        </v-list>
+      </v-menu>
     </template>
   </v-app-bar>
 

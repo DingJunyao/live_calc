@@ -43,9 +43,8 @@
           density="compact"
           variant="solo"
           hide-details
-          class="mobile-layer-selector"
+          class="map-control-select"
           @update:model-value="handleMobileMapChange"
-          style="max-width: 120px"
         />
 
         <!-- 地点切换器（仅在有地点时显示） -->
@@ -58,7 +57,7 @@
           density="compact"
           variant="solo"
           hide-details
-          :style="{ maxWidth: isDesktop ? '150px' : '110px' }"
+          class="map-control-select place-select"
           @update:model-value="onPlaceChange"
         />
 
@@ -1046,8 +1045,8 @@ onUnmounted(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.mobile-layer-selector {
-  display: none;
+.map-control-select {
+  max-width: 150px;
 }
 
 .control-btn {
@@ -1163,8 +1162,14 @@ onUnmounted(() => {
     display: none;
   }
 
-  .mobile-layer-selector {
-    display: block;
+  .map-control-select {
+    max-width: 80px;
+    font-size: 0.7rem;
+  }
+
+  /* 地点下拉选项文案更长（「全部商家」等），单独放宽以免截断 */
+  .map-control-select.place-select {
+    max-width: 120px;
   }
 
   /* 移动端地图控件缩小 */
@@ -1172,12 +1177,7 @@ onUnmounted(() => {
     gap: 4px; /* 减小间距 */
   }
 
-  :deep(.mobile-layer-selector) {
-    max-width: 80px; /* 减小宽度 */
-    font-size: 0.7rem; /* 减小字体 */
-  }
-
-  :deep(.mobile-layer-selector .v-field__input) {
+  :deep(.map-control-select .v-field__input) {
     padding: 4px 8px; /* 减小内边距 */
     min-height: 28px; /* 减小高度 */
     font-size: 0.7rem;
