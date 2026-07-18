@@ -26,7 +26,14 @@ export default defineConfig(({ mode }) => {
     VitePWA({
       registerType: 'prompt',          // 新版本弹提示，用户主动刷新；不用 autoUpdate 防丢表单
       injectRegister: 'auto',          // 自动注入 SW 注册脚本
-      devOptions: { enabled: true },   // vite dev 下 localhost 可测安装
+      devOptions: {
+        enabled: true,               // vite dev 下 localhost 可测安装
+        // dev 模式 dev-dist 仅含 sw.js / workbox-*.js（均被默认 globIgnores 排除），
+        // workbox 的 globPatterns（为 build 扫 dist 设计）套用到 dev-dist 必然空匹配 → 控制台警告。
+        // 官方开关：dev-dist 补一个空 suppress-warnings.js，并把 dev 用 globPatterns 临时指向它。
+        // 仅作用于 dev 分支，build 模式的 globPatterns 与 dist precache 清单不受影响。
+        suppressWarnings: true,
+      },
       includeAssets: ['favicon.ico', 'logo.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: '生计 - 生活成本计算器',

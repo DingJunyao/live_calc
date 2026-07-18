@@ -42,7 +42,8 @@
       <!-- 移动端：列表样式 -->
       <v-card v-if="smAndDown" elevation="0">
         <v-list lines="three">
-          <v-list-item v-for="record in records" :key="record.id">
+          <v-list-item v-for="record in records" :key="record.id"
+             @click="goToProduct(record)">
             <template #prepend>
               <v-avatar color="primary" size="40">
                 <span class="text-white">{{ record.product_name?.charAt(0) }}</span>
@@ -54,16 +55,21 @@
               ¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
             </v-list-item-subtitle>
             <v-list-item-subtitle>
-              {{ record.merchant_name || '未知商家' }}
+              <span v-if="record.merchant_id"
+                    class="text-primary cursor-pointer"
+                    @click.stop="goToMerchant(record)">
+                {{ record.merchant_name }}
+              </span>
+              <span v-else class="text-medium-emphasis">未知商家</span>
             </v-list-item-subtitle>
             <v-list-item-subtitle>
               {{ formatToLocalDateTimeShort(record.recorded_at) }}
             </v-list-item-subtitle>
 
             <template #append>
-              <v-btn icon="mdi-tag-multiple" size="small" variant="text" class="mr-1" @click="openRecordAgainDialog(record)" />
-              <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" class="mr-1" @click="openEditDialog(record)" />
-              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="deleteRecord(record.id)" />
+              <v-btn icon="mdi-tag-multiple" size="small" variant="text" class="mr-1" @click.stop="openRecordAgainDialog(record)" />
+              <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" class="mr-1" @click.stop="openEditDialog(record)" />
+              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click.stop="deleteRecord(record.id)" />
             </template>
           </v-list-item>
 
@@ -84,7 +90,8 @@
           lg="3"
           xl="2"
         >
-          <v-card elevation="0" class="list-grid-card">
+          <v-card elevation="0" class="list-grid-card cursor-pointer"
+                 @click="goToProduct(record)">
             <v-card-text>
               <div class="d-flex align-center mb-2">
                 <v-avatar color="primary" size="40" class="mr-3">
@@ -96,7 +103,10 @@
                 ¥{{ formatPrice(record.price) }} / {{ record.original_quantity }}{{ record.original_unit }}
               </div>
               <div class="d-flex flex-wrap align-center ga-2">
-                <v-chip size="x-small" color="default" variant="outlined">
+                <v-chip size="x-small"
+                        :color="record.merchant_id ? 'primary' : 'default'"
+                        :variant="record.merchant_id ? 'tonal' : 'outlined'"
+                        @click.stop="goToMerchant(record)">
                   <v-icon start size="x-small">mdi-store</v-icon>
                   {{ record.merchant_name || '未知商家' }}
                 </v-chip>
@@ -108,9 +118,9 @@
             <v-divider />
             <v-card-actions>
               <v-spacer />
-              <v-btn icon="mdi-tag-multiple" size="small" variant="text" @click="openRecordAgainDialog(record)" />
-              <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" @click="openEditDialog(record)" />
-              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="deleteRecord(record.id)" />
+              <v-btn icon="mdi-tag-multiple" size="small" variant="text" @click.stop="openRecordAgainDialog(record)" />
+              <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" @click.stop="openEditDialog(record)" />
+              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click.stop="deleteRecord(record.id)" />
             </v-card-actions>
           </v-card>
         </v-col>
@@ -322,6 +332,18 @@ const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { smAndDown, mdAndDown, md, lgAndUp } = useDisplay()
+
+// 跳转：点记录整体 → 商品明细
+const goToProduct = (record: PriceRecord) => {
+  if (!record.product_id) return
+  router.push(`/data/products/${record.product_id}`)
+}
+
+// 跳转：点记录内商家 → 商家详情
+const goToMerchant = (record: PriceRecord) => {
+  if (!record.merchant_id) return
+  router.push(`/data/merchants/${record.merchant_id}`)
+}
 
 interface PriceRecord {
   id: number

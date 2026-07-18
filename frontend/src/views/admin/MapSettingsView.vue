@@ -35,7 +35,7 @@
             />
             <v-divider class="my-4" />
             <div class="text-caption text-medium-emphasis mb-2">启用的地图服务</div>
-            <v-chip-group v-model="config.available_maps" column>
+            <v-chip-group v-model="config.available_maps" multiple column>
               <v-chip
                 v-for="map in allMaps"
                 :key="map.value"
@@ -244,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import api from '@/api/client'
@@ -324,12 +324,27 @@ const config = reactive<MapConfig>({
 const saving = ref(false)
 const showSuccess = ref(false)
 
-const availableMaps = ref(allMaps)
+// 默认地图下拉项跟随「启用的地图服务」联动
+const availableMaps = computed(() =>
+  allMaps.filter((m) => config.available_maps.includes(m.value))
+)
+
+// 默认地图不在启用列表时，回退到首个启用项
+const ensureDefaultMapValid = () => {
+  const maps = config.available_maps
+  if (Array.isArray(maps) && maps.length > 0 && !maps.includes(config.default_map)) {
+    config.default_map = maps[0]
+  }
+}
+
+watch(() => [...config.available_maps], ensureDefaultMapValid)
 
 const fetchConfig = async () => {
   try {
     const data = await api.get('/admin/map-config')
     Object.assign(config, data)
+    // 兜底：库里 default_map 不在启用列表时回退首个
+    ensureDefaultMapValid()
   } catch (error) {
     console.error('获取地图配置失败:', error)
   }
