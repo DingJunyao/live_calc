@@ -48,31 +48,38 @@ export default defineConfig(({ mode }) => {
             {
                 name: "今日推荐",
                 url: "/",
-                description: "为你的早 / 午 / 晚各选一道菜"
+                description: "为你的早 / 午 / 晚各选一道菜",
+                icons: [{ src: "shortcuts/today.png", sizes: "96x96", type: "image/png" }]
             },
             {
                 name: "价格记录",
-                url: "/prices"
+                url: "/prices",
+                icons: [{ src: "shortcuts/prices.png", sizes: "96x96", type: "image/png" }]
             },
             {
                 name: "菜谱管理",
-                url: "/recipes"
+                url: "/recipes",
+                icons: [{ src: "shortcuts/recipes.png", sizes: "96x96", type: "image/png" }]
             },
             {
                 name: "商品管理",
-                url: "/data/products"
+                url: "/data/products",
+                icons: [{ src: "shortcuts/products.png", sizes: "96x96", type: "image/png" }]
             },
             {
                 name: "原料管理",
-                url: "/data/ingredients"
+                url: "/data/ingredients",
+                icons: [{ src: "shortcuts/ingredients.png", sizes: "96x96", type: "image/png" }]
             },
             {
                 name: "商家管理",
-                url: "/data/merchants"
+                url: "/data/merchants",
+                icons: [{ src: "shortcuts/merchants.png", sizes: "96x96", type: "image/png" }]
             },
             {
                 name: "个人中心",
-                url: "/profile"
+                url: "/profile",
+                icons: [{ src: "shortcuts/profile.png", sizes: "96x96", type: "image/png" }]
             }
         ],
         // 安装弹窗展示应用截图：桌面 wide + 移动 narrow 各一张
