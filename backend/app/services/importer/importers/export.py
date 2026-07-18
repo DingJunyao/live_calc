@@ -9,7 +9,10 @@ from typing import Optional
 from app.models.entity_density import EntityDensity
 from app.models.ingredient_category import IngredientCategory
 from app.models.ingredient_hierarchy import IngredientHierarchy
+from app.models.blacklist_group import BlacklistGroup, BlacklistGroupIngredient
+from app.models.blacklist_group_subscription import BlacklistGroupSubscription
 from app.models.merchant import Merchant
+from app.models.user_ingredient_blacklist import UserIngredientBlacklist
 from app.models.user_place import UserPlace
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
@@ -32,6 +35,7 @@ class ReferenceMapping:
         self.merchants: dict[int, int] = {}
         self.units: dict[int, int] = {}
         self.categories: dict[int, int] = {}
+        self.blacklist_groups: dict[int, int] = {}
 
 
 class ExportImporter(Importer):
@@ -46,24 +50,47 @@ class ExportImporter(Importer):
         self.result = ImportResult()
         self.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-    def import_all(self, collection: FileCollection) -> ImportResult:
+    def import_all(
+        self,
+        collection: FileCollection,
+        progress_callback=None,
+    ) -> ImportResult:
         self.result = ImportResult()
+        # 兜底成空操作，子方法可直接调用 cb(...) 而不必每次判空
+        cb = progress_callback or (lambda *a, **k: None)
 
         try:
+            cb("导入单位", 0, 0, "正在导入单位…")
             self._import_units(collection)
+            cb("导入单位换算", 0, 0, "正在导入单位换算…")
             self._import_unit_conversions(collection)
+            cb("导入原料分类", 0, 0, "正在导入原料分类…")
             self._import_ingredient_categories(collection)
-            self._import_ingredients(collection)
+            self._import_ingredients(collection, cb)
+            cb("导入实体密度", 0, 0, "正在导入实体密度…")
             self._import_entity_densities(collection)
+            cb("导入营养数据", 0, 0, "正在导入营养数据…")
             self._import_nutritions(collection)
+            cb("导入原料层级", 0, 0, "正在导入原料层级…")
             self._import_ingredient_hierarchy(collection)
-            self._import_recipes(collection)
-            self._import_products(collection)
+            self._import_recipes(collection, cb)
+            self._import_products(collection, cb)
+            cb("导入商品条码", 0, 0, "正在导入商品条码…")
             self._import_product_barcodes(collection)
+            cb("导入商品关联", 0, 0, "正在导入商品关联…")
             self._import_product_links(collection)
+            cb("导入商家", 0, 0, "正在导入商家…")
             self._import_merchants(collection)
+            cb("导入常用地点", 0, 0, "正在导入常用地点…")
             self._import_user_places(collection)
-            self._import_price_records(collection)
+            self._import_price_records(collection, cb)
+            cb("导入黑名单分组", 0, 0, "正在导入黑名单分组…")
+            self._import_blacklist_groups(collection)
+            cb("导入我的黑名单", 0, 0, "正在导入我的黑名单条目…")
+            self._import_user_blacklist(collection)
+            cb("导入黑名单订阅", 0, 0, "正在导入黑名单订阅…")
+            self._import_blacklist_subscriptions(collection)
+            cb("导入图片", 0, 0, "正在导入图片…")
             self._import_images(collection)
 
             self.db.commit()
@@ -177,14 +204,17 @@ class ExportImporter(Importer):
                 self.mapping.categories[old_id] = c.id
         self.result.stats["ingredient_categories"] = imported
 
-    def _import_ingredients(self, collection):
+    def _import_ingredients(self, collection, cb=None):
+        cb = cb or (lambda *a, **k: None)
         data = self._load_json(collection, "ingredients.json")
         if not data:
             return
         imported = 0
         skipped = 0
-        items = data if isinstance(data, list) else data.values()
-        for item in items:
+        items = data if isinstance(data, list) else list(data.values())
+        total = len(items)
+        cb("导入原料", 0, total, f"原料 0/{total}" if total else "正在导入原料…")
+        for idx, item in enumerate(items, 1):
             name = item.get("name", "").strip() if isinstance(item, dict) else ""
             if not name:
                 continue
@@ -211,6 +241,8 @@ class ExportImporter(Importer):
             old_id = item.get("id")
             if old_id:
                 self.mapping.ingredients[old_id] = ingredient.id
+            if idx % 100 == 0:
+                cb("导入原料", idx, total, f"原料 {idx}/{total}")
         self.result.stats["ingredients"] = imported
 
     def _import_entity_densities(self, collection):
@@ -306,12 +338,15 @@ class ExportImporter(Importer):
             imported += 1
         self.result.stats["ingredient_hierarchy"] = imported
 
-    def _import_recipes(self, collection):
+    def _import_recipes(self, collection, cb=None):
+        cb = cb or (lambda *a, **k: None)
         recipe_files = collection.find("recipes/")
         if not recipe_files:
             return
+        total = len(recipe_files)
+        cb("导入菜谱", 0, total, f"菜谱 0/{total}" if total else "正在导入菜谱…")
         imported = 0
-        for rf in recipe_files:
+        for idx, rf in enumerate(recipe_files, 1):
             with open(rf.absolute_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             name = data.get("name", "").strip()
@@ -367,15 +402,20 @@ class ExportImporter(Importer):
                     original_quantity=ing_data.get("original_quantity"),
                 )
                 self.db.add(ri)
+            if idx % 25 == 0:
+                cb("导入菜谱", idx, total, f"菜谱 {idx}/{total}")
         self.result.stats["recipes"] = imported
 
-    def _import_products(self, collection):
+    def _import_products(self, collection, cb=None):
+        cb = cb or (lambda *a, **k: None)
         data = self._load_json(collection, "products.json")
         if not data:
             return
         imported = 0
-        items = data if isinstance(data, list) else data.values()
-        for item in items:
+        items = data if isinstance(data, list) else list(data.values())
+        total = len(items)
+        cb("导入商品", 0, total, f"商品 0/{total}" if total else "正在导入商品…")
+        for idx, item in enumerate(items, 1):
             name = item.get("name", "").strip()
             if not name:
                 continue
@@ -422,6 +462,8 @@ class ExportImporter(Importer):
             old_id = item.get("id")
             if old_id:
                 self.mapping.products[old_id] = product.id
+            if idx % 100 == 0:
+                cb("导入商品", idx, total, f"商品 {idx}/{total}")
         self.result.stats["products"] = imported
 
     def _import_product_barcodes(self, collection):
@@ -539,6 +581,158 @@ class ExportImporter(Importer):
             imported += 1
         self.result.stats["user_places"] = imported
 
+    def _match_blacklist_group_by_name(self, name: str) -> Optional[BlacklistGroup]:
+        """按名字查找黑名单分组（含软删，便于导入时去重与复活）。"""
+        return self.db.query(BlacklistGroup).filter(BlacklistGroup.name == name).first()
+
+    def _import_blacklist_groups(self, collection):
+        """导入黑名单分组定义及其原料映射。
+
+        分组为管理员维护的全局数据：按 name 去重——已存在则只登记 id 映射不重建，
+        避免撞 BlacklistGroup.name 唯一约束。原料映射按 (group_id, ingredient_id)
+        去重，命中软删行则复活（对齐 API add_ingredients_to_group 行为），否则新建。
+        """
+        data = self._load_json(collection, "blacklist_groups.json")
+        if not data:
+            return
+        imported_groups = 0
+        imported_mappings = 0
+        for item in data:
+            name = item.get("name", "").strip()
+            if not name:
+                continue
+            group = self._match_blacklist_group_by_name(name)
+            if group:
+                old_id = item.get("id")
+                if old_id:
+                    self.mapping.blacklist_groups[old_id] = group.id
+            else:
+                group = BlacklistGroup(
+                    name=name,
+                    display_order=item.get("display_order", 0),
+                    is_active=bool(item.get("is_active", True)),
+                    created_by=self.user_id,
+                    updated_by=self.user_id,
+                )
+                self.db.add(group)
+                self.db.flush()
+                imported_groups += 1
+                old_id = item.get("id")
+                if old_id:
+                    self.mapping.blacklist_groups[old_id] = group.id
+
+            for ing_item in item.get("ingredients", []):
+                old_ing_id = ing_item.get("ingredient_id")
+                new_ing_id = self.mapping.ingredients.get(old_ing_id) if old_ing_id else None
+                if not new_ing_id:
+                    ing_name = (ing_item.get("ingredient_name") or "").strip()
+                    if ing_name:
+                        matched = self._match_ingredient_by_name(ing_name)
+                        if matched:
+                            new_ing_id = matched.id
+                if not new_ing_id:
+                    continue
+                existing = self.db.query(BlacklistGroupIngredient).filter(
+                    BlacklistGroupIngredient.group_id == group.id,
+                    BlacklistGroupIngredient.ingredient_id == new_ing_id,
+                ).first()
+                if existing:
+                    if not existing.is_active:
+                        existing.is_active = True
+                        existing.updated_by = self.user_id
+                    continue
+                self.db.add(BlacklistGroupIngredient(
+                    group_id=group.id,
+                    ingredient_id=new_ing_id,
+                    is_ai_matched=bool(ing_item.get("is_ai_matched", False)),
+                    is_active=True,
+                    created_by=self.user_id,
+                    updated_by=self.user_id,
+                ))
+                imported_mappings += 1
+        self.result.stats["blacklist_groups"] = imported_groups
+        self.result.stats["blacklist_group_ingredients"] = imported_mappings
+
+    def _import_user_blacklist(self, collection):
+        """导入当前用户的个人黑名单条目。
+
+        绑定到导入用户；按 (user_id, ingredient_id) 去重，命中软删行则复活并补全分组归属。
+        """
+        data = self._load_json(collection, "user_ingredient_blacklist.json")
+        if not data:
+            return
+        imported = 0
+        for item in data:
+            old_ing_id = item.get("ingredient_id")
+            new_ing_id = self.mapping.ingredients.get(old_ing_id) if old_ing_id else None
+            if not new_ing_id:
+                ing_name = (item.get("ingredient_name") or "").strip()
+                if ing_name:
+                    matched = self._match_ingredient_by_name(ing_name)
+                    if matched:
+                        new_ing_id = matched.id
+            if not new_ing_id:
+                continue
+            old_group_id = item.get("blacklist_group_id")
+            new_group_id = self.mapping.blacklist_groups.get(old_group_id) if old_group_id else None
+            existing = self.db.query(UserIngredientBlacklist).filter(
+                UserIngredientBlacklist.user_id == self.user_id,
+                UserIngredientBlacklist.ingredient_id == new_ing_id,
+            ).first()
+            if existing:
+                if not existing.is_active:
+                    existing.is_active = True
+                if new_group_id and not existing.blacklist_group_id:
+                    existing.blacklist_group_id = new_group_id
+                existing.updated_by = self.user_id
+                continue
+            self.db.add(UserIngredientBlacklist(
+                user_id=self.user_id,
+                ingredient_id=new_ing_id,
+                reason=item.get("reason"),
+                source=item.get("source", "manual"),
+                blacklist_group_id=new_group_id,
+                created_by=self.user_id,
+                updated_by=self.user_id,
+            ))
+            imported += 1
+        self.result.stats["user_ingredient_blacklist"] = imported
+
+    def _import_blacklist_subscriptions(self, collection):
+        """导入当前用户的黑名单分组订阅。按 (user_id, group_id) 去重，命中软删则复活。"""
+        data = self._load_json(collection, "blacklist_group_subscriptions.json")
+        if not data:
+            return
+        imported = 0
+        for item in data:
+            old_group_id = item.get("blacklist_group_id")
+            new_group_id = self.mapping.blacklist_groups.get(old_group_id) if old_group_id else None
+            if not new_group_id:
+                gname = (item.get("blacklist_group_name") or "").strip()
+                if gname:
+                    matched = self._match_blacklist_group_by_name(gname)
+                    if matched:
+                        new_group_id = matched.id
+            if not new_group_id:
+                continue
+            existing = self.db.query(BlacklistGroupSubscription).filter(
+                BlacklistGroupSubscription.user_id == self.user_id,
+                BlacklistGroupSubscription.blacklist_group_id == new_group_id,
+            ).first()
+            if existing:
+                if not existing.is_active:
+                    existing.is_active = True
+                    existing.updated_by = self.user_id
+                continue
+            self.db.add(BlacklistGroupSubscription(
+                user_id=self.user_id,
+                blacklist_group_id=new_group_id,
+                created_by=self.user_id,
+                updated_by=self.user_id,
+            ))
+            imported += 1
+        self.result.stats["blacklist_group_subscriptions"] = imported
+
     @staticmethod
     def _restore_image_paths(images: list) -> list:
         """将导出时的相对图片路径还原为本地 /static/... 路径。
@@ -568,12 +762,15 @@ class ExportImporter(Importer):
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
 
-    def _import_price_records(self, collection):
+    def _import_price_records(self, collection, cb=None):
+        cb = cb or (lambda *a, **k: None)
         data = self._load_json(collection, "price_records.json")
         if not data:
             return
         imported = 0
-        for item in data:
+        total = len(data) if isinstance(data, list) else 0
+        cb("导入价格记录", 0, total, f"价格记录 0/{total}" if total else "正在导入价格记录…")
+        for idx, item in enumerate(data, 1):
             old_prod_id = item.get("product_id")
             old_mer_id = item.get("merchant_id")
             new_prod_id = self.mapping.products.get(old_prod_id) if old_prod_id else None
@@ -603,6 +800,8 @@ class ExportImporter(Importer):
             )
             self.db.add(rec)
             imported += 1
+            if idx % 200 == 0:
+                cb("导入价格记录", idx, total, f"价格记录 {idx}/{total}")
         self.result.stats["price_records"] = imported
 
     def _import_images(self, collection):

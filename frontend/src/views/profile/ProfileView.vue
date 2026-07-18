@@ -501,7 +501,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
@@ -573,22 +572,33 @@ const changePasswordErrors = reactive({
 const doExport = async () => {
   exporting.value = true
   try {
-    // 注意：api 客户端的响应拦截器对所有响应统一返回 response.data（见 frontend/src/api/client.ts），
-    // 这会剥离外层 AxiosResponse，导致 blob 请求无法拿到 response.headers/content-disposition。
-    // 因此此处直接使用原生 axios，手动附加 Authorization，以保留完整 AxiosResponse。
     const token = localStorage.getItem('access_token')
     const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
-    const response = await axios.get(`${baseURL}/export/data`, {
-      params: { scope: exportScope.value },
-      responseType: 'blob',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    // 从响应头取文件名
-    const disposition = response.headers?.['content-disposition'] || ''
+    // dev 下绕过 Vite proxy 直连后端：①proxy 对带 Accept-Encoding 的大响应流式吞字节；
+    // ②axios/XHR 的 responseType:'blob' 让浏览器内部累积 ~100MB blob 会失败（net::ERR_FAILED）。
+    // 故改用 fetch + getReader 流式读（JS 主动消费，绕开浏览器内部 blob 累积失败）+ 手动 new Blob。
+    // 生产同源 Nginx 反代无吞字节问题，directHost 为空串走同源。
+    const directHost = import.meta.env.DEV
+      ? (import.meta.env.VITE_DEV_BACKEND_URL || 'http://localhost:8000')
+      : ''
+    const resp = await fetch(
+      `${directHost}${baseURL}/export/data?scope=${encodeURIComponent(exportScope.value)}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    )
+    if (!resp.ok || !resp.body) {
+      throw new Error(`导出失败：HTTP ${resp.status}`)
+    }
+    const reader = resp.body.getReader()
+    const chunks: Uint8Array[] = []
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) chunks.push(value)
+    }
+    const disposition = resp.headers.get('content-disposition') || ''
     const match = disposition.match(/filename="?([^"]+)"?/)
     const filename = match?.[1] || `export_${Date.now()}.zip`
-    // 触发下载
-    const blob = new Blob([response.data], { type: 'application/zip' })
+    const blob = new Blob(chunks, { type: 'application/zip' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

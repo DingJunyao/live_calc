@@ -84,6 +84,15 @@ class Importer:
         self.db = db
         self.user_id = user_id
 
-    def import_all(self, collection: FileCollection) -> ImportResult:
-        """将文件集合中的数据导入数据库。"""
+    def import_all(
+        self,
+        collection: FileCollection,
+        progress_callback: Optional[Callable] = None,
+    ) -> ImportResult:
+        """将文件集合中的数据导入数据库。
+
+        progress_callback(stage, current, total, message="") 可选，用于回报
+        导入进度。子类应在阶段边界与长循环中调用它，否则前端只能看到转圈、
+        感知不到进度（大包导入可能持续数十秒到几分钟）。
+        """
         raise NotImplementedError

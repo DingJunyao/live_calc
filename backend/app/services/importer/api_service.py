@@ -76,6 +76,12 @@ def _run_import_task(task_id: int, import_func, *args):
         if not task:
             return
         task.status = "running"
+        task.progress = {
+            "stage": "初始化",
+            "current": 0,
+            "total": 0,
+            "message": "正在准备导入…",
+        }
         db.commit()
 
         progress_callback = make_progress_callback(task_id)
@@ -159,7 +165,7 @@ def import_from_local_dir(db: Session, local_path: str,
     else:
         raise ValueError(f"无法识别的数据格式: {fmt}")
 
-    return importer.import_all(collection)
+    return importer.import_all(collection, progress_callback=progress_callback)
 
 
 def import_from_upload(db: Session, file: UploadFile,
@@ -188,7 +194,7 @@ def import_from_upload(db: Session, file: UploadFile,
         else:
             raise ValueError("无法识别的数据格式，支持 HowToCook_json 和系统导出格式")
 
-        result = importer.import_all(collection)
+        result = importer.import_all(collection, progress_callback=progress_callback)
         return result
     finally:
         if collection:

@@ -51,23 +51,31 @@ class HowToCookImporter(Importer):
         self.result = ImportResult()
         self.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-    def import_all(self, collection: FileCollection) -> ImportResult:
+    def import_all(
+        self,
+        collection: FileCollection,
+        progress_callback=None,
+    ) -> ImportResult:
         self.result = ImportResult()
+        # 兜底成空操作，子方法可直接调用 cb(...) 而不必每次判空
+        cb = progress_callback or (lambda *a, **k: None)
 
         logger.info("开始 HowToCook 数据导入...")
 
         # 1. 导入单位
+        cb("导入单位", 0, 0, "正在导入单位…")
         self._import_units(collection)
 
         # 2. 导入原料
-        self._import_ingredients(collection)
+        self._import_ingredients(collection, cb)
 
         # 3. 导入菜谱
-        self._import_recipes(collection)
+        self._import_recipes(collection, cb)
 
         self.db.commit()
 
         # 4. 导入营养数据（独立提交，失败不回滚已导入的原料/菜谱）
+        cb("导入营养数据", 0, 0, "正在导入营养数据…")
         self._import_nutrition(collection)
 
         logger.info("导入完成: %s", self.result.stats)
@@ -102,11 +110,13 @@ class HowToCookImporter(Importer):
         self.result.stats["units"] = imported
         logger.info("单位导入完成: %d 个新单位", imported)
 
-    def _import_ingredients(self, collection: FileCollection):
+    def _import_ingredients(self, collection: FileCollection, cb=None):
         ing_file = collection.find_one("ingredients.json")
         if not ing_file:
             logger.info("ingredients.json 不存在，跳过原料导入")
             return
+
+        cb = cb or (lambda *a, **k: None)
 
         with open(ing_file.absolute_path, "r", encoding="utf-8") as f:
             ingredients_data = json.load(f)
@@ -160,17 +170,20 @@ class HowToCookImporter(Importer):
 
             if idx % 100 == 0:
                 logger.info("  原料进度: %d/%d (已导入 %d)", idx, total, imported)
+                cb("导入原料", idx, total, f"原料 {idx}/{total}")
 
         self.result.stats["ingredients"] = imported
         logger.info("原料导入完成: %d 个新原料", imported)
 
-    def _import_recipes(self, collection: FileCollection):
+    def _import_recipes(self, collection: FileCollection, cb=None):
         recipe_files = [f for f in collection.files
                         if f.name.endswith(".json")
                         and f.name not in NON_RECIPE_FILES]
 
         total = len(recipe_files)
         logger.info("导入菜谱: 共 %d 个文件", total)
+        cb = cb or (lambda *a, **k: None)
+        cb("导入菜谱", 0, total, f"菜谱 0/{total}" if total else "正在导入菜谱…")
         imported = 0
         for idx, rf in enumerate(recipe_files, 1):
             try:
@@ -228,6 +241,7 @@ class HowToCookImporter(Importer):
 
             if idx % 50 == 0:
                 logger.info("  菜谱进度: %d/%d (已导入 %d)", idx, total, imported)
+                cb("导入菜谱", idx, total, f"菜谱 {idx}/{total}")
 
         self.result.stats["recipes"] = imported
         logger.info("菜谱导入完成: %d 个新菜谱", imported)

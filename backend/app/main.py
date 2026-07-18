@@ -563,6 +563,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],  # dev 跨域直连后端下载时，前端读文件名用
 )
 
 # 注册路由
