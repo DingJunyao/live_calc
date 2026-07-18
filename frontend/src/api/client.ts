@@ -60,24 +60,29 @@ api.interceptors.response.use(
   async (error) => {
     // 401 处理: Token 过期，尝试刷新
     if (error.response?.status === 401) {
-      const refreshToken = localStorage.getItem('refresh_token')
-      if (refreshToken) {
-        try {
-          const response = await axios.post('/api/v1/auth/refresh', {
-            refresh_token: refreshToken,
-          })
-          localStorage.setItem('access_token', response.data.access_token)
-          // 重试原请求
-          error.config.headers.Authorization = `Bearer ${response.data.access_token}`
-          return api.request(error.config)
-        } catch {
-          // 刷新失败，清除 token
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
+      // 登录请求的 401 = 凭证错误，不刷新 token、不跳登录页（用户本就在登录页），
+      // 交给调用方 Login.vue 的 catch 显示错误；否则整页刷新会冲掉刚设的错误提示
+      const isLoginRequest = error.config?.url?.includes('/auth/login')
+      if (!isLoginRequest) {
+        const refreshToken = localStorage.getItem('refresh_token')
+        if (refreshToken) {
+          try {
+            const response = await axios.post('/api/v1/auth/refresh', {
+              refresh_token: refreshToken,
+            })
+            localStorage.setItem('access_token', response.data.access_token)
+            // 重试原请求
+            error.config.headers.Authorization = `Bearer ${response.data.access_token}`
+            return api.request(error.config)
+          } catch {
+            // 刷新失败，清除 token
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('refresh_token')
+            window.location.href = '/login'
+          }
+        } else {
           window.location.href = '/login'
         }
-      } else {
-        window.location.href = '/login'
       }
     }
 

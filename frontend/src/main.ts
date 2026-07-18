@@ -34,3 +34,18 @@ app.use(router)
 app.use(vuetify)
 
 app.mount('#app')
+
+// 兜底：站内 <a href="/..."> 点击统一交给 Vue Router 客户端导航（preventDefault + router.push）。
+// 防止 <a> 默认文档导航在 PWA standalone 下被浏览器甩到外部窗口——
+// Vuetify v-list-item 等组件在某些环境下只调 router.push、漏了 preventDefault，
+// 普通浏览器 tab 里默认导航在当前页无感，PWA standalone 才会被甩到外部浏览器。
+document.addEventListener('click', (e) => {
+  const a = (e.target as HTMLElement | null)?.closest('a')
+  if (!a) return
+  const href = a.getAttribute('href')
+  if (!href || a.target === '_blank') return
+  // 仅站内绝对路径（/xxx），排除外部 URL、协议链接、锚点
+  if (!href.startsWith('/') || href.startsWith('//')) return
+  e.preventDefault()
+  router.push(href)
+}, false)
