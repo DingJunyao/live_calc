@@ -214,6 +214,35 @@ def trigger_ai_match(
     )
 
 
+@blacklist_group_admin_router.get("/blacklist-groups/allergens-status")
+@blacklist_group_admin_router.get("/blacklist-groups/allergens-status/")
+def get_allergens_status(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """管理员：获取过敏原分组导入状态（决定「快速导入」按钮显隐）"""
+    from app.services.allergen_seed import need_allergen_seed
+    return need_allergen_seed(db)
+
+
+@blacklist_group_admin_router.post("/blacklist-groups/seed-allergens")
+@blacklist_group_admin_router.post("/blacklist-groups/seed-allergens/")
+def seed_allergens(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """管理员：一键导入/补全 GB 7718-2025 的 13 类过敏原分组（upsert 幂等）"""
+    from app.services.allergen_seed import upsert_allergen_groups
+    result = upsert_allergen_groups(db)
+    return {
+        "message": (
+            f"导入完成：新建 {result['created']} 个分组，"
+            f"复活 {result['reactivated']} 个分组，映射 {result['mapped']} 条原料"
+        ),
+        "stats": result,
+    }
+
+
 # ---- 公开只读端点 ----
 
 @blacklist_group_public_router.get("/blacklist-groups", response_model=List[BlacklistGroupPublicResponse])

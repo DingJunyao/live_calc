@@ -244,6 +244,15 @@ async def lifespan(app: FastAPI):
                     result = import_from_git_repo(db, user_id=0)
                     logger.info(f"远程数据导入结果: {result.stats}")
 
+            # 确保过敏原黑名单分组存在（仅在启动导入时执行，跟在菜谱/原料导入之后；
+            # 空表才创建，幂等，失败不阻断启动。FIRST_RUN_INIT_RECIPES=false 时整个 else
+            # 跳过，不建空壳分组——如需导入由管理页「快速导入过敏原」按钮触发）
+            try:
+                from app.services.allergen_seed import ensure_allergen_groups
+                ensure_allergen_groups(db)
+            except Exception as e:
+                logger.warning(f"过敏原分组初始化失败: {e}")
+
         # 检查是否需要为现有原料批量创建商品
         from app.models.nutrition import Ingredient
         from app.models.product_entity import Product
@@ -284,13 +293,6 @@ async def lifespan(app: FastAPI):
             logger.info(f"批量创建商品完成：共创建 {created_count} 个商品")
         elif product_count > 0:
             logger.info(f"商品已存在，跳过批量创建（原料: {ingredient_count}, 商品: {product_count}）")
-
-        # 确保过敏原黑名单分组存在（空表才创建，幂等，失败不阻断启动）
-        try:
-            from app.services.allergen_seed import ensure_allergen_groups
-            ensure_allergen_groups(db)
-        except Exception as e:
-            logger.warning(f"过敏原分组初始化失败: {e}")
 
         # 确保默认邮件模板存在（按 key 幂等补齐缺失项，不覆盖管理员已编辑模板，失败不阻断启动）
         try:

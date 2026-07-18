@@ -10,6 +10,36 @@
     </v-app-bar>
 
     <v-container style="max-width: 960px">
+      <!-- 快速导入过敏原提示（仅在未完整导入时显示） -->
+      <v-alert
+        v-if="allergenStatus.needed"
+        type="info"
+        variant="tonal"
+        class="mb-4"
+        closable
+      >
+        <div class="text-body-2 mb-2">
+          检测到系统尚未完整导入 GB 7718-2025 的 13 类过敏原分组
+          <span v-if="allergenStatus.missing_groups.length">
+            （缺失 {{ allergenStatus.missing_groups.length }} 个）
+          </span>
+          <span v-if="allergenStatus.empty_groups.length">
+            （{{ allergenStatus.empty_groups.length }} 个分组无原料映射）
+          </span>
+          ，可一键补全。
+        </div>
+        <v-btn
+          color="primary"
+          variant="tonal"
+          size="small"
+          :loading="seedingAllergens"
+          @click="seedAllergens"
+        >
+          <v-icon start>mdi-shield-sync</v-icon>
+          快速导入过敏原分组
+        </v-btn>
+      </v-alert>
+
       <v-card v-for="group in groups" :key="group.id" class="mb-4" elevation="0">
         <v-card-title class="d-flex align-center">
           <v-icon icon="mdi-shield-alert" class="mr-2" />
@@ -156,7 +186,25 @@ interface BlacklistGroup {
   ingredient_count: number
 }
 
+interface AllergenStatus {
+  needed: boolean
+  total: number
+  existing: number
+  with_mappings: number
+  missing_groups: string[]
+  empty_groups: string[]
+}
+
 const groups = ref<BlacklistGroup[]>([])
+const allergenStatus = ref<AllergenStatus>({
+  needed: false,
+  total: 13,
+  existing: 0,
+  with_mappings: 0,
+  missing_groups: [],
+  empty_groups: [],
+})
+const seedingAllergens = ref(false)
 const loading = ref(false)
 const aiMatchingGroups = ref(new Set<number>())
 const snackbar = ref({ show: false, message: '', color: 'error' })
@@ -341,5 +389,29 @@ async function triggerAiMatch(group: BlacklistGroup) {
   }
 }
 
-onMounted(loadGroups)
+async function loadAllergenStatus() {
+  try {
+    const data = await api.get('/admin/blacklist-groups/allergens-status')
+    allergenStatus.value = data
+  } catch (e) {
+    console.error('加载过敏原导入状态失败', e)
+  }
+}
+
+async function seedAllergens() {
+  seedingAllergens.value = true
+  try {
+    const data = await api.post('/admin/blacklist-groups/seed-allergens')
+    showInfo(data.message)
+    await Promise.all([loadGroups(), loadAllergenStatus()])
+  } catch (e: any) {
+    showError('导入失败：' + (e?.userMessage || e?.message || '未知错误'))
+  } finally {
+    seedingAllergens.value = false
+  }
+}
+
+onMounted(() => {
+  Promise.all([loadGroups(), loadAllergenStatus()])
+})
 </script>

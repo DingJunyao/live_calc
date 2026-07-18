@@ -223,3 +223,118 @@ def ensure_allergen_groups(db: Session) -> None:
         "过敏原分组初始化完成：%s 组，%s 条映射，未匹配 %s 条",
         created, mappings, len(not_found),
     )
+
+
+def upsert_allergen_groups(db: Session) -> dict:
+    """Upsert 过敏原分组及原料映射（幂等，支持补齐）。
+
+    供管理页「快速导入过敏原」按钮调用。与 ``ensure_allergen_groups``（启动时
+    空表才建的保守语义）互补——本函数主动补齐缺失/复活软删：
+    - 分组按 name 查含软删（避免撞 name unique）：不存在则建；存在且软删则复活
+      （**不改 display_order**，尊重管理员排序调整）。
+    - 原料映射按 (group_id, ingredient_id) 查含软删：软删则复活，不存在才建。
+    返回 ``{created, reactivated, mapped, not_found}``。
+    """
+    # name → id 查找表（含别名），复用 _create_groups 的构建方式
+    all_ings = db.query(Ingredient).filter(Ingredient.is_active == True).all()
+    name_to_id = {}
+    for ing in all_ings:
+        name_to_id.setdefault(ing.name, ing.id)
+        if ing.aliases:
+            for alias in (ing.aliases if isinstance(ing.aliases, list) else []):
+                if alias and alias not in name_to_id:
+                    name_to_id[alias] = ing.id
+
+    created = 0
+    reactivated = 0
+    mapped = 0
+    not_found = []
+
+    for group_data in ALLERGEN_GROUPS:
+        group_name = group_data["name"]
+        group = db.query(BlacklistGroup).filter(BlacklistGroup.name == group_name).first()
+        if not group:
+            group = BlacklistGroup(
+                name=group_name,
+                display_order=group_data["display_order"],
+                is_active=True,
+            )
+            db.add(group)
+            db.flush()
+            created += 1
+        elif not group.is_active:
+            # 软删分组复活（不改 display_order，尊重管理员排序调整）
+            group.is_active = True
+            reactivated += 1
+
+        # 原料映射：name 匹配 → (group, ingredient) 查含软删 → 复活 or 新建
+        found_ids = []
+        for ing_name in group_data.get("ingredient_names", []):
+            ing_id = name_to_id.get(ing_name)
+            if ing_id:
+                found_ids.append(ing_id)
+            else:
+                not_found.append(f"[{group_name}] 未找到: {ing_name}")
+        for ing_id in set(found_ids):
+            existing = db.query(BlacklistGroupIngredient).filter(
+                BlacklistGroupIngredient.group_id == group.id,
+                BlacklistGroupIngredient.ingredient_id == ing_id,
+            ).first()
+            if existing:
+                if not existing.is_active:
+                    existing.is_active = True
+                    mapped += 1
+            else:
+                db.add(BlacklistGroupIngredient(
+                    group_id=group.id,
+                    ingredient_id=ing_id,
+                    is_ai_matched=False,
+                    is_active=True,
+                ))
+                mapped += 1
+
+    db.commit()
+    logger.info(
+        "过敏原分组 upsert 完成：新建 %s 组，复活 %s 组，映射 %s 条，未匹配 %s 条",
+        created, reactivated, mapped, len(not_found),
+    )
+    return {"created": created, "reactivated": reactivated, "mapped": mapped, "not_found": not_found}
+
+
+def need_allergen_seed(db: Session) -> dict:
+    """判断是否需要导入过敏原分组（供管理页按钮显隐）。
+
+    以 ``is_active=True`` 的标准分组为准（软删算缺失）；任一缺失或映射数为 0
+    → ``needed=True``。返回
+    ``{needed, total, existing, with_mappings, missing_groups, empty_groups}``。
+    """
+    standard_names = [g["name"] for g in ALLERGEN_GROUPS]
+    standard_set = set(standard_names)
+
+    active_groups = db.query(BlacklistGroup).filter(
+        BlacklistGroup.name.in_(standard_names),
+        BlacklistGroup.is_active == True,
+    ).all()
+    active_names = {g.name for g in active_groups}
+    missing_groups = sorted(standard_set - active_names)
+
+    empty_groups = []
+    with_mappings = 0
+    for g in active_groups:
+        cnt = db.query(BlacklistGroupIngredient).filter(
+            BlacklistGroupIngredient.group_id == g.id,
+            BlacklistGroupIngredient.is_active == True,
+        ).count()
+        if cnt == 0:
+            empty_groups.append(g.name)
+        else:
+            with_mappings += 1
+
+    return {
+        "needed": bool(missing_groups) or bool(empty_groups),
+        "total": len(ALLERGEN_GROUPS),
+        "existing": len(active_groups),
+        "with_mappings": with_mappings,
+        "missing_groups": missing_groups,
+        "empty_groups": sorted(empty_groups),
+    }
