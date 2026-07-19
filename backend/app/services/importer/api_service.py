@@ -101,7 +101,10 @@ def _run_import_task(task_id: int, import_func, *args):
             )
             task.status = "failed" if has_errors else "success"
             task.progress = {"stage": "完成", "current": 1, "total": 1, "message": "导入完成"}
-            task.stats = result.stats if hasattr(result, 'stats') else {}
+            stats = dict(result.stats) if hasattr(result, 'stats') else {}
+            if hasattr(result, 'skipped') and result.skipped:
+                stats["skipped"] = result.skipped
+            task.stats = stats
             task.error = "\n".join(result.errors) if has_errors else None
             db.commit()
     except Exception as e:
@@ -129,7 +132,7 @@ def import_from_git_repo(db: Session, user_id: int,
     if fmt == FormatType.HOWTOCOOK_JSON:
         importer = HowToCookImporter(db, user_id=user_id)
     elif fmt == FormatType.EXPORT:
-        importer = ExportImporter(db, user_id=user_id)
+        importer = ExportImporter(db, user_id=user_id, is_admin=True)
     else:
         raise ValueError(f"无法识别的数据格式: {fmt}")
 
@@ -161,7 +164,7 @@ def import_from_local_dir(db: Session, local_path: str,
     if fmt == FormatType.HOWTOCOOK_JSON:
         importer = HowToCookImporter(db, user_id=user_id)
     elif fmt == FormatType.EXPORT:
-        importer = ExportImporter(db, user_id=user_id)
+        importer = ExportImporter(db, user_id=user_id, is_admin=True)
     else:
         raise ValueError(f"无法识别的数据格式: {fmt}")
 
@@ -190,7 +193,7 @@ def import_from_upload(db: Session, file: UploadFile,
         if fmt == FormatType.HOWTOCOOK_JSON:
             importer = HowToCookImporter(db, user_id=user_id)
         elif fmt == FormatType.EXPORT:
-            importer = ExportImporter(db, user_id=user_id)
+            importer = ExportImporter(db, user_id=user_id, is_admin=is_admin)
         else:
             raise ValueError("无法识别的数据格式，支持 HowToCook_json 和系统导出格式")
 
@@ -219,7 +222,7 @@ def import_from_upload_path(db: Session, file_path: str, user_id: int,
     if fmt == FormatType.HOWTOCOOK_JSON:
         importer = HowToCookImporter(db, user_id=user_id)
     elif fmt == FormatType.EXPORT:
-        importer = ExportImporter(db, user_id=user_id)
+        importer = ExportImporter(db, user_id=user_id, is_admin=is_admin)
     else:
         raise ValueError("无法识别的数据格式")
 

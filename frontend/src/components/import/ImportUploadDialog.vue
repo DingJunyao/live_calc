@@ -11,9 +11,15 @@
                  variant="tonal" class="mb-4" closable>
           <div v-if="result.success">
             导入完成：
-            <span v-for="(v, k) in result.stats" :key="k" class="mr-2">
+            <span v-for="(v, k) in displayStats" :key="k" class="mr-2">
               {{ k }}={{ v }}
             </span>
+            <div v-if="skippedItems.length" class="mt-2">
+              <div class="text-caption text-medium-emphasis">已跳过（权限或隐私限制）：</div>
+              <div v-for="item in skippedItems" :key="item.key" class="text-caption">
+                · {{ skippedLabel[item.key] || item.key }}：{{ item.count }} 条
+              </div>
+            </div>
           </div>
           <div v-else>{{ result.errors?.join('; ') }}</div>
           <div v-if="result.warnings?.length" class="mt-1">
@@ -82,6 +88,32 @@ const currentTask = computed<ImportTask | undefined>(() => {
   if (!currentTaskId.value) return undefined
   return tasks.value.find((t) => t.id === currentTaskId.value)
 })
+
+// 导入统计（排除 skipped 子表，skipped 单独展示）
+const displayStats = computed<Record<string, any>>(() => {
+  const s = result.value?.stats || {}
+  const rest: Record<string, any> = {}
+  for (const [k, v] of Object.entries(s)) {
+    if (k !== 'skipped') rest[k] = v
+  }
+  return rest
+})
+
+const skippedItems = computed<{ key: string; count: number }[]>(() => {
+  const skipped = result.value?.stats?.skipped
+  if (!skipped || typeof skipped !== 'object') return []
+  return Object.entries(skipped).map(([key, count]) => ({ key, count: count as number }))
+})
+
+const skippedLabel: Record<string, string> = {
+  blacklist_groups: '管理员专属·黑名单分组',
+  unit_conversions: '管理员专属·单位换算',
+  product_barcodes: '管理员专属·商品条码',
+  user_places: '他人隐私·常用地点',
+  price_records: '他人隐私·价格记录',
+  user_ingredient_blacklist: '他人隐私·个人黑名单',
+  blacklist_group_subscriptions: '他人隐私·分组订阅',
+}
 
 // 监听任务状态变化，终态时展示结果
 watch(

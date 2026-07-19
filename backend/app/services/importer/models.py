@@ -76,13 +76,15 @@ class ImportResult:
     stats: dict[str, int] = field(default_factory=dict)   # {"recipes": 5, "ingredients": 3, ...}
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    skipped: dict[str, int] = field(default_factory=dict)  # 按桶/原因计数，如 {"blacklist_groups": 3}
 
 
 class Importer:
     """导入器基类。"""
-    def __init__(self, db, user_id: int):
+    def __init__(self, db, user_id: int, is_admin: bool = False):
         self.db = db
         self.user_id = user_id
+        self.is_admin = is_admin
 
     def import_all(
         self,

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.models.entity_density import EntityDensity
+from app.models.entity_unit_override import EntityUnitOverride
 from app.models.ingredient_category import IngredientCategory
 from app.models.ingredient_hierarchy import IngredientHierarchy
 from app.models.blacklist_group import BlacklistGroup, BlacklistGroupIngredient
@@ -24,6 +25,7 @@ from app.models.recipe import Recipe, RecipeIngredient
 from app.models.unit import UnitConversion
 from app.services.importer.models import Importer, ImportResult, FileCollection
 from app.services.unit_matcher import UnitMatcher
+from app.utils.database_helpers import serialize_tags
 
 
 class ReferenceMapping:
@@ -43,11 +45,12 @@ class ExportImporter(Importer):
 
     IMAGES_DIR = Path(__file__).parent.parent.parent.parent.parent / "static" / "images" / "recipes"
 
-    def __init__(self, db, user_id: int):
-        super().__init__(db, user_id)
+    def __init__(self, db, user_id: int, is_admin: bool = False):
+        super().__init__(db, user_id, is_admin=is_admin)
         self.unit_matcher = UnitMatcher(db)
         self.mapping = ReferenceMapping()
         self.result = ImportResult()
+        self.scope = "full"  # import_all 里从 manifest 覆盖（见 Task 2）
         self.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
     def import_all(
@@ -56,6 +59,8 @@ class ExportImporter(Importer):
         progress_callback=None,
     ) -> ImportResult:
         self.result = ImportResult()
+        manifest = self._load_json(collection, "manifest.json")
+        self.scope = manifest.get("scope", "full") if isinstance(manifest, dict) else "full"
         # 兜底成空操作，子方法可直接调用 cb(...) 而不必每次判空
         cb = progress_callback or (lambda *a, **k: None)
 
@@ -69,6 +74,8 @@ class ExportImporter(Importer):
             self._import_ingredients(collection, cb)
             cb("导入实体密度", 0, 0, "正在导入实体密度…")
             self._import_entity_densities(collection)
+            cb("导入实体单位覆盖", 0, 0, "正在导入实体单位覆盖…")
+            self._import_entity_unit_overrides(collection)
             cb("导入营养数据", 0, 0, "正在导入营养数据…")
             self._import_nutritions(collection)
             cb("导入原料层级", 0, 0, "正在导入原料层级…")
@@ -100,6 +107,10 @@ class ExportImporter(Importer):
             self.result.errors.append(f"导入过程出错: {str(e)}")
 
         return self.result
+
+    def _skip(self, key: str, count: int = 1):
+        """累加跳过统计（权限或隐私原因）。"""
+        self.result.skipped[key] = self.result.skipped.get(key, 0) + count
 
     def _load_json(self, collection: FileCollection, filename: str):
         """从文件集合中加载 JSON 文件。"""
@@ -148,6 +159,9 @@ class ExportImporter(Importer):
     def _import_unit_conversions(self, collection):
         data = self._load_json(collection, "unit_conversions.json")
         if not data:
+            return
+        if not self.is_admin:
+            self._skip("unit_conversions", len(data) if isinstance(data, list) else 0)
             return
         imported = 0
         for item in data:
@@ -289,6 +303,51 @@ class ExportImporter(Importer):
             imported += 1
         self.result.stats["entity_densities"] = imported
 
+    def _import_entity_unit_overrides(self, collection):
+        """导入实体单位覆盖（按 entity_type+entity_id+unit_name+is_active 去重）。"""
+        data = self._load_json(collection, "entity_unit_overrides.json")
+        if not data:
+            return
+        imported = 0
+        for item in data:
+            entity_type = item.get("entity_type", "")
+            old_entity_id = item.get("entity_id")
+            if not entity_type or not old_entity_id:
+                continue
+            if entity_type == "ingredient":
+                new_entity_id = self.mapping.ingredients.get(old_entity_id)
+            elif entity_type == "product":
+                new_entity_id = self.mapping.products.get(old_entity_id)
+            else:
+                continue
+            if not new_entity_id:
+                continue
+            unit_name = item.get("unit_name", "").strip()
+            if not unit_name:
+                continue
+            existing = self.db.query(EntityUnitOverride).filter(
+                EntityUnitOverride.entity_type == entity_type,
+                EntityUnitOverride.entity_id == new_entity_id,
+                EntityUnitOverride.unit_name == unit_name,
+                EntityUnitOverride.is_active.is_(True),
+            ).first()
+            if existing:
+                continue
+            self.db.add(EntityUnitOverride(
+                entity_type=entity_type,
+                entity_id=new_entity_id,
+                unit_name=unit_name,
+                base_unit_id=self.mapping.units.get(item.get("base_unit_id")),
+                conversion_factor=item.get("conversion_factor"),
+                weight_per_unit=item.get("weight_per_unit"),
+                weight_unit_id=self.mapping.units.get(item.get("weight_unit_id")),
+                is_default=item.get("is_default", False),
+                source=item.get("source", "import"),
+                is_active=True,
+            ))
+            imported += 1
+        self.result.stats["entity_unit_overrides"] = imported
+
     def _import_nutritions(self, collection):
         data = self._load_json(collection, "nutritions.json")
         if not data:
@@ -309,7 +368,7 @@ class ExportImporter(Importer):
                 ingredient_id=new_ing_id,
                 nutrients=item.get("raw_nutrients") or item.get("nutrients", {}),
                 source=item.get("source", "import"),
-                is_verified=item.get("is_verified", False),
+                is_verified=item.get("is_verified", False) and self.is_admin,
             ))
             imported += 1
         self.result.stats["nutritions"] = imported
@@ -359,10 +418,15 @@ class ExportImporter(Importer):
                     self.mapping.recipes[old_id] = existing.id
                 continue
 
+            # is_public：管理员任意；普通用户 full→强制私有，mine→恢复原值
+            if self.is_admin:
+                recipe_is_public = data.get("is_public", True)
+            else:
+                recipe_is_public = data.get("is_public", False) if self.scope == "mine" else False
             recipe = Recipe(
                 name=name,
                 source="import",
-                is_public=True,  # 导入菜谱默认公共
+                is_public=recipe_is_public,
                 category=data.get("category"),
                 user_id=self.user_id,
                 tags=data.get("tags", []),
@@ -446,12 +510,25 @@ class ExportImporter(Importer):
                 if old_id:
                     self.mapping.products[old_id] = existing.id
                 continue
+            custom_nut = item.get("custom_nutrition_data")
+            # tags 在 DB 是 JSON 字符串列（对齐 API 的 serialize_tags）；
+            # 包里若是字符串直接用，若是 list 则序列化，避免 list 绑 String 列崩
+            raw_tags = item.get("tags", [])
+            tags_val = raw_tags if isinstance(raw_tags, str) else serialize_tags(raw_tags)
             product = Product(
                 name=name,
                 ingredient_id=ing_id,
                 brand=item.get("brand"),
+                barcode=item.get("barcode"),
+                image_url=item.get("image_url"),
                 aliases=item.get("aliases", []),
-                tags=item.get("tags", []),
+                tags=tags_val,
+                custom_nutrition_data=custom_nut,
+                # 普通用户带自定义营养时 source 标 import（与 NutritionData 降级口径一致）
+                custom_nutrition_source=(
+                    "import" if (custom_nut and not self.is_admin)
+                    else item.get("custom_nutrition_source", "custom")
+                ),
                 is_active=True,
                 created_by=self.user_id,
                 updated_by=self.user_id,
@@ -469,6 +546,9 @@ class ExportImporter(Importer):
     def _import_product_barcodes(self, collection):
         data = self._load_json(collection, "product_barcodes.json")
         if not data:
+            return
+        if not self.is_admin:
+            self._skip("product_barcodes", len(data) if isinstance(data, list) else 0)
             return
         imported = 0
         for item in data:
@@ -557,6 +637,9 @@ class ExportImporter(Importer):
         data = self._load_json(collection, "user_places.json")
         if not data:
             return
+        if not self.is_admin and self.scope == "full":
+            self._skip("user_places", len(data) if isinstance(data, list) else 0)
+            return
         imported = 0
         for item in data:
             name = item.get("name", "").strip()
@@ -594,6 +677,9 @@ class ExportImporter(Importer):
         """
         data = self._load_json(collection, "blacklist_groups.json")
         if not data:
+            return
+        if not self.is_admin:
+            self._skip("blacklist_groups", len(data) if isinstance(data, list) else 0)
             return
         imported_groups = 0
         imported_mappings = 0
@@ -661,6 +747,9 @@ class ExportImporter(Importer):
         data = self._load_json(collection, "user_ingredient_blacklist.json")
         if not data:
             return
+        if not self.is_admin and self.scope == "full":
+            self._skip("user_ingredient_blacklist", len(data) if isinstance(data, list) else 0)
+            return
         imported = 0
         for item in data:
             old_ing_id = item.get("ingredient_id")
@@ -702,6 +791,9 @@ class ExportImporter(Importer):
         """导入当前用户的黑名单分组订阅。按 (user_id, group_id) 去重，命中软删则复活。"""
         data = self._load_json(collection, "blacklist_group_subscriptions.json")
         if not data:
+            return
+        if not self.is_admin and self.scope == "full":
+            self._skip("blacklist_group_subscriptions", len(data) if isinstance(data, list) else 0)
             return
         imported = 0
         for item in data:
@@ -768,6 +860,7 @@ class ExportImporter(Importer):
         if not data:
             return
         imported = 0
+        skipped_dup = 0
         total = len(data) if isinstance(data, list) else 0
         cb("导入价格记录", 0, total, f"价格记录 0/{total}" if total else "正在导入价格记录…")
         for idx, item in enumerate(data, 1):
@@ -783,26 +876,66 @@ class ExportImporter(Importer):
             new_orig_unit_id = self.mapping.units.get(old_orig_unit) if old_orig_unit else None
             new_std_unit_id = self.mapping.units.get(old_std_unit) if old_std_unit else None
 
+            # 非自己的购买记录不计支出 → 降为价格参考
+            original_user_id = item.get("user_id")
+            is_own = original_user_id is None or original_user_id == self.user_id
+            record_type = item.get("record_type", "price")
+            if not is_own and record_type == "purchase":
+                record_type = "price"
+
+            price_val = item.get("price", 0)
+            currency_val = item.get("currency", "CNY")
+            orig_qty = item.get("original_quantity", 1)
+            std_qty = item.get("standard_quantity", 1)
+            recorded_at = self._parse_iso_datetime(item.get("recorded_at"))
+            notes_val = item.get("notes")
+            product_name_val = item.get("product_name", "")
+
+            # 查重：除 id/审计字段外业务字段全相同则跳过（nullable 字段用 is_(None)）
+            filters = [
+                ProductRecord.user_id == self.user_id,
+                ProductRecord.product_id == new_prod_id,
+                ProductRecord.price == price_val,
+                ProductRecord.currency == currency_val,
+                ProductRecord.original_quantity == orig_qty,
+                ProductRecord.standard_quantity == std_qty,
+                ProductRecord.record_type == record_type,
+                ProductRecord.product_name == product_name_val,
+                ProductRecord.merchant_id.is_(None) if new_mer_id is None else ProductRecord.merchant_id == new_mer_id,
+                ProductRecord.original_unit_id.is_(None) if new_orig_unit_id is None else ProductRecord.original_unit_id == new_orig_unit_id,
+                ProductRecord.standard_unit_id.is_(None) if new_std_unit_id is None else ProductRecord.standard_unit_id == new_std_unit_id,
+                ProductRecord.notes.is_(None) if notes_val is None else ProductRecord.notes == notes_val,
+            ]
+            # recorded_at：包里有值才比（缺失时 server_default=now() 不可预测，不参与查重）
+            if recorded_at is not None:
+                filters.append(ProductRecord.recorded_at == recorded_at)
+            if self.db.query(ProductRecord).filter(*filters).first():
+                skipped_dup += 1
+                continue
+
             rec = ProductRecord(
                 user_id=self.user_id,
                 product_id=new_prod_id,
-                product_name=item.get("product_name", ""),
+                product_name=product_name_val,
                 merchant_id=new_mer_id,
-                price=item.get("price", 0),
-                currency=item.get("currency", "CNY"),
-                original_quantity=item.get("original_quantity", 1),
+                price=price_val,
+                currency=currency_val,
+                original_quantity=orig_qty,
                 original_unit_id=new_orig_unit_id,
-                standard_quantity=item.get("standard_quantity", 1),
+                standard_quantity=std_qty,
                 standard_unit_id=new_std_unit_id,
-                record_type=item.get("record_type", "price"),
-                recorded_at=self._parse_iso_datetime(item.get("recorded_at")),
-                notes=item.get("notes"),
+                record_type=record_type,
+                recorded_at=recorded_at,
+                notes=notes_val,
             )
             self.db.add(rec)
+            self.db.flush()
             imported += 1
             if idx % 200 == 0:
                 cb("导入价格记录", idx, total, f"价格记录 {idx}/{total}")
         self.result.stats["price_records"] = imported
+        if skipped_dup:
+            self.result.skipped["price_records_duplicate"] = skipped_dup
 
     def _import_images(self, collection):
         image_files = collection.find("images/")
