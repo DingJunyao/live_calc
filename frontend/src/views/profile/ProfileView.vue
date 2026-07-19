@@ -94,7 +94,7 @@
           </div>
         </v-list-item>
 
-        <v-list-item @click="router.push('/profile/places')">
+        <v-list-item v-if="mapEnabled" @click="router.push('/profile/places')">
           <template #prepend>
             <v-icon>mdi-map-marker-multiple</v-icon>
           </template>
@@ -509,6 +509,7 @@ import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import { useUserUnits } from '@/composables/useUserUnits'
 import { useThemeToggle } from '@/composables/useTheme'
+import { useMapConfig } from '@/composables/useMapConfig'
 import { hashPassword } from '@/utils/crypto'
 
 const { notify } = useGlobalSnackbar()
@@ -519,6 +520,7 @@ const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
 const userStore = useUserStore()
 const { themeMode } = useThemeToggle()
+const { mapEnabled, ensureLoaded } = useMapConfig()
 // 当前主题模式的中文标签
 const themeModeLabel = computed(() => {
   switch (themeMode.value) {
@@ -878,6 +880,7 @@ watch(blacklistDialog, (val) => {
 })
 
 onMounted(() => {
+  ensureLoaded()
   loadStats()
   loadBlacklistCount()
 })

@@ -1,6 +1,7 @@
 // router/index.ts
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useMapConfig } from '@/composables/useMapConfig'
 
 const SITE_NAME = '生计 - 生活成本计算器'
 
@@ -227,6 +228,15 @@ router.beforeEach(async (to, from, next) => {
     next('/')
   } else if ((to.name === 'login' || to.name === 'register') && userStore.isLoggedIn) {
     next('/')
+  } else if (to.name === 'profile-places') {
+    // 地图关闭时拦截常用地点页（数据保留，仅禁用访问）
+    const { mapEnabled, ensureLoaded } = useMapConfig()
+    await ensureLoaded()
+    if (!mapEnabled.value) {
+      next('/profile')
+    } else {
+      next()
+    }
   } else {
     next()
   }

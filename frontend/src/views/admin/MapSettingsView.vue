@@ -14,10 +14,27 @@
 
   <v-container class="pa-4">
 
+    <!-- 地图总开关 -->
+    <v-card class="rounded-lg mb-4">
+      <v-card-text class="d-flex align-center flex-wrap">
+        <v-switch
+          v-model="config.map_enabled"
+          color="primary"
+          label="启用地图功能"
+          hide-details
+          density="compact"
+        />
+        <v-icon class="ml-4">mdi-map</v-icon>
+        <div class="ml-2 text-body-2 text-medium-emphasis">
+          关闭后前端所有地图隐藏、商家经纬度改为不必填、常用地点入口隐藏。配置保留，重新启用后恢复。
+        </div>
+      </v-card-text>
+    </v-card>
+
     <v-row>
       <!-- 可用地图 -->
       <v-col cols="12" md="6">
-        <v-card class="rounded-lg h-100">
+        <v-card class="rounded-lg h-100" :class="{ 'config-disabled': !config.map_enabled }">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2">mdi-map</v-icon>
             <span>可用地图</span>
@@ -53,7 +70,7 @@
 
       <!-- API 密钥配置 -->
       <v-col cols="12" md="6">
-        <v-card class="rounded-lg h-100">
+        <v-card class="rounded-lg h-100" :class="{ 'config-disabled': !config.map_enabled }">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2">mdi-key</v-icon>
             <span>API 密钥配置</span>
@@ -159,7 +176,7 @@
 
       <!-- 地理编码配置 -->
       <v-col cols="12">
-        <v-card class="rounded-lg">
+        <v-card class="rounded-lg" :class="{ 'config-disabled': !config.map_enabled }">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2">mdi-crosshairs-gps</v-icon>
             <span>地理编码服务</span>
@@ -247,6 +264,7 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { useMapConfig } from '@/composables/useMapConfig'
 import api from '@/api/client'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
@@ -277,6 +295,7 @@ interface GeocodingConfig {
 }
 
 interface MapConfig {
+  map_enabled: boolean
   available_maps: string[]
   default_map: string
   map_api_keys: MapApiKeys
@@ -299,6 +318,7 @@ const geocodingServices = [
 ]
 
 const config = reactive<MapConfig>({
+  map_enabled: true,
   available_maps: ['amap', 'baidu', 'tencent', 'tianditu', 'osm'],
   default_map: 'amap',
   map_api_keys: {
@@ -354,6 +374,8 @@ const saveConfig = async () => {
   saving.value = true
   try {
     await api.put('/admin/map-config', config)
+    // 刷新前端地图配置单例缓存，让其他页面立即感知开关变化（无需刷新页面）
+    await useMapConfig().reload()
     showSuccess.value = true
   } catch (error) {
     console.error('保存地图配置失败:', error)
@@ -370,5 +392,10 @@ onMounted(() => {
 <style scoped>
 .h-100 {
   height: 100%;
+}
+
+.config-disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 </style>

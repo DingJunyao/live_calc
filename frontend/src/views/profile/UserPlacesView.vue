@@ -6,6 +6,10 @@
   </v-app-bar>
 
   <v-container fluid>
+    <v-alert v-if="!mapEnabled" type="info" variant="tonal" class="ma-4" icon="mdi-map-off">
+      地图功能已关闭，常用地点暂不可维护。数据已保留，重新启用地图后可继续使用。
+    </v-alert>
+
     <v-alert v-if="error" type="error" class="ma-4" closable @click:close="error = null">
       {{ error }}
     </v-alert>
@@ -34,12 +38,12 @@
                 size="small"
                 variant="text"
                 :color="item.is_default ? 'primary' : undefined"
-                :disabled="item.is_default"
+                :disabled="item.is_default || !mapEnabled"
                 :title="item.is_default ? '已是默认' : '设为默认'"
                 @click="setDefault(item)"
               />
-              <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" @click="openEditDialog(item)" />
-              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="deleteItem(item)" />
+              <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" :disabled="!mapEnabled" @click="openEditDialog(item)" />
+              <v-btn icon="mdi-delete" size="small" variant="text" color="error" :disabled="!mapEnabled" @click="deleteItem(item)" />
             </div>
           </template>
         </v-list-item>
@@ -63,6 +67,7 @@
       size="large"
       elevation="6"
       class="fab-button"
+      :disabled="!mapEnabled"
       @click="openEditDialog()"
     />
 
@@ -122,10 +127,12 @@ import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { useMapConfig } from '@/composables/useMapConfig'
 import MapPicker from '@/components/map/MapPicker.vue'
 import type { Coordinate } from '@/utils/map/mapTypes'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
+const { mapEnabled, ensureLoaded } = useMapConfig()
 const router = useRouter()
 const goBack = () => router.back()
 
@@ -251,6 +258,7 @@ const deleteItem = async (item: PlaceOption) => {
 }
 
 onMounted(() => {
+  ensureLoaded()
   loadPlaces()
 })
 </script>

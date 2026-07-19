@@ -72,8 +72,9 @@ async def get_public_map_config(
     try:
         config = db.query(MapConfiguration).first()
         if not config:
-            # 如果没有配置，返回默认配置
+            # 如果没有配置，返回默认配置（map_enabled 默认 True）
             return {
+                "map_enabled": True,
                 "available_maps": ["amap", "baidu", "tencent", "tianditu", "osm"],
                 "default_map": "amap",
                 "map_api_keys": {

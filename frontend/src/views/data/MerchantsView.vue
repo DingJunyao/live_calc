@@ -26,10 +26,175 @@
         <div class="text-body-1 mt-4">加载中...</div>
       </div>
 
-      <!-- 左边：搜索框 + 商家列表 -->
-      <div class="left-panel">
-        <div class="search-wrapper">
-          <div class="d-flex align-center ga-2">
+      <!-- A. 地图启用：左列表 + 右地图（原布局，整块包起来） -->
+      <template v-if="mapEnabled">
+        <!-- 左边：搜索框 + 商家列表 -->
+        <div class="left-panel">
+          <div class="search-wrapper">
+            <div class="d-flex align-center ga-2">
+              <v-text-field
+                v-model="search"
+                label="搜索商家..."
+                prepend-inner-icon="mdi-magnify"
+                variant="outlined"
+                density="compact"
+                hide-details
+                clearable
+                class="flex-grow-1"
+                @update:model-value="debouncedSearch"
+              />
+              <FilterBar
+                :filters="merchantFilters"
+                mobile
+                @change="onFilterChange"
+              />
+            </div>
+          </div>
+
+          <div class="list-scroll-area">
+            <v-list lines="two" class="merchant-list">
+              <v-list-item
+                v-for="item in items"
+                :key="item.id"
+                @click="selectMerchant(item)"
+                :active="selectedMerchant?.id === item.id"
+              >
+                <template #prepend>
+                  <v-avatar color="tertiary" size="40">
+                    <v-icon>mdi-store</v-icon>
+                  </v-avatar>
+                </template>
+
+                <v-list-item-title>
+                  {{ pendingName(item) }}
+                  <v-chip
+                    v-if="pendingIsOpen(item) === false"
+                    size="x-small"
+                    color="warning"
+                    variant="tonal"
+                    class="ms-2"
+                  >已关闭</v-chip>
+                  <v-chip
+                    v-if="hasPending('merchant', item.id)"
+                    size="x-small"
+                    color="info"
+                    variant="tonal"
+                    class="ms-2"
+                  >修改待审</v-chip>
+                </v-list-item-title>
+                <v-list-item-subtitle>
+                  {{ pendingAddress(item) || '暂无地址' }}
+                </v-list-item-subtitle>
+                <template #append>
+                  <div class="d-flex ga-1 align-center">
+                    <!-- 定位按钮：高频操作，留在列表项上 -->
+                    <v-btn
+                      icon="mdi-crosshairs-gps"
+                      size="small"
+                      variant="text"
+                      color="secondary"
+                      :disabled="!isValidCoordinate(item.latitude, item.longitude)"
+                      :title="isValidCoordinate(item.latitude, item.longitude) ? '在地图上定位' : '未设置位置'"
+                      @click.stop="locateMerchant(item)"
+                    />
+                    <!-- 收藏 / 编辑 / 删除 收进三点溢出菜单 -->
+                    <v-menu :close-on-content-click="true" location="bottom end">
+                      <template #activator="{ props: menuProps }">
+                        <v-btn icon="mdi-dots-vertical" size="small" variant="text" v-bind="menuProps" />
+                      </template>
+                      <v-list density="compact" nav>
+                        <v-list-item
+                          :prepend-icon="favoriteIds.has(item.id) ? 'mdi-heart' : 'mdi-heart-outline'"
+                          :base-color="favoriteIds.has(item.id) ? 'error' : undefined"
+                          :title="favoriteIds.has(item.id) ? '取消收藏' : '收藏'"
+                          @click="toggleFavorite(item.id)"
+                        />
+                        <v-list-item
+                          prepend-icon="mdi-pencil"
+                          base-color="primary"
+                          title="编辑"
+                          @click="openEditDialog(item)"
+                        />
+                        <v-list-item
+                          prepend-icon="mdi-delete"
+                          base-color="error"
+                          title="删除"
+                          @click="deleteItem(item.id)"
+                        />
+                      </v-list>
+                    </v-menu>
+                  </div>
+                </template>
+              </v-list-item>
+
+              <v-list-item v-if="items.length === 0">
+                <v-list-item-title class="text-center text-medium-emphasis">
+                  暂无商家
+                </v-list-item-title>
+              </v-list-item>
+            </v-list>
+          </div>
+
+          <!-- 分页器 -->
+          <div v-if="total > 0" class="pagination-wrapper">
+            <div class="pagination-content">
+              <v-pagination
+                :model-value="currentPage"
+                :length="totalPages"
+                :total-visible="totalVisible"
+                @update:model-value="onPageChange"
+                rounded="circle"
+                :density="isDesktop ? 'comfortable' : 'compact'"
+                :size="isDesktop ? 'small' : 'x-small'"
+                class="flex-shrink-0"
+              />
+              <div class="pagination-controls">
+                <v-select
+                  v-model="pageSize"
+                  :items="[10, 20, 50, 100]"
+                  :label="isDesktop ? '每页' : undefined"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                  class="page-size-select"
+                  @update:model-value="handlePageSizeChange"
+                />
+                <span v-if="isDesktop" class="text-caption text-medium-emphasis total-count">共 {{ total }} 条</span>
+                <span v-else class="text-caption text-medium-emphasis total-count">{{ total }}条</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- FAB 添加按钮 -->
+          <v-btn
+            icon="mdi-plus"
+            color="primary"
+            size="large"
+            elevation="6"
+            class="fab-button"
+            @click="openEditDialog()"
+          />
+        </div>
+
+        <!-- 右边：地图 -->
+        <div class="right-panel" ref="rightPanelRef">
+          <MerchantMapView
+            :merchants="items"
+            :selected-merchant="selectedMerchant"
+            :is-desktop="isDesktop"
+            :places="places"
+            :current-place-id="currentPlaceId"
+            :all-coordinates="allCoordinates"
+            @update:current-place-id="onPlaceChange"
+          />
+        </div>
+      </template>
+
+      <!-- B. 地图禁用：卡片网格（桌面）/ 列表（移动），无地图 -->
+      <template v-else>
+        <div class="w-100">
+          <!-- 搜索 + 筛选 -->
+          <div class="d-flex ga-2 mb-4 align-center">
             <v-text-field
               v-model="search"
               label="搜索商家..."
@@ -41,66 +206,27 @@
               class="flex-grow-1"
               @update:model-value="debouncedSearch"
             />
-            <FilterBar
-              :filters="merchantFilters"
-              mobile
-              @change="onFilterChange"
-            />
+            <FilterBar :filters="merchantFilters" :mobile="!isDesktop" @change="onFilterChange" />
           </div>
-        </div>
 
-        <div class="list-scroll-area">
-          <v-list lines="two" class="merchant-list">
-            <v-list-item
-              v-for="item in items"
-              :key="item.id"
-              @click="selectMerchant(item)"
-              :active="selectedMerchant?.id === item.id"
-            >
-              <template #prepend>
-                <v-avatar color="tertiary" size="40">
-                  <v-icon>mdi-store</v-icon>
-                </v-avatar>
-              </template>
-
-              <v-list-item-title>
-                {{ pendingName(item) }}
-                <v-chip
-                  v-if="pendingIsOpen(item) === false"
-                  size="x-small"
-                  color="warning"
-                  variant="tonal"
-                  class="ms-2"
-                >已关闭</v-chip>
-                <v-chip
-                  v-if="hasPending('merchant', item.id)"
-                  size="x-small"
-                  color="info"
-                  variant="tonal"
-                  class="ms-2"
-                >修改待审</v-chip>
-              </v-list-item-title>
-              <v-list-item-subtitle>
-                {{ pendingAddress(item) || '暂无地址' }}
-              </v-list-item-subtitle>
-              <v-list-item-subtitle v-if="item.latitude && item.longitude" class="text-caption">
-                <v-icon size="x-small" class="mr-1">mdi-map-marker</v-icon>
-                {{ item.latitude.toFixed(4) }}, {{ item.longitude.toFixed(4) }}
-              </v-list-item-subtitle>
-
-              <template #append>
-                <div class="d-flex ga-1 align-center">
-                  <!-- 定位按钮：高频操作，留在列表项上 -->
-                  <v-btn
-                    icon="mdi-crosshairs-gps"
-                    size="small"
-                    variant="text"
-                    color="secondary"
-                    :disabled="!isValidCoordinate(item.latitude, item.longitude)"
-                    :title="isValidCoordinate(item.latitude, item.longitude) ? '在地图上定位' : '未设置位置'"
-                    @click.stop="locateMerchant(item)"
-                  />
-                  <!-- 收藏 / 编辑 / 删除 收进三点溢出菜单 -->
+          <!-- 移动端：列表 -->
+          <v-card v-if="!isDesktop" elevation="0">
+            <v-list lines="three">
+              <v-list-item
+                v-for="item in items"
+                :key="item.id"
+                @click="selectMerchant(item)"
+              >
+                <template #prepend>
+                  <v-avatar color="tertiary" size="40"><v-icon>mdi-store</v-icon></v-avatar>
+                </template>
+                <v-list-item-title>
+                  {{ pendingName(item) }}
+                  <v-chip v-if="pendingIsOpen(item) === false" size="x-small" color="warning" variant="tonal" class="ms-2">已关闭</v-chip>
+                  <v-chip v-if="hasPending('merchant', item.id)" size="x-small" color="info" variant="tonal" class="ms-2">修改待审</v-chip>
+                </v-list-item-title>
+                <v-list-item-subtitle>{{ pendingAddress(item) || '暂无地址' }}</v-list-item-subtitle>
+                <template #append>
                   <v-menu :close-on-content-click="true" location="bottom end">
                     <template #activator="{ props: menuProps }">
                       <v-btn icon="mdi-dots-vertical" size="small" variant="text" v-bind="menuProps" />
@@ -112,85 +238,88 @@
                         :title="favoriteIds.has(item.id) ? '取消收藏' : '收藏'"
                         @click="toggleFavorite(item.id)"
                       />
-                      <v-list-item
-                        prepend-icon="mdi-pencil"
-                        base-color="primary"
-                        title="编辑"
-                        @click="openEditDialog(item)"
-                      />
-                      <v-list-item
-                        prepend-icon="mdi-delete"
-                        base-color="error"
-                        title="删除"
-                        @click="deleteItem(item.id)"
-                      />
+                      <v-list-item prepend-icon="mdi-pencil" base-color="primary" title="编辑" @click="openEditDialog(item)" />
+                      <v-list-item prepend-icon="mdi-delete" base-color="error" title="删除" @click="deleteItem(item.id)" />
                     </v-list>
                   </v-menu>
-                </div>
-              </template>
-            </v-list-item>
+                </template>
+              </v-list-item>
+              <v-list-item v-if="items.length === 0">
+                <v-list-item-title class="text-center text-medium-emphasis">暂无商家</v-list-item-title>
+              </v-list-item>
+            </v-list>
+          </v-card>
 
-            <v-list-item v-if="items.length === 0">
-              <v-list-item-title class="text-center text-medium-emphasis">
-                暂无商家
-              </v-list-item-title>
-            </v-list-item>
-          </v-list>
-        </div>
+          <!-- 桌面端：卡片网格 -->
+          <v-row v-else>
+            <v-col v-for="item in items" :key="item.id" cols="12" sm="6" md="4" lg="3" xl="2">
+              <v-card elevation="0" class="list-grid-card cursor-pointer h-100" @click="selectMerchant(item)">
+                <v-card-text>
+                  <div class="d-flex align-center mb-2">
+                    <v-avatar color="tertiary" size="40" class="mr-3"><v-icon>mdi-store</v-icon></v-avatar>
+                    <div class="text-body-2 font-weight-medium text-truncate">
+                      {{ pendingName(item) }}
+                      <v-chip v-if="pendingIsOpen(item) === false" size="x-small" color="warning" variant="tonal" class="ms-1">已关闭</v-chip>
+                    </div>
+                  </div>
+                  <div class="text-caption text-medium-emphasis mb-1 text-truncate">{{ pendingAddress(item) || '暂无地址' }}</div>
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                  <v-spacer />
+                  <v-btn
+                    :icon="favoriteIds.has(item.id) ? 'mdi-heart' : 'mdi-heart-outline'"
+                    size="small"
+                    variant="text"
+                    :color="favoriteIds.has(item.id) ? 'error' : undefined"
+                    @click.stop="toggleFavorite(item.id)"
+                  />
+                  <v-btn icon="mdi-pencil" size="small" variant="text" color="primary" @click.stop="openEditDialog(item)" />
+                  <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click.stop="deleteItem(item.id)" />
+                </v-card-actions>
+              </v-card>
+            </v-col>
+            <v-col v-if="items.length === 0" cols="12">
+              <div class="text-center py-8 text-medium-emphasis">暂无商家</div>
+            </v-col>
+          </v-row>
 
-        <!-- 分页器 -->
-        <div v-if="total > 0" class="pagination-wrapper">
-          <div class="pagination-content">
+          <!-- 分页（禁用态共用） -->
+          <div v-if="total > 0" class="d-flex flex-wrap justify-center align-center ga-2 py-4">
             <v-pagination
               :model-value="currentPage"
               :length="totalPages"
               :total-visible="totalVisible"
-              @update:model-value="onPageChange"
               rounded="circle"
-              :density="isDesktop ? 'comfortable' : 'compact'"
-              :size="isDesktop ? 'small' : 'x-small'"
-              class="flex-shrink-0"
+              density="comfortable"
+              @update:model-value="onPageChange"
             />
-            <div class="pagination-controls">
-              <v-select
-                v-model="pageSize"
-                :items="[10, 20, 50, 100]"
-                :label="isDesktop ? '每页' : undefined"
-                variant="outlined"
-                density="compact"
-                hide-details
-                class="page-size-select"
-                @update:model-value="handlePageSizeChange"
-              />
-              <span v-if="isDesktop" class="text-caption text-medium-emphasis total-count">共 {{ total }} 条</span>
-              <span v-else class="text-caption text-medium-emphasis total-count">{{ total }}条</span>
-            </div>
+            <v-select
+              v-model="pageSize"
+              :items="[10, 20, 50, 100]"
+              label="每页"
+              variant="outlined"
+              density="compact"
+              hide-details
+              style="max-width: 90px"
+              @update:model-value="handlePageSizeChange"
+            />
+            <span class="text-caption text-medium-emphasis">共 {{ total }} 条</span>
           </div>
         </div>
+      </template>
 
-        <!-- FAB 添加按钮 -->
-        <v-btn
-          icon="mdi-plus"
-          color="primary"
-          size="large"
-          elevation="6"
-          class="fab-button"
-          @click="openEditDialog()"
-        />
-      </div>
-
-      <!-- 右边：地图 -->
-      <div class="right-panel" ref="rightPanelRef">
-        <MerchantMapView
-          :merchants="items"
-          :selected-merchant="selectedMerchant"
-          :is-desktop="isDesktop"
-          :places="places"
-          :current-place-id="currentPlaceId"
-          :all-coordinates="allCoordinates"
-          @update:current-place-id="onPlaceChange"
-        />
-      </div>
+      <!-- 禁用态独立 FAB（启用态 FAB 在 left-panel 内） -->
+      <v-btn
+        v-if="!mapEnabled"
+        icon="mdi-plus"
+        color="primary"
+        size="large"
+        elevation="8"
+        class="position-fixed"
+        style="bottom: 80px; right: 24px"
+        @click="openEditDialog()"
+      />
     </div>
 
     <!-- 添加/编辑对话框 -->
@@ -221,8 +350,8 @@
               hide-details
             />
 
-            <!-- 地图选点 -->
-            <div class="mb-4">
+            <!-- 地图选点（地图禁用时隐藏，提交不带坐标，后端保留原值） -->
+            <div v-if="mapEnabled" class="mb-4">
               <div class="text-subtitle-2 mb-2">商家位置</div>
               <MapPicker
                 v-model="pickerCoords"
@@ -255,12 +384,14 @@ import MerchantMapView from '@/components/map/MerchantMapView.vue'
 import MapPicker from '@/components/map/MapPicker.vue'
 import type { Coordinate } from '@/utils/map/mapTypes'
 import { usePendingProposals } from '@/composables/usePendingProposals'
+import { useMapConfig } from '@/composables/useMapConfig'
 
 const route = useRoute()
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { notify } = useGlobalSnackbar()
 const userStore = useUserStore()
+const { mapEnabled, ensureLoaded } = useMapConfig()
 
 interface Merchant {
   id: number
@@ -615,8 +746,8 @@ const saveItem = async () => {
       is_open: form.value.is_open,
     }
 
-    // 添加坐标
-    if (pickerCoords.value) {
+    // 仅地图启用时才提交坐标；禁用时不传，靠后端 exclude_unset 保留原值
+    if (mapEnabled.value && pickerCoords.value) {
       data.latitude = pickerCoords.value.lat
       data.longitude = pickerCoords.value.lng
     }
@@ -678,6 +809,7 @@ const deleteItem = async (id: number) => {
 }
 
 onMounted(() => {
+  ensureLoaded()
   loadMerchants()
   loadPlaces()
   loadAllCoordinates()
@@ -698,6 +830,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
+
+/* 通用工具类 */
+.cursor-pointer { cursor: pointer; }
+.font-family-monospace { font-family: monospace; }
 
 /* 全页面加载/错误提示 */
 .fullpage-loading {

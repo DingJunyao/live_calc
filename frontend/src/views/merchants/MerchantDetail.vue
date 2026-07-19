@@ -48,7 +48,7 @@
       </div>
       <div class="merchant-layout">
         <!-- 基本信息 -->
-        <v-card elevation="0" class="grid-item item-basic-info">
+        <v-card elevation="0" class="grid-item item-basic-info" :class="{ 'item-full-width': !mapEnabled }">
           <v-card-title class="d-flex align-center pb-2">
             <v-icon start color="primary">mdi-information-outline</v-icon>
             基本信息
@@ -72,7 +72,7 @@
                 <v-list-item-subtitle>{{ overlaidAddress }}</v-list-item-subtitle>
               </v-list-item>
 
-              <v-list-item v-if="overlaidLatitude != null && overlaidLongitude != null">
+              <v-list-item v-if="mapEnabled && overlaidLatitude != null && overlaidLongitude != null">
                 <template #prepend>
                   <v-icon size="small" color="medium-emphasis">mdi-crosshairs-gps</v-icon>
                 </template>
@@ -81,7 +81,7 @@
                   {{ overlaidLatitude.toFixed(4) }}, {{ overlaidLongitude.toFixed(4) }}
                 </v-list-item-subtitle>
               </v-list-item>
-              <v-list-item v-else>
+              <v-list-item v-else-if="mapEnabled">
                 <template #prepend>
                   <v-icon size="small" color="medium-emphasis">mdi-crosshairs-gps</v-icon>
                 </template>
@@ -118,8 +118,12 @@
           </v-card-text>
         </v-card>
 
-        <!-- 位置 -->
-        <v-card elevation="0" class="grid-item item-location">
+        <!-- 位置（地图关闭或无坐标时不显示） -->
+        <v-card
+          v-if="mapEnabled && overlaidLatitude != null && overlaidLongitude != null"
+          elevation="0"
+          class="grid-item item-location"
+        >
           <v-card-title class="d-flex align-center pb-2">
             <v-icon start color="secondary">mdi-map</v-icon>
             位置
@@ -288,8 +292,8 @@
                 hide-details
               />
 
-              <!-- 地图选点 -->
-              <div class="mb-4">
+              <!-- 地图选点（地图禁用时隐藏） -->
+              <div v-if="mapEnabled" class="mb-4">
                 <div class="text-subtitle-2 mb-2">商家位置</div>
                 <MapPicker v-model="pickerCoords" :show-switcher="true" />
               </div>
@@ -321,6 +325,7 @@ import { formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useUserStore } from '@/stores/user'
 import PendingProposalBanner from '@/components/proposals/PendingProposalBanner.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
+import { useMapConfig } from '@/composables/useMapConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -328,6 +333,7 @@ const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { setDetailTitle } = usePageTitle()
 const { notify } = useGlobalSnackbar()
 const { smAndDown, md, lgAndUp } = useDisplay()
+const { mapEnabled, ensureLoaded } = useMapConfig()
 
 interface Merchant {
   id: number
@@ -497,7 +503,8 @@ const saveItem = async () => {
       is_open: editingForm.value.is_open,
     }
 
-    if (pickerCoords.value) {
+    // 仅地图启用时才提交坐标；禁用时不传，靠后端 exclude_unset 保留原值
+    if (mapEnabled.value && pickerCoords.value) {
       data.latitude = pickerCoords.value.lat
       data.longitude = pickerCoords.value.lng
     }
@@ -546,6 +553,7 @@ const formatUnitSuffix = (label: string | null) => {
 }
 
 onMounted(() => {
+  ensureLoaded()
   loadData()
   window.addEventListener('app-refresh', loadData)
 })
@@ -608,6 +616,8 @@ onUnmounted(() => {
   }
 
   .item-basic-info { grid-column: 1; grid-row: 1; }
+  /* 地图关闭时位置卡片不渲染，基本信息占整行（不影响开启地图态） */
+  .item-basic-info.item-full-width { grid-column: 1 / -1; }
   .item-location { grid-column: 2; grid-row: 1; }
   .item-prices { grid-column: 1 / -1; grid-row: 2; }
 }

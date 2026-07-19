@@ -6,6 +6,7 @@ from typing import List
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user_place import UserPlace
+from app.models.map_config import MapConfiguration
 from app.schemas.user_place import (
     UserPlaceCreate,
     UserPlaceUpdate,
@@ -13,6 +14,14 @@ from app.schemas.user_place import (
 )
 
 router = APIRouter()
+
+
+def _ensure_map_enabled(db: Session) -> None:
+    """地图功能关闭时拒绝写操作（读接口不拦，数据保留）。"""
+    config = db.query(MapConfiguration).first()
+    enabled = bool(config.map_enabled) if config else True
+    if not enabled:
+        raise HTTPException(status_code=403, detail="地图功能已关闭，无法维护常用地点")
 
 
 def _clear_default(db: Session, user_id: int) -> None:
@@ -52,6 +61,7 @@ async def create_user_place(
 ):
     """新建常用地点。若 is_default=True，联动清除该用户其他默认。"""
     try:
+        _ensure_map_enabled(db)
         if place.is_default:
             _clear_default(db, current_user.id)
         db_place = UserPlace(
@@ -82,6 +92,7 @@ async def update_user_place(
 ):
     """更新常用地点（改名/坐标/类型等）。"""
     try:
+        _ensure_map_enabled(db)
         db_place = db.query(UserPlace).filter(
             UserPlace.id == place_id,
             UserPlace.user_id == current_user.id,
@@ -108,6 +119,7 @@ async def delete_user_place(
 ):
     """删除常用地点。"""
     try:
+        _ensure_map_enabled(db)
         db_place = db.query(UserPlace).filter(
             UserPlace.id == place_id,
             UserPlace.user_id == current_user.id,
@@ -132,6 +144,7 @@ async def set_default_user_place(
 ):
     """将指定地点设为默认（联动清除该用户其他默认）。"""
     try:
+        _ensure_map_enabled(db)
         db_place = db.query(UserPlace).filter(
             UserPlace.id == place_id,
             UserPlace.user_id == current_user.id,

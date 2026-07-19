@@ -43,6 +43,7 @@ class GeocodingConfig(BaseModel):
 
 
 class MapConfig(BaseModel):
+    map_enabled: bool = True
     available_maps: List[str] = ['amap', 'baidu', 'tencent', 'tianditu', 'osm']
     default_map: str = 'amap'
     map_api_keys: MapApiKeys = MapApiKeys()
@@ -60,6 +61,7 @@ router = APIRouter()
 
 # 默认地图配置
 DEFAULT_MAP_CONFIG = {
+    "map_enabled": True,
     "available_maps": ['amap', 'baidu', 'tencent', 'tianditu', 'osm'],
     "default_map": 'amap',
     "map_api_keys": {
@@ -127,6 +129,7 @@ async def update_map_config(
 ):
     """更新地图配置 - 仅限管理员"""
     config_data = {
+        "map_enabled": config.map_enabled,
         "available_maps": config.available_maps,
         "default_map": config.default_map,
         "map_api_keys": config.map_api_keys.dict(),
