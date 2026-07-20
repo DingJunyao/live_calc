@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 
 class Settings(BaseSettings):
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     data_local_path: Optional[str] = None
 
     # 图片存储
-    storage_backend: str = "local"  # 'local' | 's3'
+    storage_backend: Literal["local", "s3"] = "local"
     storage_base_url: str = ""  # local 端对外基址，空则走 /api/v1/static
     s3_endpoint: str = ""  # OSS/COS/MinIO 等 S3 兼容端点
     s3_access_key: str = ""
