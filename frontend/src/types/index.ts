@@ -1,12 +1,32 @@
 // types/index.ts
 
+export interface UnitPreference {
+  id: number
+  name: string
+  abbreviation: string
+}
+
+export interface UnitPreferences {
+  energy_unit: string | null
+  mass_unit: UnitPreference | null
+  volume_unit: UnitPreference | null
+  price_unit: UnitPreference | null
+}
+
 export interface User {
   id: number
   username: string
   email: string
+  phone: string | null
   is_admin: boolean
-  is_superuser: boolean
-  created_at: string
+  is_active: boolean
+  email_verified: boolean
+  avatar: string | null
+  nickname: string | null
+  created_at: string | null
+  nutrition_goals: Record<string, number> | null
+  daily_budget: number | null
+  unit_preferences: UnitPreferences | null
 }
 
 export interface LoginRequest {
