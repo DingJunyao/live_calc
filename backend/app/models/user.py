@@ -16,6 +16,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     email_verified = Column(Boolean, default=False)
     token_version = Column(Integer, default=0, nullable=False)
+    avatar = Column(String(500), nullable=True)  # storage key, e.g. avatars/uuid.png
+    nickname = Column(String(50), nullable=True)  # display name, falls back to username when empty
     # 营养目标与预算
     daily_calorie_target = Column(Float, default=2000)
     daily_protein_target = Column(Float, default=60)
