@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     s3_secret_key: str = ""
     s3_bucket: str = ""
     s3_region: str = ""
+    # S3 URL 风格：
+    #   path     → <endpoint>/<bucket>/<key>（MinIO / 多数自建）
+    #   virtual  → <scheme>://<bucket>.<host>[:<port>]/<key>（OSS / AWS S3）
+    # OSS 实际为 virtual-hosted 风格，配 OSS 时设 virtual；默认 path 兼容 MinIO
+    s3_url_style: Literal["path", "virtual"] = "path"
 
     class Config:
         env_file = ".env"
