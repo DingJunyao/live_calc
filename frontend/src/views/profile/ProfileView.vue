@@ -50,42 +50,6 @@
       </v-col>
     </v-row>
 
-    <!-- 头像上传 -->
-    <v-card class="ma-4 mb-0" elevation="0">
-      <v-card-text class="d-flex flex-column align-center py-6">
-        <v-avatar
-          size="80"
-          class="cursor-pointer mb-2"
-          @click="triggerAvatarUpload"
-        >
-          <template v-if="userStore.user?.avatar">
-            <v-img :src="avatarSrc" cover />
-          </template>
-          <v-icon v-else size="48">mdi-account</v-icon>
-        </v-avatar>
-        <v-file-input
-          ref="avatarFileInputRef"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          hide-input
-          hide-details
-          density="compact"
-          class="d-none"
-          @update:model-value="uploadAvatar"
-        />
-        <div
-          class="text-caption text-medium-emphasis cursor-pointer"
-          @click="triggerAvatarUpload"
-        >
-          <template v-if="avatarUploading">
-            <v-progress-circular indeterminate size="16" width="2" class="mr-1" />
-            上传中…
-          </template>
-          <template v-else>
-            点击更换头像
-          </template>
-        </div>
-      </v-card-text>
-    </v-card>
 
     <!-- 设置列表 -->
     <v-card class="ma-4" elevation="0">
@@ -95,7 +59,7 @@
             <v-icon>mdi-account-edit</v-icon>
           </template>
           <v-list-item-title>用户信息编辑</v-list-item-title>
-          <v-list-item-subtitle>用户名、昵称、邮箱、密码</v-list-item-subtitle>
+          <v-list-item-subtitle>头像、用户名、昵称、邮箱、地区、密码</v-list-item-subtitle>
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>
           </template>
@@ -175,17 +139,6 @@
           </template>
         </v-list-item>
 
-        <v-list-item @click="openRegionDialog">
-          <template #prepend>
-            <v-icon>mdi-map-marker-radius</v-icon>
-          </template>
-          <v-list-item-title>地区</v-list-item-title>
-          <v-list-item-subtitle>{{ regionPathLabel }}</v-list-item-subtitle>
-          <template #append>
-            <v-icon>mdi-chevron-right</v-icon>
-          </template>
-        </v-list-item>
-
         <v-list-item @click="blacklistDialog = true">
           <template #prepend>
             <v-icon>mdi-cancel</v-icon>
@@ -247,6 +200,27 @@
           <v-btn icon="mdi-close" variant="text" size="small" @click="accountDialog = false" />
         </v-card-title>
         <v-card-text>
+          <div class="d-flex flex-column align-center mb-3">
+            <v-avatar size="80" class="cursor-pointer mb-1" @click="triggerAvatarUpload">
+              <template v-if="userStore.user?.avatar">
+                <v-img :src="avatarSrc" cover />
+              </template>
+              <v-icon v-else size="48">mdi-account</v-icon>
+            </v-avatar>
+            <v-file-input
+              ref="avatarFileInputRef"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              hide-input hide-details density="compact"
+              class="d-none"
+              @update:model-value="uploadAvatar"
+            />
+            <div class="text-caption text-medium-emphasis cursor-pointer" @click="triggerAvatarUpload">
+              <template v-if="avatarUploading">
+                <v-progress-circular indeterminate size="16" width="2" class="mr-1" />上传中…
+              </template>
+              <template v-else>点击更换头像</template>
+            </div>
+          </div>
           <div class="text-caption text-medium-emphasis mb-2">基本信息</div>
           <v-text-field
             v-model="accountForm.username"
@@ -259,7 +233,6 @@
           <v-text-field
             v-model="accountForm.nickname"
             label="昵称"
-            prepend-icon="mdi-account-edit"
             variant="outlined"
             density="compact"
             :error-messages="accountErrors.nickname"
@@ -282,6 +255,25 @@
             :error-messages="accountErrors.phone"
             class="mb-4"
           />
+
+          <div class="text-caption text-medium-emphasis mb-2 mt-2">所在地区</div>
+          <div class="d-flex flex-wrap ga-2 mb-2">
+            <v-select v-model="regionSelections[0]" :items="regionItems[0]" item-title="name" item-value="id"
+              label="国家/地区" variant="outlined" density="compact" class="region-select flex-grow-1"
+              :loading="regionLoading[0]" hide-details="auto" clearable @update:model-value="onRegionChange(0)" />
+            <v-select v-if="regionSelections[0] && regionItems[1].length >= 0" v-model="regionSelections[1]"
+              :items="regionItems[1]" item-title="name" item-value="id" label="省/州" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[1]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(1)" />
+            <v-select v-if="regionSelections[1] && regionItems[2].length >= 0" v-model="regionSelections[2]"
+              :items="regionItems[2]" item-title="name" item-value="id" label="城市" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[2]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(2)" />
+            <v-select v-if="regionSelections[2] && regionItems[3].length >= 0" v-model="regionSelections[3]"
+              :items="regionItems[3]" item-title="name" item-value="id" label="区/县" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[3]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(3)" />
+          </div>
 
           <v-btn
             variant="outlined"
@@ -506,87 +498,6 @@
       </v-card>
     </v-dialog>
 
-    <!-- 地区选择对话框 -->
-    <v-dialog v-model="regionDialog" max-width="520" @after-leave="resetRegionDialog">
-      <v-card>
-        <v-card-title class="d-flex align-center">
-          地区设置
-          <v-spacer />
-          <v-btn icon="mdi-close" variant="text" size="small" @click="regionDialog = false" />
-        </v-card-title>
-        <v-card-text>
-          <p class="text-caption text-medium-emphasis mb-4">
-            选择你的所在地，用于本地化推荐与显示。
-          </p>
-          <div class="d-flex flex-wrap ga-2">
-            <v-select
-              v-model="regionSelections[0]"
-              :items="regionItems[0]"
-              item-title="name"
-              item-value="id"
-              label="国家"
-              variant="outlined"
-              density="compact"
-              class="region-select flex-grow-1"
-              :loading="regionLoading[0]"
-              hide-details="auto"
-              clearable
-              @update:model-value="onRegionChange(0)"
-            />
-            <v-select
-              v-if="regionSelections[0] && regionItems[1].length >= 0"
-              v-model="regionSelections[1]"
-              :items="regionItems[1]"
-              item-title="name"
-              item-value="id"
-              label="省/州"
-              variant="outlined"
-              density="compact"
-              class="region-select flex-grow-1"
-              :loading="regionLoading[1]"
-              hide-details="auto"
-              clearable
-              @update:model-value="onRegionChange(1)"
-            />
-            <v-select
-              v-if="regionSelections[1] && regionItems[2].length >= 0"
-              v-model="regionSelections[2]"
-              :items="regionItems[2]"
-              item-title="name"
-              item-value="id"
-              label="城市"
-              variant="outlined"
-              density="compact"
-              class="region-select flex-grow-1"
-              :loading="regionLoading[2]"
-              hide-details="auto"
-              clearable
-              @update:model-value="onRegionChange(2)"
-            />
-            <v-select
-              v-if="regionSelections[2] && regionItems[3].length >= 0"
-              v-model="regionSelections[3]"
-              :items="regionItems[3]"
-              item-title="name"
-              item-value="id"
-              label="区/县"
-              variant="outlined"
-              density="compact"
-              class="region-select flex-grow-1"
-              :loading="regionLoading[3]"
-              hide-details="auto"
-              clearable
-              @update:model-value="onRegionChange(3)"
-            />
-          </div>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="regionDialog = false">取消</v-btn>
-          <v-btn color="primary" :loading="savingRegion" @click="saveRegion">保存</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
     <v-dialog v-model="exportDialog" max-width="420">
       <v-card>
         <v-card-title>数据导出</v-card-title>
@@ -855,27 +766,12 @@ const volumeUnitOptions = computed(() => unitOptionsAll.value.filter(u => u.unit
 const priceUnitOptions = computed(() => unitOptionsAll.value.filter(u => ['mass', 'volume', 'count'].includes(u.unit_type)))
 
 // 地区选择
-const regionDialog = ref(false)
-const savingRegion = ref(false)
 const regionSelections = ref<Array<number | null>>([null, null, null, null])
 const regionItems = ref<Array<Array<{ id: number; name: string; has_children: boolean }>>>([[], [], [], []])
 const regionLoading = ref<boolean[]>([false, false, false, false])
 // 缓存已选地区名，用于展示路径
 const regionNames = ref<Record<number, string>>({})
 const currentRegionId = ref<number | null>(null)
-
-// 地区路径展示文案
-const regionPathLabel = computed(() => {
-  if (!currentRegionId.value) return '未设置'
-  // 拼接已缓存的名称链
-  const ids: number[] = []
-  for (let i = 0; i < 4; i++) {
-    if (regionSelections.value[i]) ids.push(regionSelections.value[i]!)
-  }
-  if (ids.length === 0) return '未设置'
-  const names = ids.map(id => regionNames.value[id]).filter(Boolean)
-  return names.length > 0 ? names.join(' / ') : '已设置'
-})
 
 async function openUnitPrefsDialog() {
   const u = userStore.user as any
@@ -912,7 +808,7 @@ async function saveUnitPrefs() {
   }
 }
 
-function openAccountDialog() {
+async function openAccountDialog() {
   const u = userStore.user as any
   accountForm.value = {
     username: u?.username ?? '',
@@ -921,6 +817,50 @@ function openAccountDialog() {
     nickname: u?.nickname ?? '',
   }
   Object.keys(accountErrors).forEach(k => (accountErrors[k as keyof typeof accountErrors] = ''))
+
+  // Initialize region selection
+  currentRegionId.value = u?.region_id ?? null
+  regionSelections.value = [null, null, null, null]
+  regionItems.value = [[], [], [], []]
+
+  // Load top level (countries)
+  if (regionItems.value[0].length === 0) {
+    await loadRegionLevel(0, null)
+  }
+
+  // Restore user's current region selection
+  if (currentRegionId.value) {
+    try {
+      const detail = await api.get(`/regions/${currentRegionId.value}`)
+      const ancestors: Array<{ id: number; name: string; level: number }> = detail?.ancestors || []
+      // Save names for display
+      regionNames.value[currentRegionId.value] = detail?.name || ''
+      for (const a of ancestors) {
+        regionNames.value[a.id] = a.name
+      }
+      // Load and select each level
+      const chain = [...ancestors, { id: currentRegionId.value, name: detail?.name || '', level: ancestors.length }]
+      for (let i = 0; i < chain.length; i++) {
+        const item = chain[i]
+        if (i > 0) {
+          await loadRegionLevel(i, chain[i - 1].id)
+        }
+        regionSelections.value[i] = item.id
+      }
+      // Check if deeper levels available
+      if (chain.length < 4) {
+        const last = chain[chain.length - 1]
+        const lastItem = regionItems.value[chain.length - 1]?.find(r => r.id === last.id)
+        if (lastItem?.has_children) {
+          await loadRegionLevel(chain.length, last.id)
+        }
+      }
+    } catch {
+      // Region doesn't exist, ignore
+      currentRegionId.value = null
+    }
+  }
+
   accountDialog.value = true
 }
 
@@ -953,12 +893,36 @@ async function saveAccount() {
     if ((f.nickname || null) !== (u?.nickname || null)) payload.nickname = f.nickname || null
     if (f.email !== u?.email) payload.email = f.email
     if ((f.phone || null) !== (u?.phone || null)) payload.phone = f.phone || null
+
+    // Get deepest selected region
+    let newRegionId: number | null = null
+    for (let i = 3; i >= 0; i--) {
+      if (regionSelections.value[i]) {
+        newRegionId = regionSelections.value[i]!
+        break
+      }
+    }
+    if (newRegionId !== currentRegionId.value) {
+      payload.region_id = newRegionId
+    }
+
     if (Object.keys(payload).length === 0) {
       accountDialog.value = false
       return
     }
     await api.put('/auth/me/account', payload)
     await userStore.fetchUser()
+    currentRegionId.value = newRegionId
+    // Cache region names for display
+    if (newRegionId) {
+      for (let i = 0; i < 4; i++) {
+        const id = regionSelections.value[i]
+        if (id) {
+          const item = regionItems.value[i]?.find(r => r.id === id)
+          if (item) regionNames.value[id] = item.name
+        }
+      }
+    }
     accountDialog.value = false
     notify('已更新', 'success')
   } catch (e: any) {
@@ -1029,117 +993,6 @@ function onRegionChange(level: number) {
     if (selected && selected.has_children) {
       loadRegionLevel(nextLevel, id)
     }
-  }
-}
-
-async function openRegionDialog() {
-  // 从 userStore 读取当前 region_id
-  const u = userStore.user as any
-  currentRegionId.value = u?.region_id ?? null
-
-  // 重置选择
-  regionSelections.value = [null, null, null, null]
-  regionItems.value = [[], [], [], []]
-
-  // 加载顶层（国家）
-  await loadRegionLevel(0, null)
-
-  // 如果有已选地区，逐级恢复
-  if (currentRegionId.value) {
-    try {
-      const detail = await api.get(`/regions/${currentRegionId.value}`)
-      const ancestors: Array<{ id: number; name: string; level: number }> = detail?.ancestors || []
-      // 保存名称
-      regionNames.value[currentRegionId.value] = detail?.name || ''
-      for (const a of ancestors) {
-        regionNames.value[a.id] = a.name
-      }
-      // 逐级加载并选中
-      const chain = [...ancestors, { id: currentRegionId.value, name: detail?.name || '', level: ancestors.length }]
-      for (let i = 0; i < chain.length; i++) {
-        const item = chain[i]
-        if (i > 0) {
-          await loadRegionLevel(i, chain[i - 1].id)
-        }
-        regionSelections.value[i] = item.id
-      }
-      // 检查是否有更深层级可用
-      if (chain.length < 4) {
-        const last = chain[chain.length - 1]
-        const lastItem = regionItems.value[chain.length - 1]?.find(r => r.id === last.id)
-        if (lastItem?.has_children) {
-          await loadRegionLevel(chain.length, last.id)
-        }
-      }
-    } catch {
-      // 地区已不存在，忽略
-      currentRegionId.value = null
-    }
-  }
-
-  regionDialog.value = true
-}
-
-function resetRegionDialog() {
-  regionSelections.value = [null, null, null, null]
-  regionItems.value = [[], [], [], []]
-}
-
-async function saveRegion() {
-  savingRegion.value = true
-  try {
-    // 选中最深一级作为 region_id
-    let newRegionId: number | null = null
-    for (let i = 3; i >= 0; i--) {
-      if (regionSelections.value[i]) {
-        newRegionId = regionSelections.value[i]!
-        break
-      }
-    }
-    await api.put('/auth/me/account', { region_id: newRegionId })
-    await userStore.fetchUser()
-    currentRegionId.value = newRegionId
-    // 缓存名称
-    if (newRegionId) {
-      for (let i = 0; i < 4; i++) {
-        const id = regionSelections.value[i]
-        if (id) {
-          const item = regionItems.value[i]?.find(r => r.id === id)
-          if (item) regionNames.value[id] = item.name
-        }
-      }
-    }
-    regionDialog.value = false
-    notify('地区已更新', 'success')
-  } catch (e: any) {
-    notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
-  } finally {
-    savingRegion.value = false
-  }
-}
-
-async function loadCurrentRegionPath() {
-  const u = userStore.user as any
-  const rid = u?.region_id ?? null
-  if (!rid) {
-    currentRegionId.value = null
-    return
-  }
-  currentRegionId.value = rid
-  try {
-    const detail = await api.get(`/regions/${rid}`)
-    const ancestors: Array<{ id: number; name: string; level: number }> = detail?.ancestors || []
-    if (detail?.name) regionNames.value[rid] = detail.name
-    for (const a of ancestors) {
-      regionNames.value[a.id] = a.name
-    }
-    // 重建 selections 用于展示
-    const chain = [...ancestors, { id: rid, name: detail?.name || '', level: 0 }]
-    for (let i = 0; i < chain.length; i++) {
-      regionSelections.value[i] = chain[i].id
-    }
-  } catch {
-    currentRegionId.value = null
   }
 }
 
@@ -1221,6 +1074,5 @@ onMounted(() => {
   ensureLoaded()
   loadStats()
   loadBlacklistCount()
-  loadCurrentRegionPath()
 })
 </script>
