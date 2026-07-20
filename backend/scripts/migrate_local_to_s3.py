@@ -53,10 +53,13 @@ def _migrate_all(
     images_dir: Path,
     *,
     quiet: bool = False,
+    progress_callback=None,
 ) -> tuple[int, int, int]:
     """核心迁移逻辑：遍历 ``images_dir`` 下所有文件并上传到 ``backend``。
 
     返回值: (uploaded, skipped, failed) 三元组。
+
+    ``progress_callback``：可选回调函数，签名 ``(stage, current, total, message)``。
     """
     all_files = sorted(images_dir.rglob("*"))
     image_files = [f for f in all_files if f.is_file()]
@@ -65,23 +68,25 @@ def _migrate_all(
     skipped = 0
     failed = 0
 
-    for fp in image_files:
+    for i, fp in enumerate(image_files):
         key = _compute_key(fp, images_dir)
         try:
             if backend.exists(key):
                 skipped += 1
-                continue
-
-            data = fp.read_bytes()
-            content_type = _infer_content_type(fp)
-            backend.put(key, data, content_type)
-            uploaded += 1
-            if not quiet:
-                print(f"  [上传] {key} ({content_type})")
+            else:
+                data = fp.read_bytes()
+                content_type = _infer_content_type(fp)
+                backend.put(key, data, content_type)
+                uploaded += 1
+                if not quiet:
+                    print(f"  [上传] {key} ({content_type})")
         except Exception as e:
             failed += 1
             if not quiet:
                 print(f"  [失败] {key}: {e}")
+
+        if progress_callback:
+            progress_callback("迁移到 S3", i + 1, len(image_files), key)
 
     return uploaded, skipped, failed
 
