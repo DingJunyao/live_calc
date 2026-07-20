@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.core.database import get_db
-from app.models.administrative_region import AdministrativeRegion
-from app.schemas.region import RegionResponse, RegionDetailResponse, RegionAncestor
 from app.core.security import get_current_admin_user
+from app.models.administrative_region import AdministrativeRegion
 from app.models.user import User
+from app.schemas.region import RegionResponse, RegionDetailResponse, RegionAncestor
 from app.services.region_seed import upsert_administrative_regions, need_region_seed
 
 router = APIRouter(tags=["行政区划"])
@@ -134,7 +134,7 @@ def region_seed_status(
     """行政区划数据状态：各级数量 + 是否需要 seed。仅管理员。"""
     counts = {}
     for lv in range(4):
-        counts[lv] = (
+        counts[str(lv)] = (
             db.query(AdministrativeRegion)
             .filter(
                 AdministrativeRegion.level == lv,

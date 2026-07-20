@@ -2,6 +2,14 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
 
+def test_seed_status_requires_admin(as_non_admin):
+    """非管理员访问 seed-status 应被拒（403）。"""
+    from app.main import app
+    client = TestClient(app)
+    r = client.get("/api/v1/admin/regions/seed-status")
+    assert r.status_code == 403
+
+
 def test_seed_status_returns_counts_and_needed(as_admin):
     """GET /admin/regions/seed-status 返各级 count + needed，管理员鉴权。"""
     from app.main import app
