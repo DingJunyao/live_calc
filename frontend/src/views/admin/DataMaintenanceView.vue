@@ -211,6 +211,46 @@
         </v-card>
       </v-col>
 
+      <!-- 行政区划 -->
+      <v-col cols="12" md="6" lg="4">
+        <v-card class="rounded-lg h-100">
+          <v-card-title class="d-flex align-center py-4">
+            <v-icon class="mr-2" color="blue">mdi-map-marker-multiple</v-icon>
+            <span>行政区划</span>
+          </v-card-title>
+          <v-divider />
+          <v-card-text class="pt-6">
+            <p class="text-body-2 mb-4">
+              管理行政区划数据，支持中国和全球的省、市、区县三级数据。
+            </p>
+            <v-alert v-if="regionStatus?.needed" type="warning" variant="tonal" density="compact" class="mb-3">
+              行政区划数据缺失，用户级联选择器将无法使用
+            </v-alert>
+            <div class="d-flex flex-wrap ga-3 mb-3 text-body-2">
+              <v-chip size="small">国家/地区：{{ regionStatus?.counts?.['0'] ?? '--' }}</v-chip>
+              <v-chip size="small">省/州：{{ regionStatus?.counts?.['1'] ?? '--' }}</v-chip>
+              <v-chip size="small">城市：{{ regionStatus?.counts?.['2'] ?? '--' }}</v-chip>
+              <v-chip size="small">区/县：{{ regionStatus?.counts?.['3'] ?? '--' }}</v-chip>
+              <v-chip size="small" color="primary">总计：{{ regionStatus?.total ?? '--' }}</v-chip>
+            </div>
+          </v-card-text>
+          <v-divider />
+          <v-card-actions class="pa-4">
+            <v-spacer />
+            <v-btn
+              color="primary"
+              variant="tonal"
+              size="large"
+              :loading="regionSeeding"
+              prepend-icon="mdi-database-refresh"
+              @click="seedRegions"
+            >
+              {{ regionStatus?.needed ? '导入行政区划数据' : '更新行政区划数据' }}
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+
       <!-- AI 后处理 -->
       <v-col cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
@@ -521,6 +561,10 @@ const showUnmapped = ref(false)
 const usdaDownloading = ref(false)
 const usdaUploading = ref(false)
 
+// 行政区划状态
+const regionStatus = ref<{ counts: Record<string, number>; needed: boolean; total: number } | null>(null)
+const regionSeeding = ref(false)
+
 const AGENT_TASK_TYPES = ['fill_piece_weight', 'infer_densities', 'usda_translate', 'unmapped_nutrient_translate']
 const TASK_LABELS: Record<string, string> = {
   fill_piece_weight: 'Agent 自定义单位校准',
@@ -589,6 +633,9 @@ onMounted(async () => {
   } catch {
     // 忽略错误
   }
+
+  // 加载行政区划状态
+  await loadRegionStatus()
 
   // 恢复最近的 agent 会话到任务列表（刷新后重建）
   try {
@@ -847,6 +894,30 @@ function triggerUsdaUpload() {
     }
   }
   input.click()
+}
+
+// === 行政区划操作 ===
+
+async function loadRegionStatus() {
+  try {
+    const data = await api.get('/admin/regions/seed-status')
+    regionStatus.value = data
+  } catch (e: any) {
+    // 非致命，静默（管理员未登录或网络问题不阻塞页面）
+  }
+}
+
+async function seedRegions() {
+  regionSeeding.value = true
+  try {
+    const result = await api.post('/admin/regions/seed')
+    successMessage.value = `行政区划更新完成：新建 ${result.created}，跳过 ${result.skipped}`
+    await loadRegionStatus()
+  } catch (e: any) {
+    errorMessage.value = '更新失败：' + (e?.userMessage || e?.message || '未知错误')
+  } finally {
+    regionSeeding.value = false
+  }
 }
 
 // === Agent 轮询 ===
