@@ -1,7 +1,10 @@
 """存储配置三层合并：DB → .env(BOOTSTRAP_*) → 代码默认，逐字段判定 source。"""
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # 代码默认值
 _DEFAULTS = {
@@ -37,8 +40,17 @@ class StorageEffectiveConfig:
     sources: dict = field(default_factory=dict)   # 字段名 → db/env/default
 
 
+def _is_truthy(val) -> bool:
+    """判断配置值是否有效（非 None / 非空串 / 非纯空白）。"""
+    if val is None:
+        return False
+    if isinstance(val, str):
+        return val.strip() != ""
+    return True
+
+
 def _query_db_row():
-    """读 storage_configurations 单行；无表/异常返 None（不阻断启动）。"""
+    """读 storage_configurations 单行；无表/异常返 None（不阻断启动，但记日志）。"""
     try:
         from app.core.database import SessionLocal
         from app.models.storage_configuration import StorageConfiguration
@@ -47,7 +59,8 @@ def _query_db_row():
             return db.query(StorageConfiguration).first()
         finally:
             db.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("读取 storage_configurations 失败，回落 .env/默认配置: %s", e)
         return None
 
 
@@ -58,12 +71,12 @@ def load_effective_storage_config() -> StorageEffectiveConfig:
     sources = {}
     for fname, env_name in _ENV_MAP.items():
         db_val = getattr(row, fname, None) if row else None
-        if db_val not in (None, ""):
+        if _is_truthy(db_val):
             resolved[fname] = db_val
             sources[fname] = "db"
             continue
         env_val = getattr(settings, env_name, None)
-        if env_val not in (None, ""):
+        if _is_truthy(env_val):
             resolved[fname] = env_val
             sources[fname] = "env"
             continue
