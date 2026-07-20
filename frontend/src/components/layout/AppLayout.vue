@@ -8,8 +8,22 @@
       permanent
       touchless
     >
-      <v-list density="compact" nav>
-        <v-list-item prepend-avatar="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" :title="userStore.user?.username || '用户'" :subtitle="userStore.user?.email || ''" />
+      <!-- 用户卡片 -->
+      <v-list v-if="userStore.user" density="compact" nav>
+        <v-list-item class="pa-2">
+          <template #prepend>
+            <v-avatar size="36" color="primary" class="mr-2">
+              <v-img v-if="userStore.user.avatar" :src="resolveImageUrl(userStore.user.avatar)" alt="avatar" />
+              <v-icon v-else>mdi-account</v-icon>
+            </v-avatar>
+          </template>
+          <v-list-item-title class="text-body-2 font-weight-medium">
+            {{ userStore.user.nickname || userStore.user.username }}
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            {{ userStore.user.email }}
+          </v-list-item-subtitle>
+        </v-list-item>
       </v-list>
 
       <v-divider />
@@ -78,12 +92,22 @@
       :z-index="1000"
       @update:model-value="handleMobileDrawerUpdate"
     >
-      <v-list density="compact" nav class="pt-4">
-        <v-list-item
-          prepend-avatar="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
-          :title="userStore.user?.username || '用户'"
-          :subtitle="userStore.user?.email || ''"
-        />
+      <!-- 用户卡片 -->
+      <v-list v-if="userStore.user" density="compact" nav class="pt-4">
+        <v-list-item class="pa-2">
+          <template #prepend>
+            <v-avatar size="40" color="primary" class="mr-2">
+              <v-img v-if="userStore.user.avatar" :src="resolveImageUrl(userStore.user.avatar)" alt="avatar" />
+              <v-icon v-else>mdi-account</v-icon>
+            </v-avatar>
+          </template>
+          <v-list-item-title class="text-body-2 font-weight-medium">
+            {{ userStore.user.nickname || userStore.user.username }}
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            {{ userStore.user.email }}
+          </v-list-item-subtitle>
+        </v-list-item>
       </v-list>
 
       <v-divider />
@@ -147,6 +171,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawer } from '@/composables/useMobileDrawer'
 import { useThemeToggle } from '@/composables/useTheme'
+import { resolveImageUrl } from '@/utils/image'
 
 const userStore = useUserStore()
 const router = useRouter()
