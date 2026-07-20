@@ -254,13 +254,13 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning(f"过敏原分组初始化失败: {e}")
 
-            # 确保中国行政区划数据存在（省/市/区县三级，不含时只创建一次；
-            # 失败不阻断启动，网络不可用时从本地缓存读取）
-            try:
-                from app.services.region_seed import ensure_administrative_regions
-                ensure_administrative_regions(db)
-            except Exception as e:
-                logger.warning(f"行政区划数据初始化失败: {e}")
+        # 确保行政区划数据存在（纯地理基础数据，不依赖菜谱，无条件执行；
+        # 幂等 count>0 跳过，失败不阻断启动）
+        try:
+            from app.services.region_seed import ensure_administrative_regions
+            ensure_administrative_regions(db)
+        except Exception as e:
+            logger.warning(f"行政区划数据初始化失败: {e}")
 
         # 检查是否需要为现有原料批量创建商品
         from app.models.nutrition import Ingredient
