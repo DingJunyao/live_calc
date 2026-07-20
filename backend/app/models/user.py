@@ -29,6 +29,8 @@ class User(Base):
     default_mass_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
     default_volume_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
     default_price_unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
+    # 所属行政区划
+    region_id = Column(Integer, ForeignKey("administrative_regions.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
