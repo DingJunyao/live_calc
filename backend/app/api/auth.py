@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+import os
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -436,6 +438,60 @@ async def update_my_account(
         access_token=access_token,
         refresh_token=refresh_token,
     )
+
+
+@router.post("/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """上传/更换头像。
+
+    - 仅允许图片 MIME 类型
+    - 上传前自动删除旧头像（如有）
+    - 文件存到 storage backend，key = avatars/{uuid}.{ext}
+    - 返回 avatar_key + avatar_url
+    """
+    allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    if file.content_type and file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="仅支持 JPEG、PNG、GIF、WebP 格式的图片",
+        )
+
+    try:
+        ext = os.path.splitext(file.filename or "avatar.jpg")[1] or ".jpg"
+        filename = f"{uuid.uuid4().hex}{ext}"
+        key = f"avatars/{filename}"
+
+        from app.services.storage import get_storage
+
+        content = await file.read()
+        storage = get_storage()
+        storage.put(key, content, file.content_type or "image/jpeg")
+
+        # 删除旧头像
+        if current_user.avatar:
+            try:
+                storage.delete(current_user.avatar)
+            except Exception:
+                pass  # 旧文件删除失败不影响新头像上传
+
+        # 更新数据库
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+        user.avatar = key
+        db.commit()
+
+        return {"avatar_key": key, "avatar_url": storage.url_for(key)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"上传头像失败: {str(e)}")
 
 
 @router.post("/config", response_model=ConfigResponse)
