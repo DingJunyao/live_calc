@@ -657,7 +657,7 @@ async def upload_recipe_image(
     """上传菜谱配图。
 
     - 管理员/作者 + 未发布菜谱：直接写入 recipe.images（立即生效）
-    - 非管理员编辑已发布/公共菜谱：仅存文件到磁盘，返回路径由前端纳入编辑提议 payload，统一走审核
+    - 非管理员编辑已发布/公共菜谱：仅存文件到 storage，返回 key 由前端纳入编辑提议 payload，统一走审核
     """
     try:
         recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
@@ -678,38 +678,32 @@ async def upload_recipe_image(
         if file.content_type and file.content_type not in allowed_types:
             raise HTTPException(status_code=400, detail="仅支持 JPEG、PNG、GIF、WebP 格式的图片")
 
-        # 确保存储目录存在
-        from pathlib import Path
-        static_images_dir = Path(__file__).parent.parent.parent / "static" / "images" / "recipes"
-        static_images_dir.mkdir(parents=True, exist_ok=True)
-
         # 生成唯一文件名
         import uuid
         ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
         filename = f"{uuid.uuid4().hex}{ext}"
-        file_path = static_images_dir / filename
+        key = f"recipes/{filename}"
 
-        # 保存文件
+        # 保存到 storage backend
+        from app.services.storage import get_storage
         content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-
-        image_rel_path = f"/static/images/recipes/{filename}"
+        storage = get_storage()
+        storage.put(key, content, file.content_type or "image/jpeg")
 
         if direct_write:
             # 管理员/作者编辑未发布菜谱：直接写入（无审核流程）
             current_images = recipe.images or []
-            current_images.append(image_rel_path)
+            current_images.append(key)
             recipe.images = current_images
             from datetime import datetime, timezone
             recipe.updated_at = datetime.now(timezone.utc)
             db.commit()
         else:
             # 已发布/公共菜谱 + 非管理员：仅存文件，不更新 DB
-            # 前端在 handleSave 时会把图片路径放进 PUT payload 统一走审核
+            # 前端在 handleSave 时会把图片 key 放进 PUT payload 统一走审核
             pass
 
-        return {"image_path": image_rel_path, "image_url": f"/api/v1{image_rel_path}"}
+        return {"image_path": key, "image_url": storage.url_for(key)}
 
     except HTTPException:
         raise
@@ -734,24 +728,31 @@ async def delete_recipe_image(
         if not current_user.is_admin:
             raise HTTPException(status_code=403, detail="仅管理员可删除菜谱图片")
 
-        # 从 images 列表中移除
+        # 从 images 列表中移除（兼容旧格式 /static/images/recipes/xxx 和新格式 recipes/xxx）
         current_images = recipe.images or []
-        target_path = f"/static/images/recipes/{filename}"
-        if target_path not in current_images:
+        target_key = f"recipes/{filename}"
+        old_format = f"/static/images/recipes/{filename}"
+
+        found = None
+        if target_key in current_images:
+            found = target_key
+        elif old_format in current_images:
+            found = old_format
+
+        if found is None:
             raise HTTPException(status_code=404, detail="图片不存在")
 
-        current_images.remove(target_path)
+        current_images.remove(found)
         recipe.images = current_images
 
         from datetime import datetime, timezone
         recipe.updated_at = datetime.now(timezone.utc)
         db.commit()
 
-        # 删除物理文件（不阻止成功响应）
-        from pathlib import Path
-        file_path = Path(__file__).parent.parent.parent / "static" / "images" / "recipes" / filename
-        if file_path.exists():
-            file_path.unlink()
+        # 删除 storage 中的文件
+        from app.services.storage import get_storage
+        storage = get_storage()
+        storage.delete(target_key)
 
         return {"detail": "图片已删除"}
 
