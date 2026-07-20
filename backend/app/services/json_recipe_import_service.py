@@ -2,11 +2,12 @@
 从外部 JSON 仓库导入菜谱和原料的服务
 """
 import json
+import mimetypes
 import os
+import shutil
 import tempfile
 import zipfile
 import requests
-import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
@@ -71,10 +72,10 @@ class JsonRecipeImportService:
 
     def _download_image(self, image_path: str, out_dir: str) -> Optional[str]:
         """
-        下载图片到本地
+        通过 storage backend 存储图片。
         :param image_path: 原始图片路径（如 images/xxx.jpg）
         :param out_dir: 临时解压目录
-        :return: 本地图片路径（如 /static/images/recipes/xxx.jpg）
+        :return: storage key（如 recipes/xxx.jpg），失败返回 None
         """
         try:
             # 获取文件名
@@ -89,20 +90,25 @@ class JsonRecipeImportService:
                 print(f"图片不存在，跳过: {image_path}")
                 return None
 
-            # 检查本地是否已存在该图片
-            local_image_path = self.IMAGES_DIR / filename
-            if local_image_path.exists():
-                print(f"图片已存在，跳过下载: {filename}")
-                return f"/static/images/recipes/{filename}"
+            key = f"recipes/{filename}"
 
-            # 下载图片到本地
-            shutil.copy2(temp_image_path, local_image_path)
-            print(f"已下载图片: {filename}")
+            # 已存在则跳过（幂等）
+            from app.services.storage import get_storage
+            storage = get_storage()
+            if storage.exists(key):
+                print(f"图片已存在，跳过: {filename}")
+                return key
 
-            return f"/static/images/recipes/{filename}"
+            # 读取并存入 storage
+            with open(temp_image_path, "rb") as f:
+                data = f.read()
+            mime, _ = mimetypes.guess_type(filename)
+            storage.put(key, data, mime or "image/jpeg")
+            print(f"已存储图片: {filename}")
+            return key
 
         except Exception as e:
-            print(f"下载图片失败 {image_path}: {str(e)}")
+            print(f"存储图片失败 {image_path}: {str(e)}")
             return None
 
     def import_all(self) -> Dict[str, any]:

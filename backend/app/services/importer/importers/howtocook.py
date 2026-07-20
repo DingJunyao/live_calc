@@ -1,8 +1,8 @@
 """HowToCook_json 格式导入器。"""
 import json
 import logging
+import mimetypes
 import os
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -215,7 +215,8 @@ class HowToCookImporter(Importer):
             images = []
             for img in data.get("images", []):
                 local_path = self._download_image(img, rf.dirname)
-                images.append(local_path or img)
+                if local_path:
+                    images.append(local_path)
 
             recipe = Recipe(
                 name=name,
@@ -282,18 +283,29 @@ class HowToCookImporter(Importer):
             self.result.stats["nutrition"] = {"imported": 0, "skipped": 0, "failed": 1}
 
     def _download_image(self, image_path: str, recipe_dir: str) -> Optional[str]:
-        """从本地文件复制图片到 static 目录。"""
+        """通过 storage backend 存储图片。成功返回 key（recipes/<basename>），失败返回 None。"""
         if not recipe_dir:
             return None
         img_file = os.path.join(recipe_dir, image_path)
         if not os.path.exists(img_file):
             return None
-        filename = os.path.basename(image_path)
-        local_path = self.IMAGES_DIR / filename
-        if local_path.exists():
-            return f"/static/images/recipes/{filename}"
-        shutil.copy2(img_file, local_path)
-        return f"/static/images/recipes/{filename}"
+        try:
+            filename = os.path.basename(image_path)
+            key = f"recipes/{filename}"
+
+            from app.services.storage import get_storage
+            storage = get_storage()
+            if storage.exists(key):
+                return key
+
+            with open(img_file, "rb") as f:
+                data = f.read()
+            mime, _ = mimetypes.guess_type(filename)
+            storage.put(key, data, mime or "image/jpeg")
+            return key
+        except Exception as e:
+            logger.warning("存储图片失败 %s: %s", image_path, e)
+            return None
 
     def _add_recipe_ingredient(self, recipe: Recipe, ing_data: dict):
         """添加菜谱原料。"""

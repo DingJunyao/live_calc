@@ -12,13 +12,14 @@
   └── *.json                 # 菜谱文件（{name, ingredients: [...], steps: [{content, ...}], ...}）
 """
 import json
+import mimetypes
 import os
 import re
+import shutil
 import tempfile
+import time
 import zipfile
 import requests
-import shutil
-import time
 from pathlib import Path
 from typing import Dict, List, Optional, Callable
 from sqlalchemy.orm import Session
@@ -187,6 +188,7 @@ class EnhancedRecipeImportService:
         return None
 
     def _download_image(self, image_path: str, out_dir: str) -> Optional[str]:
+        """通过 storage backend 存储图片。成功返回 key（recipes/<basename>），失败返回 None。"""
         try:
             filename = image_path[7:] if image_path.startswith("images/") else image_path
             repo_image_path = os.path.join(out_dir, image_path)
@@ -194,14 +196,20 @@ class EnhancedRecipeImportService:
                 print(f"图片不存在，跳过: {image_path}")
                 return None
 
-            local_image_path = self.IMAGES_DIR / filename
-            if local_image_path.exists():
-                return f"/static/images/recipes/{filename}"
+            key = f"recipes/{filename}"
 
-            shutil.copy2(repo_image_path, local_image_path)
-            return f"/static/images/recipes/{filename}"
+            from app.services.storage import get_storage
+            storage = get_storage()
+            if storage.exists(key):
+                return key
+
+            with open(repo_image_path, "rb") as f:
+                data = f.read()
+            mime, _ = mimetypes.guess_type(filename)
+            storage.put(key, data, mime or "image/jpeg")
+            return key
         except Exception as e:
-            print(f"复制图片失败 {image_path}: {str(e)}")
+            print(f"存储图片失败 {image_path}: {str(e)}")
             return None
 
     # ------------------------------------------------------------------
@@ -664,7 +672,8 @@ class EnhancedRecipeImportService:
                 for img in images:
                     normalized_path = img if img.startswith("images/") else f"images/{img}"
                     local_path = self._download_image(normalized_path, out_dir)
-                    processed_images.append(local_path or normalized_path)
+                    if local_path:
+                        processed_images.append(local_path)
                 images = processed_images
 
             # 创建菜谱
