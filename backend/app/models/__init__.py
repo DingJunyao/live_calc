@@ -32,6 +32,7 @@ from app.models.user_ingredient_blacklist import UserIngredientBlacklist
 from app.models.blacklist_group_subscription import BlacklistGroupSubscription
 from app.models.blacklist_group import BlacklistGroup, BlacklistGroupIngredient
 from app.models.user_oauth_account import UserOauthAccount
+from app.models.storage_configuration import StorageConfiguration
 
 __all__ = [
     "User", "UserPlace", "Merchant", "ProductRecord", "RecordType",
@@ -62,4 +63,5 @@ __all__ = [
     "BlacklistGroupIngredient",
     "BlacklistGroupSubscription",
     "UserOauthAccount",
+    "StorageConfiguration",
 ]
