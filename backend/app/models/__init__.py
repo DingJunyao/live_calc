@@ -31,6 +31,7 @@ from app.models.daily_recommendation import DailyRecommendation
 from app.models.user_ingredient_blacklist import UserIngredientBlacklist
 from app.models.blacklist_group_subscription import BlacklistGroupSubscription
 from app.models.blacklist_group import BlacklistGroup, BlacklistGroupIngredient
+from app.models.user_oauth_account import UserOauthAccount
 
 __all__ = [
     "User", "UserPlace", "Merchant", "ProductRecord", "RecordType",
@@ -60,4 +61,5 @@ __all__ = [
     "BlacklistGroup",
     "BlacklistGroupIngredient",
     "BlacklistGroupSubscription",
+    "UserOauthAccount",
 ]
