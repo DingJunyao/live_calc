@@ -192,9 +192,9 @@
 
       <!-- B. 地图禁用：卡片网格（桌面）/ 列表（移动），无地图 -->
       <template v-else>
-        <div class="w-100">
+        <div class="w-100 list-grid-container">
           <!-- 搜索 + 筛选 -->
-          <div class="d-flex ga-2 mb-4 align-center">
+          <div class="d-flex ga-3 mb-4 align-center">
             <v-text-field
               v-model="search"
               label="搜索商家..."
@@ -206,7 +206,12 @@
               class="flex-grow-1"
               @update:model-value="debouncedSearch"
             />
-            <FilterBar :filters="merchantFilters" :mobile="!isDesktop" @change="onFilterChange" />
+            <FilterBar
+              :filters="merchantFilters"
+              :mobile="!isDesktop"
+              :hide-clear-button="isDesktop"
+              @change="onFilterChange"
+            />
           </div>
 
           <!-- 移动端：列表 -->

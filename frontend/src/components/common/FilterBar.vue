@@ -329,9 +329,9 @@
       </v-select>
     </template>
 
-    <!-- 有激活的筛选时显示清除按钮 -->
+    <!-- 有激活的筛选时显示清除按钮（可通过 hideClearButton 关闭，如商家列表桌面端） -->
     <v-btn
-      v-if="hasActiveFilters"
+      v-if="hasActiveFilters && !hideClearButton"
       variant="text"
       density="compact"
       color="medium-emphasis"
@@ -372,6 +372,8 @@ const props = defineProps<{
   filters: FilterConfig[]
   mobile?: boolean
   loading?: boolean
+  /** 隐藏桌面 inline 模式的「清除筛选」按钮（移动端 modal 内的清除按钮不受影响） */
+  hideClearButton?: boolean
 }>()
 
 const emit = defineEmits<{

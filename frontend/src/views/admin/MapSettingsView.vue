@@ -156,17 +156,7 @@
                     persistent-placeholder
                     placeholder="留空则使用默认密钥"
                   />
-                  <v-select
-                    v-model="config.map_api_keys.tianditu.type"
-                    :items="[
-                      { title: '矢量地图', value: 'vec' },
-                      { title: '影像地图', value: 'img' },
-                      { title: '地形地图', value: 'ter' },
-                    ]"
-                    label="地图类型"
-                    variant="outlined"
-                    class="mt-2"
-                  />
+                  <!-- 天地图引擎固定加载矢量底图（TianDiTu.Normal.Map），「地图类型」切换不生效，故不暴露；type 字段保留默认值 'vec' 供结构兼容与后端透传 -->
                 </v-expansion-panel-text>
               </v-expansion-panel>
             </v-expansion-panels>
