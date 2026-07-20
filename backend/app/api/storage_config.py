@@ -35,6 +35,20 @@ class StorageConfigTest(BaseModel):
     s3_url_style: Optional[str] = None
 
 
+class StorageConfigResponse(BaseModel):
+    backend: Optional[str] = None
+    storage_base_url: Optional[str] = None
+    s3_endpoint: Optional[str] = None
+    s3_access_key: Optional[str] = None      # 脱敏 "***" 或 None
+    has_access_key: bool = False
+    s3_secret_key: Optional[str] = None      # 脱敏 "***" 或 None
+    has_secret: bool = False
+    s3_bucket: Optional[str] = None
+    s3_region: Optional[str] = None
+    s3_url_style: Optional[str] = None
+    sources: dict = {}
+
+
 def _get_db_row(db: Session):
     return db.query(StorageConfiguration).first()
 
@@ -67,25 +81,25 @@ def _probe_s3(cfg) -> tuple[bool, Optional[str]]:
         return False, str(e)
 
 
-@router.get("")
+@router.get("", response_model=StorageConfigResponse)
 def get_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> StorageConfigResponse:
     cfg = load_effective_storage_config()
-    return {
-        "backend": cfg.backend,
-        "storage_base_url": cfg.storage_base_url,
-        "s3_endpoint": cfg.s3_endpoint,
-        "s3_access_key": "***" if cfg.s3_access_key else None,
-        "has_access_key": bool(cfg.s3_access_key),
-        "s3_secret_key": "***" if cfg.s3_secret_key else None,
-        "has_secret": bool(cfg.s3_secret_key),
-        "s3_bucket": cfg.s3_bucket,
-        "s3_region": cfg.s3_region,
-        "s3_url_style": cfg.s3_url_style,
-        "sources": cfg.sources,
-    }
+    return StorageConfigResponse(
+        backend=cfg.backend,
+        storage_base_url=cfg.storage_base_url,
+        s3_endpoint=cfg.s3_endpoint,
+        s3_access_key="***" if cfg.s3_access_key else None,
+        has_access_key=bool(cfg.s3_access_key),
+        s3_secret_key="***" if cfg.s3_secret_key else None,
+        has_secret=bool(cfg.s3_secret_key),
+        s3_bucket=cfg.s3_bucket,
+        s3_region=cfg.s3_region,
+        s3_url_style=cfg.s3_url_style,
+        sources=cfg.sources,
+    )
 
 
 @router.put("")
@@ -105,14 +119,18 @@ def put_config(
     # 仅 backend=s3 时写前探针
     target_backend = data.get("backend") or (existing.backend if existing else "local")
     if target_backend == "s3":
+        existing_endpoint = existing.s3_endpoint if existing else ""
+        existing_bucket = existing.s3_bucket if existing else ""
+        existing_url_style = existing.s3_url_style if existing else "path"
+
         probe_cfg = StorageConfigTest(
             backend="s3",
-            s3_endpoint=data.get("s3_endpoint") or (existing.s3_endpoint if existing else ""),
+            s3_endpoint=data.get("s3_endpoint") or existing_endpoint,
             s3_access_key=data.get("s3_access_key"),
             s3_secret_key=data.get("s3_secret_key"),
-            s3_bucket=data.get("s3_bucket") or (existing.s3_bucket if existing else ""),
+            s3_bucket=data.get("s3_bucket") or existing_bucket,
             s3_region=data.get("s3_region"),
-            s3_url_style=data.get("s3_url_style") or (existing.s3_url_style if existing else "path"),
+            s3_url_style=data.get("s3_url_style") or existing_url_style,
         )
         ok, err = _probe_s3(probe_cfg)
         if not ok:
