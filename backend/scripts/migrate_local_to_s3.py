@@ -10,7 +10,6 @@
 """
 from __future__ import annotations
 
-import mimetypes
 import sys
 from pathlib import Path
 
@@ -24,29 +23,6 @@ from app.services.storage.s3 import S3Backend
 from app.services.storage.migrate import _migrate_to_s3_core
 
 IMAGES_DIR = _BACKEND_DIR / "static" / "images"
-
-
-def _infer_content_type(path: Path) -> str:
-    """根据文件扩展名推断 MIME 类型。
-
-    已知类型返标准 MIME，未知类型 fallback ``application/octet-stream``。
-    """
-    mime, _ = mimetypes.guess_type(str(path))
-    return mime or "application/octet-stream"
-
-
-def _compute_key(file_path: Path, images_dir: Path | None = None) -> str:
-    """计算上传到 S3 的 key。
-
-    ``static/images/recipes/xxx.jpg`` → ``recipes/xxx.jpg``
-
-    ``images_dir``：基准目录，默认为模块级 ``IMAGES_DIR``。
-    始终使用 POSIX 风格路径分隔符，确保 Windows 下产出 ``recipes/xxx.jpg``
-    而非 ``recipes\\xxx.jpg``。
-    """
-    base = images_dir or IMAGES_DIR
-    rel = file_path.relative_to(base)
-    return rel.as_posix()
 
 
 def main() -> int:
