@@ -411,7 +411,7 @@
                   </v-icon>
                 </template>
                 <v-list-item-title class="font-weight-medium">
-                  {{ t._kind === 'agent' ? t.label : taskTypeLabel(t.task_type) }}
+                  {{ t._kind === 'agent' ? t.label : taskTypeLabel(t.task_type, t.stats) }}
                   <v-chip :color="statusColor(t.status)" size="x-small" variant="tonal" class="ml-2">
                     {{ statusLabel(t.status) }}
                   </v-chip>
@@ -433,8 +433,23 @@
                       </div>
                     </div>
                     <div v-if="t.stats && Object.keys(t.stats).length" class="text-caption mt-1">
-                      <v-chip v-for="(v, k) in t.stats" :key="k" size="x-small" variant="tonal"
-                              class="mr-1 mb-1">{{ k }}: {{ v }}</v-chip>
+                      <!-- storage_migrate 任务的友好统计显示 -->
+                      <template v-if="t.task_type === 'storage_migrate'">
+                        <v-chip v-if="t.stats.uploaded != null" size="x-small" variant="tonal" color="success" class="mr-1 mb-1">
+                          成功 {{ t.stats.uploaded }}
+                        </v-chip>
+                        <v-chip v-if="t.stats.skipped != null" size="x-small" variant="tonal" color="grey" class="mr-1 mb-1">
+                          跳过 {{ t.stats.skipped }}
+                        </v-chip>
+                        <v-chip v-if="t.stats.failed != null" size="x-small" variant="tonal" color="error" class="mr-1 mb-1">
+                          失败 {{ t.stats.failed }}
+                        </v-chip>
+                      </template>
+                      <!-- 其他任务显示所有 stats 字段 -->
+                      <template v-else>
+                        <v-chip v-for="(v, k) in t.stats" :key="k" size="x-small" variant="tonal"
+                                class="mr-1 mb-1">{{ k }}: {{ v }}</v-chip>
+                      </template>
                     </div>
                     <div v-if="t.error" class="text-caption text-error mt-1">{{ t.error }}</div>
                   </template>
@@ -1094,7 +1109,13 @@ const taskTypeLabels: Record<string, string> = {
   upload: 'USDA 数据上传',
 }
 
-function taskTypeLabel(type: string): string {
+function taskTypeLabel(type: string, stats?: Record<string, any>): string {
+  if (type === 'storage_migrate') {
+    const direction = stats?.direction
+    if (direction === 'to_s3') return '图片存储迁移 → S3'
+    if (direction === 'to_local') return '图片存储迁移 → 本地'
+    return '图片存储迁移'
+  }
   return taskTypeLabels[type] || type
 }
 
