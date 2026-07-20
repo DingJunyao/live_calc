@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     # 本地数据路径（如设置，启动时自动从该路径导入菜谱/食材等）
     data_local_path: Optional[str] = None
 
+    # 图片存储
+    storage_backend: str = "local"  # 'local' | 's3'
+    storage_base_url: str = ""  # local 端对外基址，空则走 /api/v1/static
+    s3_endpoint: str = ""  # OSS/COS/MinIO 等 S3 兼容端点
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_bucket: str = ""
+    s3_region: str = ""
+
     class Config:
         env_file = ".env"
 
