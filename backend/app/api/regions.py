@@ -7,6 +7,9 @@ from typing import Optional
 from app.core.database import get_db
 from app.models.administrative_region import AdministrativeRegion
 from app.schemas.region import RegionResponse, RegionDetailResponse, RegionAncestor
+from app.core.security import get_current_admin_user
+from app.models.user import User
+from app.services.region_seed import upsert_administrative_regions, need_region_seed
 
 router = APIRouter(tags=["行政区划"])
 
@@ -121,3 +124,36 @@ def get_region(region_id: int, db: Session = Depends(get_db)):
         **resp.model_dump(),
         ancestors=ancestors,
     )
+
+
+@router.get("/admin/regions/seed-status")
+def region_seed_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """行政区划数据状态：各级数量 + 是否需要 seed。仅管理员。"""
+    counts = {}
+    for lv in range(4):
+        counts[lv] = (
+            db.query(AdministrativeRegion)
+            .filter(
+                AdministrativeRegion.level == lv,
+                AdministrativeRegion.is_active == True,
+            )
+            .count()
+        )
+    return {
+        "counts": counts,
+        "needed": need_region_seed(db),
+        "total": sum(counts.values()),
+    }
+
+
+@router.post("/admin/regions/seed")
+def region_seed_run(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """手动 upsert 行政区划数据（更新/补缺失）。仅管理员。同步执行。"""
+    result = upsert_administrative_regions(db)
+    return result
