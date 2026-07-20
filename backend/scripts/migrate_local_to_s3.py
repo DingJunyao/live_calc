@@ -21,6 +21,7 @@ if str(_BACKEND_DIR) not in sys.path:
 
 from app.config import settings
 from app.services.storage.s3 import S3Backend
+from app.services.storage.migrate import _migrate_to_s3_core
 
 IMAGES_DIR = _BACKEND_DIR / "static" / "images"
 
@@ -48,58 +49,10 @@ def _compute_key(file_path: Path, images_dir: Path | None = None) -> str:
     return rel.as_posix()
 
 
-def _migrate_all(
-    backend: S3Backend,
-    images_dir: Path,
-    *,
-    quiet: bool = False,
-    progress_callback=None,
-) -> tuple[int, int, int]:
-    """核心迁移逻辑：遍历 ``images_dir`` 下所有文件并上传到 ``backend``。
-
-    返回值: (uploaded, skipped, failed) 三元组。
-
-    ``progress_callback``：可选回调函数，签名 ``(stage, current, total, message)``。
-    """
-    all_files = sorted(images_dir.rglob("*"))
-    image_files = [f for f in all_files if f.is_file()]
-
-    uploaded = 0
-    skipped = 0
-    failed = 0
-
-    for i, fp in enumerate(image_files):
-        key = _compute_key(fp, images_dir)
-        try:
-            if backend.exists(key):
-                skipped += 1
-            else:
-                data = fp.read_bytes()
-                content_type = _infer_content_type(fp)
-                backend.put(key, data, content_type)
-                uploaded += 1
-                if not quiet:
-                    print(f"  [上传] {key} ({content_type})")
-        except Exception as e:
-            failed += 1
-            if not quiet:
-                print(f"  [失败] {key}: {e}")
-
-        if progress_callback:
-            progress_callback("迁移到 S3", i + 1, len(image_files), key)
-
-    return uploaded, skipped, failed
-
-
 def main() -> int:
     """CLI 入口。"""
     if not IMAGES_DIR.is_dir():
         print(f"[SKIP] 图片目录不存在: {IMAGES_DIR}")
-        return 0
-
-    image_files = [f for f in sorted(IMAGES_DIR.rglob("*")) if f.is_file()]
-    if not image_files:
-        print(f"[DONE] {IMAGES_DIR} 下没有文件，无需迁移")
         return 0
 
     # ----- 配置校验 -----
@@ -131,12 +84,16 @@ def main() -> int:
         return 1
 
     # ----- 执行迁移 -----
-    print(f"[开始] 扫描到 {len(image_files)} 个图片文件，开始迁移...\n")
-    uploaded, skipped, failed = _migrate_all(backend, IMAGES_DIR)
-    print(
-        f"\n[完成] 上传 {uploaded} / 跳过 {skipped} / 失败 {failed}"
-        f" / 总计 {len(image_files)}"
-    )
+    print(f"[开始] 迁移图片到 S3...\n")
+    uploaded, skipped, failed = _migrate_to_s3_core(backend, IMAGES_DIR)
+    total = uploaded + skipped + failed
+    if total == 0:
+        print(f"[DONE] {IMAGES_DIR} 下没有文件，无需迁移")
+    else:
+        print(
+            f"\n[完成] 上传 {uploaded} / 跳过 {skipped} / 失败 {failed}"
+            f" / 总计 {total}"
+        )
     return 0 if failed == 0 else 1
 
 

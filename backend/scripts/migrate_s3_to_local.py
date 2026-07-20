@@ -18,69 +18,11 @@ _BACKEND_DIR = _HERE.parent  # backend/
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from app.config import settings
 from app.services.storage.s3 import S3Backend
 from app.services.storage.effective import load_effective_storage_config
+from app.services.storage.migrate import _migrate_from_s3_core
 
 IMAGES_DIR = _BACKEND_DIR / "static" / "images"
-
-
-def _migrate_all(
-    backend: S3Backend,
-    images_dir: Path,
-    *,
-    quiet: bool = False,
-    progress_callback=None,
-) -> tuple[int, int, int]:
-    """核心迁移逻辑：list_objects_v2 分页 → get → 落本地。
-
-    返回值: (uploaded, skipped, failed) 三元组。
-
-    ``progress_callback``：可选回调函数，签名 ``(stage, current, total, message)``。
-    """
-    uploaded = 0
-    skipped = 0
-    failed = 0
-    continuation = None
-    all_keys = []
-
-    # 分页列出所有 S3 对象
-    while True:
-        kwargs = {"Bucket": backend.bucket}
-        if continuation:
-            kwargs["ContinuationToken"] = continuation
-        resp = backend.client.list_objects_v2(**kwargs)
-        for obj in resp.get("Contents", []):
-            all_keys.append(obj["Key"])
-        if resp.get("IsTruncated") and resp.get("NextContinuationToken"):
-            continuation = resp["NextContinuationToken"]
-        else:
-            break
-
-    # 下载到本地
-    for i, key in enumerate(all_keys):
-        try:
-            dest = images_dir / key
-            if dest.exists():
-                skipped += 1
-                if not quiet:
-                    print(f"  [跳过] {key} (本地已存在)")
-            else:
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                data = backend.get(key)
-                dest.write_bytes(data)
-                uploaded += 1
-                if not quiet:
-                    print(f"  [下载] {key}")
-        except Exception as e:
-            failed += 1
-            if not quiet:
-                print(f"  [失败] {key}: {e}")
-
-        if progress_callback:
-            progress_callback("迁移到本地", i + 1, len(all_keys), key)
-
-    return uploaded, skipped, failed
 
 
 def main() -> int:
@@ -117,7 +59,7 @@ def main() -> int:
 
     # ----- 执行迁移 -----
     print(f"[开始] 从 S3 下载图片到 {IMAGES_DIR}...\n")
-    uploaded, skipped, failed = _migrate_all(backend, IMAGES_DIR)
+    uploaded, skipped, failed = _migrate_from_s3_core(backend, IMAGES_DIR)
     total = uploaded + skipped + failed
     print(
         f"\n[完成] 下载 {uploaded} / 跳过 {skipped} / 失败 {failed}"
