@@ -2,9 +2,11 @@ from typing import Literal
 from urllib.parse import quote, urlparse
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 _UrlStyle = Literal["path", "virtual"]
+# 注意：NoSuchBucket 不在此列——bucket 配错属配置错误，应向上抛而非当成 key 不存在
 _NOT_FOUND_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
 
 
@@ -31,19 +33,36 @@ class S3Backend:
         region: str = "",
         url_style: _UrlStyle = "path",
     ) -> None:
+        if not endpoint:
+            raise ValueError("s3 endpoint is required")
         if url_style not in ("path", "virtual"):
             raise ValueError(
                 f"invalid url_style: {url_style!r}, must be 'path' or 'virtual'"
             )
+        # botocore 要求 endpoint_url 含 scheme（is_valid_endpoint_url 校验）；
+        # 无 scheme 时默认 https（OSS 常见 schemeless 写法如 `oss-cn-beijing.aliyuncs.com`）
+        if "://" not in endpoint:
+            endpoint = f"https://{endpoint}"
         self.endpoint = endpoint.rstrip("/")
         self.bucket = bucket
         self.url_style: _UrlStyle = url_style
+        # SigV4：OSS/COS 等 S3 兼容服务要求；addressing_style 与 url_style 对齐避免认知割裂
+        # 注意：addressing_style 只影响 boto3 API 调用的 URL 形态，不影响 url_for 的公开 URL
+        config = Config(
+            signature_version="s3v4",
+            s3={
+                "addressing_style": "virtual"
+                if url_style == "virtual"
+                else "path"
+            },
+        )
         self.client = boto3.client(
             "s3",
             endpoint_url=endpoint or None,
             aws_access_key_id=access_key or None,
             aws_secret_access_key=secret_key or None,
             region_name=region or None,
+            config=config,
         )
 
     def put(self, key: str, data: bytes, content_type: str) -> str:
@@ -57,8 +76,16 @@ class S3Backend:
         return key
 
     def get(self, key: str) -> bytes:
-        """下载。key 不存在时 boto3 抛 ClientError（NoSuchKey），由调用方 try/except。"""
-        return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+        """下载。key 不存在时抛 FileNotFoundError（与 LocalBackend 一致，调用方可统一 try/except）。
+
+        其他 ClientError（如 403 权限、NoSuchBucket）向上抛，由调用方处理。
+        """
+        try:
+            return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code", "") in _NOT_FOUND_CODES:
+                raise FileNotFoundError(key) from e
+            raise
 
     def delete(self, key: str) -> None:
         """删除。key 不存在时 S3 delete_object 幂等返 204（不抛）。"""
@@ -83,9 +110,14 @@ class S3Backend:
 
         path 风格：`<endpoint>/<bucket>/<key>`（自建 / MinIO）
         virtual 风格：从 endpoint 解析 scheme + netloc（含端口），拼 `<scheme>://<bucket>.<netloc>/<key>`（OSS / S3）
+
+        virtual 风格对无 scheme 的 endpoint（如 `oss-cn-beijing.aliyuncs.com`，OSS 常见写法）
+        兜底：scheme 默认 https，netloc 取 urlparse 的 path 段（无 scheme 时 path 即 host）。
         """
         quoted = quote(key)
         if self.url_style == "virtual":
             parsed = urlparse(self.endpoint)
-            return f"{parsed.scheme}://{self.bucket}.{parsed.netloc}/{quoted}"
+            scheme = parsed.scheme or "https"
+            netloc = parsed.netloc or parsed.path  # 无 scheme 时 path 段即 host
+            return f"{scheme}://{self.bucket}.{netloc}/{quoted}"
         return f"{self.endpoint}/{self.bucket}/{quoted}"

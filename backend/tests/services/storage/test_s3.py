@@ -173,3 +173,75 @@ def test_invalid_url_style_rejected():
             secret_key="sk",
             url_style="bogus",  # type: ignore[arg-type]
         )
+
+
+def test_empty_endpoint_rejected():
+    """endpoint 为空字符串应在构造时 fail-fast 抛 ValueError（s3 模式必填）。
+
+    避免 boto3.client 传 endpoint_url=None 静默走默认区域，行为与用户预期不符。
+    """
+    with pytest.raises(ValueError, match="endpoint"):
+        S3Backend(
+            endpoint="",
+            bucket="live",
+            access_key="ak",
+            secret_key="sk",
+        )
+
+
+def test_url_for_virtual_style_schemeless_endpoint():
+    """virtual 风格 endpoint 无 scheme（如 OSS 常见 `oss-cn-beijing.aliyuncs.com`）兜底。
+
+    urlparse 无 scheme 时把整段当 path、scheme/netloc 均空；这里兜底 scheme 默认 https、
+    netloc 取 path 段（即 host），避免产出 `://livecalc./k` 破损 URL。
+
+    用户有真实 OSS bucket，必命中此场景。
+    """
+    b = S3Backend(
+        endpoint="oss-cn-beijing.aliyuncs.com",
+        bucket="livecalc",
+        access_key="ak",
+        secret_key="sk",
+        region="cn-beijing",
+        url_style="virtual",
+    )
+    b.client = MagicMock()
+    assert (
+        b.url_for("recipes/a.png")
+        == "https://livecalc.oss-cn-beijing.aliyuncs.com/recipes/a.png"
+    )
+
+
+def test_get_nonexistent_raises_filenotfound():
+    """get 不存在 key 应抛 FileNotFoundError（与 LocalBackend 一致，调用方可统一 try/except）。
+
+    避免切 S3 后 `except FileNotFoundError` 失效。
+    """
+    b = _backend()
+    b.client.get_object.side_effect = ClientError(
+        {"Error": {"Code": "NoSuchKey", "Message": "Not Found"}}, "get_object"
+    )
+    with pytest.raises(FileNotFoundError):
+        b.get("missing-key")
+
+
+def test_get_propagates_non_notfound_error():
+    """get 遇非 _NOT_FOUND_CODES 的 ClientError（如 403、NoSuchBucket）应向上抛，不吞。"""
+    b = _backend()
+    b.client.get_object.side_effect = ClientError(
+        {"Error": {"Code": "403", "Message": "Forbidden"}}, "get_object"
+    )
+    with pytest.raises(ClientError):
+        b.get("k")
+
+
+def test_delete_idempotent_on_missing_key():
+    """delete 不存在的 key 不应抛异常（S3 delete_object 本就幂等）。
+
+    mock delete_object 默认不抛，验证 delete 调用即返回。
+    """
+    b = _backend()
+    b.client.delete_object.return_value = {}
+    # 不应抛
+    b.delete("missing-key")
+    b.client.delete_object.assert_called_once_with(Bucket="live", Key="missing-key")
