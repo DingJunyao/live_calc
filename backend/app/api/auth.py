@@ -272,6 +272,8 @@ def _user_to_response(user: "User", db: Session) -> UserResponse:
         is_admin=user.is_admin,
         is_active=user.is_active,
         email_verified=user.email_verified,
+        avatar=user.avatar,
+        nickname=user.nickname,
         created_at=serialize_datetime(user.created_at) if user.created_at else None,
         nutrition_goals={
             "daily_calorie_target": user.daily_calorie_target,
@@ -404,6 +406,10 @@ async def update_my_account(
             raise HTTPException(status_code=400, detail="手机号已被占用")
         user.phone = payload.phone
 
+    # 昵称
+    if payload.nickname is not None:
+        user.nickname = payload.nickname
+
     # 密码
     changed_password = False
     if payload.new_password is not None:
@@ -483,6 +489,8 @@ async def get_all_users(
                 is_admin=user.is_admin,
                 is_active=user.is_active,
                 email_verified=user.email_verified,
+                avatar=user.avatar,
+                nickname=user.nickname,
                 created_at=serialize_datetime(user.created_at) if user.created_at else None
             ) for user in users
         ],
@@ -538,7 +546,10 @@ async def get_user_detail(
         email=user.email,
         phone=user.phone,
         is_admin=user.is_admin,
+        is_active=user.is_active,
         email_verified=user.email_verified,
+        avatar=user.avatar,
+        nickname=user.nickname,
         created_at=serialize_datetime(user.created_at) if user.created_at else None
     )
 
@@ -571,7 +582,10 @@ async def admin_create_user(
         email=user.email,
         phone=user.phone,
         is_admin=user.is_admin,
+        is_active=user.is_active,
         email_verified=user.email_verified,
+        avatar=user.avatar,
+        nickname=user.nickname,
         created_at=serialize_datetime(user.created_at) if user.created_at else None
     )
 
@@ -598,6 +612,8 @@ async def update_user(
         target.email = user_update.email
     if user_update.phone is not None:
         target.phone = user_update.phone
+    if user_update.nickname is not None:
+        target.nickname = user_update.nickname
     if user_update.email_verified is not None:
         target.email_verified = user_update.email_verified
     if user_update.password_hash is not None:
@@ -614,6 +630,8 @@ async def update_user(
         is_admin=target.is_admin,
         is_active=target.is_active,
         email_verified=target.email_verified,
+        avatar=target.avatar,
+        nickname=target.nickname,
         created_at=serialize_datetime(target.created_at) if target.created_at else None
     )
 
@@ -648,6 +666,8 @@ async def toggle_user_admin(
         is_admin=target.is_admin,
         is_active=target.is_active,
         email_verified=target.email_verified,
+        avatar=target.avatar,
+        nickname=target.nickname,
         created_at=serialize_datetime(target.created_at) if target.created_at else None
     )
 
@@ -682,6 +702,8 @@ async def toggle_user_active(
         is_admin=target.is_admin,
         is_active=target.is_active,
         email_verified=target.email_verified,
+        avatar=target.avatar,
+        nickname=target.nickname,
         created_at=serialize_datetime(target.created_at) if target.created_at else None
     )
 
