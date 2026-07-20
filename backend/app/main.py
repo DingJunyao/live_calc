@@ -35,6 +35,7 @@ from app.api import blacklist_groups  # 原料黑名单分组
 from app.api import blacklist  # 用户原料黑名单
 from app.api import proposals  # 通用提议-审核 API
 from app.api import email_config  # 邮件配置 API
+from app.api import regions  # 行政区划 API
 from app.core.database import Base, engine, get_db
 from app.core.exceptions import AppException
 from app.core.logging_config import setup_logging
@@ -614,6 +615,7 @@ app.include_router(blacklist_groups.blacklist_group_admin_router, prefix="/api/v
 app.include_router(blacklist_groups.blacklist_group_public_router, prefix="/api/v1", tags=["原料黑名单分组"])
 app.include_router(proposals.router, prefix="/api/v1", tags=["变更提议"])
 app.include_router(email_config.router, prefix="/api/v1", tags=["邮件配置"])
+app.include_router(regions.router, prefix="/api/v1", tags=["行政区划"])
 
 
 @app.get("/")
