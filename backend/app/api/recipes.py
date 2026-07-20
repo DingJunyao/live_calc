@@ -521,6 +521,24 @@ async def update_recipe(
             # 从 update dict 中移除 ingredients，避免直接设置到 Recipe 模型
             exclude_unset.pop("ingredients")
 
+        # 处理 images 变更：删除已移除的图片文件（仅直写分支）
+        if "images" in exclude_unset:
+            old_images = set(recipe.images or [])
+            new_images = set(exclude_unset["images"])
+            removed = old_images - new_images
+            if removed:
+                from app.services.storage import get_storage
+                storage = get_storage()
+                for key in removed:
+                    try:
+                        # 兼容旧格式 /static/images/recipes/xxx → 新格式 recipes/xxx
+                        if key.startswith("/static/images/recipes/"):
+                            fname = key[len("/static/images/recipes/"):]
+                            key = f"recipes/{fname}"
+                        storage.delete(key)
+                    except Exception:
+                        pass  # 图片文件不存在或删除失败不影响菜谱更新
+
         # 更新标量字段（只更新传入的字段）
         for field, value in exclude_unset.items():
             if hasattr(recipe, field):

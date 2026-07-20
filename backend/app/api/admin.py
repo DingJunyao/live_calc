@@ -14,6 +14,7 @@ from app.schemas.auth import UserResponse, AdminConfigUpdate, ConfigResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 from app.services.recipe_import_service import RecipeImportService
+from app.services.storage import get_storage
 
 
 class TiandituConfig(BaseModel):
@@ -264,17 +265,19 @@ async def get_unused_images(
                     used_names.add(name)
 
     # 扫描目录
+    storage = get_storage()
     unused = []
     if not static_dir.is_dir():
         return {"images": []}
     for f in sorted(static_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         if f.is_file() and f.name not in used_names:
             stat = f.stat()
+            key = f"recipes/{f.name}"
             unused.append({
                 "filename": f.name,
                 "size": stat.st_size,
                 "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "url": f"/static/images/recipes/{f.name}",
+                "url": storage.url_for(key),
             })
 
     return {"images": unused}
@@ -291,18 +294,15 @@ async def delete_unused_images(
     if not paths:
         raise HTTPException(status_code=400, detail="缺少 paths")
 
-    static_dir = Path(__file__).parent.parent.parent / "static" / "images" / "recipes"
+    storage = get_storage()
     deleted: list = []
     errors: list = []
 
     for filename in paths:
-        file_path = static_dir / filename
         try:
-            if file_path.exists():
-                file_path.unlink()
-                deleted.append(filename)
-            else:
-                errors.append(f"{filename}: 文件不存在")
+            key = f"recipes/{filename}"
+            storage.delete(key)
+            deleted.append(filename)
         except Exception as e:
             errors.append(f"{filename}: {str(e)}")
 

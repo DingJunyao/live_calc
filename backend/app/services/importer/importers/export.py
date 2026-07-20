@@ -520,7 +520,7 @@ class ExportImporter(Importer):
                 ingredient_id=ing_id,
                 brand=item.get("brand"),
                 barcode=item.get("barcode"),
-                image_url=item.get("image_url"),
+                image_url=self._restore_single_image_path(item.get("image_url")),
                 aliases=item.get("aliases", []),
                 tags=tags_val,
                 custom_nutrition_data=custom_nut,
@@ -841,6 +841,15 @@ class ExportImporter(Importer):
             else:
                 result.append("/static/" + img)
         return result
+
+    @staticmethod
+    def _restore_single_image_path(image_path: Optional[str]) -> Optional[str]:
+        """与 _restore_image_paths 相同逻辑，但处理单个路径字符串（如 product.image_url）。"""
+        if not image_path:
+            return None
+        if image_path.startswith(("http://", "https://")):
+            return image_path
+        return "/static/" + image_path
 
     @staticmethod
     def _parse_iso_datetime(value):
