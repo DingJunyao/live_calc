@@ -6,7 +6,7 @@
 - 单例：避免每请求新建 boto3 client（S3Backend 构造含 boto3.client 调用，代价不低）。
 - M3 懒加载（Task 3 reviewer 指出）：S3Backend 的 `import boto3` 在 s3.py 顶层，
   若 factory 模块顶层 `from .s3 import S3Backend`，则 local-only 部署也会付 boto3 import
-  成本（数百毫秒）。故 S3Backend import 置于 `if settings.storage_backend == "s3"` 分支内
+  成本（数百毫秒）。故 S3Backend import 置于 `if settings.bootstrap_storage_backend == "s3"` 分支内
   （函数内导入=懒加载），local 模式永不 import s3.py / boto3。
 - _STATIC_ROOT：对齐 main.py:551 的 `Path(__file__).parent.parent / "static"` = backend/static。
   本模块在 backend/app/services/storage/factory.py，
@@ -24,19 +24,19 @@ _STATIC_ROOT = Path(__file__).resolve().parents[3] / "static"
 
 @lru_cache(maxsize=1)
 def _build() -> StorageBackend:
-    if settings.storage_backend == "s3":
+    if settings.bootstrap_storage_backend == "s3":
         # 懒加载：local-only 部署不付 boto3 import 成本（Task 3 review M3）
         from app.services.storage.s3 import S3Backend
 
         return S3Backend(
-            endpoint=settings.s3_endpoint,
-            bucket=settings.s3_bucket,
-            access_key=settings.s3_access_key,
-            secret_key=settings.s3_secret_key,
-            region=settings.s3_region,
-            url_style=settings.s3_url_style,
+            endpoint=settings.bootstrap_s3_endpoint,
+            bucket=settings.bootstrap_s3_bucket,
+            access_key=settings.bootstrap_s3_access_key,
+            secret_key=settings.bootstrap_s3_secret_key,
+            region=settings.bootstrap_s3_region,
+            url_style=settings.bootstrap_s3_url_style,
         )
-    base_url = settings.storage_base_url or "/api/v1/static"
+    base_url = settings.bootstrap_storage_base_url or "/api/v1/static"
     return LocalBackend(root=_STATIC_ROOT, base_url=base_url)
 
 

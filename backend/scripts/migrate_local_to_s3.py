@@ -99,14 +99,14 @@ def main() -> int:
 
     # ----- 配置校验 -----
     missing = []
-    if not settings.s3_endpoint:
-        missing.append("S3_ENDPOINT")
-    if not settings.s3_bucket:
-        missing.append("S3_BUCKET")
-    if not settings.s3_access_key:
-        missing.append("S3_ACCESS_KEY")
-    if not settings.s3_secret_key:
-        missing.append("S3_SECRET_KEY")
+    if not settings.bootstrap_s3_endpoint:
+        missing.append("BOOTSTRAP_S3_ENDPOINT")
+    if not settings.bootstrap_s3_bucket:
+        missing.append("BOOTSTRAP_S3_BUCKET")
+    if not settings.bootstrap_s3_access_key:
+        missing.append("BOOTSTRAP_S3_ACCESS_KEY")
+    if not settings.bootstrap_s3_secret_key:
+        missing.append("BOOTSTRAP_S3_SECRET_KEY")
     if missing:
         print(f"[ERR] 缺少 S3 配置（请检查 backend/.env）：{', '.join(missing)}")
         return 1
@@ -114,12 +114,12 @@ def main() -> int:
     # ----- 构造 S3Backend -----
     try:
         backend = S3Backend(
-            endpoint=settings.s3_endpoint,
-            bucket=settings.s3_bucket,
-            access_key=settings.s3_access_key,
-            secret_key=settings.s3_secret_key,
-            region=settings.s3_region,
-            url_style=settings.s3_url_style,
+            endpoint=settings.bootstrap_s3_endpoint,
+            bucket=settings.bootstrap_s3_bucket,
+            access_key=settings.bootstrap_s3_access_key,
+            secret_key=settings.bootstrap_s3_secret_key,
+            region=settings.bootstrap_s3_region,
+            url_style=settings.bootstrap_s3_url_style,
         )
     except Exception as e:
         print(f"[ERR] 创建 S3Backend 失败: {e}")

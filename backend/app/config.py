@@ -57,19 +57,19 @@ class Settings(BaseSettings):
     # 本地数据路径（如设置，启动时自动从该路径导入菜谱/食材等）
     data_local_path: Optional[str] = None
 
-    # 图片存储
-    storage_backend: Literal["local", "s3"] = "local"
-    storage_base_url: str = ""  # local 端对外基址，空则走 /api/v1/static
-    s3_endpoint: str = ""  # OSS/COS/MinIO 等 S3 兼容端点
-    s3_access_key: str = ""
-    s3_secret_key: str = ""
-    s3_bucket: str = ""
-    s3_region: str = ""
+    # 图片存储（仅初始化 / 首次启动 / DB 未配置时生效；后台「图片存储」页配置后优先级更高）
+    bootstrap_storage_backend: Literal["local", "s3"] = "local"
+    bootstrap_storage_base_url: str = ""  # local 端对外基址，空则走 /api/v1/static
+    bootstrap_s3_endpoint: str = ""  # OSS/COS/MinIO 等 S3 兼容端点
+    bootstrap_s3_access_key: str = ""
+    bootstrap_s3_secret_key: str = ""
+    bootstrap_s3_bucket: str = ""
+    bootstrap_s3_region: str = ""
     # S3 URL 风格：
     #   path     → <endpoint>/<bucket>/<key>（MinIO / 多数自建）
     #   virtual  → <scheme>://<bucket>.<host>[:<port>]/<key>（OSS / AWS S3）
     # OSS 实际为 virtual-hosted 风格，配 OSS 时设 virtual；默认 path 兼容 MinIO
-    s3_url_style: Literal["path", "virtual"] = "path"
+    bootstrap_s3_url_style: Literal["path", "virtual"] = "path"
 
     class Config:
         env_file = ".env"
