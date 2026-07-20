@@ -285,6 +285,7 @@ def _user_to_response(user: "User", db: Session) -> UserResponse:
         },
         daily_budget=user.daily_budget,
         unit_preferences=_build_unit_preferences(user, db),
+        region_id=user.region_id,
     )
 
 
@@ -411,6 +412,10 @@ async def update_my_account(
     # 昵称
     if payload.nickname is not None:
         user.nickname = payload.nickname
+
+    # 地区（region_id = None 表示清除地区）
+    if payload.region_id is not None or "region_id" in payload.model_dump(exclude_unset=True):
+        user.region_id = payload.region_id
 
     # 密码
     changed_password = False

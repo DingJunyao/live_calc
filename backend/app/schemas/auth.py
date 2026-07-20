@@ -69,6 +69,7 @@ class UserResponse(BaseModel):
     nutrition_goals: Optional[dict] = None
     daily_budget: Optional[float] = None
     unit_preferences: Optional[UnitPreferences] = None
+    region_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -135,13 +136,14 @@ class UserProfileUpdate(BaseModel):
 
 
 class UserAccountUpdate(BaseModel):
-    """用户自行更新账号信息（用户名/邮箱/手机/昵称/密码）。字段全部可选，传了才改。"""
+    """用户自行更新账号信息（用户名/邮箱/手机/昵称/密码/地区）。字段全部可选，传了才改。"""
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, pattern=r"^1[3-9]\d{9}$")
     nickname: Optional[str] = Field(None, min_length=1, max_length=50)
     current_password: Optional[str] = None   # 前端 SHA256 后传
     new_password: Optional[str] = None       # 前端 SHA256 后传
+    region_id: Optional[int] = None
 
     @field_validator('phone', mode='before')
     @classmethod

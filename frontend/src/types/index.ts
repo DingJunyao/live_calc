@@ -27,6 +27,7 @@ export interface User {
   nutrition_goals: Record<string, number> | null
   daily_budget: number | null
   unit_preferences: UnitPreferences | null
+  region_id: number | null
 }
 
 export interface LoginRequest {
