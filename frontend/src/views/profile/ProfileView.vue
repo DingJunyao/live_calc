@@ -50,6 +50,43 @@
       </v-col>
     </v-row>
 
+    <!-- 头像上传 -->
+    <v-card class="ma-4 mb-0" elevation="0">
+      <v-card-text class="d-flex flex-column align-center py-6">
+        <v-avatar
+          size="80"
+          class="cursor-pointer mb-2"
+          @click="triggerAvatarUpload"
+        >
+          <template v-if="userStore.user?.avatar">
+            <v-img :src="avatarSrc" cover />
+          </template>
+          <v-icon v-else size="48">mdi-account</v-icon>
+        </v-avatar>
+        <v-file-input
+          ref="avatarFileInputRef"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          hide-input
+          hide-details
+          density="compact"
+          class="d-none"
+          @update:model-value="uploadAvatar"
+        />
+        <div
+          class="text-caption text-medium-emphasis cursor-pointer"
+          @click="triggerAvatarUpload"
+        >
+          <template v-if="avatarUploading">
+            <v-progress-circular indeterminate size="16" width="2" class="mr-1" />
+            上传中…
+          </template>
+          <template v-else>
+            点击更换头像
+          </template>
+        </div>
+      </v-card-text>
+    </v-card>
+
     <!-- 设置列表 -->
     <v-card class="ma-4" elevation="0">
       <v-list>
@@ -58,7 +95,7 @@
             <v-icon>mdi-account-edit</v-icon>
           </template>
           <v-list-item-title>用户信息编辑</v-list-item-title>
-          <v-list-item-subtitle>用户名、邮箱、密码</v-list-item-subtitle>
+          <v-list-item-subtitle>用户名、昵称、邮箱、密码</v-list-item-subtitle>
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>
           </template>
@@ -206,6 +243,15 @@
             variant="outlined"
             density="compact"
             :error-messages="accountErrors.username"
+            class="mb-2"
+          />
+          <v-text-field
+            v-model="accountForm.nickname"
+            label="昵称"
+            prepend-icon="mdi-account-edit"
+            variant="outlined"
+            density="compact"
+            :error-messages="accountErrors.nickname"
             class="mb-2"
           />
           <v-text-field
@@ -511,6 +557,7 @@ import { useUserUnits } from '@/composables/useUserUnits'
 import { useThemeToggle } from '@/composables/useTheme'
 import { useMapConfig } from '@/composables/useMapConfig'
 import { hashPassword } from '@/utils/crypto'
+import { resolveImageUrl } from '@/utils/image'
 
 const { notify } = useGlobalSnackbar()
 const { energyUnit, toDisplayCalorie, fromDisplayCalorie } = useUserUnits()
@@ -550,12 +597,44 @@ const accountForm = ref({
   username: '',
   email: '',
   phone: '',
+  nickname: '',
 })
 const accountErrors = reactive({
   username: '',
   email: '',
   phone: '',
+  nickname: '',
 })
+
+// 头像上传
+const avatarUploading = ref(false)
+const avatarFileInputRef = ref<any>(null)
+const avatarSrc = computed(() => {
+  const a = userStore.user?.avatar
+  return a ? resolveImageUrl(a) : ''
+})
+
+function triggerAvatarUpload() {
+  if (avatarUploading.value) return
+  avatarFileInputRef.value?.click()
+}
+
+async function uploadAvatar(file: File | null) {
+  if (!file) return
+  avatarUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    await api.post('/auth/me/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    await userStore.fetchUser()
+  } catch (e: any) {
+    notify('头像上传失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
+  } finally {
+    avatarUploading.value = false
+  }
+}
 
 // 修改密码（独立对话框）
 const changePasswordDialog = ref(false)
@@ -725,6 +804,7 @@ function openAccountDialog() {
     username: u?.username ?? '',
     email: u?.email ?? '',
     phone: u?.phone ?? '',
+    nickname: u?.nickname ?? '',
   }
   Object.keys(accountErrors).forEach(k => (accountErrors[k as keyof typeof accountErrors] = ''))
   accountDialog.value = true
@@ -756,6 +836,7 @@ async function saveAccount() {
     const u = userStore.user as any
     const payload: Record<string, any> = {}
     if (f.username !== u?.username) payload.username = f.username
+    if ((f.nickname || null) !== (u?.nickname || null)) payload.nickname = f.nickname || null
     if (f.email !== u?.email) payload.email = f.email
     if ((f.phone || null) !== (u?.phone || null)) payload.phone = f.phone || null
     if (Object.keys(payload).length === 0) {
