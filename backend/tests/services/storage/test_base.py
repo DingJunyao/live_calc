@@ -27,7 +27,8 @@ def test_storage_backend_protocol_runtime_checkable():
 
 
 def test_settings_has_storage_config():
-    assert hasattr(settings, "storage_backend")
-    assert settings.storage_backend in ("local", "s3")
-    assert hasattr(settings, "s3_endpoint")
-    assert hasattr(settings, "s3_bucket")
+    """Settings 现在用 BOOTSTRAP_ 前缀字段（初始化引导语义），与 DB 配置区分。"""
+    assert hasattr(settings, "bootstrap_storage_backend")
+    assert settings.bootstrap_storage_backend in ("local", "s3")
+    assert hasattr(settings, "bootstrap_s3_endpoint")
+    assert hasattr(settings, "bootstrap_s3_bucket")
