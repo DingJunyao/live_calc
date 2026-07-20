@@ -332,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import api from '@/api/client'
@@ -365,6 +365,40 @@ interface StorageConfig {
     s3_access_key?: string
     s3_secret_key?: string
   }
+}
+
+interface MigrationRequest {
+  direction: 'to_s3' | 'to_local'
+  s3_config?: {
+    s3_endpoint: string
+    s3_bucket: string
+    s3_access_key: string
+    s3_secret_key: string
+    s3_region: string
+    s3_url_style: 'path' | 'virtual'
+  }
+}
+
+interface StorageConfigUpdatePayload {
+  backend: 'local' | 's3'
+  storage_base_url?: string | null
+  s3_endpoint?: string | null
+  s3_bucket?: string | null
+  s3_region?: string | null
+  s3_access_key?: string | null
+  s3_secret_key?: string | null
+  s3_url_style?: 'path' | 'virtual'
+}
+
+// 错误消息提取辅助函数
+const extractErrorMessage = (error: unknown): string => {
+  if (error && typeof error === 'object' && 'userMessage' in error) {
+    return String((error as { userMessage?: string }).userMessage)
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return '未知错误'
 }
 
 const config = ref<StorageConfig | null>(null)
@@ -512,8 +546,8 @@ const testConnection = async () => {
       s3_url_style: wizardConfig.s3_url_style,
     })
     testResult.value = { ok: result.ok, error: result.error }
-  } catch (error: any) {
-    testResult.value = { ok: false, error: error.userMessage || '测试失败' }
+  } catch (error: unknown) {
+    testResult.value = { ok: false, error: extractErrorMessage(error) || '测试失败' }
   } finally {
     testingConnection.value = false
   }
@@ -523,7 +557,7 @@ const startMigration = async () => {
   startingMigration.value = true
   try {
     const direction = config.value?.backend === 'local' ? 'to_s3' : 'to_local'
-    const payload: any = { direction }
+    const payload: MigrationRequest = { direction }
     if (direction === 'to_s3') {
       payload.s3_config = {
         s3_endpoint: wizardConfig.s3_endpoint,
@@ -537,9 +571,9 @@ const startMigration = async () => {
     const result = await api.post('/admin/storage-config/migrate', payload)
     migrationTaskId.value = result.task_id
     startMigrationPolling()
-  } catch (error: any) {
+  } catch (error: unknown) {
     showError.value = true
-    errorMessage.value = error.userMessage || '启动迁移失败'
+    errorMessage.value = extractErrorMessage(error) || '启动迁移失败'
   } finally {
     startingMigration.value = false
   }
@@ -570,8 +604,9 @@ const startMigrationPolling = () => {
           errorMessage.value = result.error || '迁移失败'
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
       // 忽略轮询错误，继续下一轮
+      console.warn('迁移进度轮询失败', error)
     }
   }, 2000)
 }
@@ -583,7 +618,7 @@ const skipMigration = () => {
 const applyConfig = async () => {
   applyingConfig.value = true
   try {
-    const payload: any = {
+    const payload: StorageConfigUpdatePayload = {
       backend: wizardConfig.targetBackend,
     }
     if (wizardConfig.targetBackend === 'local') {
@@ -602,9 +637,9 @@ const applyConfig = async () => {
     showSuccess.value = true
     wizardDialog.value = false
     await fetchConfig()
-  } catch (error: any) {
+  } catch (error: unknown) {
     showError.value = true
-    errorMessage.value = error.userMessage || '切换失败'
+    errorMessage.value = extractErrorMessage(error) || '切换失败'
   } finally {
     applyingConfig.value = false
   }
@@ -614,12 +649,20 @@ const fetchConfig = async () => {
   loading.value = true
   try {
     config.value = await api.get('/admin/storage-config')
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('获取存储配置失败:', error)
   } finally {
     loading.value = false
   }
 }
+
+// Fix 1: 监听对话框关闭，停止迁移轮询（防止泄漏）
+watch(wizardDialog, (open) => {
+  if (!open && migrationPoller) {
+    clearInterval(migrationPoller)
+    migrationPoller = null
+  }
+})
 
 onMounted(() => {
   fetchConfig()
