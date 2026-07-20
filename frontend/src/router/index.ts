@@ -200,6 +200,12 @@ const router = createRouter({
           meta: { adminOnly: true, title: '未使用图片清理' },
           component: () => import('@/views/admin/UnusedImagesView.vue'),
         },
+        {
+          path: 'admin/storage',
+          name: 'admin-storage',
+          meta: { adminOnly: true, title: '图片存储' },
+          component: () => import('@/views/admin/StorageConfigView.vue'),
+        },
       ],
     },
   ],

@@ -148,6 +148,17 @@
         </v-list-item>
 
         <v-list-item
+          prepend-icon="mdi-cloud-outline"
+          title="图片存储"
+          subtitle="配置本地存储或 S3 对象存储"
+          to="/admin/storage"
+        >
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+
+        <v-list-item
           prepend-icon="mdi-email-sync-outline"
           title="邮件配置"
           subtitle="SMTP 设置与邮件模板管理"
