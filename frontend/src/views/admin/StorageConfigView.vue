@@ -70,6 +70,33 @@
             </v-col>
             <v-col cols="12" sm="6">
               <div class="text-caption text-medium-emphasis mb-1">
+                base_path
+                <v-chip size="x-small" :color="sourceColor(config.sources?.s3_base_path)" class="ml-2">
+                  {{ sourceLabel(config.sources?.s3_base_path) }}
+                </v-chip>
+              </div>
+              <div class="text-body-2">{{ config.s3_base_path || '(未设置)' }}</div>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <div class="text-caption text-medium-emphasis mb-1">
+                custom_domain
+                <v-chip size="x-small" :color="sourceColor(config.sources?.s3_custom_domain)" class="ml-2">
+                  {{ sourceLabel(config.sources?.s3_custom_domain) }}
+                </v-chip>
+              </div>
+              <div class="text-body-2">{{ config.s3_custom_domain || '(未设置)' }}</div>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <div class="text-caption text-medium-emphasis mb-1">
+                url_suffix
+                <v-chip size="x-small" :color="sourceColor(config.sources?.s3_url_suffix)" class="ml-2">
+                  {{ sourceLabel(config.sources?.s3_url_suffix) }}
+                </v-chip>
+              </div>
+              <div class="text-body-2">{{ config.s3_url_suffix || '(未设置)' }}</div>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <div class="text-caption text-medium-emphasis mb-1">
                 access_key
                 <v-chip size="x-small" :color="sourceColor(config.sources?.s3_access_key)" class="ml-2">
                   {{ sourceLabel(config.sources?.s3_access_key) }}
@@ -116,7 +143,7 @@
 
         <v-card-text class="pa-4">
           <!-- 步骤指示器 -->
-          <v-stepper v-model="wizardStep" :items="wizardItems" class="elevation-0" />
+          <v-stepper v-model="wizardStep" :items="wizardItems" class="elevation-0" :hide-actions="true" />
 
           <!-- 步骤 1: 选目标 backend -->
           <div v-if="wizardStep === 1" class="mt-4">
@@ -189,10 +216,40 @@
                 placeholder="未修改时留空"
                 class="mb-2"
               />
+              <v-text-field
+                v-model="wizardConfig.s3_base_path"
+                label="存储路径前缀（可选）"
+                variant="outlined"
+                hint="如 livecalc/（留空则存 bucket 根目录）"
+                persistent-hint
+                placeholder="留空则存 bucket 根目录"
+                class="mb-2"
+              />
+              <v-text-field
+                v-model="wizardConfig.s3_custom_domain"
+                label="自定义域名（可选）"
+                variant="outlined"
+                hint="如 https://cdn.example.com（留空用 endpoint 拼）"
+                persistent-hint
+                placeholder="留空用 endpoint 拼"
+                class="mb-2"
+              />
+              <v-text-field
+                v-model="wizardConfig.s3_url_suffix"
+                label="网址后缀（可选）"
+                variant="outlined"
+                hint="如 ?imageslim（图床处理参数）"
+                persistent-hint
+                placeholder="如 ?imageslim"
+                class="mb-2"
+              />
               <v-radio-group v-model="wizardConfig.s3_url_style" label="url_style">
                 <v-radio label="Path（路径风格）" value="path" />
                 <v-radio label="Virtual-hosted（虚拟主机风格）" value="virtual" />
               </v-radio-group>
+              <div class="text-caption text-medium-emphasis mb-2">
+                OSS / AWS S3 选「虚拟主机」（&lt;bucket&gt;.&lt;host&gt;）；MinIO / 自建选「路径风格」（&lt;host&gt;/&lt;bucket&gt;）。不确定时 OSS/AWS 选 virtual，自建选 path。
+              </div>
             </template>
 
             <!-- local 配置 -->
@@ -352,6 +409,9 @@ interface StorageConfig {
   s3_region: string | null
   s3_access_key: string | null
   s3_secret_key: string | null
+  s3_base_path: string | null
+  s3_custom_domain: string | null
+  s3_url_suffix: string | null
   s3_url_style: 'path' | 'virtual'
   has_access_key: boolean
   has_secret_key: boolean
@@ -364,6 +424,9 @@ interface StorageConfig {
     s3_url_style?: string
     s3_access_key?: string
     s3_secret_key?: string
+    s3_base_path?: string
+    s3_custom_domain?: string
+    s3_url_suffix?: string
   }
 }
 
@@ -375,6 +438,9 @@ interface MigrationRequest {
     s3_access_key: string
     s3_secret_key: string
     s3_region: string
+    s3_base_path: string
+    s3_custom_domain: string
+    s3_url_suffix: string
     s3_url_style: 'path' | 'virtual'
   }
 }
@@ -387,6 +453,9 @@ interface StorageConfigUpdatePayload {
   s3_region?: string | null
   s3_access_key?: string | null
   s3_secret_key?: string | null
+  s3_base_path?: string | null
+  s3_custom_domain?: string | null
+  s3_url_suffix?: string | null
   s3_url_style?: 'path' | 'virtual'
 }
 
@@ -417,6 +486,9 @@ const wizardConfig = reactive({
   s3_region: '',
   s3_access_key: '',
   s3_secret_key: '',
+  s3_base_path: '',
+  s3_custom_domain: '',
+  s3_url_suffix: '',
   s3_url_style: 'path' as 'path' | 'virtual',
 })
 
@@ -520,6 +592,9 @@ const openWizard = () => {
   wizardConfig.s3_region = config.value?.s3_region || ''
   wizardConfig.s3_access_key = ''
   wizardConfig.s3_secret_key = ''
+  wizardConfig.s3_base_path = config.value?.s3_base_path || ''
+  wizardConfig.s3_custom_domain = config.value?.s3_custom_domain || ''
+  wizardConfig.s3_url_suffix = config.value?.s3_url_suffix || ''
   wizardConfig.s3_url_style = config.value?.s3_url_style || 'path'
   testResult.value = null
   migrationTaskId.value = null
@@ -543,6 +618,9 @@ const testConnection = async () => {
       s3_region: wizardConfig.s3_region,
       s3_access_key: wizardConfig.s3_access_key,
       s3_secret_key: wizardConfig.s3_secret_key,
+      s3_base_path: wizardConfig.s3_base_path,
+      s3_custom_domain: wizardConfig.s3_custom_domain,
+      s3_url_suffix: wizardConfig.s3_url_suffix,
       s3_url_style: wizardConfig.s3_url_style,
     })
     testResult.value = { ok: result.ok, error: result.error }
@@ -565,6 +643,9 @@ const startMigration = async () => {
         s3_region: wizardConfig.s3_region,
         s3_access_key: wizardConfig.s3_access_key,
         s3_secret_key: wizardConfig.s3_secret_key,
+        s3_base_path: wizardConfig.s3_base_path,
+        s3_custom_domain: wizardConfig.s3_custom_domain,
+        s3_url_suffix: wizardConfig.s3_url_suffix,
         s3_url_style: wizardConfig.s3_url_style,
       }
     }
@@ -630,6 +711,9 @@ const applyConfig = async () => {
       payload.s3_access_key = wizardConfig.s3_access_key || null
       // secret_key: 哨兵，空字符串表示未修改，传 null 让后端保持旧值
       payload.s3_secret_key = wizardConfig.s3_secret_key || null
+      payload.s3_base_path = wizardConfig.s3_base_path || null
+      payload.s3_custom_domain = wizardConfig.s3_custom_domain || null
+      payload.s3_url_suffix = wizardConfig.s3_url_suffix || null
       payload.s3_url_style = wizardConfig.s3_url_style
     }
     await api.put('/admin/storage-config', payload)
