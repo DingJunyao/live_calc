@@ -101,16 +101,21 @@ def start_migrate_task(db, direction: str, s3_config: Optional[dict], user_id: i
     Task 9 补真正的双向迁移核心。
     """
     from app.services.importer.api_service import start_background_import
+    # direction/s3_config 必须位置传（进 start_background_import 的 *args），
+    # _run_import_task 会把它们透传给 _run_migrate_task(db, direction, s3_config, progress_callback=cb)
     task_id = start_background_import(
-        db, task_type="storage_migrate", user_id=user_id,
-        import_func=_run_migrate_task, direction=direction, s3_config=s3_config,
+        db, "storage_migrate", user_id,
+        _run_migrate_task, direction, s3_config,
     )
     return task_id
 
 
-def _run_migrate_task(db, direction: str = "to_s3", s3_config: Optional[dict] = None,
+def _run_migrate_task(direction: str = "to_s3", s3_config: Optional[dict] = None,
                       progress_callback: Optional[Callable] = None):
-    """后台线程执行体（Task 8 占位 → Task 9 真实现）。"""
+    """后台线程执行体。签名对齐 _run_import_task 的 import_func(*args, progress_callback=cb) 约定：
+    start_background_import 的 *args = (direction, s3_config)（不含 db——迁移是文件 I/O，不查 DB）。
+    之前误带 db 参数致错位（db 收 direction、direction 收 s3_config、s3_config 收 None）。
+    """
     from app.services.importer.models import ImportResult
     s3_backend = _build_s3_from_config(s3_config if direction == "to_s3" else None)
     if direction == "to_s3":

@@ -44,4 +44,4 @@ dmypy.json
 # Application directories
 data/
 logs/
-static/images/recipes/
+static/images/

@@ -665,7 +665,7 @@ const startMigrationPolling = () => {
   migrationPoller = setInterval(async () => {
     if (!migrationTaskId.value) return
     try {
-      const result = await api.get(`/import/tasks/${migrationTaskId.value}`)
+      const result = await api.get(`/import/task/${migrationTaskId.value}`)
       const status = result.status
       const progress = result.progress || {}
       migrationProgress.value = progress.current && progress.total
