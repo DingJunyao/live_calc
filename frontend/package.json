@@ -19,6 +19,7 @@
     "pinia": "^2.1.7",
     "proj4leaflet": "^1.0.2",
     "vue": "^3.4.0",
+    "vue-advanced-cropper": "^2.8.9",
     "vue-router": "^4.2.5",
     "vuetify": "^3.7.0",
     "webfontloader": "^1.6.28"

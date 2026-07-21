@@ -343,6 +343,9 @@
     <!-- 黑名单对话框 -->
     <BlacklistDialog v-model="blacklistDialog" />
 
+    <!-- 头像裁剪对话框 -->
+    <AvatarCropperDialog v-model="cropperDialog" :src="cropperSrc" @cropped="uploadCroppedAvatar" />
+
     <!-- 饮食偏好对话框 -->
     <v-dialog v-model="nutritionDialog" max-width="480">
       <v-card>
@@ -554,6 +557,7 @@ import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { api } from '@/api/client'
 import { ImportUploadDialog } from '@/components/import'
 import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
+import AvatarCropperDialog from '@/components/profile/AvatarCropperDialog.vue'
 import { useGlobalSnackbar } from '@/composables/useGlobalSnackbar'
 import { useUserUnits } from '@/composables/useUserUnits'
 import { useThemeToggle } from '@/composables/useTheme'
@@ -616,6 +620,10 @@ const avatarSrc = computed(() => {
   return a ? resolveImageUrl(a) : ''
 })
 
+// 裁剪对话框
+const cropperDialog = ref(false)
+const cropperSrc = ref('')
+
 function triggerAvatarUpload() {
   if (avatarUploading.value) return
   avatarFileInputRef.value?.click()
@@ -623,18 +631,30 @@ function triggerAvatarUpload() {
 
 async function uploadAvatar(file: File | null) {
   if (!file) return
+  cropperSrc.value = URL.createObjectURL(file)
+  cropperDialog.value = true
+}
+
+async function uploadCroppedAvatar(blob: Blob) {
   avatarUploading.value = true
   try {
+    const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' })
     const formData = new FormData()
     formData.append('file', file)
     await api.post('/auth/me/avatar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     await userStore.fetchUser()
-  } catch (e: any) {
-    notify('头像上传失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
+    notify('头像已更新', 'success')
+  } catch (e: unknown) {
+    const msg = (e && typeof e === 'object' && 'userMessage' in e)
+      ? (e as { userMessage?: string }).userMessage
+      : (e instanceof Error ? e.message : '未知错误')
+    notify('头像上传失败：' + (msg || '未知错误'), 'error')
   } finally {
     avatarUploading.value = false
+    if (cropperSrc.value) URL.revokeObjectURL(cropperSrc.value)
+    cropperSrc.value = ''
   }
 }
 
