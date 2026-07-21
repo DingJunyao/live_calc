@@ -17,6 +17,9 @@ class StorageConfiguration(Base):
     s3_bucket = Column(String(255), nullable=True)
     s3_region = Column(String(64), nullable=True)
     s3_url_style = Column(String(10), nullable=False, default="path")    # path | virtual
+    s3_base_path = Column(String(255), nullable=True)                 # key 前缀，如 "livecalc/"
+    s3_custom_domain = Column(String(255), nullable=True)             # 自定义域名，如 "https://cdn.example.com"
+    s3_url_suffix = Column(String(255), nullable=True)                # 网址后缀，如 "?imageslim"
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -31,4 +34,7 @@ class StorageConfiguration(Base):
             "s3_bucket": self.s3_bucket,
             "s3_region": self.s3_region,
             "s3_url_style": self.s3_url_style,
+            "s3_base_path": self.s3_base_path,
+            "s3_custom_domain": self.s3_custom_domain,
+            "s3_url_suffix": self.s3_url_suffix,
         }
