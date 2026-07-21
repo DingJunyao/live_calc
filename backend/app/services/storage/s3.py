@@ -53,8 +53,13 @@ class S3Backend:
             s3={
                 "addressing_style": "virtual"
                 if url_style == "virtual"
-                else "path"
+                else "path",
+                # OSS 兼容：强制签名（AWS4-HMAC-SHA256），绕过 streaming-unsigned-payload-trailer
+                "payload_signing_enabled": True,
             },
+            # OSS 兼容：关默认 CRC32C checksum（boto3 2.x 默认开，OSS 不支持）
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
         )
         self.client = boto3.client(
             "s3",
