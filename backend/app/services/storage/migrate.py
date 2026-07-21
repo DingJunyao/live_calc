@@ -80,13 +80,18 @@ def _build_s3_from_config(s3_config):
             endpoint=s3_config["s3_endpoint"], bucket=s3_config["s3_bucket"],
             access_key=s3_config["s3_access_key"], secret_key=s3_config["s3_secret_key"],
             region=s3_config.get("s3_region", ""), url_style=s3_config.get("s3_url_style", "path"),
+            base_path=s3_config.get("s3_base_path", ""),
+            custom_domain=s3_config.get("s3_custom_domain", ""),
+            url_suffix=s3_config.get("s3_url_suffix", ""),
         )
     # to_local：当前 effective S3 配置
     from app.services.storage.effective import load_effective_storage_config
     cfg = load_effective_storage_config()
     return S3Backend(endpoint=cfg.s3_endpoint, bucket=cfg.s3_bucket,
                      access_key=cfg.s3_access_key, secret_key=cfg.s3_secret_key,
-                     region=cfg.s3_region, url_style=cfg.s3_url_style)
+                     region=cfg.s3_region, url_style=cfg.s3_url_style,
+                     base_path=cfg.s3_base_path or "", custom_domain=cfg.s3_custom_domain or "",
+                     url_suffix=cfg.s3_url_suffix or "")
 
 
 def start_migrate_task(db, direction: str, s3_config: Optional[dict], user_id: int) -> int:

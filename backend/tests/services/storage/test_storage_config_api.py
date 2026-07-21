@@ -12,6 +12,7 @@ def test_get_config_masks_secret(as_admin):
         backend="s3", storage_base_url=None,
         s3_endpoint="https://x", s3_access_key="ak", s3_secret_key="secret-val",
         s3_bucket="b", s3_region="r", s3_url_style="path",
+        s3_base_path="", s3_custom_domain="", s3_url_suffix="",
         sources={"backend": "db"},
     )
     with patch("app.api.storage_config.load_effective_storage_config", return_value=fake):

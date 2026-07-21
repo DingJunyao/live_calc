@@ -34,6 +34,8 @@ def _build() -> StorageBackend:
             endpoint=cfg.s3_endpoint, bucket=cfg.s3_bucket,
             access_key=cfg.s3_access_key, secret_key=cfg.s3_secret_key,
             region=cfg.s3_region, url_style=cfg.s3_url_style,
+            base_path=cfg.s3_base_path or "", custom_domain=cfg.s3_custom_domain or "",
+            url_suffix=cfg.s3_url_suffix or "",
         )
     return LocalBackend(root=_STATIC_ROOT,
                         base_url=cfg.storage_base_url or "/api/v1/static")

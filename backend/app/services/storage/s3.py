@@ -32,6 +32,9 @@ class S3Backend:
         secret_key: str,
         region: str = "",
         url_style: _UrlStyle = "path",
+        base_path: str = "",
+        custom_domain: str = "",
+        url_suffix: str = "",
     ) -> None:
         if not endpoint:
             raise ValueError("s3 endpoint is required")
@@ -46,6 +49,9 @@ class S3Backend:
         self.endpoint = endpoint.rstrip("/")
         self.bucket = bucket
         self.url_style: _UrlStyle = url_style
+        self.base_path = (base_path or "").strip("/")
+        self.custom_domain = (custom_domain or "").rstrip("/")
+        self.url_suffix = url_suffix or ""
         # SigV4：OSS/COS 等 S3 兼容服务要求；addressing_style 与 url_style 对齐避免认知割裂
         # 注意：addressing_style 只影响 boto3 API 调用的 URL 形态，不影响 url_for 的公开 URL
         config = Config(
@@ -70,11 +76,20 @@ class S3Backend:
             config=config,
         )
 
+    def _full_key(self, key: str) -> str:
+        """返回带 base_path 前缀的完整 key（用于 S3 操作）。"""
+        return f"{self.base_path}/{key}" if self.base_path else key
+
     def put(self, key: str, data: bytes, content_type: str) -> str:
-        """上传，回传入参 key（便于调用方链式拿 key 存 DB）。"""
+        """上传，回传入参 key（便于调用方链式拿 key 存 DB）。
+
+        注意：S3 中存储的 Key 是 _full_key(key)（含 base_path），
+        但返回逻辑 key（不含 base_path），便于 DB 存储与迁移。
+        """
+        full = self._full_key(key)
         self.client.put_object(
             Bucket=self.bucket,
-            Key=key,
+            Key=full,
             Body=data,
             ContentType=content_type,
         )
@@ -86,7 +101,7 @@ class S3Backend:
         其他 ClientError（如 403 权限、NoSuchBucket）向上抛，由调用方处理。
         """
         try:
-            return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+            return self.client.get_object(Bucket=self.bucket, Key=self._full_key(key))["Body"].read()
         except ClientError as e:
             if e.response.get("Error", {}).get("Code", "") in _NOT_FOUND_CODES:
                 raise FileNotFoundError(key) from e
@@ -94,7 +109,7 @@ class S3Backend:
 
     def delete(self, key: str) -> None:
         """删除。key 不存在时 S3 delete_object 幂等返 204（不抛）。"""
-        self.client.delete_object(Bucket=self.bucket, Key=key)
+        self.client.delete_object(Bucket=self.bucket, Key=self._full_key(key))
 
     def exists(self, key: str) -> bool:
         """存在性。head_object 成功 → True；404/NoSuchKey/NotFound → False；其他错（如 403）向上抛。
@@ -102,7 +117,7 @@ class S3Backend:
         403 等权限错误不吞：配错 access_key/bucket 应尽早暴露而非误判为「key 不存在」。
         """
         try:
-            self.client.head_object(Bucket=self.bucket, Key=key)
+            self.client.head_object(Bucket=self.bucket, Key=self._full_key(key))
             return True
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
@@ -113,16 +128,25 @@ class S3Backend:
     def url_for(self, key: str) -> str:
         """对外可访问 URL。key 经 quote 编码以兼容空格/中文/特殊字符。
 
+        优先级：custom_domain > virtual-style > path-style。
+        custom_domain 优先： PicGo 风格，可配 CDN/加速域名。
+        url_suffix 附加：如 ?imageslim（图片处理参数）。
+
         path 风格：`<endpoint>/<bucket>/<key>`（自建 / MinIO）
         virtual 风格：从 endpoint 解析 scheme + netloc（含端口），拼 `<scheme>://<bucket>.<netloc>/<key>`（OSS / S3）
 
         virtual 风格对无 scheme 的 endpoint（如 `oss-cn-beijing.aliyuncs.com`，OSS 常见写法）
         兜底：scheme 默认 https，netloc 取 urlparse 的 path 段（无 scheme 时 path 即 host）。
         """
-        quoted = quote(key)
-        if self.url_style == "virtual":
+        full_key = self._full_key(key)
+        quoted = quote(full_key)
+        if self.custom_domain:
+            base = self.custom_domain
+        elif self.url_style == "virtual":
             parsed = urlparse(self.endpoint)
             scheme = parsed.scheme or "https"
             netloc = parsed.netloc or parsed.path  # 无 scheme 时 path 段即 host
-            return f"{scheme}://{self.bucket}.{netloc}/{quoted}"
-        return f"{self.endpoint}/{self.bucket}/{quoted}"
+            base = f"{scheme}://{self.bucket}.{netloc}"
+        else:
+            base = f"{self.endpoint}/{self.bucket}"
+        return f"{base}/{quoted}{self.url_suffix}"

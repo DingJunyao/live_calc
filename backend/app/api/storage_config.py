@@ -23,6 +23,9 @@ class StorageConfigUpdate(BaseModel):
     s3_bucket: Optional[str] = None
     s3_region: Optional[str] = None
     s3_url_style: Optional[str] = None
+    s3_base_path: Optional[str] = None
+    s3_custom_domain: Optional[str] = None
+    s3_url_suffix: Optional[str] = None
 
 
 class StorageConfigTest(BaseModel):
@@ -33,6 +36,9 @@ class StorageConfigTest(BaseModel):
     s3_bucket: Optional[str] = None
     s3_region: Optional[str] = None
     s3_url_style: Optional[str] = None
+    s3_base_path: Optional[str] = None
+    s3_custom_domain: Optional[str] = None
+    s3_url_suffix: Optional[str] = None
 
 
 class StorageConfigResponse(BaseModel):
@@ -46,6 +52,9 @@ class StorageConfigResponse(BaseModel):
     s3_bucket: Optional[str] = None
     s3_region: Optional[str] = None
     s3_url_style: Optional[str] = None
+    s3_base_path: Optional[str] = None
+    s3_custom_domain: Optional[str] = None
+    s3_url_suffix: Optional[str] = None
     sources: dict = {}
 
 
@@ -71,7 +80,9 @@ def _probe_s3(cfg) -> tuple[bool, Optional[str]]:
         from app.services.storage.s3 import S3Backend
         b = S3Backend(endpoint=cfg.s3_endpoint, bucket=cfg.s3_bucket,
                       access_key=cfg.s3_access_key, secret_key=cfg.s3_secret_key,
-                      region=cfg.s3_region, url_style=cfg.s3_url_style or "path")
+                      region=cfg.s3_region, url_style=cfg.s3_url_style or "path",
+                      base_path=cfg.s3_base_path or "", custom_domain=cfg.s3_custom_domain or "",
+                      url_suffix=cfg.s3_url_suffix or "")
         key = "_storage_probe_test"
         b.put(key, b"ok", "application/octet-stream")
         b.get(key)
@@ -98,6 +109,9 @@ def get_config(
         s3_bucket=cfg.s3_bucket,
         s3_region=cfg.s3_region,
         s3_url_style=cfg.s3_url_style,
+        s3_base_path=cfg.s3_base_path,
+        s3_custom_domain=cfg.s3_custom_domain,
+        s3_url_suffix=cfg.s3_url_suffix,
         sources=cfg.sources,
     )
 
@@ -131,6 +145,9 @@ def put_config(
             s3_bucket=data.get("s3_bucket") or existing_bucket,
             s3_region=data.get("s3_region"),
             s3_url_style=data.get("s3_url_style") or existing_url_style,
+            s3_base_path=data.get("s3_base_path") or (existing.s3_base_path if existing else ""),
+            s3_custom_domain=data.get("s3_custom_domain") or (existing.s3_custom_domain if existing else ""),
+            s3_url_suffix=data.get("s3_url_suffix") or (existing.s3_url_suffix if existing else ""),
         )
         ok, err = _probe_s3(probe_cfg)
         if not ok:

@@ -12,6 +12,7 @@ _DEFAULTS = {
     "storage_base_url": "",
     "s3_endpoint": "", "s3_access_key": "", "s3_secret_key": "",
     "s3_bucket": "", "s3_region": "", "s3_url_style": "path",
+    "s3_base_path": "", "s3_custom_domain": "", "s3_url_suffix": "",
 }
 
 # DB 字段名 → settings 字段名
@@ -24,6 +25,9 @@ _ENV_MAP = {
     "s3_bucket": "bootstrap_s3_bucket",
     "s3_region": "bootstrap_s3_region",
     "s3_url_style": "bootstrap_s3_url_style",
+    "s3_base_path": "bootstrap_s3_base_path",
+    "s3_custom_domain": "bootstrap_s3_custom_domain",
+    "s3_url_suffix": "bootstrap_s3_url_suffix",
 }
 
 
@@ -37,6 +41,9 @@ class StorageEffectiveConfig:
     s3_bucket: Optional[str]
     s3_region: Optional[str]
     s3_url_style: str
+    s3_base_path: str
+    s3_custom_domain: str
+    s3_url_suffix: str
     sources: dict = field(default_factory=dict)   # 字段名 → db/env/default
 
 
@@ -91,5 +98,8 @@ def load_effective_storage_config() -> StorageEffectiveConfig:
         s3_bucket=resolved["s3_bucket"],
         s3_region=resolved["s3_region"],
         s3_url_style=resolved["s3_url_style"],
+        s3_base_path=resolved["s3_base_path"],
+        s3_custom_domain=resolved["s3_custom_domain"],
+        s3_url_suffix=resolved["s3_url_suffix"],
         sources=sources,
     )

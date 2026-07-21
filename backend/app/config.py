@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     #   virtual  → <scheme>://<bucket>.<host>[:<port>]/<key>（OSS / AWS S3）
     # OSS 实际为 virtual-hosted 风格，配 OSS 时设 virtual；默认 path 兼容 MinIO
     bootstrap_s3_url_style: Literal["path", "virtual"] = "path"
+    # PicGo 风格：S3 key 前缀、自定义域名、网址后缀
+    bootstrap_s3_base_path: str = ""         # 如 "livecalc/"（自动加首尾斜杠）
+    bootstrap_s3_custom_domain: str = ""     # 如 "https://cdn.example.com"（CDN 域名）
+    bootstrap_s3_url_suffix: str = ""       # 如 "?imageslim"（七牛云图片处理参数）
 
     class Config:
         env_file = ".env"
