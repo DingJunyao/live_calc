@@ -62,7 +62,7 @@
           <!-- 菜谱图片或占位符 -->
           <v-img
             v-if="pendingImages(recipe) && pendingImages(recipe).length > 0"
-            :src="getImageUrl(pendingImages(recipe)[0])"
+            :src="recipe.image_urls?.[0] || getImageUrl(pendingImages(recipe)[0])"
             height="140"
             cover
           />
@@ -265,6 +265,7 @@ interface Recipe {
   estimated_cost?: number | string
   calories?: number
   images?: string[]
+  image_urls?: string[]
   is_public?: boolean
   source?: string
   created_at?: string

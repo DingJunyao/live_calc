@@ -226,11 +226,15 @@ def _build_recipe_brief(
     recipe: Recipe, nutrition: Optional[Dict], cost: Optional[Dict]
 ) -> Dict:
     """构建菜谱简要信息 dict。"""
+    from app.services.storage import get_storage
+
+    images_list = recipe.images or []
     brief = {
         "id": recipe.id,
         "name": recipe.name,
         "category": recipe.category,
-        "images": recipe.images or [],
+        "images": images_list,
+        "image_urls": [get_storage().url_for(img[len('/static/images/'):] if img.startswith('/static/images/') else img) for img in images_list] if images_list else None,
         "servings": recipe.servings or 1,
     }
 

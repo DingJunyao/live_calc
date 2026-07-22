@@ -20,6 +20,7 @@ class RecipeBrief(BaseModel):
     name: str
     category: Optional[str] = None
     images: Optional[List[str]] = None
+    image_urls: Optional[List[str]] = None  # 已解析的完整 URL（S3 直连 / local 路径）
     servings: int = 1
     cost_estimate: Optional[float] = None
     nutrition_per_serving: Optional[dict] = None

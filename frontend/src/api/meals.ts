@@ -13,6 +13,7 @@ export interface RecipeBrief {
   name: string
   category?: string
   images?: string[]
+  image_urls?: string[]  // 已解析的完整 URL（S3 直连 / local 路径）
   servings: number
   cost_estimate?: number
   nutrition_per_serving?: NutritionPerServing | null

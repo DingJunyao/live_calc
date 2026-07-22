@@ -51,6 +51,7 @@ class RecipeResponse(TimeZoneAwareModel):
     tips: Optional[List[str]] = None
     description: Optional[str] = None
     images: Optional[List[str]] = None
+    image_urls: Optional[List[str]] = None  # 已解析的完整 URL（S3 直连 / local 路径），前端优先使用
     result_ingredient_id: Optional[int] = None
     # 是否已发布（共享转型后区分私有/公开菜谱，供前端显示发布标记与守卫）
     is_public: Optional[bool] = False

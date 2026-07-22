@@ -10,6 +10,7 @@ export interface RecipeDetail {
   servings?: number
   tips?: string[]
   images?: string[]
+  image_urls?: string[]  // 已解析的完整 URL（S3 直连 / local 路径），优先使用
   result_ingredient_id?: number
   created_at?: string
   updated_at?: string

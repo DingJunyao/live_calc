@@ -39,6 +39,16 @@ import tempfile
 
 router = APIRouter()
 
+# 旧格式 /static/images/xxx → 新格式 xxx（DB 存量数据兼容）
+_STATIC_IMAGES = '/static/images/'
+
+
+def _normalize_img_key(path: str) -> str:
+    """将旧格式 /static/images/xxx 归一化为 storage key xxx。"""
+    if path.startswith(_STATIC_IMAGES):
+        return path[len(_STATIC_IMAGES):]
+    return path
+
 
 def _apply_recipe_special_conditions(query, has_unpriced_ingredient, has_unnourished_ingredient):
     """Apply special condition filters to a Recipe query."""
@@ -244,6 +254,10 @@ async def get_recipes(
         items = []
 
         # 如果需要包含成本和营养信息，批量计算它们
+        from app.services.storage import get_storage
+
+        storage = get_storage()
+
         if include_cost:
             from app.services.recipe_service import batch_calculate_recipes_cost_nutrition
 
@@ -257,6 +271,7 @@ async def get_recipes(
                 cooking_steps_list = recipe.cooking_steps if isinstance(recipe.cooking_steps, list) else []
                 tips_list = recipe.tips if isinstance(recipe.tips, list) else []
                 images_list = recipe.images if isinstance(recipe.images, list) else []
+                image_urls_list = [storage.url_for(_normalize_img_key(img)) for img in images_list] if images_list else None
 
                 # 从批量结果中获取成本和营养信息
                 recipe_result = batch_results.get(recipe.id, {})
@@ -288,6 +303,7 @@ async def get_recipes(
                     tips=tips_list,
                     description=recipe.description,
                     images=images_list,
+                    image_urls=image_urls_list,
                     result_ingredient_id=recipe.result_ingredient_id,
                     is_public=getattr(recipe, "is_public", False),
                     created_at=recipe.created_at,
@@ -304,6 +320,7 @@ async def get_recipes(
                 cooking_steps_list = recipe.cooking_steps if isinstance(recipe.cooking_steps, list) else []
                 tips_list = recipe.tips if isinstance(recipe.tips, list) else []
                 images_list = recipe.images if isinstance(recipe.images, list) else []
+                image_urls_list = [storage.url_for(_normalize_img_key(img)) for img in images_list] if images_list else None
 
                 items.append(RecipeResponse(
                     id=recipe.id,
@@ -318,6 +335,7 @@ async def get_recipes(
                     tips=tips_list,
                     description=recipe.description,
                     images=images_list,
+                    image_urls=image_urls_list,
                     result_ingredient_id=recipe.result_ingredient_id,
                     is_public=getattr(recipe, "is_public", False),
                     created_at=recipe.created_at,
@@ -419,6 +437,10 @@ async def get_recipe_detail(
                 nutrition_info=None
             ))
 
+        images_list = recipe.images or []
+        from app.services.storage import get_storage
+        image_urls_list = [get_storage().url_for(_normalize_img_key(img)) for img in images_list] if images_list else None
+
         response = RecipeDetailResponse(
             id=recipe.id,
             name=recipe.name,
@@ -431,7 +453,8 @@ async def get_recipe_detail(
             servings=recipe.servings,
             tips=recipe.tips,
             description=recipe.description,
-            images=recipe.images or [],
+            images=images_list,
+            image_urls=image_urls_list,
             is_public=getattr(recipe, "is_public", False),
             created_at=recipe.created_at,
             updated_at=recipe.updated_at,
@@ -585,6 +608,10 @@ def _build_recipe_detail_response(recipe: Recipe, db: Session) -> RecipeDetailRe
             nutrition_info=None
         ))
 
+    images_list = recipe.images or []
+    from app.services.storage import get_storage
+    image_urls_list = [get_storage().url_for(_normalize_img_key(img)) for img in images_list] if images_list else None
+
     return RecipeDetailResponse(
         id=recipe.id,
         name=recipe.name,
@@ -597,7 +624,8 @@ def _build_recipe_detail_response(recipe: Recipe, db: Session) -> RecipeDetailRe
         servings=recipe.servings,
         tips=recipe.tips,
         description=recipe.description,
-        images=recipe.images or [],
+        images=images_list,
+        image_urls=image_urls_list,
         created_at=recipe.created_at,
         updated_at=recipe.updated_at,
         ingredients=ingredients_detail

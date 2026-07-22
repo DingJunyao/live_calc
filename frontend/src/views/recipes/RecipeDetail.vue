@@ -127,7 +127,7 @@
               <v-card elevation="0" class="ma-4 overflow-hidden">
                 <!-- 主图片 -->
                 <v-img
-                  :src="getImageUrl(displayRecipe?.images[selectedImageIndex])"
+                  :src="displayRecipe?.image_urls?.[selectedImageIndex] || getImageUrl(displayRecipe?.images[selectedImageIndex])"
                   height="max(320px, 33vh)"
                   cover
                   class="bg-surface-variant cursor-pointer recipe-main-img"
@@ -156,7 +156,7 @@
                   <v-img
                     v-for="(img, index) in displayRecipe?.images"
                     :key="index"
-                    :src="getImageUrl(img)"
+                    :src="displayRecipe?.image_urls?.[index] || getImageUrl(img)"
                     width="60"
                     height="60"
                     cover
@@ -406,7 +406,7 @@
         <!-- 主图片 -->
         <img
           v-if="recipe?.images?.length"
-          :src="getImageUrl(displayRecipe?.images[lightboxIndex])"
+          :src="displayRecipe?.image_urls?.[lightboxIndex] || getImageUrl(displayRecipe?.images[lightboxIndex])"
           class="lightbox-image"
           @click.stop
         />
@@ -436,7 +436,7 @@
           <v-img
             v-for="(img, index) in displayRecipe?.images"
             :key="index"
-            :src="getImageUrl(img)"
+            :src="displayRecipe?.image_urls?.[index] || getImageUrl(img)"
             width="48"
             height="48"
             cover
@@ -547,6 +547,7 @@ interface Recipe {
   servings?: number
   tips?: string[]
   images?: string[]
+  image_urls?: string[]
   result_ingredient_id?: number
   created_at?: string
   updated_at?: string

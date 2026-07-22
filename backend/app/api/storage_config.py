@@ -48,7 +48,7 @@ class StorageConfigResponse(BaseModel):
     s3_access_key: Optional[str] = None      # 脱敏 "***" 或 None
     has_access_key: bool = False
     s3_secret_key: Optional[str] = None      # 脱敏 "***" 或 None
-    has_secret: bool = False
+    has_secret_key: bool = False
     s3_bucket: Optional[str] = None
     s3_region: Optional[str] = None
     s3_url_style: Optional[str] = None
@@ -105,7 +105,7 @@ def get_config(
         s3_access_key="***" if cfg.s3_access_key else None,
         has_access_key=bool(cfg.s3_access_key),
         s3_secret_key="***" if cfg.s3_secret_key else None,
-        has_secret=bool(cfg.s3_secret_key),
+        has_secret_key=bool(cfg.s3_secret_key),
         s3_bucket=cfg.s3_bucket,
         s3_region=cfg.s3_region,
         s3_url_style=cfg.s3_url_style,

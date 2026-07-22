@@ -122,7 +122,10 @@ const emit = defineEmits<{
 }>()
 
 const recipeImage = computed(() => {
-  const images = props.recommendation.recipe?.images
+  const recipe = props.recommendation.recipe
+  // 优先使用已解析的 image_urls（S3 直连，零开销）
+  if (recipe?.image_urls?.[0]) return recipe.image_urls[0]
+  const images = recipe?.images
   if (images && images.length > 0) {
     return resolveImageUrl(images[0]) || null
   }

@@ -21,7 +21,7 @@ def test_get_config_masks_secret(as_admin):
     assert r.status_code == 200
     body = r.json()
     assert body["s3_secret_key"] == "***"
-    assert body["has_secret"] is True
+    assert body["has_secret_key"] is True
     assert body["sources"]["backend"] == "db"
 
 

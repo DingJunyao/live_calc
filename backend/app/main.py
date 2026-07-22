@@ -565,6 +565,23 @@ static_images_dir = static_dir / "images"
 static_dir.mkdir(exist_ok=True)
 static_images_dir.mkdir(exist_ok=True)
 
+
+# 动态图片服务端点：根据当前存储后端决定返回本地文件还是重定向到 S3
+@app.get("/api/v1/images/{key:path}", tags=["图片服务"])
+async def serve_image(key: str):
+    """根据当前存储后端（local/s3）返回图片。
+
+    - local: 307 重定向到 /api/v1/static/images/<key>（StaticFiles 挂载）
+    - s3: 307 重定向到 S3 的对外 URL（url_for）
+    """
+    from fastapi.responses import RedirectResponse
+    from app.services.storage.factory import get_storage
+
+    storage = get_storage()
+    url = storage.url_for(key)
+    return RedirectResponse(url, status_code=307)
+
+
 # 挂载静态文件到 /api/v1/static 路径，与 API 路径保持一致
 app.mount("/api/v1/static", StaticFiles(directory=str(static_dir)), name="static")
 

@@ -140,6 +140,7 @@
       <div class="text-subtitle-2 mb-2">配图管理</div>
       <ImageManager
         v-model="editImages"
+        :image-urls="recipe.image_urls"
         :recipe-id="recipe.id"
         :uploading="uploadingImage"
         @upload="handleImageUpload"

@@ -8,7 +8,7 @@
         class="image-thumb-wrapper"
       >
         <v-img
-          :src="getImageUrl(img)"
+          :src="imageUrls?.[index] || getImageUrl(img)"
           width="80"
           height="80"
           cover
@@ -96,6 +96,7 @@ import { resolveImageUrl } from '@/utils/image'
 
 const props = defineProps<{
   modelValue: string[]
+  imageUrls?: string[]  // 已解析的完整 URL，优先用于展示
   uploading: boolean
   recipeId?: number
 }>()

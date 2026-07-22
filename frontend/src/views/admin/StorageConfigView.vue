@@ -345,16 +345,6 @@
                 迁移状态：{{ migrationTaskId ? (migrationComplete ? '已完成' : '进行中') : '已跳过' }}
               </div>
             </v-alert>
-            <v-btn
-              color="error"
-              variant="tonal"
-              :loading="applyingConfig"
-              @click="applyConfig"
-              block
-            >
-              <v-icon start>mdi-check-circle</v-icon>
-              确认切换
-            </v-btn>
           </div>
         </v-card-text>
 
@@ -367,8 +357,9 @@
           <v-btn v-if="wizardStep < 5" variant="text" @click="nextStep" :disabled="!canNextStep">
             下一步
           </v-btn>
-          <v-btn v-else variant="text" color="error" @click="wizardDialog = false" :disabled="applyingConfig">
-            关闭
+          <v-btn v-else color="error" variant="tonal" :loading="applyingConfig" @click="applyConfig">
+            <v-icon start>mdi-check-circle</v-icon>
+            确认切换
           </v-btn>
         </v-card-actions>
       </v-card>
