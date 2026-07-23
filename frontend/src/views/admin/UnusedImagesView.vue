@@ -78,14 +78,12 @@
             <v-btn
               v-if="group.count > 0"
               size="x-small"
-              color="error"
               variant="text"
-              :loading="deleting"
-              @click.stop="deleteGroup(group)"
-              class="ml-2"
+              :color="isGroupAllSelected(group.key) ? 'primary' : undefined"
+              @click.stop="toggleGroup(group.key)"
             >
-              <v-icon size="small">mdi-delete</v-icon>
-              删除本组
+              <v-icon size="small">mdi-checkbox-{{ isGroupAllSelected(group.key) ? 'marked' : 'blank-outline' }}</v-icon>
+              {{ isGroupAllSelected(group.key) ? '取消全选' : '选择本组' }}
             </v-btn>
           </v-expansion-panel-title>
           <v-expansion-panel-text>
@@ -225,11 +223,6 @@ const toggleSelect = (key: string): void => {
   }
 }
 
-const deleteGroup = async (group: ImageGroup) => {
-  if (!group.images.length) return
-  selected.value = group.images.map(img => img.key)
-  await confirmDelete()
-}
 
 const loadData = async () => {
   scanning.value = true
