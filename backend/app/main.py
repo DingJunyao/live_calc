@@ -326,6 +326,15 @@ async def lifespan(app: FastAPI):
             logger.info("提议执行器已注册")
         except Exception as e:
             logger.error(f"提议执行器注册失败: {e}")
+
+        # 图像引用追踪初始化：启动时扫描重建 image_tracking 表，
+        # 确保引用计数准确。失败不阻断启动。
+        try:
+            from app.services.image_tracking import scan_all_images
+            scan_all_images(db)
+            logger.info("图像引用追踪扫描完成")
+        except Exception as e:
+            logger.warning(f"图像引用追踪初始化失败: {e}")
     except Exception as e:
         logger.error(f"初始化过程中发生错误: {str(e)}")
     finally:

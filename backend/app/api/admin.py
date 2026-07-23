@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from app.core.security import get_current_user, get_current_admin_user
 from app.core.database import get_db
 from app.models.user import User
@@ -10,6 +10,7 @@ from app.models.product_entity import Product as ProductEntity
 from app.models.recipe import Recipe
 from app.models.merchant import Merchant
 from app.models.map_config import MapConfiguration
+from app.models.image_tracking import ImageTracking
 from app.models.system_config import SystemConfig
 from app.schemas.auth import UserResponse, AdminConfigUpdate, ConfigResponse
 from pydantic import BaseModel
@@ -275,31 +276,116 @@ async def get_unused_images(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """获取服务器上未被引用的图片列表 - 仅限管理员
+    """获取未使用图片，按不再使用时间分组。
 
-    扫描 storage 后端中所有图片文件，排除 Recipe.images、users.avatar、
-    ProductEntity.image_url 中已引用的 key。支持本地和 S3 存储后端。
+    分组（越老的越靠前，越安全）：
+    - never_used: 从未引用（ref_count=0 AND last_used_at IS NULL）
+    - 180d: 180 天以上
+    - 90d: 90~180 天
+    - 60d: 60~90 天
+    - 30d: 30~60 天
+    - recent: 30 天内
     """
-    used = _collect_used_image_keys(db)
+    now = datetime.now(timezone.utc)
+    used_keys = _collect_used_image_keys(db)
     storage = get_storage()
 
-    # 只列出已知图片子目录（避免 S3 后端列出整个 bucket 的无关对象）
-    _KNOWN_IMAGE_DIRS = ("recipes/", "avatars/")
-    all_keys = [
-        k for k in storage.list("")
-        if any(k.startswith(d) for d in _KNOWN_IMAGE_DIRS)
-    ]
+    rows = db.query(ImageTracking).filter(
+        ImageTracking.ref_count == 0
+    ).all()
 
-    unused = []
-    for key in sorted(all_keys):
-        if key not in used:
-            unused.append({
-                "key": key,
-                "filename": key.split("/")[-1],
-                "url": storage.url_for(key),
-            })
+    unused = [r for r in rows if r.key not in used_keys]
 
-    return {"images": unused}
+    def _ensure_utc(dt):
+        if dt is not None and dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    def _group_key(row):
+        if row.last_used_at is None:
+            return "never_used"
+        last_used = _ensure_utc(row.last_used_at)
+        days = (now - last_used).days
+        if days >= 180:
+            return "180d"
+        if days >= 90:
+            return "90d"
+        if days >= 60:
+            return "60d"
+        if days >= 30:
+            return "30d"
+        return "recent"
+
+    groups: dict[str, list[dict]] = {
+        "never_used": [], "180d": [], "90d": [],
+        "60d": [], "30d": [], "recent": [],
+    }
+
+    for row in unused:
+        gk = _group_key(row)
+        groups[gk].append({
+            "key": row.key,
+            "filename": row.key.split("/")[-1],
+            "url": storage.url_for(row.key),
+            "file_size": row.file_size,
+            "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        })
+
+    group_order = ["never_used", "180d", "90d", "60d", "30d", "recent"]
+    group_labels = {
+        "never_used": "从未引用",
+        "180d": "180 天以上不再使用",
+        "90d": "90~180 天不再使用",
+        "60d": "60~90 天不再使用",
+        "30d": "30~60 天不再使用",
+        "recent": "30 天内不再使用",
+    }
+
+    result_groups = []
+    for gk in group_order:
+        items = groups[gk]
+        items.sort(key=lambda x: x.get("last_used_at") or "")
+        result_groups.append({
+            "key": gk,
+            "label": group_labels[gk],
+            "images": items,
+            "count": len(items),
+            "total_size": sum(item["file_size"] for item in items),
+        })
+
+    # 全量统计
+    all_tracking = db.query(ImageTracking).all()
+    total = len(all_tracking)
+    used = sum(1 for r in all_tracking if r.ref_count > 0)
+    unused_count = total - used
+    used_size = sum(r.file_size for r in all_tracking if r.ref_count > 0)
+    unused_size_t = sum(r.file_size for r in all_tracking if r.ref_count == 0 and r.key not in used_keys)
+
+    return {
+        "stats": {
+            "total_images": total,
+            "used_images": used,
+            "unused_images": unused_count,
+            "used_size": used_size,
+            "unused_size": unused_size_t,
+        },
+        "groups": result_groups,
+    }
+
+
+@router.post("/images/scan")
+async def scan_images(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """扫描存储后端，全量重建 image_tracking 表。
+
+    每次系统启动时自动执行一次（lifespan 内调相同逻辑），
+    也支持管理员手动调用刷新。失败不阻断启动。
+    """
+    from app.services.image_tracking import scan_all_images
+    stats = scan_all_images(db)
+    return {"stats": stats, "message": "扫描完成"}
 
 
 @router.post("/images/unused/delete")
