@@ -8,7 +8,7 @@
         <span class="text-truncate">{{ displayRecipe?.name || '菜谱详情' }}</span>
         <v-chip size="x-small" variant="tonal" color="primary">菜谱</v-chip>
         <v-chip v-if="proposalStatus === 'pending'" size="x-small" variant="tonal" color="warning">审核中</v-chip>
-        <v-chip v-else-if="!isPublished" size="x-small" variant="tonal" color="warning">未发布</v-chip>
+        <v-chip v-else-if="recipe && !isPublished" size="x-small" variant="tonal" color="warning">未发布</v-chip>
       </div>
     </v-app-bar-title>
     <template #append>

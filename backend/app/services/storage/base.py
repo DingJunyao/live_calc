@@ -28,3 +28,7 @@ class StorageBackend(Protocol):
     def url_for(self, key: str) -> str:
         """对外可访问 URL。"""
         ...
+
+    def list(self, prefix: str = "") -> list[str]:
+        """列出给定 prefix 下的所有 key（递归）。prefix 为空时从根目录列全部。"""
+        ...

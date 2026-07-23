@@ -214,7 +214,7 @@ class HowToCookImporter(Importer):
             # 处理图片
             images = []
             for img in data.get("images", []):
-                local_path = self._download_image(img, rf.dirname)
+                local_path = self._download_image(img, os.path.dirname(rf.absolute_path))
                 if local_path:
                     images.append(local_path)
 

@@ -63,6 +63,23 @@ AGENT_APPROVAL_TIMEOUT=3600
 
 # 导入超时
 IMPORT_DOWNLOAD_TIMEOUT=300
+
+# 图片存储（仅初始化 / 首次启动 / DB 未配置时生效；后台「图片存储」页配置后优先级更高）
+# BOOTSTRAP_STORAGE_BACKEND: local=本地磁盘（默认）, s3=S3 兼容对象存储（OSS/COS/MinIO 等）
+BOOTSTRAP_STORAGE_BACKEND=local
+
+# S3 兼容端点（OSS/COS/MinIO），BOOTSTRAP_STORAGE_BACKEND=s3 时必填
+BOOTSTRAP_S3_ENDPOINT=
+BOOTSTRAP_S3_ACCESS_KEY=
+BOOTSTRAP_S3_SECRET_KEY=
+BOOTSTRAP_S3_BUCKET=
+BOOTSTRAP_S3_REGION=
+# S3 URL 风格：path=<endpoint>/<bucket>/<key>（MinIO/自建，默认），virtual=<scheme>://<bucket>.<host>/<key>（OSS/AWS S3）
+BOOTSTRAP_S3_URL_STYLE=path
+# PicGo 风格：S3 key 前缀（如 livecalc/）、自定义域名（如 https://cdn.example.com）、网址后缀（如 ?imageslim）
+BOOTSTRAP_S3_BASE_PATH=
+BOOTSTRAP_S3_CUSTOM_DOMAIN=
+BOOTSTRAP_S3_URL_SUFFIX=
 ```
 
 > 生产环境务必改掉 `JWT_SECRET_KEY` 的默认值，并设 `DEBUG=false`。

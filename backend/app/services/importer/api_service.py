@@ -42,27 +42,36 @@ def start_background_import(db: Session, task_type: str, user_id: int,
 def make_progress_callback(task_id: int):
     """创建进度回调函数，用于更新数据库中的任务进度。
 
-    返回 (stage, current, total, message) -> None 的回调。
+    返回形如 (stage, current, total, message="", counts=None) -> bool 的回调：
+    - counts 非 None 时，其键值合并进 progress（供迁移实时展示 已上传/跳过/失败）。
+    - 返回值表示任务是否已被取消（task.status == "cancelled"），
+      供支持取消的后台循环（如图片迁移）在循环中检查并 break。
     """
     from app.core.database import SessionLocal as _SessionLocal
 
-    def progress_callback(stage: str, current: int, total: int, message: str = ""):
+    def progress_callback(stage: str, current: int, total: int,
+                          message: str = "", counts: dict = None):
         try:
             cb_db = _SessionLocal()
             try:
                 t = cb_db.query(ImportTask).get(task_id)
                 if t:
-                    t.progress = {
+                    progress = {
                         "stage": stage,
                         "current": current,
                         "total": total,
                         "message": message,
                     }
+                    if counts:
+                        progress.update(counts)
+                    t.progress = progress
                     cb_db.commit()
+                    return t.status == "cancelled"
             finally:
                 cb_db.close()
         except Exception:
             pass
+        return False
 
     return progress_callback
 
@@ -96,16 +105,26 @@ def _run_import_task(task_id: int, import_func, *args):
 
         task = db.query(ImportTask).get(task_id)
         if task:
+            # 若运行中被取消（cancel 端点置 status=cancelled），保留 cancelled，
+            # 不覆盖为 success/failed；stats 仍记部分统计，前端可见「取消时已迁移多少」
+            was_cancelled = task.status == "cancelled"
             has_errors = (
                 hasattr(result, 'errors') and result.errors
             )
-            task.status = "failed" if has_errors else "success"
-            task.progress = {"stage": "完成", "current": 1, "total": 1, "message": "导入完成"}
+            if was_cancelled:
+                task.status = "cancelled"
+                task.progress = {"stage": "已取消", "current": 1, "total": 1,
+                                 "message": "任务已取消"}
+            else:
+                task.status = "failed" if has_errors else "success"
+                task.progress = {"stage": "完成", "current": 1, "total": 1,
+                                 "message": "导入完成"}
             stats = dict(result.stats) if hasattr(result, 'stats') else {}
             if hasattr(result, 'skipped') and result.skipped:
                 stats["skipped"] = result.skipped
             task.stats = stats
-            task.error = "\n".join(result.errors) if has_errors else None
+            task.error = (None if was_cancelled
+                          else ("\n".join(result.errors) if has_errors else None))
             db.commit()
     except Exception as e:
         try:

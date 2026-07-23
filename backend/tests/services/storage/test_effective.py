@@ -29,7 +29,6 @@ def test_effective_falls_back_to_env():
          patch("app.services.storage.effective.settings") as s:
         s.bootstrap_storage_backend = "s3"
         s.bootstrap_s3_endpoint = "https://env.example.com"
-        s.bootstrap_storage_base_url = ""
         s.bootstrap_s3_access_key = ""; s.bootstrap_s3_secret_key = ""
         s.bootstrap_s3_bucket = ""; s.bootstrap_s3_region = ""
         s.bootstrap_s3_url_style = "path"
@@ -48,8 +47,7 @@ def test_effective_default_when_all_empty():
     with patch("app.services.storage.effective._query_db_row", return_value=fake_row), \
          patch("app.services.storage.effective.settings") as s:
         # 所有 bootstrap 字段都为空，回落到代码默认
-        s.bootstrap_storage_backend = None; s.bootstrap_storage_base_url = None
-        s.bootstrap_s3_endpoint = None; s.bootstrap_s3_access_key = None
+        s.bootstrap_storage_backend = None; s.bootstrap_s3_endpoint = None; s.bootstrap_s3_access_key = None
         s.bootstrap_s3_secret_key = None; s.bootstrap_s3_bucket = None
         s.bootstrap_s3_region = None; s.bootstrap_s3_url_style = None
         cfg = load_effective_storage_config()

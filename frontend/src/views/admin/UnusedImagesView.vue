@@ -56,41 +56,49 @@
           </span>
         </div>
 
-        <v-row v-if="images.length > 0">
-          <v-col
-            v-for="img in images"
-            :key="img.filename"
-            cols="6"
-            sm="4"
-            md="3"
-            lg="2"
-          >
-            <v-card
-              elevation="1"
-              :color="selected.includes(img.filename) ? 'primary' : undefined"
-              @click="toggleSelect(img.filename)"
-              style="cursor: pointer"
+        <template v-for="group in groups" :key="group.dir">
+          <v-divider class="my-2" />
+          <div class="text-subtitle-2 font-weight-medium mb-2 mt-2">
+            <v-icon class="mr-1">{{ groupIcon(group.dir) }}</v-icon>
+            {{ group.label }}
+            <span class="text-caption text-medium-emphasis">（{{ group.items.length }} 张）</span>
+          </div>
+          <v-row>
+            <v-col
+              v-for="img in group.items"
+              :key="img.key"
+              cols="6"
+              sm="4"
+              md="3"
+              lg="2"
             >
-              <v-img
-                :src="img.url"
-                height="100"
-                cover
-                class="bg-grey-lighten-3"
+              <v-card
+                elevation="1"
+                :color="selected.includes(img.key) ? 'primary' : undefined"
+                @click="toggleSelect(img.key)"
+                style="cursor: pointer"
               >
-                <template #placeholder>
-                  <div class="d-flex align-center justify-center fill-height">
-                    <v-icon color="grey">mdi-image-off</v-icon>
-                  </div>
-                </template>
-              </v-img>
-              <v-card-text class="pa-1 text-caption text-center text-truncate">
-                {{ img.filename }}
-              </v-card-text>
-            </v-card>
-          </v-col>
-        </v-row>
+                <v-img
+                  :src="img.url"
+                  height="100"
+                  cover
+                  class="bg-grey-lighten-3"
+                >
+                  <template #placeholder>
+                    <div class="d-flex align-center justify-center fill-height">
+                      <v-icon color="grey">mdi-image-off</v-icon>
+                    </div>
+                  </template>
+                </v-img>
+                <v-card-text class="pa-1 text-caption text-center text-truncate">
+                  {{ img.filename }}
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+        </template>
 
-        <v-card-text v-else-if="!loading" class="text-center py-8">
+        <v-card-text v-if="!loading && images.length === 0" class="text-center py-8">
           <v-icon size="64" color="success">mdi-check-circle-outline</v-icon>
           <div class="text-body-1 mt-2">没有未使用的图片</div>
         </v-card-text>
@@ -107,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useRouter } from 'vue-router'
@@ -127,6 +135,35 @@ const loading = ref(false)
 const deleting = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+
+interface ImageGroup {
+  dir: string
+  label: string
+  items: any[]
+}
+
+const groupIcon = (dir: string): string => {
+  const icons: Record<string, string> = {
+    recipes: 'mdi-silverware-fork-knife',
+    avatars: 'mdi-account-circle',
+  }
+  return icons[dir] || 'mdi-folder'
+}
+
+const groups = computed<ImageGroup[]>(() => {
+  const map = new Map<string, any[]>()
+  for (const img of images.value) {
+    const dir = (img.key as string).split('/')[0] || 'other'
+    if (!map.has(dir)) map.set(dir, [])
+    map.get(dir)!.push(img)
+  }
+  const labels: Record<string, string> = {
+    recipes: '菜谱图片',
+    avatars: '头像',
+  }
+  return Array.from(map.entries())
+    .map(([dir, items]) => ({ dir, label: labels[dir] || dir, items }))
+})
 
 const loadImages = async () => {
   loading.value = true
@@ -158,7 +195,7 @@ const confirmDelete = async () => {
   successMsg.value = ''
   try {
     const resp = await api.post('/admin/images/unused/delete', {
-      paths: selected.value,
+      keys: selected.value,
     })
     successMsg.value = `已删除 ${resp.deleted?.length || 0} 张图片`
     if (resp.errors?.length) {

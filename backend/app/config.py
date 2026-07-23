@@ -59,7 +59,6 @@ class Settings(BaseSettings):
 
     # 图片存储（仅初始化 / 首次启动 / DB 未配置时生效；后台「图片存储」页配置后优先级更高）
     bootstrap_storage_backend: Literal["local", "s3"] = "local"
-    bootstrap_storage_base_url: str = ""  # local 端对外基址，空则走 /api/v1/static
     bootstrap_s3_endpoint: str = ""  # OSS/COS/MinIO 等 S3 兼容端点
     bootstrap_s3_access_key: str = ""
     bootstrap_s3_secret_key: str = ""

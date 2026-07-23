@@ -14,9 +14,25 @@ _STATIC_ROOT = Path(__file__).resolve().parents[3] / "static"
 IMAGES_DIR = _STATIC_ROOT / "images"
 
 
+def _strip_base_path(full_key: str, base_path: str) -> str:
+    """把 list_objects_v2 返回的真实 key 剥掉 base_path 前缀，还原成逻辑 key。
+
+    S3Backend.get/put/exists 内部会用 _full_key 再加一次 base_path，
+    故迁移循环必须用逻辑 key（不含 base_path），否则前缀翻倍、404 全失败。
+    base_path 为空、或 key 不以 `base_path/` 开头时原样返回。
+    """
+    base = (base_path or "").rstrip("/")
+    if base:
+        prefix = base + "/"
+        if full_key.startswith(prefix):
+            return full_key[len(prefix):]
+    return full_key
+
+
 def _migrate_to_s3_core(s3_backend, images_dir: Path,
                         progress_callback=None) -> tuple[int, int, int]:
-    """local→S3。walk images_dir 所有文件 → s3.put。幂等：S3 已存在跳过。"""
+    """local→S3。walk images_dir 所有文件 → s3.put。幂等：S3 已存在跳过。
+    支持中止：progress_callback 返回 True 即 break。"""
     import mimetypes
     files = sorted(f for f in images_dir.rglob("*") if f.is_file())
     uploaded = skipped = failed = 0
@@ -33,18 +49,34 @@ def _migrate_to_s3_core(s3_backend, images_dir: Path,
             failed += 1
             logger.warning("to_s3 失败 %s: %s", key, e)
         if progress_callback:
-            progress_callback("迁移到 S3", i + 1, len(files), key)
+            cancelled = progress_callback(
+                "迁移到 S3", i + 1, len(files), key,
+                counts={"uploaded": uploaded, "skipped": skipped, "failed": failed},
+            )
+            if cancelled:
+                logger.info("to_s3 迁移被中止，已完成 %d/%d", i + 1, len(files))
+                break
     return uploaded, skipped, failed
 
 
 def _migrate_from_s3_core(s3_backend, images_dir: Path,
                           progress_callback=None) -> tuple[int, int, int]:
-    """S3→local。list_objects_v2 分页 → get → 落本地。幂等：本地已存在跳过（不覆盖）。"""
+    """S3→local。list_objects_v2 限定 base_path 前缀 → get → 落本地。
+
+    list 返回的是含 base_path 的真实 key，需剥前缀还原逻辑 key 再 get
+    （否则 get 内部 _full_key 会再加一次 base_path 致前缀翻倍、404 全失败）。
+    幂等：本地已存在跳过（不覆盖）。支持中止：progress_callback 返回 True 即 break。
+    """
     uploaded = skipped = failed = 0
+    base_path = getattr(s3_backend, "base_path", "") or ""
+    list_prefix = (base_path.rstrip("/") + "/") if base_path else ""
+
     continuation = None
     all_keys = []
     while True:
         kwargs = {"Bucket": s3_backend.bucket}
+        if list_prefix:
+            kwargs["Prefix"] = list_prefix
         if continuation:
             kwargs["ContinuationToken"] = continuation
         resp = s3_backend.client.list_objects_v2(**kwargs)
@@ -55,20 +87,30 @@ def _migrate_from_s3_core(s3_backend, images_dir: Path,
         else:
             break
 
-    for i, key in enumerate(all_keys):
+    # 过滤目录占位符（某些 S3 会建以 / 结尾的空目录标记）
+    real_keys = [k for k in all_keys if not k.endswith("/")]
+
+    for i, real_key in enumerate(real_keys):
+        logical_key = _strip_base_path(real_key, base_path)
         try:
-            dest = images_dir / key
+            dest = images_dir / logical_key
             if dest.exists():
                 skipped += 1
             else:
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(s3_backend.get(key))
+                dest.write_bytes(s3_backend.get(logical_key))
                 uploaded += 1
         except Exception as e:
             failed += 1
-            logger.warning("to_local 失败 %s: %s", key, e)
+            logger.warning("to_local 失败 %s: %s", logical_key, e)
         if progress_callback:
-            progress_callback("迁移到本地", i + 1, len(all_keys), key)
+            cancelled = progress_callback(
+                "迁移到本地", i + 1, len(real_keys), logical_key,
+                counts={"uploaded": uploaded, "skipped": skipped, "failed": failed},
+            )
+            if cancelled:
+                logger.info("to_local 迁移被中止，已完成 %d/%d", i + 1, len(real_keys))
+                break
     return uploaded, skipped, failed
 
 

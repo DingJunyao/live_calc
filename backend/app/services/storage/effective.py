@@ -18,7 +18,6 @@ _DEFAULTS = {
 # DB 字段名 → settings 字段名
 _ENV_MAP = {
     "backend": "bootstrap_storage_backend",
-    "storage_base_url": "bootstrap_storage_base_url",
     "s3_endpoint": "bootstrap_s3_endpoint",
     "s3_access_key": "bootstrap_s3_access_key",
     "s3_secret_key": "bootstrap_s3_secret_key",
@@ -89,6 +88,16 @@ def load_effective_storage_config() -> StorageEffectiveConfig:
             continue
         resolved[fname] = _DEFAULTS[fname]
         sources[fname] = "default"
+
+    # storage_base_url：仅来自 DB 或默认值，无 .env 兜底（BOOTSTRAP_STORAGE_BASE_URL 已废弃）
+    db_val = getattr(row, "storage_base_url", None) if row else None
+    if _is_truthy(db_val):
+        resolved["storage_base_url"] = db_val
+        sources["storage_base_url"] = "db"
+    else:
+        resolved["storage_base_url"] = _DEFAULTS["storage_base_url"]
+        sources["storage_base_url"] = "default"
+
     return StorageEffectiveConfig(
         backend=resolved["backend"],
         storage_base_url=resolved["storage_base_url"],

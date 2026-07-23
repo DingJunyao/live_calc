@@ -21,16 +21,6 @@
             <div class="text-h6">{{ config.backend === 'local' ? '本地存储' : 'S3 对象存储' }}</div>
           </v-col>
 
-          <v-col cols="12" sm="6" v-if="config.backend === 'local'">
-            <div class="text-caption text-medium-emphasis mb-1">
-              storage_base_url
-              <v-chip size="x-small" :color="sourceColor(config.sources?.storage_base_url)" class="ml-2">
-                {{ sourceLabel(config.sources?.storage_base_url) }}
-              </v-chip>
-            </div>
-            <div class="text-body-2">{{ config.storage_base_url || '(未设置)' }}</div>
-          </v-col>
-
           <template v-if="config.backend === 's3'">
             <v-col cols="12" sm="6">
               <div class="text-caption text-medium-emphasis mb-1">
@@ -168,8 +158,8 @@
             </v-radio-group>
           </div>
 
-          <!-- 步骤 2: 填目标配置 -->
-          <div v-if="wizardStep === 2" class="mt-4">
+          <!-- 步骤 2: 填目标配置（本地存储无需配置，跳过） -->
+          <div v-if="wizardStep === 2 && wizardConfig.targetBackend === 's3'" class="mt-4">
             <div class="text-h6 mb-4">填写目标配置</div>
 
             <!-- S3 配置 -->
@@ -252,23 +242,13 @@
               </div>
             </template>
 
-            <!-- local 配置 -->
-            <template v-if="wizardConfig.targetBackend === 'local'">
-              <v-text-field
-                v-model="wizardConfig.storage_base_url"
-                label="storage_base_url"
-                variant="outlined"
-                hint="本地存储 URL 基础路径（如 /static/uploads/）"
-                persistent-hint
-              />
-            </template>
+            <!-- local 配置：storage_base_url 是前端图片 URL 前缀，不影响存储落地路径，不在向导中展示 -->
           </div>
 
-          <!-- 步骤 3: 测试连接（强制） -->
-          <div v-if="wizardStep === 3" class="mt-4">
+          <!-- 步骤 3: 测试连接（本地存储无需测试，跳过） -->
+          <div v-if="wizardStep === 3 && wizardConfig.targetBackend === 's3'" class="mt-4">
             <div class="text-h6 mb-4">测试连接</div>
-            <v-alert v-if="wizardConfig.targetBackend === 'local'" type="info" text="本地存储无需测试连接" class="mb-4" />
-            <div v-else>
+            <div>
               <v-btn
                 color="primary"
                 variant="tonal"
@@ -306,9 +286,24 @@
                 <div class="text-caption text-medium-emphasis mb-2">
                   {{ migrationStage || '准备中...' }} ({{ migrationCurrent || 0 }}/{{ migrationTotal || 0 }})
                 </div>
-                <div v-if="migrationStats" class="text-caption">
-                  已上传: {{ migrationStats.uploaded }} | 跳过: {{ migrationStats.skipped }} | 失败: {{ migrationStats.failed }}
+                <div v-if="migrationStats" class="text-caption mb-1">
+                  已上传: {{ migrationStats.uploaded || 0 }} | 跳过: {{ migrationStats.skipped || 0 }} | 失败: {{ migrationStats.failed || 0 }}
                 </div>
+                <div v-if="migrationCancelled" class="text-caption text-warning mb-1">
+                  迁移已中止
+                </div>
+                <v-btn
+                  v-if="!migrationComplete"
+                  color="error"
+                  variant="tonal"
+                  size="small"
+                  :loading="cancellingMigration"
+                  class="mt-1"
+                  @click="cancelMigration"
+                >
+                  <v-icon start>mdi-stop-circle-outline</v-icon>
+                  中止迁移
+                </v-btn>
               </div>
 
               <!-- 迁移控制 -->
@@ -496,6 +491,8 @@ const migrationTotal = ref(0)
 const migrationStats = ref<{ uploaded: number; skipped: number; failed: number } | null>(null)
 const migrationComplete = ref(false)
 const startingMigration = ref(false)
+const cancellingMigration = ref(false)
+const migrationCancelled = ref(false)
 let migrationPoller: ReturnType<typeof setInterval> | null = null
 
 // 应用配置
@@ -564,13 +561,23 @@ const canNextStep = computed(() => {
 
 const nextStep = () => {
   if (wizardStep.value < 5) {
-    wizardStep.value++
+    // 本地模式：选完后端直接跳到迁移图片，跳过填写配置和测试连接
+    if (wizardConfig.targetBackend === 'local' && wizardStep.value === 1) {
+      wizardStep.value = 4
+    } else {
+      wizardStep.value++
+    }
   }
 }
 
 const prevStep = () => {
   if (wizardStep.value > 1) {
-    wizardStep.value--
+    // 本地模式：从迁移图片回退直接到选择后端
+    if (wizardConfig.targetBackend === 'local' && wizardStep.value === 4) {
+      wizardStep.value = 1
+    } else {
+      wizardStep.value--
+    }
   }
 }
 
@@ -595,6 +602,8 @@ const openWizard = () => {
   migrationTotal.value = 0
   migrationStats.value = null
   migrationComplete.value = false
+  migrationCancelled.value = false
+  cancellingMigration.value = false
   wizardDialog.value = true
 }
 
@@ -665,15 +674,26 @@ const startMigrationPolling = () => {
       migrationStage.value = progress.stage || ''
       migrationCurrent.value = progress.current || 0
       migrationTotal.value = progress.total || 0
-      migrationStats.value = result.stats || null
+      // 优先读 progress 的实时分类计数（运行中），回落 stats（结束才有）
+      const hasLiveCounts = progress.uploaded != null
+        || progress.skipped != null || progress.failed != null
+      migrationStats.value = hasLiveCounts
+        ? {
+            uploaded: progress.uploaded || 0,
+            skipped: progress.skipped || 0,
+            failed: progress.failed || 0,
+          }
+        : (result.stats || null)
 
-      if (status === 'success' || status === 'failed') {
+      if (status === 'success' || status === 'failed' || status === 'cancelled') {
         if (migrationPoller) clearInterval(migrationPoller)
         migrationPoller = null
         migrationComplete.value = true
         if (status === 'failed') {
           showError.value = true
           errorMessage.value = result.error || '迁移失败'
+        } else if (status === 'cancelled') {
+          migrationCancelled.value = true
         }
       }
     } catch (error: unknown) {
@@ -681,6 +701,20 @@ const startMigrationPolling = () => {
       console.warn('迁移进度轮询失败', error)
     }
   }, 2000)
+}
+
+const cancelMigration = async () => {
+  if (!migrationTaskId.value) return
+  cancellingMigration.value = true
+  try {
+    await api.post(`/import/task/${migrationTaskId.value}/cancel`)
+    // 不立即置完成——轮询会在后台置 cancelled 后接管显示
+  } catch (error: unknown) {
+    showError.value = true
+    errorMessage.value = extractErrorMessage(error) || '中止失败'
+  } finally {
+    cancellingMigration.value = false
+  }
 }
 
 const skipMigration = () => {
@@ -694,7 +728,7 @@ const applyConfig = async () => {
       backend: wizardConfig.targetBackend,
     }
     if (wizardConfig.targetBackend === 'local') {
-      payload.storage_base_url = wizardConfig.storage_base_url || null
+      // storage_base_url 是前端图片 URL 前缀，不影响存储落地路径；不传让后端保持现有值
     } else {
       payload.s3_endpoint = wizardConfig.s3_endpoint || null
       payload.s3_bucket = wizardConfig.s3_bucket || null

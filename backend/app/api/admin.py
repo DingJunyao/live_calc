@@ -6,6 +6,7 @@ from app.core.security import get_current_user, get_current_admin_user
 from app.core.database import get_db
 from app.models.user import User
 from app.models.product import ProductRecord
+from app.models.product_entity import Product as ProductEntity
 from app.models.recipe import Recipe
 from app.models.merchant import Merchant
 from app.models.map_config import MapConfiguration
@@ -15,6 +16,31 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 from app.services.recipe_import_service import RecipeImportService
 from app.services.storage import get_storage
+
+
+def _collect_used_image_keys(db) -> set[str]:
+    """收集所有图片字段引用的 storage key，供未使用图片清理使用。
+
+    来源：Recipe.images（JSON list）、users.avatar（单 key）、
+    ProductEntity.image_url（仅不以 http 开头的内部 key）。
+    """
+    used: set[str] = set()
+
+    for (images_list,) in db.query(Recipe.images).all():
+        if images_list:
+            for img in images_list:
+                if isinstance(img, str) and img:
+                    used.add(img)
+
+    for (avatar,) in db.query(User.avatar).filter(User.avatar.isnot(None)).all():
+        if avatar:
+            used.add(avatar)
+
+    for (url,) in db.query(ProductEntity.image_url).filter(ProductEntity.image_url.isnot(None)).all():
+        if url and not url.startswith("http"):
+            used.add(url)
+
+    return used
 
 
 class TiandituConfig(BaseModel):
@@ -249,34 +275,27 @@ async def get_unused_images(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """获取服务器上未被任何菜谱引用的图片列表 - 仅限管理员"""
-    static_dir = Path(__file__).parent.parent.parent / "static" / "images" / "recipes"
-    if not static_dir.exists():
-        return {"images": []}
+    """获取服务器上未被引用的图片列表 - 仅限管理员
 
-    # 获取所有菜谱引用的图片
-    all_recipes = db.query(Recipe.images).all()
-    used_names: set = set()
-    for row in all_recipes:
-        if row[0]:
-            for img in row[0]:
-                name = img.split("/")[-1] if "/" in img else img
-                if name:
-                    used_names.add(name)
-
-    # 扫描目录
+    扫描 storage 后端中所有图片文件，排除 Recipe.images、users.avatar、
+    ProductEntity.image_url 中已引用的 key。支持本地和 S3 存储后端。
+    """
+    used = _collect_used_image_keys(db)
     storage = get_storage()
+
+    # 只列出已知图片子目录（避免 S3 后端列出整个 bucket 的无关对象）
+    _KNOWN_IMAGE_DIRS = ("recipes/", "avatars/")
+    all_keys = [
+        k for k in storage.list("")
+        if any(k.startswith(d) for d in _KNOWN_IMAGE_DIRS)
+    ]
+
     unused = []
-    if not static_dir.is_dir():
-        return {"images": []}
-    for f in sorted(static_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if f.is_file() and f.name not in used_names:
-            stat = f.stat()
-            key = f"recipes/{f.name}"
+    for key in sorted(all_keys):
+        if key not in used:
             unused.append({
-                "filename": f.name,
-                "size": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "key": key,
+                "filename": key.split("/")[-1],
                 "url": storage.url_for(key),
             })
 
@@ -289,21 +308,24 @@ async def delete_unused_images(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """删除指定的未使用图片 - 仅限管理员"""
-    paths = body.get("paths", [])
-    if not paths:
-        raise HTTPException(status_code=400, detail="缺少 paths")
+    """删除指定的未使用图片 - 仅限管理员
+
+    接受 keys（完整 storage key 列表），直接调 storage.delete(key) 删除。
+    不再硬编码 `recipes/` 前缀，支持所有子目录。
+    """
+    keys = body.get("keys", [])
+    if not keys:
+        raise HTTPException(status_code=400, detail="缺少 keys")
 
     storage = get_storage()
     deleted: list = []
     errors: list = []
 
-    for filename in paths:
+    for key in keys:
         try:
-            key = f"recipes/{filename}"
             storage.delete(key)
-            deleted.append(filename)
+            deleted.append(key)
         except Exception as e:
-            errors.append(f"{filename}: {str(e)}")
+            errors.append(f"{key}: {str(e)}")
 
     return {"deleted": deleted, "errors": errors}

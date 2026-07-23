@@ -62,6 +62,18 @@ class LocalBackend:
             return False
         return path.exists()
 
+    def list(self, prefix: str = "") -> list[str]:
+        """列出给定 prefix 下的所有 key（递归）。prefix 为空时从 images 根目录列起。"""
+        scan_dir = self.images_dir / prefix if prefix else self.images_dir
+        if not scan_dir.exists():
+            return []
+        keys = []
+        for fp in sorted(scan_dir.rglob("*")):
+            if fp.is_file():
+                rel = fp.relative_to(self.images_dir).as_posix()
+                keys.append(rel)
+        return keys
+
     def url_for(self, key: str) -> str:
         """对外可访问 URL。key 经 quote 编码以兼容空格/中文/特殊字符。
 
