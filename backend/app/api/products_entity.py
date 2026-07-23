@@ -410,6 +410,14 @@ def update_product(
             db, entity_type="product", entity_id=product_id,
             action="update", payload=update_data, admin=current_user,
         )
+        # 管理员的 image_url 变更立即生效 → 更新引用追踪
+        if "image_url" in update_data:
+            old_key = db_product.image_url
+            new_key = update_data["image_url"]
+            old_set = {old_key} if old_key and not old_key.startswith("http") else set()
+            new_set = {new_key} if new_key and not new_key.startswith("http") else set()
+            from app.services.image_tracking import update_image_refs
+            update_image_refs(db, old_set, new_set)
     else:
         proposal_service.submit(
             db, entity_type="product", entity_id=product_id,

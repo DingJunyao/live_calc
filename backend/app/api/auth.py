@@ -476,12 +476,11 @@ async def upload_avatar(
         storage = get_storage()
         storage.put(key, content, file.content_type or "image/jpeg")
 
-        # 删除旧头像
-        if current_user.avatar:
-            try:
-                storage.delete(current_user.avatar)
-            except Exception:
-                pass  # 旧文件删除失败不影响新头像上传
+        # 更新引用计数（替代物理删除旧头像）
+        old_keys = {current_user.avatar} if current_user.avatar else set()
+        new_keys = {key}
+        from app.services.image_tracking import update_image_refs
+        update_image_refs(db, old_keys, new_keys, file_sizes={key: len(content)})
 
         # 更新数据库
         user = db.query(User).filter(User.id == current_user.id).first()
