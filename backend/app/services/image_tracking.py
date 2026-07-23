@@ -73,15 +73,11 @@ def scan_all_images(db) -> dict:
     storage = get_storage()
     now = datetime.now(timezone.utc)
 
-    # 1. 遍历 storage 文件
+    # 1. 遍历 storage 文件（list 已带回大小，无需逐 key head_object）
     all_keys_with_size: dict[str, int] = {}
-    for key in storage.list(""):
+    for key, size in storage.list(""):
         if key.startswith("recipes/") or key.startswith("avatars/"):
-            try:
-                size = storage.file_size(key)
-                all_keys_with_size[key] = size
-            except (FileNotFoundError, Exception):
-                all_keys_with_size[key] = 0
+            all_keys_with_size[key] = size
 
     # 2. 收集引用源，构建 {key → ref_count}
     from app.api.admin import _collect_used_image_keys

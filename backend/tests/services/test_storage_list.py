@@ -20,11 +20,12 @@ def test_local_list_returns_all_keys(tmp_path):
     (images / "avatars" / "c.png").write_bytes(b"c")
 
     lb = LocalBackend(root=tmp_path)
-    keys = lb.list("")
-    assert "recipes/a.jpg" in keys
-    assert "recipes/sub/b.jpg" in keys
-    assert "avatars/c.png" in keys
-    assert len(keys) == 3
+    items = lb.list("")
+    item_keys = [k for k, _ in items]
+    assert "recipes/a.jpg" in item_keys
+    assert "recipes/sub/b.jpg" in item_keys
+    assert "avatars/c.png" in item_keys
+    assert len(items) == 3
 
 
 def test_local_list_prefix_filters(tmp_path):
@@ -35,8 +36,8 @@ def test_local_list_prefix_filters(tmp_path):
     (images / "avatars" / "b.png").write_bytes(b"b")
 
     lb = LocalBackend(root=tmp_path)
-    keys = lb.list("recipes/")
-    assert keys == ["recipes/a.jpg"]
+    items = lb.list("recipes/")
+    assert items == [("recipes/a.jpg", 1)]
 
 
 def test_local_list_empty_dir(tmp_path):
@@ -66,8 +67,9 @@ def test_s3_list_returns_all_keys():
                         access_key="ak", secret_key="sk")
     backend.client = fake
     keys = backend.list("")
-    assert "recipes/a.jpg" in keys
-    assert "avatars/b.png" in keys
+    item_keys = [k for k, _ in keys]
+    assert "recipes/a.jpg" in item_keys
+    assert "avatars/b.png" in item_keys
     assert len(keys) == 2
     assert fake.list_objects_v2.call_count == 2
     _, kwargs = fake.list_objects_v2.call_args
@@ -98,8 +100,9 @@ def test_s3_list_with_base_path_strips_prefix():
                         base_path="livecalc")
     backend.client = fake
     keys = backend.list("")
-    assert "recipes/a.jpg" in keys
-    assert "avatars/b.png" in keys
+    item_keys = [k for k, _ in keys]
+    assert "recipes/a.jpg" in item_keys
+    assert "avatars/b.png" in item_keys
     # 验证 S3 Prefix 正确加了 base_path
     _, kwargs = fake.list_objects_v2.call_args
     assert kwargs.get("Prefix") == "livecalc/"

@@ -111,13 +111,13 @@ class S3Backend:
         """删除。key 不存在时 S3 delete_object 幂等返 204（不抛）。"""
         self.client.delete_object(Bucket=self.bucket, Key=self._full_key(key))
 
-    def list(self, prefix: str = "") -> list[str]:
-        """列出给定 prefix 下的所有 key（递归）。分页自动遍历。
+    def list(self, prefix: str = "") -> list[tuple[str, int]]:
+        """列出给定 prefix 下的所有 key 及大小（递归）。分页自动遍历。
 
         自动用 _full_key 加 base_path 做 S3 端 Prefix，
         返回时剥掉 base_path 前缀还原逻辑 key（与 get/put/exists 的 key 语义一致）。
         """
-        keys: list[str] = []
+        keys: list[tuple[str, int]] = []
         continuation = None
         s3_prefix = self._full_key(prefix)
         kwargs = {"Bucket": self.bucket}
@@ -129,10 +129,11 @@ class S3Backend:
             resp = self.client.list_objects_v2(**kwargs)
             for obj in resp.get("Contents", []):
                 raw = obj["Key"]
+                size = obj.get("Size", 0)
                 # 剥掉 base_path 前缀，还原成逻辑 key（如 livecalc/recipes/a.jpg → recipes/a.jpg）
                 if self.base_path and raw.startswith(self.base_path + "/"):
                     raw = raw[len(self.base_path) + 1:]
-                keys.append(raw)
+                keys.append((raw, size))
             if resp.get("IsTruncated") and resp.get("NextContinuationToken"):
                 continuation = resp["NextContinuationToken"]
             else:

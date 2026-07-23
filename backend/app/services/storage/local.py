@@ -69,16 +69,16 @@ class LocalBackend:
             raise FileNotFoundError(key)
         return path.stat().st_size
 
-    def list(self, prefix: str = "") -> list[str]:
-        """列出给定 prefix 下的所有 key（递归）。prefix 为空时从 images 根目录列起。"""
+    def list(self, prefix: str = "") -> list[tuple[str, int]]:
+        """列出给定 prefix 下的所有 key 及大小（递归）。prefix 为空时从 images 根目录列起。"""
         scan_dir = self.images_dir / prefix if prefix else self.images_dir
         if not scan_dir.exists():
             return []
-        keys = []
+        keys: list[tuple[str, int]] = []
         for fp in sorted(scan_dir.rglob("*")):
             if fp.is_file():
                 rel = fp.relative_to(self.images_dir).as_posix()
-                keys.append(rel)
+                keys.append((rel, fp.stat().st_size))
         return keys
 
     def url_for(self, key: str) -> str:
