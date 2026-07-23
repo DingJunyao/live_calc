@@ -1,0 +1,10 @@
+-- SQLite: 新建 image_tracking 表
+CREATE TABLE IF NOT EXISTS image_tracking (
+    key VARCHAR(512) NOT NULL PRIMARY KEY,
+    ref_count INTEGER DEFAULT 0 NOT NULL,
+    file_size INTEGER DEFAULT 0 NOT NULL,
+    content_hash VARCHAR(64),
+    last_used_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
