@@ -544,23 +544,12 @@ async def update_recipe(
             # 从 update dict 中移除 ingredients，避免直接设置到 Recipe 模型
             exclude_unset.pop("ingredients")
 
-        # 处理 images 变更：删除已移除的图片文件（仅直写分支）
+        # 处理 images 变更：更新引用追踪（不再自动删除物理文件）
         if "images" in exclude_unset:
             old_images = set(recipe.images or [])
             new_images = set(exclude_unset["images"])
-            removed = old_images - new_images
-            if removed:
-                from app.services.storage import get_storage
-                storage = get_storage()
-                for key in removed:
-                    try:
-                        # 兼容旧格式 /static/images/recipes/xxx → 新格式 recipes/xxx
-                        if key.startswith("/static/images/recipes/"):
-                            fname = key[len("/static/images/recipes/"):]
-                            key = f"recipes/{fname}"
-                        storage.delete(key)
-                    except Exception:
-                        pass  # 图片文件不存在或删除失败不影响菜谱更新
+            from app.services.image_tracking import update_image_refs
+            update_image_refs(db, old_images, new_images)
 
         # 更新标量字段（只更新传入的字段）
         for field, value in exclude_unset.items():
@@ -684,6 +673,10 @@ async def delete_recipe(
                 detail="已发布的菜谱不可删除/撤回，请联系管理员")
 
         recipe.is_active = False
+        # 软删菜谱：释放对配图的引用
+        if recipe.images:
+            from app.services.image_tracking import update_image_refs
+            update_image_refs(db, set(recipe.images or []), set())
         db.commit()
         return {"detail": "菜谱已删除"}
     except HTTPException:
@@ -739,8 +732,12 @@ async def upload_recipe_image(
         if direct_write:
             # 管理员/作者编辑未发布菜谱：直接写入（无审核流程）
             current_images = recipe.images or []
+            old_set = set(current_images)
             current_images.append(key)
             recipe.images = current_images
+            # 更新引用计数
+            from app.services.image_tracking import update_image_refs
+            update_image_refs(db, old_set, set(current_images))
             from datetime import datetime, timezone
             recipe.updated_at = datetime.now(timezone.utc)
             db.commit()
@@ -791,11 +788,17 @@ async def delete_recipe_image(
         current_images.remove(found)
         recipe.images = current_images
 
+        # 更新引用计数
+        from app.services.image_tracking import update_image_refs
+        old_set = set(current_images + [found])  # 包含旧图
+        new_set = set(current_images)            # 不包含旧图
+        update_image_refs(db, old_set, new_set)
+
         from datetime import datetime, timezone
         recipe.updated_at = datetime.now(timezone.utc)
         db.commit()
 
-        # 删除 storage 中的文件
+        # 删除 storage 中的文件（管理员操作，物理删除）
         from app.services.storage import get_storage
         storage = get_storage()
         storage.delete(target_key)
