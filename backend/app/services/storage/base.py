@@ -29,6 +29,10 @@ class StorageBackend(Protocol):
         """对外可访问 URL。"""
         ...
 
+    def file_size(self, key: str) -> int:
+        """返回给定 key 的文件大小（bytes）。key 不存在时抛 FileNotFoundError。"""
+        ...
+
     def list(self, prefix: str = "") -> list[str]:
         """列出给定 prefix 下的所有 key（递归）。prefix 为空时从根目录列全部。"""
         ...

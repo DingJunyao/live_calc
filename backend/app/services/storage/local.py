@@ -62,6 +62,13 @@ class LocalBackend:
             return False
         return path.exists()
 
+    def file_size(self, key: str) -> int:
+        """返回文件大小（bytes）。key 不存在时抛 FileNotFoundError。"""
+        path = self._path(key)
+        if not path.exists():
+            raise FileNotFoundError(key)
+        return path.stat().st_size
+
     def list(self, prefix: str = "") -> list[str]:
         """列出给定 prefix 下的所有 key（递归）。prefix 为空时从 images 根目录列起。"""
         scan_dir = self.images_dir / prefix if prefix else self.images_dir

@@ -153,6 +153,17 @@ class S3Backend:
                 return False
             raise
 
+    def file_size(self, key: str) -> int:
+        """返回文件大小（bytes）。key 不存在时抛 FileNotFoundError。"""
+        try:
+            resp = self.client.head_object(Bucket=self.bucket, Key=self._full_key(key))
+            return resp["ContentLength"]
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            if code in _NOT_FOUND_CODES:
+                raise FileNotFoundError(key) from e
+            raise
+
     def url_for(self, key: str) -> str:
         """对外可访问 URL。key 经 quote 编码以兼容空格/中文/特殊字符。
 
