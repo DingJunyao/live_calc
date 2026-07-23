@@ -117,13 +117,24 @@ def scan_all_images(db) -> dict:
                 key=key,
                 ref_count=new_ref_count,
                 file_size=file_size,
-                last_used_at=None if new_ref_count > 0 else now,
+                last_used_at=None,  # 新行无历史，last_used_at 恒为 None
             )
             db.add(row)
 
     db.commit()
 
-    # 5. 统计
+    # 5. 清理残留行：存在于 image_tracking 但不在 storage 也不被引用的行
+    orphaned = db.query(ImageTracking).filter(
+        ~ImageTracking.key.in_(all_scan_keys)
+    ).all()
+    for row in orphaned:
+        db.delete(row)
+    if orphaned:
+        logger.info(f"cleaned {len(orphaned)} orphaned tracking rows")
+    if orphaned:
+        db.commit()
+
+    # 6. 统计
     all_rows = db.query(ImageTracking).all()
     used_images = sum(1 for r in all_rows if r.ref_count > 0)
     unused_images = sum(1 for r in all_rows if r.ref_count == 0)

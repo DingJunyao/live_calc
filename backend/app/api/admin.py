@@ -414,4 +414,11 @@ async def delete_unused_images(
         except Exception as e:
             errors.append(f"{key}: {str(e)}")
 
+    # 清理 image_tracking 中的已删除记录
+    if deleted:
+        db.query(ImageTracking).filter(ImageTracking.key.in_(deleted)).delete(
+            synchronize_session="evaluate"
+        )
+        db.commit()
+
     return {"deleted": deleted, "errors": errors}

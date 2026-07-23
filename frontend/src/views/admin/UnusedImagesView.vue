@@ -74,19 +74,21 @@
             <v-chip size="x-small" class="ml-2">
               {{ group.count }} 张 · {{ formatSize(group.total_size) }}
             </v-chip>
+            <v-spacer />
+            <v-btn
+              v-if="group.count > 0"
+              size="x-small"
+              color="error"
+              variant="text"
+              :loading="deleting"
+              @click.stop="deleteGroup(group)"
+              class="ml-2"
+            >
+              <v-icon size="small">mdi-delete</v-icon>
+              删除本组
+            </v-btn>
           </v-expansion-panel-title>
           <v-expansion-panel-text>
-            <template #actions>
-              <v-btn
-                size="x-small"
-                variant="text"
-                :color="isGroupAllSelected(group.key) ? 'primary' : undefined"
-                @click.stop="toggleGroup(group.key)"
-              >
-                {{ isGroupAllSelected(group.key) ? '取消全选' : '选择本组' }}
-              </v-btn>
-            </template>
-
             <v-row>
               <v-col
                 v-for="img in group.images"
@@ -221,6 +223,12 @@ const toggleSelect = (key: string): void => {
   } else {
     selected.value.push(key)
   }
+}
+
+const deleteGroup = async (group: ImageGroup) => {
+  if (!group.images.length) return
+  selected.value = group.images.map(img => img.key)
+  await confirmDelete()
 }
 
 const loadData = async () => {
