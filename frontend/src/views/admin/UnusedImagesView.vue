@@ -17,16 +17,6 @@
         <v-icon start size="small">mdi-delete</v-icon>
         删除选中（{{ selected.length }}）
       </v-btn>
-      <v-btn
-        color="primary"
-        variant="tonal"
-        size="small"
-        :loading="loading"
-        @click="loadImages"
-      >
-        <v-icon start size="small">mdi-refresh</v-icon>
-        刷新
-      </v-btn>
     </template>
   </v-app-bar>
 
@@ -47,70 +37,106 @@
       @click:close="successMsg = ''"
     >{{ successMsg }}</v-alert>
 
-    <v-card elevation="0">
-      <v-card-text>
-        <div class="d-flex align-center mb-4">
-          <v-icon color="medium-emphasis" class="mr-2">mdi-information-outline</v-icon>
-          <span class="text-body-2 text-medium-emphasis">
-            扫描结果：{{ images.length }} 张未使用的图片
-          </span>
-        </div>
+    <v-skeleton-loader
+      v-if="scanning"
+      type="card, list-item-two-line, card"
+      class="mx-auto"
+      max-width="600"
+    />
 
-        <template v-for="group in groups" :key="group.dir">
-          <v-divider class="my-2" />
-          <div class="text-subtitle-2 font-weight-medium mb-2 mt-2">
-            <v-icon class="mr-1">{{ groupIcon(group.dir) }}</v-icon>
-            {{ group.label }}
-            <span class="text-caption text-medium-emphasis">（{{ group.items.length }} 张）</span>
+    <template v-else>
+      <!-- 存储概览 -->
+      <v-card class="mb-4" elevation="0">
+        <v-card-text class="d-flex ga-4 flex-wrap">
+          <div class="text-body-2">
+            <v-icon class="mr-1" color="success">mdi-check-circle</v-icon>
+            已用: <strong>{{ stats.used_images }}</strong> 张
+            · {{ formatSize(stats.used_size) }}
           </div>
-          <v-row>
-            <v-col
-              v-for="img in group.items"
-              :key="img.key"
-              cols="6"
-              sm="4"
-              md="3"
-              lg="2"
-            >
-              <v-card
-                elevation="1"
-                :color="selected.includes(img.key) ? 'primary' : undefined"
-                @click="toggleSelect(img.key)"
-                style="cursor: pointer"
-              >
-                <v-img
-                  :src="img.url"
-                  height="100"
-                  cover
-                  class="bg-grey-lighten-3"
-                >
-                  <template #placeholder>
-                    <div class="d-flex align-center justify-center fill-height">
-                      <v-icon color="grey">mdi-image-off</v-icon>
-                    </div>
-                  </template>
-                </v-img>
-                <v-card-text class="pa-1 text-caption text-center text-truncate">
-                  {{ img.filename }}
-                </v-card-text>
-              </v-card>
-            </v-col>
-          </v-row>
-        </template>
-
-        <v-card-text v-if="!loading && images.length === 0" class="text-center py-8">
-          <v-icon size="64" color="success">mdi-check-circle-outline</v-icon>
-          <div class="text-body-1 mt-2">没有未使用的图片</div>
+          <div class="text-body-2">
+            <v-icon class="mr-1" color="warning">mdi-alert-circle</v-icon>
+            未用: <strong>{{ stats.unused_images }}</strong> 张
+            · {{ formatSize(stats.unused_size) }}
+          </div>
+          <div class="text-body-2">
+            <v-icon class="mr-1" color="medium-emphasis">mdi-folder</v-icon>
+            总计: <strong>{{ stats.total_images }}</strong> 张
+            · {{ formatSize(stats.used_size + stats.unused_size) }}
+          </div>
         </v-card-text>
+      </v-card>
 
-        <v-skeleton-loader
-          v-if="loading"
-          type="card"
-          class="mx-auto"
-          max-width="300"
-        />
+      <!-- 分组列表 -->
+      <v-expansion-panels v-model="expandedPanels" multiple>
+        <v-expansion-panel v-for="group in groups" :key="group.key" :value="group.key">
+          <v-expansion-panel-title class="text-subtitle-2 font-weight-medium">
+            <span>{{ group.label }}</span>
+            <v-chip size="x-small" class="ml-2">
+              {{ group.count }} 张 · {{ formatSize(group.total_size) }}
+            </v-chip>
+          </v-expansion-panel-title>
+          <v-expansion-panel-text>
+            <template #actions>
+              <v-btn
+                size="x-small"
+                variant="text"
+                :color="isGroupAllSelected(group.key) ? 'primary' : undefined"
+                @click.stop="toggleGroup(group.key)"
+              >
+                {{ isGroupAllSelected(group.key) ? '取消全选' : '选择本组' }}
+              </v-btn>
+            </template>
+
+            <v-row>
+              <v-col
+                v-for="img in group.images"
+                :key="img.key"
+                cols="6"
+                sm="4"
+                md="3"
+                lg="2"
+              >
+                <v-card
+                  elevation="1"
+                  :color="selected.includes(img.key) ? 'primary' : undefined"
+                  @click="toggleSelect(img.key)"
+                  style="cursor: pointer"
+                >
+                  <v-img
+                    :src="img.url"
+                    height="100"
+                    cover
+                    class="bg-grey-lighten-3"
+                  >
+                    <template #placeholder>
+                      <div class="d-flex align-center justify-center fill-height">
+                        <v-icon color="grey">mdi-image-off</v-icon>
+                      </div>
+                    </template>
+                  </v-img>
+                  <v-card-text class="pa-1 text-caption text-center">
+                    <div class="text-truncate">{{ img.filename }}</div>
+                    <div class="text-medium-emphasis">{{ formatSize(img.file_size) }}</div>
+                  </v-card-text>
+                </v-card>
+              </v-col>
+            </v-row>
+
+            <div v-if="group.images.length === 0" class="text-center py-4 text-body-2 text-medium-emphasis">
+              无
+            </div>
+          </v-expansion-panel-text>
+        </v-expansion-panel>
+      </v-expansion-panels>
+
+      <v-card-text
+        v-if="!scanning && groups.length === 0"
+        class="text-center py-8"
+      >
+        <v-icon size="64" color="success">mdi-check-circle-outline</v-icon>
+        <div class="text-body-1 mt-2">没有未使用的图片</div>
       </v-card-text>
-    </v-card>
+    </template>
   </v-container>
 </template>
 
@@ -122,69 +148,99 @@ import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
-const { smAndDown } = useDisplay()
 const router = useRouter()
 
-const goBack = () => {
-  router.back()
-}
+const goBack = () => { router.back() }
 
-const images = ref<any[]>([])
-const selected = ref<string[]>([])
-const loading = ref(false)
+const scanning = ref(false)
 const deleting = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+const expandedPanels = ref<string[]>([])
+
+interface ImageItem {
+  key: string
+  filename: string
+  url: string
+  file_size: number
+  last_used_at: string | null
+}
 
 interface ImageGroup {
-  dir: string
+  key: string
   label: string
-  items: any[]
+  images: ImageItem[]
+  count: number
+  total_size: number
 }
 
-const groupIcon = (dir: string): string => {
-  const icons: Record<string, string> = {
-    recipes: 'mdi-silverware-fork-knife',
-    avatars: 'mdi-account-circle',
-  }
-  return icons[dir] || 'mdi-folder'
+interface Stats {
+  total_images: number
+  used_images: number
+  unused_images: number
+  used_size: number
+  unused_size: number
 }
 
-const groups = computed<ImageGroup[]>(() => {
-  const map = new Map<string, any[]>()
-  for (const img of images.value) {
-    const dir = (img.key as string).split('/')[0] || 'other'
-    if (!map.has(dir)) map.set(dir, [])
-    map.get(dir)!.push(img)
-  }
-  const labels: Record<string, string> = {
-    recipes: '菜谱图片',
-    avatars: '头像',
-  }
-  return Array.from(map.entries())
-    .map(([dir, items]) => ({ dir, label: labels[dir] || dir, items }))
-})
+const stats = ref<Stats>({ total_images: 0, used_images: 0, unused_images: 0, used_size: 0, unused_size: 0 })
+const groups = ref<ImageGroup[]>([])
+const selected = ref<string[]>([])
 
-const loadImages = async () => {
-  loading.value = true
-  errorMsg.value = ''
-  selected.value = []
-  try {
-    const resp = await api.get('/admin/images/unused')
-    images.value = resp.images || []
-  } catch (e: any) {
-    errorMsg.value = e.response?.data?.detail || e.message || '加载失败'
-  } finally {
-    loading.value = false
+const formatSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  const idx = Math.min(i, units.length - 1)
+  return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`
+}
+
+const isGroupAllSelected = (groupKey: string): boolean => {
+  const group = groups.value.find(g => g.key === groupKey)
+  if (!group || group.images.length === 0) return false
+  return group.images.every(img => selected.value.includes(img.key))
+}
+
+const toggleGroup = (groupKey: string): void => {
+  const group = groups.value.find(g => g.key === groupKey)
+  if (!group) return
+  const allSelected = isGroupAllSelected(groupKey)
+  const groupKeys = group.images.map(img => img.key)
+  if (allSelected) {
+    selected.value = selected.value.filter(k => !groupKeys.includes(k))
+  } else {
+    const existing = new Set(selected.value)
+    for (const k of groupKeys) existing.add(k)
+    selected.value = [...existing]
   }
 }
 
-const toggleSelect = (filename: string) => {
-  const idx = selected.value.indexOf(filename)
+const toggleSelect = (key: string): void => {
+  const idx = selected.value.indexOf(key)
   if (idx >= 0) {
     selected.value.splice(idx, 1)
   } else {
-    selected.value.push(filename)
+    selected.value.push(key)
+  }
+}
+
+const loadData = async () => {
+  scanning.value = true
+  errorMsg.value = ''
+  selected.value = []
+
+  try {
+    // 先扫描
+    await api.post('/admin/images/scan')
+    // 获取分组数据
+    const resp = await api.get('/admin/images/unused')
+    stats.value = resp.stats || { total_images: 0, used_images: 0, unused_images: 0, used_size: 0, unused_size: 0 }
+    groups.value = resp.groups || []
+    // 默认展开所有组
+    expandedPanels.value = (resp.groups || []).map((g: ImageGroup) => g.key)
+  } catch (e: any) {
+    errorMsg.value = e.response?.data?.detail || e.message || '加载失败'
+  } finally {
+    scanning.value = false
   }
 }
 
@@ -201,7 +257,7 @@ const confirmDelete = async () => {
     if (resp.errors?.length) {
       errorMsg.value = `删除失败：${resp.errors.join('；')}`
     }
-    await loadImages()
+    await loadData()
   } catch (e: any) {
     errorMsg.value = e.response?.data?.detail || e.message || '删除失败'
   } finally {
@@ -210,6 +266,6 @@ const confirmDelete = async () => {
 }
 
 onMounted(() => {
-  loadImages()
+  loadData()
 })
 </script>
