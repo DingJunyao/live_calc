@@ -139,10 +139,11 @@
       <v-divider class="mb-3" />
       <div class="text-subtitle-2 mb-2">配图管理</div>
       <ImageManager
-        v-model="editImages"
-        :image-urls="recipe.image_urls"
+        :model-value="editImages"
+        :image-urls="editImageUrls"
         :recipe-id="recipe.id"
         :uploading="uploadingImage"
+        @update:model-value="onEditImagesUpdated"
         @upload="handleImageUpload"
         @remove="handleImageRemove"
       />
@@ -176,6 +177,7 @@ const editForm = ref({
   result_ingredient_id: null as number | null,
 })
 const editImages = ref<string[]>([])
+const editImageUrls = ref<string[]>([])
 
 // 成品产出原料搜索
 const ingredientOptions = ref<{ id: number; name: string }[]>([])
@@ -249,6 +251,7 @@ const startEdit = () => {
     result_ingredient_id: props.recipe.result_ingredient_id ?? null,
   }
   editImages.value = [...(props.recipe.images || [])]
+  editImageUrls.value = [...(props.recipe.image_urls || [])]
   editing.value = true
 }
 
@@ -268,6 +271,9 @@ const handleImageUpload = async (file: File) => {
     if (result?.image_path) {
       editImages.value.push(result.image_path)
     }
+    if (result?.image_url) {
+      editImageUrls.value.push(result.image_url)
+    }
   } catch (e: any) {
     console.error('上传图片失败', e)
   } finally {
@@ -275,10 +281,29 @@ const handleImageUpload = async (file: File) => {
   }
 }
 
+// ImageManager 通过 update:modelValue 通知列表变更（移动排序时）
+// 需同步 editImageUrls 保持 URL 与 key 的索引一致
+const onEditImagesUpdated = (newImages: string[]) => {
+  const oldImages = editImages.value
+  editImages.value = newImages
+  // 如果长度相同，说明是排序操作（非增删），同步 URL 顺序
+  if (newImages.length === oldImages.length) {
+    const urlByKey: Record<string, string> = {}
+    oldImages.forEach((key, i) => {
+      if (editImageUrls.value[i]) urlByKey[key] = editImageUrls.value[i]
+    })
+    editImageUrls.value = newImages.map(key => urlByKey[key] || '')
+  }
+  // 长度不同时，增删操作有各自的 handler（handleImageRemove / handleImageUpload）
+  // 不需要额外处理
+}
+
 // 删除配图 — 仅从本地列表移除，实际变更在保存时通过 PUT /recipes/{id} 的 images 字段提交
 // 这样已发布菜谱会走审核提议流程（与菜谱信息编辑一致），未发布菜谱直接生效
+// 注意：editImageUrls 必须与 editImages 同步删除，否则 ImageManager 的 imageUrls 索引会错位
 const handleImageRemove = (index: number) => {
   editImages.value.splice(index, 1)
+  editImageUrls.value.splice(index, 1)
 }
 
 const handleSave = async () => {
