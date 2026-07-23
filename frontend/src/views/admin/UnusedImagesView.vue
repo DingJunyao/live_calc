@@ -20,7 +20,7 @@
     </template>
   </v-app-bar>
 
-  <v-container class="pa-4 pt-0" style="margin-top: 48px">
+  <v-container class="pa-4 pt-0" style="margin-top: 12px">
     <v-alert
       v-if="errorMsg"
       type="error"
