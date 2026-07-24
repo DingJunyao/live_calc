@@ -135,6 +135,8 @@ import * as hierarchy from './handlers/hierarchy'
 import * as blacklist from './handlers/blacklist'
 import * as admin from './handlers/admin'
 import * as recipes from './handlers/recipes'
+import * as meals from './handlers/meals'
+import * as sparklines from './handlers/sparklines'
 
 // ---- Auth ----
 addRoute('/auth/config', { get: auth.getConfig })
@@ -229,3 +231,12 @@ addRoute('/recipes/:id/merchant-costs', { get: recipes.getMerchantCosts })
 addRoute('/recipes/:id/publish', { post: recipes.publishRecipe })
 addRoute('/recipes/:id/images', { post: recipes.uploadImage })
 addRoute('/recipes/:id/images/:filename', { delete: recipes.deleteImage })
+
+// ---- Meals ----
+addRoute('/meals/recommendations/generate', { post: meals.generate })
+addRoute('/meals/recommendations/refresh', { post: meals.refresh })
+addRoute('/meals/recommendations', { get: meals.getRecommendations })
+
+// ---- Sparklines ----
+addRoute('/sparklines/products', { get: sparklines.getProductSparklines })
+addRoute('/sparklines/ingredients', { get: sparklines.getIngredientSparklines })
