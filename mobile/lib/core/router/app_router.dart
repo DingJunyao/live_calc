@@ -1,15 +1,18 @@
-ï»¿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:live_calc/features/home/screens/home_screen.dart';
 import 'package:live_calc/features/prices/screens/price_list_screen.dart';
 import 'package:live_calc/features/recipes/screens/recipe_list_screen.dart';
 import 'package:live_calc/features/profile/screens/profile_screen.dart';
 import 'package:go_router/go_router.dart';
+import 'package:live_calc/features/auth/screens/server_config_screen.dart';
+import 'package:live_calc/features/auth/screens/login_screen.dart';
+import 'package:live_calc/features/auth/screens/register_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-// è®¤è¯å®ˆå«ç”¨ ChangeNotifier + Riverpod
+// ÈÏÖ¤ÊØÎÀÓÃ ChangeNotifier + Riverpod
 class AuthGuard extends ChangeNotifier {
   bool _isLoggedIn = false;
   bool _hasServerConfig = false;
@@ -32,7 +35,7 @@ final authGuardProvider = ChangeNotifierProvider<AuthGuard>((ref) {
   return AuthGuard();
 });
 
-// è·¯ç”±æ„å»ºå‡½æ•°
+// Â·ÓÉ¹¹½¨º¯Êı
 GoRouter createAppRouter(WidgetRef ref) {
   final authGuard = ref.watch(authGuardProvider);
 
@@ -52,17 +55,17 @@ GoRouter createAppRouter(WidgetRef ref) {
       GoRoute(
         path: '/server-config',
         name: 'server-config',
-        builder: (_, __) => const Scaffold(body: Center(child: Text('æœåŠ¡å™¨é…ç½® - å¾…å®ç°'))),
+        builder: (_, __) => const ServerConfigScreen(),
       ),
       GoRoute(
         path: '/login',
         name: 'login',
-        builder: (_, __) => const Scaffold(body: Center(child: Text('ç™»å½• - å¾…å®ç°'))),
+        builder: (_, __) => const LoginScreen(),
       ),
       GoRoute(
         path: '/register',
         name: 'register',
-        builder: (_, __) => const Scaffold(body: Center(child: Text('æ³¨å†Œ - å¾…å®ç°'))),
+        builder: (_, __) => const RegisterScreen(),
       ),
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
@@ -94,7 +97,7 @@ GoRouter createAppRouter(WidgetRef ref) {
   );
 }
 
-/// åº•éƒ¨ Tab + Drawer çš„ Scaffold
+/// µ×²¿ Tab + Drawer µÄ Scaffold
 class ScaffoldWithNavBar extends ConsumerStatefulWidget {
   final Widget child;
   const ScaffoldWithNavBar({super.key, required this.child});
@@ -125,31 +128,31 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text('ç”Ÿè®°', style: Theme.of(context).textTheme.titleLarge),
+            child: Text('Éú¼Ç', style: Theme.of(context).textTheme.titleLarge),
           ),
-          const NavigationDrawerDestination(icon: Icon(Icons.search), label: Text('æœç´¢')),
+          const NavigationDrawerDestination(icon: Icon(Icons.search), label: Text('ËÑË÷')),
           const Divider(),
-          const NavigationDrawerDestination(icon: Icon(Icons.science_outlined), label: Text('åŸæ–™ç®¡ç†')),
-          const NavigationDrawerDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('å•†å“ç®¡ç†')),
-          const NavigationDrawerDestination(icon: Icon(Icons.store_outlined), label: Text('å•†å®¶ç®¡ç†')),
-          const NavigationDrawerDestination(icon: Icon(Icons.map_outlined), label: Text('å•†å®¶åœ°å›¾')),
-          const NavigationDrawerDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('æŠ¥è¡¨')),
-          const NavigationDrawerDestination(icon: Icon(Icons.settings_outlined), label: Text('è®¾ç½®')),
+          const NavigationDrawerDestination(icon: Icon(Icons.science_outlined), label: Text('Ô­ÁÏ¹ÜÀí')),
+          const NavigationDrawerDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('ÉÌÆ·¹ÜÀí')),
+          const NavigationDrawerDestination(icon: Icon(Icons.store_outlined), label: Text('ÉÌ¼Ò¹ÜÀí')),
+          const NavigationDrawerDestination(icon: Icon(Icons.map_outlined), label: Text('ÉÌ¼ÒµØÍ¼')),
+          const NavigationDrawerDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('±¨±í')),
+          const NavigationDrawerDestination(icon: Icon(Icons.settings_outlined), label: Text('ÉèÖÃ')),
         ],
       ),
       body: Row(
         children: [
-          // å¹³æ¿/å¤§å±ç”¨ NavigationRail
+          // Æ½°å/´óÆÁÓÃ NavigationRail
           if (MediaQuery.of(context).size.width >= 600)
             NavigationRail(
               selectedIndex: _selectedIndex,
               onDestinationSelected: (i) => _onTabSelected(context, i),
               labelType: NavigationRailLabelType.all,
               destinations: const [
-                NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('é¦–é¡µ')),
-                NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('è®°ä»·')),
-                NavigationRailDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: Text('èœè°±')),
-                NavigationRailDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: Text('æˆ‘çš„')),
+                NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('Ê×Ò³')),
+                NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('¼Ç¼Û')),
+                NavigationRailDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: Text('²ËÆ×')),
+                NavigationRailDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: Text('ÎÒµÄ')),
               ],
             ),
           Expanded(child: widget.child),
@@ -160,10 +163,10 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
               selectedIndex: _selectedIndex,
               onDestinationSelected: (i) => _onTabSelected(context, i),
               destinations: const [
-                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'é¦–é¡µ'),
-                NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'è®°ä»·'),
-                NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: 'èœè°±'),
-                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'æˆ‘çš„'),
+                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Ê×Ò³'),
+                NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: '¼Ç¼Û'),
+                NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: '²ËÆ×'),
+                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'ÎÒµÄ'),
               ],
             )
           : null,
