@@ -138,6 +138,7 @@ import * as recipes from './handlers/recipes'
 import * as meals from './handlers/meals'
 import * as sparklines from './handlers/sparklines'
 import * as usda from './handlers/usda'
+import * as agents from './handlers/agents'
 
 // ---- Auth ----
 addRoute('/auth/config', { get: auth.getConfig })
@@ -256,3 +257,10 @@ addRoute('/meals/recommendations', { get: meals.getRecommendations })
 // ---- Sparklines ----
 addRoute('/sparklines/products', { get: sparklines.getProductSparklines })
 addRoute('/sparklines/ingredients', { get: sparklines.getIngredientSparklines })
+
+// ---- Agent ----
+addRoute('/agent/task-types', { get: agents.getTaskTypes })
+addRoute('/agent/sessions/:id/messages', { post: agents.postMessage })
+addRoute('/agent/sessions/:id/cancel', { post: agents.cancelSession })
+addRoute('/agent/sessions/:id', { get: agents.getSession })
+addRoute('/agent/sessions', { get: agents.listSessions, post: agents.createSession })
