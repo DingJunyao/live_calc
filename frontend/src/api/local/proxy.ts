@@ -139,6 +139,7 @@ import * as meals from './handlers/meals'
 import * as sparklines from './handlers/sparklines'
 import * as usda from './handlers/usda'
 import * as agents from './handlers/agents'
+import { getExportData, uploadImport } from './handlers/exportImport'
 
 // ---- Auth ----
 addRoute('/auth/config', { get: auth.getConfig })
@@ -264,3 +265,7 @@ addRoute('/agent/sessions/:id/messages', { post: agents.postMessage })
 addRoute('/agent/sessions/:id/cancel', { post: agents.cancelSession })
 addRoute('/agent/sessions/:id', { get: agents.getSession })
 addRoute('/agent/sessions', { get: agents.listSessions, post: agents.createSession })
+
+// ---- Export / Import ----
+addRoute('/export/data', { get: getExportData })
+addRoute('/import/data/upload', { post: uploadImport })
