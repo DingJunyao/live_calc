@@ -10,4 +10,6 @@ class RouteNames {
   static const products = 'products';
   static const merchants = 'merchants';
   static const profile = 'profile';
+  static const myProposals = 'my-proposals';
+  static const myPlaces = 'my-places';
 }

@@ -14,6 +14,8 @@ import '../../features/products/screens/product_detail_screen.dart';
 import '../../features/merchants/screens/merchant_list_screen.dart';
 import '../../features/merchants/screens/merchant_detail_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
+import '../../features/profile/screens/my_proposals_screen.dart';
+import '../../features/profile/screens/my_places_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/server_config_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
@@ -132,6 +134,16 @@ GoRouter createAppRouter(WidgetRef ref) {
             path: '/profile',
             name: RouteNames.profile,
             builder: (_, __) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: '/profile/proposals',
+            name: RouteNames.myProposals,
+            builder: (_, __) => const MyProposalsScreen(),
+          ),
+          GoRoute(
+            path: '/profile/places',
+            name: RouteNames.myPlaces,
+            builder: (_, __) => const MyPlacesScreen(),
           ),
         ],
       ),
