@@ -1752,7 +1752,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
+import { api, LONG_REQUEST_TIMEOUT } from '@/api'
 import { getProductMyWeight, setProductMyWeight, deleteProductMyWeight } from '@/api/productWeight'
 import { getErrorMessage } from '@/utils/errorHandler'
 import PriceTrendChart from '@/components/charts/PriceTrendChart.vue'

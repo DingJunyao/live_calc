@@ -226,7 +226,7 @@ import { useUserUnits } from '@/composables/useUserUnits'
 const { priceUnitName } = useUserUnits()
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import PasteImportDialog from '@/components/prices/PasteImportDialog.vue'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()

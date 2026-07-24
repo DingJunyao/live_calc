@@ -6,7 +6,7 @@
  * 请求失败时 mapEnabled 默认回退 true（保守，不破坏现有功能）。
  */
 import { ref } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 
 export interface PublicMapConfig {
   map_enabled?: boolean

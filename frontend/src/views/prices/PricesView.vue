@@ -318,7 +318,7 @@ const { priceUnitName } = useUserUnits()
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import FilterBar from '@/components/common/FilterBar.vue'

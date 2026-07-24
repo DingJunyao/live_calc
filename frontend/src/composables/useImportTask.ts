@@ -1,5 +1,5 @@
 import { ref, onUnmounted } from 'vue'
-import api from '@/api/client'
+import { api } from '@/api'
 
 export interface ImportTask {
   id: number

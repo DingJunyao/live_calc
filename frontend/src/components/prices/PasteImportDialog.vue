@@ -143,7 +143,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { getLocalDateTimeString } from '@/utils/timezone'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { parsePasteText, type ParsedPriceLine } from '@/utils/pastePriceParser'

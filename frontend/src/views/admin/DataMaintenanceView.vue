@@ -508,7 +508,7 @@ import {
   getUsdaTaskById,
 } from '@/api/usda'
 import { createSession, getSession, listSessions, cancelSession } from '@/api/agent'
-import api from '@/api/client'
+import { api } from '@/api'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { tasks, fetchTasks, startTask, startUploadTask } = useImportTask()

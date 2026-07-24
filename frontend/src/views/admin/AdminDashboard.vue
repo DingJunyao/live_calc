@@ -220,7 +220,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import api from '@/api/client'
+import { api } from '@/api'
 import { listProposals } from '@/api/proposals'
 
 interface AdminStats {

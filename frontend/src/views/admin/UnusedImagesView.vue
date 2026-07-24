@@ -145,7 +145,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { api } from '@/api'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()

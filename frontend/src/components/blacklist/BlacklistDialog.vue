@@ -121,7 +121,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:model-value': [value: boolean] }>()

@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 
 interface LatestPriceInfo {
   average_price: number | null

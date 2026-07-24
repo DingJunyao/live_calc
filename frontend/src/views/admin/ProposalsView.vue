@@ -579,7 +579,7 @@ import {
   type ReviewPolicy,
 } from '@/api/proposals'
 import { resolveProposalRenderer } from '@/proposalRenderers'
-import api from '@/api/client'
+import { api } from '@/api'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()

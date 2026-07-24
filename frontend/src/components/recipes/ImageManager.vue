@@ -91,7 +91,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { resolveImageUrl } from '@/utils/image'
 
 const props = defineProps<{

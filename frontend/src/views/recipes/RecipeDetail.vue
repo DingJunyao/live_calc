@@ -510,7 +510,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
+import { api, LONG_REQUEST_TIMEOUT } from '@/api'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { resolveImageUrl } from '@/utils/image'
 import { useUserStore } from '@/stores/user'

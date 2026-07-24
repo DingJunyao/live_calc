@@ -239,7 +239,7 @@ const { energyUnit, toDisplayCalorie } = useUserUnits()
 import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { resolveImageUrl } from '@/utils/image'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
