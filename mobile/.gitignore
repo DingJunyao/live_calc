@@ -1,0 +1,34 @@
+# Flutter
+.dart_tool/
+.packages
+.pub/
+build/
+flutter_*.tar.xz
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Code generation
+*.g.dart
+*.freezed.dart
+
+# Coverage
+coverage/
+
+# Miscellaneous
+*.log
+.env
+.env.local
+*.pid
+*.mjs.map
+node_modules/
