@@ -120,3 +120,98 @@ export async function localDelete(url: string): Promise<any> {
   const { handler, pathParams } = parseRoute('delete', url)
   return handler(pathParams)
 }
+
+// ============================================================
+// 路由注册 — 各业务域处理函数
+// ============================================================
+
+import * as auth from './handlers/auth'
+import * as units from './handlers/units'
+import * as products from './handlers/products'
+import * as ingredients from './handlers/ingredients'
+import * as merchants from './handlers/merchants'
+import * as nutrition from './handlers/nutrition'
+import * as hierarchy from './handlers/hierarchy'
+import * as blacklist from './handlers/blacklist'
+import * as admin from './handlers/admin'
+
+// ---- Auth ----
+addRoute('/auth/config', { get: auth.getConfig })
+addRoute('/auth/me', { get: auth.getMe, put: auth.updateMe })
+addRoute('/auth/login', { post: auth.login })
+addRoute('/auth/register', { post: auth.register })
+addRoute('/auth/refresh', { post: auth.refresh })
+addRoute('/auth/me/avatar', { post: auth.postAvatar })
+addRoute('/auth/me/account', { put: auth.updateAccount })
+addRoute('/auth/personal-stats', { get: auth.getPersonalStats })
+addRoute('/auth/users', { get: auth.listUsers })
+addRoute('/auth/users/:id', { get: auth.getUser, put: auth.updateUser, delete: auth.deleteUser })
+
+// ---- Units ----
+addRoute('/units', { get: units.listUnits, post: units.createUnit })
+addRoute('/units/convert', { post: units.convertUnits })
+addRoute('/units/:id', { get: units.getUnit, put: units.updateUnit, delete: units.deleteUnit })
+addRoute('/units/:id/conversions', { get: units.listUnitConversions })
+
+// ---- Products (exact sub-paths before param paths) ----
+addRoute('/products/entity', { get: products.listEntity, post: products.createEntity })
+addRoute('/products/entity/:id', { get: products.getEntity, put: products.updateEntity, delete: products.deleteEntity })
+addRoute('/products/entity/:id/barcodes', { get: products.listBarcodes, post: products.addBarcode })
+addRoute('/products/entity/:id/latest-price', { get: products.getLatestPrice })
+addRoute('/products/autocomplete', { get: products.autocomplete })
+addRoute('/products', { get: products.listRecords, post: products.createRecord })
+addRoute('/products/:id', { put: products.updateRecord, delete: products.deleteRecord })
+addRoute('/products/:id/my-weight', { get: products.getWeight, put: products.setWeight, delete: products.deleteWeight })
+
+// ---- Ingredients (exact sub-paths before param paths) ----
+addRoute('/ingredients/categories', { get: ingredients.listCategories })
+addRoute('/ingredients/merge', { post: ingredients.mergeIngredients })
+addRoute('/ingredients/batch-create-products', { post: ingredients.batchCreateProducts })
+addRoute('/ingredients/search-by-name/:name', { get: ingredients.searchByName })
+addRoute('/ingredients/hierarchy', { post: hierarchy.createHierarchy })
+addRoute('/ingredients/hierarchy/:id', { get: hierarchy.getHierarchy })
+addRoute('/ingredients/:id', { get: ingredients.getIngredient, put: ingredients.updateIngredient, delete: ingredients.deleteIngredient })
+addRoute('/ingredients', { get: ingredients.listIngredients, post: ingredients.createIngredient })
+addRoute('/ingredients/:parent_id/hierarchy/:child_id', {
+  post: hierarchy.addHierarchyRelation,
+  put: hierarchy.updateHierarchyRelation,
+  delete: hierarchy.deleteHierarchyRelation,
+})
+
+// ---- Merchants ----
+addRoute('/merchants/map-config', { get: merchants.getMapConfig })
+addRoute('/merchants/favorites', { get: merchants.listFavorites })
+addRoute('/merchants/coordinates', { get: merchants.getCoordinates })
+addRoute('/merchants/:id', { get: merchants.getMerchant, put: merchants.updateMerchant, delete: merchants.deleteMerchant })
+addRoute('/merchants/:id/favorite', { post: merchants.addFavorite, delete: merchants.removeFavorite })
+addRoute('/merchants/:id/prices', { get: merchants.getMerchantPrices })
+addRoute('/merchants/:id/product-prices', { get: merchants.getMerchantProductPrices })
+addRoute('/merchants', { get: merchants.listMerchants, post: merchants.createMerchant })
+addRoute('/merchants/places', { get: merchants.listUserPlaces })
+
+// ---- Nutrition ----
+addRoute('/nutrition/ingredients', { get: nutrition.listNutritionIngredients })
+addRoute('/nutrition/ingredients/:id', { get: nutrition.getNutritionIngredient })
+addRoute('/nutrition/ingredients/:id/nutrition', { get: nutrition.getIngredientNutrition, post: nutrition.updateIngredientNutrition })
+addRoute('/nutrition/ingredients/:id/nutrition/base', { get: nutrition.getIngredientNutritionBase })
+addRoute('/nutrition/ingredients/:id/latest-price', { get: nutrition.getLatestPrice })
+addRoute('/nutrition/ingredients/:id/latest-price-by-merchant', { get: nutrition.getLatestPriceByMerchant })
+addRoute('/nutrition/ingredients/:id/product-weights', { get: nutrition.getProductWeights })
+addRoute('/nutrition/products/:id/nutrition', { get: nutrition.getProductNutrition, post: nutrition.updateProductNutrition })
+addRoute('/nutrition/search', { get: nutrition.searchNutrition })
+
+// ---- Blacklist ----
+addRoute('/blacklist/ingredient-ids', { get: blacklist.getEffectiveIngredientIds })
+addRoute('/blacklist/groups', { get: blacklist.listBlacklistGroups, post: blacklist.subscribeToGroups })
+addRoute('/blacklist/groups/:id', { delete: blacklist.unsubscribeFromGroup })
+addRoute('/blacklist/:ingredient_id', { delete: blacklist.removeFromBlacklist })
+addRoute('/blacklist', { get: blacklist.listBlacklist, post: blacklist.addToBlacklist })
+
+// ---- Admin ----
+addRoute('/admin/map-config', { get: admin.getMapConfig, put: admin.updateMapConfig })
+addRoute('/admin/config', { get: admin.getConfig })
+addRoute('/admin/stats', { get: admin.getStats })
+addRoute('/admin/storage-config', { get: admin.getStorageConfig, put: admin.updateStorageConfig })
+addRoute('/admin/email-templates', { get: admin.listEmailTemplates })
+addRoute('/admin/email-templates/:key', { put: admin.updateEmailTemplate })
+addRoute('/admin/map-api-keys', { get: admin.getMapApiKeys, put: admin.updateMapApiKeys })
