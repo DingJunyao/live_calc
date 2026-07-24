@@ -14,7 +14,7 @@
         <v-list-item v-if="isLocalMode" class="pa-2">
           <template #prepend>
             <v-avatar size="36" color="primary" class="mr-2">
-              <v-icon>mdi-calculator-variant</v-icon>
+              <v-img src="/logo.svg" alt="生计" />
             </v-avatar>
           </template>
           <v-list-item-title class="text-body-2 font-weight-medium">
@@ -114,7 +114,7 @@
         <v-list-item v-if="isLocalMode" class="pa-2">
           <template #prepend>
             <v-avatar size="40" color="primary" class="mr-2">
-              <v-icon>mdi-calculator-variant</v-icon>
+              <v-img src="/logo.svg" alt="生计" />
             </v-avatar>
           </template>
           <v-list-item-title class="text-body-2 font-weight-medium">
