@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
@@ -13,6 +13,7 @@ import '../../features/products/screens/product_list_screen.dart';
 import '../../features/products/screens/product_detail_screen.dart';
 import '../../features/merchants/screens/merchant_list_screen.dart';
 import '../../features/merchants/screens/merchant_detail_screen.dart';
+import '../../features/merchants/screens/merchant_map_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/profile/screens/my_proposals_screen.dart';
 import '../../features/profile/screens/my_places_screen.dart';
@@ -230,3 +231,5 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
     context.go(_tabRoutes[index]);
   }
 }
+
+
