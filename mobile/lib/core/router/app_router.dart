@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
@@ -11,6 +11,8 @@ import '../../features/ingredients/screens/ingredient_list_screen.dart';
 import '../../features/ingredients/screens/ingredient_detail_screen.dart';
 import '../../features/products/screens/product_list_screen.dart';
 import '../../features/products/screens/product_detail_screen.dart';
+import '../../features/merchants/screens/merchant_list_screen.dart';
+import '../../features/merchants/screens/merchant_detail_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/server_config_screen.dart';
@@ -115,6 +117,18 @@ GoRouter createAppRouter(WidgetRef ref) {
             ),
           ),
           GoRoute(
+            path: '/merchants',
+            name: RouteNames.merchants,
+            builder: (_, __) => const MerchantListScreen(),
+          ),
+          GoRoute(
+            path: '/merchants/:id',
+            name: 'merchant-detail',
+            builder: (_, state) => MerchantDetailScreen(
+              id: int.parse(state.pathParameters['id']!),
+            ),
+          ),
+          GoRoute(
             path: '/profile',
             name: RouteNames.profile,
             builder: (_, __) => const ProfileScreen(),
@@ -155,16 +169,16 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text('生记', style: Theme.of(context).textTheme.titleLarge),
+            child: Text('\u751f\u8bb0', style: Theme.of(context).textTheme.titleLarge),
           ),
-          const NavigationDrawerDestination(icon: Icon(Icons.search), label: Text('搜索')),
+          const NavigationDrawerDestination(icon: Icon(Icons.search), label: Text('\u641c\u7d22')),
           const Divider(),
-          const NavigationDrawerDestination(icon: Icon(Icons.science_outlined), label: Text('原料管理')),
-          const NavigationDrawerDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('商品管理')),
-          const NavigationDrawerDestination(icon: Icon(Icons.store_outlined), label: Text('商家管理')),
-          const NavigationDrawerDestination(icon: Icon(Icons.map_outlined), label: Text('商家地图')),
-          const NavigationDrawerDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('报表')),
-          const NavigationDrawerDestination(icon: Icon(Icons.settings_outlined), label: Text('设置')),
+          const NavigationDrawerDestination(icon: Icon(Icons.science_outlined), label: Text('\u539f\u6599\u7ba1\u7406')),
+          const NavigationDrawerDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('\u5546\u54c1\u7ba1\u7406')),
+          const NavigationDrawerDestination(icon: Icon(Icons.store_outlined), label: Text('\u5546\u5bb6\u7ba1\u7406')),
+          const NavigationDrawerDestination(icon: Icon(Icons.map_outlined), label: Text('\u5546\u5bb6\u5730\u56fe')),
+          const NavigationDrawerDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('\u62a5\u8868')),
+          const NavigationDrawerDestination(icon: Icon(Icons.settings_outlined), label: Text('\u8bbe\u7f6e')),
         ],
       ),
       body: Row(
@@ -175,10 +189,10 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
               onDestinationSelected: (i) => _onTabSelected(context, i),
               labelType: NavigationRailLabelType.all,
               destinations: const [
-                NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('首页')),
-                NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('记价')),
-                NavigationRailDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: Text('菜谱')),
-                NavigationRailDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: Text('我的')),
+                NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('\u9996\u9875')),
+                NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('\u8bb0\u4ef7')),
+                NavigationRailDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: Text('\u83dc\u8c31')),
+                NavigationRailDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: Text('\u6211\u7684')),
               ],
             ),
           Expanded(child: widget.child),
@@ -189,10 +203,10 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
               selectedIndex: _selectedIndex,
               onDestinationSelected: (i) => _onTabSelected(context, i),
               destinations: const [
-                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: '首页'),
-                NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: '记价'),
-                NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: '菜谱'),
-                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '我的'),
+                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: '\u9996\u9875'),
+                NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: '\u8bb0\u4ef7'),
+                NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: '\u83dc\u8c31'),
+                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '\u6211\u7684'),
               ],
             )
           : null,
