@@ -1,4 +1,4 @@
-﻿import 'recipe_summary.dart';
+﻿
 
 class RecipeIngredient {
   final String name;
