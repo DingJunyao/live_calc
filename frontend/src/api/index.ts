@@ -48,3 +48,5 @@ function createCloudApi(): ApiLike {
 export const api: ApiLike = storageMode === 'local' ? createLocalApi() : createCloudApi()
 
 export { REQUEST_TIMEOUT, LONG_REQUEST_TIMEOUT }
+
+export default api

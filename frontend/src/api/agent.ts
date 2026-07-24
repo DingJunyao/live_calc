@@ -1,7 +1,7 @@
 // api/agent.ts
 // Agent 任务台 REST 客户端，复用现有 axios 封装（@/api/client）。
 // 拦截器自动注入 Authorization: Bearer <jwt>（从 localStorage.access_token）。
-import api from './client'
+import api from './index'
 import type { AgentSession, SessionDetail, TaskType } from '@/types/agent'
 
 /**

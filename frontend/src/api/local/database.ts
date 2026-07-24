@@ -288,13 +288,13 @@ export async function getDb(): Promise<IDBPDatabase<LocalDB>> {
 // ============================================================
 
 /** 获取指定 store 的全部记录 */
-export async function getAll(storeName: StoreName): Promise<any[]> {
+export async function getAll<T = any>(storeName: StoreName): Promise<T[]> {
   const db = await getDb()
   return db.getAll(storeName)
 }
 
 /** 按主键获取单条记录 */
-export async function getById(storeName: StoreName, id: number | string): Promise<any | undefined> {
+export async function getById<T = any>(storeName: StoreName, id: number | string): Promise<T | undefined> {
   const db = await getDb()
   return db.get(storeName, id as any)
 }
@@ -324,11 +324,11 @@ export async function countAll(storeName: StoreName): Promise<number> {
 }
 
 /** 按索引查询记录 */
-export async function getByIndex(
+export async function getByIndex<T = any>(
   storeName: StoreName,
   indexName: string,
   value: any,
-): Promise<any[]> {
+): Promise<T[]> {
   const db = await getDb()
   return db.getAllFromIndex(storeName, indexName, value)
 }

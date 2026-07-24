@@ -1,5 +1,5 @@
 // frontend/src/api/usda.ts
-import api from './client'
+import api from './index'
 
 // === 用户：搜索 / 详情 / 匹配 ===
 export const searchUsdaFoods = (q: string, limit = 50) =>

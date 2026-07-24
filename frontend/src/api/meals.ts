@@ -1,5 +1,5 @@
 // api/meals.ts
-import { api } from './client'
+import { api } from './index'
 
 export interface NutritionPerServing {
   calories: number

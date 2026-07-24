@@ -1,4 +1,4 @@
-import api from './client'
+import api from './index'
 
 export interface SmtpConfig {
   host: string
