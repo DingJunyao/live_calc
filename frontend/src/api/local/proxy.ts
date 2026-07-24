@@ -134,6 +134,7 @@ import * as nutrition from './handlers/nutrition'
 import * as hierarchy from './handlers/hierarchy'
 import * as blacklist from './handlers/blacklist'
 import * as admin from './handlers/admin'
+import * as recipes from './handlers/recipes'
 
 // ---- Auth ----
 addRoute('/auth/config', { get: auth.getConfig })
@@ -215,3 +216,16 @@ addRoute('/admin/storage-config', { get: admin.getStorageConfig, put: admin.upda
 addRoute('/admin/email-templates', { get: admin.listEmailTemplates })
 addRoute('/admin/email-templates/:key', { put: admin.updateEmailTemplate })
 addRoute('/admin/map-api-keys', { get: admin.getMapApiKeys, put: admin.updateMapApiKeys })
+
+// ---- Recipes (exact sub-paths before param paths) ----
+addRoute('/recipes/batch-cost', { post: recipes.batchCost })
+addRoute('/recipes', { get: recipes.listRecipes, post: recipes.createRecipe })
+addRoute('/recipes/:id', { get: recipes.getRecipe, put: recipes.updateRecipe, delete: recipes.deleteRecipe })
+addRoute('/recipes/:id/cost', { get: recipes.getRecipeCost })
+addRoute('/recipes/:id/nutrition', { get: recipes.getRecipeNutrition })
+addRoute('/recipes/:id/cost-history', { get: recipes.getCostHistory })
+addRoute('/recipes/:id/cost-history-range', { get: recipes.getCostHistoryRange })
+addRoute('/recipes/:id/merchant-costs', { get: recipes.getMerchantCosts })
+addRoute('/recipes/:id/publish', { post: recipes.publishRecipe })
+addRoute('/recipes/:id/images', { post: recipes.uploadImage })
+addRoute('/recipes/:id/images/:filename', { delete: recipes.deleteImage })
