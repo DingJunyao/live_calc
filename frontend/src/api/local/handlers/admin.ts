@@ -94,3 +94,90 @@ export async function updateMapApiKeys(_params: Record<string, string>, data?: a
   await setConfigValue('map_api_keys', data)
   return data
 }
+
+// ============================================================
+// Images (unused image scanning/cleanup)
+// ============================================================
+
+export async function scanImages(): Promise<any> {
+  return {
+    stats: { total_images: 0, used_images: 0, unused_images: 0, used_size: 0, unused_size: 0 },
+    message: '扫描完成',
+  }
+}
+
+export async function getUnusedImages(): Promise<any> {
+  return {
+    stats: { total_images: 0, used_images: 0, unused_images: 0, used_size: 0, unused_size: 0 },
+    groups: { never_used: [], '180d': [], '90d': [], '60d': [], '30d': [], recent: [] },
+  }
+}
+
+// ============================================================
+// Email config (SMTP + templates)
+// ============================================================
+
+export async function getSmtpConfig(): Promise<any> {
+  return {
+    host: '',
+    port: 587,
+    username: '',
+    use_tls: true,
+    use_ssl: false,
+    from_address: '',
+    from_name: '',
+    enabled: false,
+  }
+}
+
+export async function updateSmtpConfig(_params: Record<string, string>, data?: any): Promise<any> {
+  return data || { enabled: false }
+}
+
+export async function listTemplates(): Promise<any> {
+  return []
+}
+
+export async function getEmailTemplate(params: Record<string, string>): Promise<any> {
+  return {
+    key: params.key,
+    name: '邮件模板',
+    subject: '通知',
+    body_html: '<p>内容</p>',
+    description: '',
+  }
+}
+
+// ============================================================
+// Translation / AI config
+// ============================================================
+
+export async function getTranslationConfig(): Promise<any> {
+  return {
+    ai: {
+      providers: {
+        claude_code: { enabled: false },
+        openai: { enabled: false, base_url: 'https://api.openai.com/v1', api_key: '', model: 'gpt-4o-mini' },
+        anthropic: { enabled: false, base_url: 'https://api.anthropic.com', api_key: '', model: 'claude-sonnet-4-6' },
+      },
+    },
+    machine: {
+      providers: {
+        baidu: { enabled: false, appid: '', secret: '' },
+        aliyun: { enabled: false, access_key_id: '', access_key_secret: '' },
+        deepl: { enabled: false, auth_key: '' },
+      },
+    },
+  }
+}
+
+export async function updateTranslationConfig(_params: Record<string, string>, data?: any): Promise<any> {
+  const config = data?.config || data
+  await setConfigValue('translation_config', config)
+  return config
+}
+
+export async function testTranslationConnection(_params: Record<string, string>, data?: any): Promise<any> {
+  // Local mode: no real provider to test, always return success
+  return { provider: data?.provider || 'unknown', ok: true, detail: '本地模式跳过连接测试' }
+}

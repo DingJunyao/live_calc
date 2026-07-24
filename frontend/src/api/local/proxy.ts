@@ -137,6 +137,7 @@ import * as admin from './handlers/admin'
 import * as recipes from './handlers/recipes'
 import * as meals from './handlers/meals'
 import * as sparklines from './handlers/sparklines'
+import * as usda from './handlers/usda'
 
 // ---- Auth ----
 addRoute('/auth/config', { get: auth.getConfig })
@@ -149,6 +150,14 @@ addRoute('/auth/me/account', { put: auth.updateAccount })
 addRoute('/auth/personal-stats', { get: auth.getPersonalStats })
 addRoute('/auth/users', { get: auth.listUsers })
 addRoute('/auth/users/:id', { get: auth.getUser, put: auth.updateUser, delete: auth.deleteUser })
+
+// ---- USDA ----
+addRoute('/usda/search', { get: usda.searchUsda })
+addRoute('/usda/:fdcId', { get: usda.getUsdaFood })
+addRoute('/usda/preview-nutrition', { get: usda.previewNutrition })
+addRoute('/usda/match/ingredient/:ingredientId', { post: usda.matchIngredient })
+addRoute('/usda/match/product/:productId', { post: usda.matchProduct })
+addRoute('/admin/usda/download', { post: usda.downloadUsda })
 
 // ---- Units ----
 addRoute('/units', { get: units.listUnits, post: units.createUnit })
@@ -218,6 +227,13 @@ addRoute('/admin/storage-config', { get: admin.getStorageConfig, put: admin.upda
 addRoute('/admin/email-templates', { get: admin.listEmailTemplates })
 addRoute('/admin/email-templates/:key', { put: admin.updateEmailTemplate })
 addRoute('/admin/map-api-keys', { get: admin.getMapApiKeys, put: admin.updateMapApiKeys })
+addRoute('/admin/images/scan', { post: admin.scanImages })
+addRoute('/admin/images/unused', { get: admin.getUnusedImages })
+addRoute('/admin/email-config/smtp', { get: admin.getSmtpConfig, put: admin.updateSmtpConfig })
+addRoute('/admin/email-config/templates', { get: admin.listTemplates })
+addRoute('/admin/email-config/templates/:key', { get: admin.getEmailTemplate, put: admin.updateEmailTemplate })
+addRoute('/admin/translation-config', { get: admin.getTranslationConfig, put: admin.updateTranslationConfig })
+addRoute('/admin/translation-config/test', { post: admin.testTranslationConnection })
 
 // ---- Recipes (exact sub-paths before param paths) ----
 addRoute('/recipes/batch-cost', { post: recipes.batchCost })
