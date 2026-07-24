@@ -3,6 +3,7 @@ import '../models/price_record.dart';
 
 class PriceRepository {
   final ApiClient _client;
+  ApiClient get client => _client;
   PriceRepository({ApiClient? client}) : _client = client ?? ApiClient.instance;
 
   Future<List<PriceRecord>> getRecords({

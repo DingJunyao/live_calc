@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/prices/screens/price_list_screen.dart';
+import '../../features/prices/screens/quick_fill_screen.dart';
 import '../../features/recipes/screens/recipe_list_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
@@ -58,6 +59,11 @@ GoRouter createAppRouter(WidgetRef ref) {
             path: '/prices',
             name: RouteNames.prices,
             builder: (_, __) => const PriceListScreen(),
+          ),
+          GoRoute(
+            path: '/prices/quick-fill',
+            name: 'quick-fill',
+            builder: (_, __) => const QuickFillScreen(),
           ),
           GoRoute(
             path: '/recipes',
