@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/product_provider.dart';
+import '../models/product.dart';
 import '../repositories/product_repository.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/error_display.dart';
@@ -54,3 +55,4 @@ class ProductDetailScreen extends ConsumerWidget {
     );
   }
 }
+
