@@ -613,10 +613,10 @@ export async function getMerchantCosts(params: Record<string, string>, _query?: 
     }
 
     // 按商家分组：取该食材在每家商家的最低价
-    const byMerchant: Record<number, { pricePerUnit: number; productId: number }> = {}
+    const byMerchant: Record<number, { pricePerUnit: number; unitId: number; productId: number }> = {}
     for (const p of prices) {
       if (!byMerchant[p.merchantId] || p.pricePerUnit < byMerchant[p.merchantId].pricePerUnit) {
-        byMerchant[p.merchantId] = { pricePerUnit: p.pricePerUnit, productId: p.productId }
+        byMerchant[p.merchantId] = { pricePerUnit: p.pricePerUnit, unitId: p.unitId, productId: p.productId }
       }
     }
 
@@ -635,7 +635,7 @@ export async function getMerchantCosts(params: Record<string, string>, _query?: 
       // 单位转换
       let convertedQty = effQty
       const recipeUnit = units.find((u: any) => u.id === ri.unit_id)
-      const priceUnit = units.find((u: any) => u.id === mp.pricePerUnit)
+      const priceUnit = units.find((u: any) => u.id === mp.unitId)
       // simplified: if same type use si_factor
       if (recipeUnit && priceUnit && recipeUnit.unit_type === priceUnit.unit_type && recipeUnit.si_factor && priceUnit.si_factor) {
         convertedQty = effQty * (recipeUnit.si_factor / priceUnit.si_factor)
