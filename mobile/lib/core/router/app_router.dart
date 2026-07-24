@@ -7,6 +7,10 @@ import '../../features/prices/screens/quick_fill_screen.dart';
 import '../../features/recipes/screens/recipe_list_screen.dart';
 import '../../features/recipes/screens/recipe_detail_screen.dart';
 import '../../features/recipes/screens/recipe_analysis_screen.dart';
+import '../../features/ingredients/screens/ingredient_list_screen.dart';
+import '../../features/ingredients/screens/ingredient_detail_screen.dart';
+import '../../features/products/screens/product_list_screen.dart';
+import '../../features/products/screens/product_detail_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/server_config_screen.dart';
@@ -83,6 +87,30 @@ GoRouter createAppRouter(WidgetRef ref) {
             path: '/recipes/:id/analysis',
             name: 'recipe-analysis',
             builder: (_, state) => RecipeAnalysisScreen(
+              id: int.parse(state.pathParameters['id']!),
+            ),
+          ),
+          GoRoute(
+            path: '/ingredients',
+            name: RouteNames.ingredients,
+            builder: (_, __) => const IngredientListScreen(),
+          ),
+          GoRoute(
+            path: '/ingredients/:id',
+            name: 'ingredient-detail',
+            builder: (_, state) => IngredientDetailScreen(
+              id: int.parse(state.pathParameters['id']!),
+            ),
+          ),
+          GoRoute(
+            path: '/products',
+            name: RouteNames.products,
+            builder: (_, __) => const ProductListScreen(),
+          ),
+          GoRoute(
+            path: '/products/:id',
+            name: 'product-detail',
+            builder: (_, state) => ProductDetailScreen(
               id: int.parse(state.pathParameters['id']!),
             ),
           ),
