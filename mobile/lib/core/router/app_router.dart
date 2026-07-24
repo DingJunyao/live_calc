@@ -5,6 +5,7 @@ import '../../features/home/screens/home_screen.dart';
 import '../../features/prices/screens/price_list_screen.dart';
 import '../../features/prices/screens/quick_fill_screen.dart';
 import '../../features/recipes/screens/recipe_list_screen.dart';
+import '../../features/recipes/screens/recipe_detail_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/server_config_screen.dart';
@@ -69,6 +70,13 @@ GoRouter createAppRouter(WidgetRef ref) {
             path: '/recipes',
             name: RouteNames.recipes,
             builder: (_, __) => const RecipeListScreen(),
+          ),
+          GoRoute(
+            path: '/recipes/:id',
+            name: 'recipe-detail',
+            builder: (_, state) => RecipeDetailScreen(
+              id: int.parse(state.pathParameters['id']!),
+            ),
           ),
           GoRoute(
             path: '/profile',
