@@ -8,9 +8,24 @@
       permanent
       touchless
     >
-      <!-- 用户卡片 -->
+      <!-- 用户卡片 / 本地模式品牌展示 -->
       <v-list v-if="userStore.user" density="compact" nav>
-        <v-list-item class="pa-2">
+        <!-- 本地模式：图标 + 名称 + slogan -->
+        <v-list-item v-if="isLocalMode" class="pa-2">
+          <template #prepend>
+            <v-avatar size="36" color="primary" class="mr-2">
+              <v-icon>mdi-calculator-variant</v-icon>
+            </v-avatar>
+          </template>
+          <v-list-item-title class="text-body-2 font-weight-medium">
+            生计
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            生活成本计算器
+          </v-list-item-subtitle>
+        </v-list-item>
+        <!-- 云模式：用户信息 -->
+        <v-list-item v-else class="pa-2">
           <template #prepend>
             <v-avatar size="36" color="primary" class="mr-2">
               <v-img v-if="userStore.user.avatar" :src="resolveImageUrl(userStore.user.avatar)" alt="avatar" />
@@ -71,6 +86,7 @@
             @click="toggleTheme"
           />
           <v-list-item
+            v-if="!isLocalMode"
             prepend-icon="mdi-logout"
             title="退出登录"
             base-color="error"
@@ -92,9 +108,24 @@
       :z-index="1000"
       @update:model-value="handleMobileDrawerUpdate"
     >
-      <!-- 用户卡片 -->
+      <!-- 用户卡片 / 本地模式品牌展示 -->
       <v-list v-if="userStore.user" density="compact" nav class="pt-4">
-        <v-list-item class="pa-2">
+        <!-- 本地模式：图标 + 名称 + slogan -->
+        <v-list-item v-if="isLocalMode" class="pa-2">
+          <template #prepend>
+            <v-avatar size="40" color="primary" class="mr-2">
+              <v-icon>mdi-calculator-variant</v-icon>
+            </v-avatar>
+          </template>
+          <v-list-item-title class="text-body-2 font-weight-medium">
+            生计
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            生活成本计算器
+          </v-list-item-subtitle>
+        </v-list-item>
+        <!-- 云模式：用户信息 -->
+        <v-list-item v-else class="pa-2">
           <template #prepend>
             <v-avatar size="40" color="primary" class="mr-2">
               <v-img v-if="userStore.user.avatar" :src="resolveImageUrl(userStore.user.avatar)" alt="avatar" />
@@ -149,6 +180,7 @@
             </v-btn-toggle>
           </div>
           <v-list-item
+            v-if="!isLocalMode"
             prepend-icon="mdi-logout"
             title="退出登录"
             base-color="error"
@@ -177,6 +209,8 @@ const userStore = useUserStore()
 const router = useRouter()
 const { mobileDrawer, desktopSidebar, isDesktop, closeDrawer } = useMobileDrawer()
 const { themeMode, toggleTheme } = useThemeToggle()
+
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 
 // rail（侧边栏收起）模式下，主题切换退化为单图标，单击三态循环
 const themeIcon = computed(() => {

@@ -117,7 +117,7 @@ const FILE_TO_STORE: Record<string, { store: string; transform?: (item: any) => 
   'products.json': { store: 'products' },
   'product_barcodes.json': { store: 'product_barcodes' },
   'price_records.json': { store: 'product_records' },
-  'merchants.json': { store: 'merchants' },
+  'merchants.json': { store: 'merchants', transform: (m: any) => ({ ...m, is_active: m.is_active ?? true }) },
   'user_places.json': { store: 'user_places' },
   'blacklist_groups.json': { store: 'blacklist_groups' },
   'user_ingredient_blacklist.json': { store: 'blacklist_group_ingredients' },
@@ -150,25 +150,32 @@ async function handleZipUpload(event: any) {
 
     // 收集所有 JSON 数据
     const dataMap: Record<string, any[]> = {}
+    const recipeFiles: Array<{ filename: string; data: any }> = []
     let imported = 0
 
     for (const entry of entries) {
-      // 只处理 JSON 文件（跳过 recipes/ 目录和其他非数据文件）
       if (!entry.filename.endsWith('.json')) continue
-      if (entry.filename.startsWith('recipes/')) continue
       if (entry.filename === 'manifest.json') continue
 
       const text = await (entry.getData as any)(new (await import('@zip.js/zip.js')).TextWriter())
       const json = JSON.parse(text)
+
+      // recipes/ 目录下的文件是独立菜谱
+      if (entry.filename.startsWith('recipes/')) {
+        recipeFiles.push({ filename: entry.filename, data: json })
+        imported++
+        continue
+      }
+
       const items = Array.isArray(json) ? json : [json]
       dataMap[entry.filename] = items
       imported += items.length
     }
 
-    importMessage.value = `解析完成（${imported} 条记录），正在写入数据库...`
+    importMessage.value = `解析完成（${imported} 条记录 + ${recipeFiles.length} 个菜谱），正在写入数据库...`
 
     // 按依赖顺序导入
-    const { getDb, batchAdd, clearStore } = await import('@/api/local/database')
+    const { getDb } = await import('@/api/local/database')
     const db = await getDb()
     let totalWritten = 0
 
@@ -182,14 +189,65 @@ async function handleZipUpload(event: any) {
       const storeName = mapping.store
       const transformed = mapping.transform ? items.map(mapping.transform) : items
 
-      // 写入事务
       const tx = db.transaction(storeName, 'readwrite')
       for (const item of transformed) {
-        // 保留 id 字段（如果有）
         await tx.store.put(item)
       }
       await tx.done
       totalWritten += transformed.length
+    }
+
+    // 导入菜谱
+    if (recipeFiles.length > 0) {
+      importMessage.value = `正在导入 ${recipeFiles.length} 个菜谱...`
+      const recipeTx = db.transaction(['recipes', 'recipe_ingredients'], 'readwrite')
+
+      for (const { data } of recipeFiles) {
+        // 提取 ingredients 字段
+        const ingredients = data.ingredients || []
+        delete data.ingredients
+
+        // 写入菜谱主体
+        const recipeRecord = {
+          id: data.id,
+          name: data.name,
+          category: data.category || null,
+          difficulty: data.difficulty || null,
+          total_time_minutes: data.total_time_minutes || null,
+          servings: data.servings || null,
+          cooking_steps: data.steps || [],
+          tips: data.tips || [],
+          description: data.description || '',
+          images: data.images || [],
+          tags: data.tags || null,
+          result_ingredient_id: data.result_ingredient_id || null,
+          is_public: true,
+          is_active: true,
+          source: 'imported',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        await recipeTx.objectStore('recipes').put(recipeRecord)
+
+        // 写入菜谱原料
+        for (let i = 0; i < ingredients.length; i++) {
+          const ing = ingredients[i]
+          await recipeTx.objectStore('recipe_ingredients').put({
+            recipe_id: data.id,
+            ingredient_id: ing.ingredient_id || null,
+            ingredient_name: ing.ingredient_name,
+            quantity: ing.quantity || null,
+            unit_id: ing.unit_id || null,
+            unit: ing.unit || null,
+            quantity_range: ing.quantity_range || null,
+            is_optional: ing.is_optional || false,
+            note: ing.note || null,
+            sort_order: i + 1,
+          })
+        }
+        totalWritten++
+      }
+      await recipeTx.done
     }
 
     reader.close()
