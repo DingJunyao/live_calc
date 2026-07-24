@@ -19,11 +19,22 @@ from app.services.recipe_import_service import RecipeImportService
 from app.services.storage import get_storage
 
 
+def _normalize_img_key(path: str) -> str:
+    """将旧格式 /static/images/xxx 归一化为 storage key xxx。"""
+    _static_prefix = '/static/images/'
+    if path.startswith(_static_prefix):
+        return path[len(_static_prefix):]
+    return path
+
+
 def _collect_used_image_keys(db) -> set[str]:
     """收集所有图片字段引用的 storage key，供未使用图片清理使用。
 
     来源：Recipe.images（JSON list）、users.avatar（单 key）、
     ProductEntity.image_url（仅不以 http 开头的内部 key）。
+
+    所有 key 统一归一化为 storage key（去 /static/images/ 前缀），
+    与 storage.list() 返回的格式一致，避免格式不匹配导致误判「从未引用」。
     """
     used: set[str] = set()
 
@@ -31,15 +42,15 @@ def _collect_used_image_keys(db) -> set[str]:
         if images_list:
             for img in images_list:
                 if isinstance(img, str) and img:
-                    used.add(img)
+                    used.add(_normalize_img_key(img))
 
     for (avatar,) in db.query(User.avatar).filter(User.avatar.isnot(None)).all():
         if avatar:
-            used.add(avatar)
+            used.add(_normalize_img_key(avatar))
 
     for (url,) in db.query(ProductEntity.image_url).filter(ProductEntity.image_url.isnot(None)).all():
         if url and not url.startswith("http"):
-            used.add(url)
+            used.add(_normalize_img_key(url))
 
     return used
 

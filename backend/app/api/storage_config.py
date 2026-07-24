@@ -154,6 +154,9 @@ def put_config(
             raise HTTPException(status_code=400, detail=f"S3 配置校验失败：{err}")
     _upsert_db(db, data)
     reset_storage()
+    # 存储后端变更后全量重建 image_tracking 表，确保引用计数与新后端一致
+    from app.services.image_tracking import scan_all_images
+    scan_all_images(db)
     return {"ok": True}
 
 

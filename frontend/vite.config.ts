@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
     vuetify({ autoImport: true }),
     // eruda(),
     VitePWA({
-      registerType: 'prompt',          // 新版本弹提示，用户主动刷新；不用 autoUpdate 防丢表单
+      registerType: 'autoUpdate',
       injectRegister: 'auto',          // 自动注入 SW 注册脚本
       devOptions: {
         enabled: true,               // vite dev 下 localhost 可测安装
