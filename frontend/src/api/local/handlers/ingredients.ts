@@ -1,27 +1,17 @@
 // Ingredients handler — CRUD, categories, search, merge, batch product creation.
 
-import { getDb, getAll, getById, addOne, putOne, deleteOne, getByIndex } from '../database'
-
-function paginate<T>(items: T[], query: any): { items: T[]; total: number; page: number; page_size: number } {
-  const page = parseInt(query?.page) || 1
-  const pageSize = parseInt(query?.page_size) || 20
-  const start = (page - 1) * pageSize
-  return { items: items.slice(start, start + pageSize), total: items.length, page, page_size: pageSize }
-}
+import { getAll, getById, addOne, putOne, getByIndex, paginate } from '../database'
 
 export async function listIngredients(_params: Record<string, string>, query?: any): Promise<any> {
-  let all = await getAll('ingredients')
   const name = query?.name || query?.search
-  if (name) {
-    const lower = name.toLowerCase()
-    all = all.filter((i: any) => i.name?.toLowerCase().includes(lower))
-  }
-  const categoryId = query?.category_id
-  if (categoryId) {
-    const cid = parseInt(categoryId)
-    all = all.filter((i: any) => i.category_id === cid)
-  }
-  return paginate(all.filter((i: any) => i.is_active !== false), query)
+  const lower = name?.toLowerCase()
+  const categoryId = query?.category_id ? parseInt(query.category_id) : undefined
+  return paginate('ingredients', { page: query?.page, page_size: query?.page_size }, (i: any) => {
+    if (i.is_active === false) return false
+    if (lower && !i.name?.toLowerCase().includes(lower)) return false
+    if (categoryId && i.category_id !== categoryId) return false
+    return true
+  })
 }
 
 export async function getIngredient(params: Record<string, string>): Promise<any> {

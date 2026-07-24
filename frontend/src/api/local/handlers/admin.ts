@@ -1,6 +1,6 @@
 // Admin handler — system configuration and statistics.
 
-import { getDb, getAll, getById, countAll } from '../database'
+import { getDb, countAll } from '../database'
 
 async function getConfigValue(key: string): Promise<any> {
   const db = await getDb()

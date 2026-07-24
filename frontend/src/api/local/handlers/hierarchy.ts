@@ -1,6 +1,6 @@
 // Hierarchy handler — ingredient parent/child relationships.
 
-import { getDb, getAll, getById, addOne, putOne, deleteOne, getByIndex } from '../database'
+import { getDb, getById, addOne, putOne, deleteOne, getByIndex } from '../database'
 
 export async function getHierarchy(params: Record<string, string>): Promise<any> {
   const id = parseInt(params.id)

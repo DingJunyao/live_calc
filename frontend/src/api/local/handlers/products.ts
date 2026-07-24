@@ -1,32 +1,21 @@
 // Products handler — product entities, price records, barcodes, weights.
 
-import { getDb, getAll, getById, addOne, putOne, deleteOne, getByIndex } from '../database'
-
-function paginate<T>(items: T[], query: any): { items: T[]; total: number; page: number; page_size: number } {
-  const page = parseInt(query?.page) || 1
-  const pageSize = parseInt(query?.page_size) || parseInt(query?.pageSize) || 20
-  const start = (page - 1) * pageSize
-  return { items: items.slice(start, start + pageSize), total: items.length, page, page_size: pageSize }
-}
+import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
 
 // ============================================================
 // Product Entity CRUD
 // ============================================================
 
 export async function listEntity(_params: Record<string, string>, query?: any): Promise<any> {
-  let all = await getAll('products')
-  all = all.filter((p: any) => p.is_active !== false)
-
   const name = query?.name || query?.search
-  if (name) {
-    const lower = name.toLowerCase()
-    all = all.filter((p: any) => p.name?.toLowerCase().includes(lower))
-  }
-  const ingredientId = query?.ingredient_id
-  if (ingredientId) {
-    all = all.filter((p: any) => p.ingredient_id === parseInt(ingredientId))
-  }
-  return paginate(all, query)
+  const lower = name?.toLowerCase()
+  const ingredientId = query?.ingredient_id ? parseInt(query.ingredient_id) : undefined
+  return paginate('products', { page: query?.page, page_size: query?.page_size || query?.pageSize }, (p: any) => {
+    if (p.is_active === false) return false
+    if (lower && !p.name?.toLowerCase().includes(lower)) return false
+    if (ingredientId && p.ingredient_id !== ingredientId) return false
+    return true
+  })
 }
 
 export async function getEntity(params: Record<string, string>): Promise<any> {
@@ -76,14 +65,14 @@ export async function autocomplete(_params: Record<string, string>, query?: any)
   if (!q) return { items: [], total: 0 }
 
   const lower = q.toLowerCase()
-  const all = await getAll('products')
-  const matched = all.filter(
-    (p: any) =>
-      p.is_active !== false &&
-      (p.name?.toLowerCase().includes(lower) ||
-        (Array.isArray(p.aliases) && p.aliases.some((a: string) => a.toLowerCase().includes(lower)))),
-  )
-  return paginate(matched, query)
+  return paginate('products', { page: query?.page, page_size: query?.page_size }, (p: any) => {
+    if (p.is_active === false) return false
+    if (!p.name?.toLowerCase().includes(lower) &&
+        !(Array.isArray(p.aliases) && p.aliases.some((a: string) => a.toLowerCase().includes(lower)))) {
+      return false
+    }
+    return true
+  })
 }
 
 // ============================================================
@@ -113,7 +102,10 @@ export async function listRecords(_params: Record<string, string>, query?: any):
   // Sort by recorded_at descending
   all.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
 
-  return paginate(all, query)
+  const page = parseInt(query?.page) || 1
+  const pageSize = parseInt(query?.page_size) || parseInt(query?.pageSize) || 20
+  const start = (page - 1) * pageSize
+  return { items: all.slice(start, start + pageSize), total: all.length, page, page_size: pageSize }
 }
 
 export async function createRecord(_params: Record<string, string>, data?: any): Promise<any> {
@@ -216,13 +208,13 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
     return { price: null, unit: null, records: 0 }
   }
 
-  const sorted = records.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
+  records.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
 
   // Simple average of all records
   let total = 0
   let count = 0
   for (const rec of records) {
-    const p = rec.price || rec.unit_price
+    const p = rec.price ?? rec.unit_price
     if (p && p > 0) {
       total += p
       count++
@@ -231,8 +223,8 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
 
   return {
     price: count > 0 ? total / count : null,
-    unit: sorted[0]?.unit_name || sorted[0]?.unit || '斤',
+    unit: records[0]?.unit_name || records[0]?.unit || '斤',
     records: count,
-    latest_record: sorted[0],
+    latest_record: records[0],
   }
 }

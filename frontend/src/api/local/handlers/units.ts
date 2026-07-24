@@ -1,6 +1,6 @@
 // Units handler — CRUD for units and unit conversions.
 
-import { getDb, getAll, getById, addOne, putOne, deleteOne, getByIndex } from '../database'
+import { getAll, getById, addOne, putOne, getByIndex } from '../database'
 
 export async function listUnits(_params: Record<string, string>, query?: any): Promise<any> {
   const all = await getAll('units')

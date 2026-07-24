@@ -1,6 +1,6 @@
 // Blacklist handler — ingredient blacklist and group subscriptions.
 
-import { getAll, getById, addOne, deleteOne, getByIndex, getDb } from '../database'
+import { getAll, getById, addOne, deleteOne, getByIndex } from '../database'
 
 export async function listBlacklist(_params: Record<string, string>, query?: any): Promise<any> {
   const all = await getAll('blacklist_group_ingredients')

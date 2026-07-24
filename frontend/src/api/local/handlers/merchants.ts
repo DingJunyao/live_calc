@@ -1,22 +1,15 @@
 // Merchants handler — CRUD, favorites, coordinates, prices.
 
-import { getDb, getAll, getById, addOne, putOne, deleteOne, getByIndex } from '../database'
-
-function paginate<T>(items: T[], query: any): { items: T[]; total: number; page: number; page_size: number } {
-  const page = parseInt(query?.page) || 1
-  const pageSize = parseInt(query?.page_size) || 20
-  const start = (page - 1) * pageSize
-  return { items: items.slice(start, start + pageSize), total: items.length, page, page_size: pageSize }
-}
+import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
 
 export async function listMerchants(_params: Record<string, string>, query?: any): Promise<any> {
-  let all = await getAll('merchants')
   const name = query?.name || query?.search
-  if (name) {
-    const lower = name.toLowerCase()
-    all = all.filter((m: any) => m.name?.toLowerCase().includes(lower))
-  }
-  return paginate(all.filter((m: any) => m.is_active !== false), query)
+  const lower = name?.toLowerCase()
+  return paginate('merchants', { page: query?.page, page_size: query?.page_size }, (m: any) => {
+    if (m.is_active === false) return false
+    if (lower && !m.name?.toLowerCase().includes(lower)) return false
+    return true
+  })
 }
 
 export async function getMerchant(params: Record<string, string>): Promise<any> {
@@ -93,7 +86,10 @@ export async function getCoordinates(): Promise<any> {
 export async function getMerchantPrices(params: Record<string, string>, query?: any): Promise<any> {
   const merchantId = parseInt(params.id)
   const all = await getByIndex('product_records', 'by_merchant_id', merchantId)
-  return paginate(all, query)
+  const page = parseInt(query?.page) || 1
+  const pageSize = parseInt(query?.page_size) || 20
+  const start = (page - 1) * pageSize
+  return { items: all.slice(start, start + pageSize), total: all.length, page, page_size: pageSize }
 }
 
 export async function getMerchantProductPrices(params: Record<string, string>): Promise<any> {

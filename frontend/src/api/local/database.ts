@@ -288,76 +288,108 @@ export async function getDb(): Promise<IDBPDatabase<LocalDB>> {
 // ============================================================
 
 /** 获取指定 store 的全部记录 */
-export async function getAll<T = any>(storeName: StoreName): Promise<T[]> {
+export async function getAll<T = any>(storeName: any): Promise<T[]> {
   const db = await getDb()
-  return db.getAll(storeName)
+  return (db as any).getAll(storeName)
 }
 
 /** 按主键获取单条记录 */
-export async function getById<T = any>(storeName: StoreName, id: number | string): Promise<T | undefined> {
+export async function getById<T = any>(storeName: any, id: number | string): Promise<T | undefined> {
   const db = await getDb()
-  return db.get(storeName, id as any)
+  return (db as any).get(storeName, id)
 }
 
 /** 新增记录，返回新主键 */
-export async function addOne(storeName: StoreName, value: any): Promise<number | string> {
+export async function addOne(storeName: any, value: any): Promise<number | string> {
   const db = await getDb()
-  return db.add(storeName, value)
+  return (db as any).add(storeName, value)
 }
 
 /** 写入/覆盖记录（upsert） */
-export async function putOne(storeName: StoreName, value: any): Promise<number | string> {
+export async function putOne(storeName: any, value: any): Promise<number | string> {
   const db = await getDb()
-  return db.put(storeName, value)
+  return (db as any).put(storeName, value)
 }
 
 /** 按主键删除记录 */
-export async function deleteOne(storeName: StoreName, id: number | string): Promise<void> {
+export async function deleteOne(storeName: any, id: number | string): Promise<void> {
   const db = await getDb()
-  return db.delete(storeName, id as any)
+  return (db as any).delete(storeName, id)
 }
 
 /** 统计 store 记录数 */
-export async function countAll(storeName: StoreName): Promise<number> {
+export async function countAll(storeName: any): Promise<number> {
   const db = await getDb()
-  return db.count(storeName)
+  return (db as any).count(storeName)
 }
 
 /** 按索引查询记录 */
 export async function getByIndex<T = any>(
-  storeName: StoreName,
+  storeName: any,
   indexName: string,
   value: any,
 ): Promise<T[]> {
   const db = await getDb()
-  return db.getAllFromIndex(storeName, indexName, value)
+  return (db as any).getAllFromIndex(storeName, indexName, value)
 }
 
 /** 清空 store */
-export async function clearStore(storeName: StoreName): Promise<void> {
+export async function clearStore(storeName: any): Promise<void> {
   const db = await getDb()
-  return db.clear(storeName)
+  return (db as any).clear(storeName)
 }
 
 /** 检查 store 是否包含数据 */
-export async function hasData(storeName: StoreName): Promise<boolean> {
+export async function hasData(storeName: any): Promise<boolean> {
   const db = await getDb()
-  const count = await db.count(storeName)
+  const count = await (db as any).count(storeName)
   return count > 0
 }
 
 /** 批量插入，全部在同一读写事务中完成。返回插入记录的主键列表。 */
-export async function batchAdd(storeName: StoreName, items: any[]): Promise<(number | string)[]> {
+export async function batchAdd(storeName: any, items: any[]): Promise<any[]> {
   if (items.length === 0) return []
   const db = await getDb()
-  const tx = db.transaction(storeName, 'readwrite')
+  const tx = (db as any).transaction(storeName, 'readwrite')
   const store = tx.objectStore(storeName)
-  const keys: (number | string)[] = []
+  const keys: any[] = []
   for (const item of items) {
     keys.push(await store.add(item))
   }
   await tx.done
   return keys
+}
+
+// ============================================================
+// 分页辅助
+// ============================================================
+
+export interface PaginationParams {
+  page?: number
+  page_size?: number
+}
+
+export interface PaginatedResult<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export async function paginate<T>(
+  storeName: any,
+  options: PaginationParams = {},
+  filter?: (item: T) => boolean,
+): Promise<PaginatedResult<T>> {
+  const db = await getDb()
+  const page = options.page || 1
+  const pageSize = options.page_size || 20
+  let all: T[] = await (db as any).getAll(storeName)
+  if (filter) all = all.filter(filter)
+  const total = all.length
+  const start = (page - 1) * pageSize
+  const items = all.slice(start, start + pageSize)
+  return { items, total, page, page_size: pageSize }
 }
 
 /** 关闭数据库连接（主要用于测试/重置） */

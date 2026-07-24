@@ -1,22 +1,15 @@
 // Nutrition handler — ingredient/product nutrition data and weighted price lookups.
 
-import { getDb, getAll, getById, addOne, putOne, getByIndex } from '../database'
-
-function paginate<T>(items: T[], query: any): { items: T[]; total: number; page: number; page_size: number } {
-  const page = parseInt(query?.page) || 1
-  const pageSize = parseInt(query?.page_size) || 20
-  const start = (page - 1) * pageSize
-  return { items: items.slice(start, start + pageSize), total: items.length, page, page_size: pageSize }
-}
+import { getAll, getById, putOne, getByIndex, getDb, paginate } from '../database'
 
 export async function listNutritionIngredients(_params: Record<string, string>, query?: any): Promise<any> {
-  let all = await getAll('ingredients')
   const name = query?.name || query?.search
-  if (name) {
-    const lower = name.toLowerCase()
-    all = all.filter((i: any) => i.name?.toLowerCase().includes(lower))
-  }
-  return paginate(all.filter((i: any) => i.is_active !== false), query)
+  const lower = name?.toLowerCase()
+  return paginate('ingredients', { page: query?.page, page_size: query?.page_size }, (i: any) => {
+    if (i.is_active === false) return false
+    if (lower && !i.name?.toLowerCase().includes(lower)) return false
+    return true
+  })
 }
 
 export async function getNutritionIngredient(params: Record<string, string>): Promise<any> {
@@ -52,26 +45,33 @@ export async function updateIngredientNutrition(params: Record<string, string>, 
   const ingredientId = parseInt(params.id)
   const nutrients = data?.nutrients || data
 
-  // Clear existing and write new
-  const existing = await getByIndex('nutrition_data', 'by_ingredient_id', ingredientId)
+  // Use a single readwrite transaction for both delete and insert
   const db = await getDb()
   const tx = db.transaction('nutrition_data', 'readwrite')
-  for (const item of existing) {
-    await tx.store.delete(item.id)
-  }
-  await tx.done
+  const store = tx.store
 
-  const created: any[] = []
+  // Delete existing records for this ingredient
+  const index = store.index('by_ingredient_id')
+  const existing = await index.getAll(ingredientId)
+  for (const item of existing) {
+    await store.delete(item.id)
+  }
+
+  // Insert new records
   for (const n of (Array.isArray(nutrients) ? nutrients : [nutrients])) {
-    const id = await addOne('nutrition_data', {
+    await store.add({
       ...n,
       ingredient_id: ingredientId,
       is_verified: true,
       source: 'custom',
       created_at: new Date().toISOString(),
     })
-    created.push(await getById('nutrition_data', id as number))
   }
+
+  await tx.done
+
+  // Read back the inserted data
+  const created = await getByIndex('nutrition_data', 'by_ingredient_id', ingredientId)
   return { items: created }
 }
 
