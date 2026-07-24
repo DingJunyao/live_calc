@@ -104,18 +104,100 @@ async function importFromRepo() {
   }
 }
 
+/** ZIP 文件名到 IndexedDB store 名的映射 */
+const FILE_TO_STORE: Record<string, { store: string; transform?: (item: any) => any }> = {
+  'units.json': { store: 'units' },
+  'unit_conversions.json': { store: 'unit_conversions' },
+  'ingredient_categories.json': { store: 'ingredient_categories' },
+  'ingredients.json': { store: 'ingredients' },
+  'nutritions.json': { store: 'nutrition_data' },
+  'ingredient_hierarchy.json': { store: 'ingredient_hierarchy' },
+  'entity_densities.json': { store: 'entity_densities' },
+  'entity_unit_overrides.json': { store: 'entity_unit_overrides' },
+  'products.json': { store: 'products' },
+  'product_barcodes.json': { store: 'product_barcodes' },
+  'price_records.json': { store: 'product_records' },
+  'merchants.json': { store: 'merchants' },
+  'user_places.json': { store: 'user_places' },
+  'blacklist_groups.json': { store: 'blacklist_groups' },
+  'user_ingredient_blacklist.json': { store: 'blacklist_group_ingredients' },
+  'blacklist_group_subscriptions.json': { store: 'blacklist_subscriptions' },
+}
+
+/** 导入顺序（依赖关系：被引用的先导入） */
+const IMPORT_ORDER = [
+  'units.json', 'unit_conversions.json', 'ingredient_categories.json',
+  'ingredients.json', 'nutritions.json', 'merchants.json',
+  'products.json', 'product_barcodes.json', 'price_records.json',
+  'ingredient_hierarchy.json', 'entity_unit_overrides.json', 'entity_densities.json',
+  'user_places.json', 'blacklist_groups.json', 'user_ingredient_blacklist.json',
+  'blacklist_group_subscriptions.json',
+]
+
 async function handleZipUpload(event: any) {
   const file = event?.target?.files?.[0] || event?.file
   if (!file) return
+
   importing.value = true
-  importMessage.value = '正在导入数据包...'
+  importMessage.value = '正在解析 ZIP 数据包...'
   try {
-    await seedBasicData() // Ensure basic data first
-    // ZIP import will be handled in Phase 8
-    importMessage.value = '基础数据已导入。ZIP 导入功能将在后续版本中完善。'
+    await seedBasicData()
+
+    const { BlobReader, ZipReader } = await import('@zip.js/zip.js')
+    const reader = new ZipReader(new BlobReader(file))
+    const entries = await reader.getEntries()
+    importMessage.value = `ZIP 中包含 ${entries.length} 个文件，正在导入...`
+
+    // 收集所有 JSON 数据
+    const dataMap: Record<string, any[]> = {}
+    let imported = 0
+
+    for (const entry of entries) {
+      // 只处理 JSON 文件（跳过 recipes/ 目录和其他非数据文件）
+      if (!entry.filename.endsWith('.json')) continue
+      if (entry.filename.startsWith('recipes/')) continue
+      if (entry.filename === 'manifest.json') continue
+
+      const text = await (entry.getData as any)(new (await import('@zip.js/zip.js')).TextWriter())
+      const json = JSON.parse(text)
+      const items = Array.isArray(json) ? json : [json]
+      dataMap[entry.filename] = items
+      imported += items.length
+    }
+
+    importMessage.value = `解析完成（${imported} 条记录），正在写入数据库...`
+
+    // 按依赖顺序导入
+    const { getDb, batchAdd, clearStore } = await import('@/api/local/database')
+    const db = await getDb()
+    let totalWritten = 0
+
+    for (const filename of IMPORT_ORDER) {
+      const items = dataMap[filename]
+      if (!items || items.length === 0) continue
+
+      const mapping = FILE_TO_STORE[filename]
+      if (!mapping) continue
+
+      const storeName = mapping.store
+      const transformed = mapping.transform ? items.map(mapping.transform) : items
+
+      // 写入事务
+      const tx = db.transaction(storeName, 'readwrite')
+      for (const item of transformed) {
+        // 保留 id 字段（如果有）
+        await tx.store.put(item)
+      }
+      await tx.done
+      totalWritten += transformed.length
+    }
+
+    reader.close()
+    importMessage.value = `导入完成！共导入 ${totalWritten} 条数据。`
     step.value = 3
   } catch (e: any) {
     importMessage.value = '导入失败：' + (e?.message || '未知错误')
+    console.error('[zip-import]', e)
   } finally {
     importing.value = false
   }
