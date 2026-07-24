@@ -1,6 +1,6 @@
 ﻿import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:flutter/services.dart';
 import '../../../../lib/features/auth/providers/auth_provider.dart';
 import '../../../../lib/features/auth/repositories/auth_repository.dart';
 import '../../../../lib/features/auth/models/login_request.dart';
@@ -10,6 +10,25 @@ class MockAuthRepository extends Mock implements AuthRepository {}
 
 void main() {
   late MockAuthRepository mockRepo;
+
+  setUpAll(() {
+    registerFallbackValue(const LoginRequest(username: '', password: ''));
+    TestWidgetsFlutterBinding.ensureInitialized();
+    // Mock all FlutterSecureStorage platform channels
+    for (final channel in [
+      'plugins.flutter.io/flutter_secure_storage',
+      'plugins.flutter.io/flutter_secure_storage_windows',
+      'plugins.flutter.io/flutter_secure_storage_linux',
+      'plugins.flutter.io/flutter_secure_storage_macos',
+      'plugins.flutter.io/flutter_secure_storage_web',
+    ]) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        MethodChannel(channel),
+        (MethodCall methodCall) async => null,
+      );
+    }
+  });
 
   setUp(() {
     mockRepo = MockAuthRepository();

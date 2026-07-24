@@ -1,4 +1,4 @@
-import 'package:dio/dio.dart';
+﻿import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 
@@ -49,16 +49,17 @@ class AuthInterceptor extends Interceptor {
   }
 
   static Future<void> saveTokens(String accessToken, String refreshToken) async {
-    final storage = FlutterSecureStorage();
+    final storage = const FlutterSecureStorage();
     await storage.write(key: _tokenKey, value: accessToken);
     await storage.write(key: _refreshTokenKey, value: refreshToken);
   }
 
   static Future<void> clearTokens() async {
-    final storage = FlutterSecureStorage();
+    final storage = const FlutterSecureStorage();
     await storage.delete(key: _tokenKey);
     await storage.delete(key: _refreshTokenKey);
   }
 
-  static Future<String?> get accessToken => FlutterSecureStorage().read(key: _tokenKey);
+  static Future<String?> get accessToken => const FlutterSecureStorage().read(key: _tokenKey);
 }
+
