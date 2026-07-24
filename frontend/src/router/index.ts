@@ -21,6 +21,12 @@ const router = createRouter({
       meta: { requiresAuth: false, title: '注册' },
     },
     {
+      path: '/setup',
+      name: 'local-setup',
+      component: () => import('@/views/setup/LocalInitWizard.vue'),
+      meta: { requiresAuth: false, title: '初始化' },
+    },
+    {
       path: '/',
       component: () => import('@/components/layout/AppLayout.vue'),
       meta: { requiresAuth: true },
@@ -214,6 +220,32 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
+
+  // ---- Local mode: simplified auth ----
+  if (import.meta.env.VITE_STORAGE_MODE === 'local') {
+    // Redirect logged-in users away from login/register
+    if ((to.name === 'login' || to.name === 'register') && userStore.isLoggedIn) {
+      next('/')
+      return
+    }
+    // Block admin pages not relevant in single-user local mode
+    const blockedInLocal: string[] = [
+      'admin-proposals',
+      'admin-users',
+      'admin-invite-codes',
+      'admin-storage',
+      'admin-email-config',
+      'admin-images-unused',
+    ]
+    if (blockedInLocal.includes(to.name as string)) {
+      next('/admin')
+      return
+    }
+    next()
+    return
+  }
+
+  // ---- Cloud/normal mode ----
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth !== false)
   const adminOnly = to.matched.some((record) => record.meta.adminOnly === true)
 

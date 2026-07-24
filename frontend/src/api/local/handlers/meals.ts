@@ -95,6 +95,7 @@ export async function getRecommendations(_params: Record<string, string>, _query
 
   if (cached.length > 0) {
     return {
+      status: 'ready',
       date: today,
       recommendations: MEAL_TYPES.map(mt => {
         const found = cached.find((c: any) => c.meal_type === mt)
@@ -210,6 +211,7 @@ async function generateAll(): Promise<any> {
   }
 
   return {
+    status: 'ready',
     date: today,
     recommendations: results,
   }
