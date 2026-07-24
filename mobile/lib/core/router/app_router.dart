@@ -1,49 +1,27 @@
-import 'package:flutter/material.dart';
+锘縤mport 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:live_calc/features/home/screens/home_screen.dart';
-import 'package:live_calc/features/prices/screens/price_list_screen.dart';
-import 'package:live_calc/features/recipes/screens/recipe_list_screen.dart';
-import 'package:live_calc/features/profile/screens/profile_screen.dart';
 import 'package:go_router/go_router.dart';
-import 'package:live_calc/features/auth/screens/server_config_screen.dart';
-import 'package:live_calc/features/auth/screens/login_screen.dart';
-import 'package:live_calc/features/auth/screens/register_screen.dart';
+import '../../features/home/screens/home_screen.dart';
+import '../../features/prices/screens/price_list_screen.dart';
+import '../../features/recipes/screens/recipe_list_screen.dart';
+import '../../features/profile/screens/profile_screen.dart';
+import '../../features/auth/providers/auth_provider.dart';
+import '../../features/auth/screens/server_config_screen.dart';
+import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/register_screen.dart';
+import 'route_names.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-// 认证守卫用 ChangeNotifier + Riverpod
-class AuthGuard extends ChangeNotifier {
-  bool _isLoggedIn = false;
-  bool _hasServerConfig = false;
-
-  bool get isLoggedIn => _isLoggedIn;
-  bool get hasServerConfig => _hasServerConfig;
-
-  void setLoggedIn(bool value) {
-    _isLoggedIn = value;
-    notifyListeners();
-  }
-
-  void setServerConfigured(bool value) {
-    _hasServerConfig = value;
-    notifyListeners();
-  }
-}
-
-final authGuardProvider = ChangeNotifierProvider<AuthGuard>((ref) {
-  return AuthGuard();
-});
-
-// 路由构建函数
 GoRouter createAppRouter(WidgetRef ref) {
-  final authGuard = ref.watch(authGuardProvider);
+  final authState = ref.watch(authProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/home',
     redirect: (context, state) {
-      final isLoggedIn = authGuard.isLoggedIn;
+      final isLoggedIn = authState.status == AuthStatus.authenticated;
       final location = state.matchedLocation;
       final isAuthRoute = location == '/login' || location == '/register' || location == '/server-config';
 
@@ -54,17 +32,17 @@ GoRouter createAppRouter(WidgetRef ref) {
     routes: [
       GoRoute(
         path: '/server-config',
-        name: 'server-config',
+        name: RouteNames.serverConfig,
         builder: (_, __) => const ServerConfigScreen(),
       ),
       GoRoute(
         path: '/login',
-        name: 'login',
+        name: RouteNames.login,
         builder: (_, __) => const LoginScreen(),
       ),
       GoRoute(
         path: '/register',
-        name: 'register',
+        name: RouteNames.register,
         builder: (_, __) => const RegisterScreen(),
       ),
       ShellRoute(
@@ -73,22 +51,22 @@ GoRouter createAppRouter(WidgetRef ref) {
         routes: [
           GoRoute(
             path: '/home',
-            name: 'home',
+            name: RouteNames.home,
             builder: (_, __) => const HomeScreen(),
           ),
           GoRoute(
             path: '/prices',
-            name: 'prices',
+            name: RouteNames.prices,
             builder: (_, __) => const PriceListScreen(),
           ),
           GoRoute(
             path: '/recipes',
-            name: 'recipes',
+            name: RouteNames.recipes,
             builder: (_, __) => const RecipeListScreen(),
           ),
           GoRoute(
             path: '/profile',
-            name: 'profile',
+            name: RouteNames.profile,
             builder: (_, __) => const ProfileScreen(),
           ),
         ],
@@ -97,7 +75,6 @@ GoRouter createAppRouter(WidgetRef ref) {
   );
 }
 
-/// 底部 Tab + Drawer 的 Scaffold
 class ScaffoldWithNavBar extends ConsumerStatefulWidget {
   final Widget child;
   const ScaffoldWithNavBar({super.key, required this.child});
@@ -128,31 +105,30 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text('生记', style: Theme.of(context).textTheme.titleLarge),
+            child: Text('鐢熻', style: Theme.of(context).textTheme.titleLarge),
           ),
-          const NavigationDrawerDestination(icon: Icon(Icons.search), label: Text('搜索')),
+          const NavigationDrawerDestination(icon: Icon(Icons.search), label: Text('鎼滅储')),
           const Divider(),
-          const NavigationDrawerDestination(icon: Icon(Icons.science_outlined), label: Text('原料管理')),
-          const NavigationDrawerDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('商品管理')),
-          const NavigationDrawerDestination(icon: Icon(Icons.store_outlined), label: Text('商家管理')),
-          const NavigationDrawerDestination(icon: Icon(Icons.map_outlined), label: Text('商家地图')),
-          const NavigationDrawerDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('报表')),
-          const NavigationDrawerDestination(icon: Icon(Icons.settings_outlined), label: Text('设置')),
+          const NavigationDrawerDestination(icon: Icon(Icons.science_outlined), label: Text('鍘熸枡绠＄悊')),
+          const NavigationDrawerDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('鍟嗗搧绠＄悊')),
+          const NavigationDrawerDestination(icon: Icon(Icons.store_outlined), label: Text('鍟嗗绠＄悊')),
+          const NavigationDrawerDestination(icon: Icon(Icons.map_outlined), label: Text('鍟嗗鍦板浘')),
+          const NavigationDrawerDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('鎶ヨ〃')),
+          const NavigationDrawerDestination(icon: Icon(Icons.settings_outlined), label: Text('璁剧疆')),
         ],
       ),
       body: Row(
         children: [
-          // 平板/大屏用 NavigationRail
           if (MediaQuery.of(context).size.width >= 600)
             NavigationRail(
               selectedIndex: _selectedIndex,
               onDestinationSelected: (i) => _onTabSelected(context, i),
               labelType: NavigationRailLabelType.all,
               destinations: const [
-                NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('首页')),
-                NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('记价')),
-                NavigationRailDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: Text('菜谱')),
-                NavigationRailDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: Text('我的')),
+                NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('棣栭〉')),
+                NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('璁颁环')),
+                NavigationRailDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: Text('鑿滆氨')),
+                NavigationRailDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: Text('鎴戠殑')),
               ],
             ),
           Expanded(child: widget.child),
@@ -163,10 +139,10 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
               selectedIndex: _selectedIndex,
               onDestinationSelected: (i) => _onTabSelected(context, i),
               destinations: const [
-                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: '首页'),
-                NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: '记价'),
-                NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: '菜谱'),
-                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '我的'),
+                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: '棣栭〉'),
+                NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: '璁颁环'),
+                NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: '鑿滆氨'),
+                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '鎴戠殑'),
               ],
             )
           : null,
