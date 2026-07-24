@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/merchant_provider.dart';
@@ -34,7 +34,7 @@ class _MerchantListScreenState extends ConsumerState<MerchantListScreen> {
     final state = ref.watch(merchantListProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Merchants')),
+      appBar: AppBar(title: const Text('Merchant')),
       body: Column(
         children: [
           Padding(
@@ -81,3 +81,4 @@ class _MerchantListScreenState extends ConsumerState<MerchantListScreen> {
     );
   }
 }
+

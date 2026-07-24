@@ -46,3 +46,4 @@ class MerchantMapScreen extends ConsumerWidget {
     );
   }
 }
+

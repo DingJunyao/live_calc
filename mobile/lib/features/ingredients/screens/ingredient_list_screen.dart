@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/ingredient_provider.dart';
@@ -34,14 +34,14 @@ class _IngredientListScreenState extends ConsumerState<IngredientListScreen> {
     final state = ref.watch(ingredientListProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Ingredients')),
+      appBar: AppBar(title: const Text('Ingredient')),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
               controller: _searchController,
-              decoration: const InputDecoration(hintText: 'Search...', prefixIcon: Icon(Icons.search)),
+              decoration: const InputDecoration(hintText: 'Search', prefixIcon: Icon(Icons.search)),
               onSubmitted: (v) => ref.read(ingredientListProvider.notifier).load(search: v),
             ),
           ),
@@ -52,12 +52,12 @@ class _IngredientListScreenState extends ConsumerState<IngredientListScreen> {
   }
 
   Widget _buildContent(ThemeData theme, IngredientListState state) {
-    if (state.loading && state.items.isEmpty) return const LoadingIndicator(message: 'Loading...');
+    if (state.loading && state.items.isEmpty) return const LoadingIndicator(message: 'Loading');
     if (state.error != null && state.items.isEmpty) {
       return ErrorDisplay(message: state.error!, onRetry: () => ref.read(ingredientListProvider.notifier).load());
     }
     if (state.items.isEmpty) {
-      return const EmptyState(icon: Icons.science, title: 'No Ingredients', subtitle: 'Create ingredients from the web app');
+      return const EmptyState(icon: Icons.science, title: 'No Ingredients', subtitle: 'Create ingredients from web app');
     }
     return RefreshIndicator(
       onRefresh: () => ref.read(ingredientListProvider.notifier).load(),
@@ -78,3 +78,4 @@ class _IngredientListScreenState extends ConsumerState<IngredientListScreen> {
     );
   }
 }
+

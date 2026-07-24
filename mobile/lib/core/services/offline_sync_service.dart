@@ -1,7 +1,8 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:dio/dio.dart';
 import '../api/api_client.dart';
 import '../database/app_database.dart';
+import 'package:drift/drift.dart';
 
 class OfflineSyncService {
   final AppDatabase _db;
@@ -51,3 +52,4 @@ class OfflineSyncService {
     _subscription?.cancel();
   }
 }
+

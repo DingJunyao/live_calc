@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/product_provider.dart';
@@ -34,14 +34,14 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     final state = ref.watch(productListProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Products')),
+      appBar: AppBar(title: const Text('Product')),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
               controller: _searchController,
-              decoration: const InputDecoration(hintText: 'Search...', prefixIcon: Icon(Icons.search)),
+              decoration: const InputDecoration(hintText: 'Search', prefixIcon: Icon(Icons.search)),
               onSubmitted: (v) => ref.read(productListProvider.notifier).load(search: v),
             ),
           ),
@@ -78,3 +78,4 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     );
   }
 }
+
