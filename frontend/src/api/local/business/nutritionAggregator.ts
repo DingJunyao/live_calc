@@ -25,6 +25,10 @@ export interface AggregationInput {
   nutrition_data: NutritionRecord[]
 }
 
+export interface AggregationInputMulti {
+  items: AggregationInput[]
+}
+
 /**
  * 聚合单个食材的营养数据。
  * 将每 100g 基准值缩放到实际用量。
@@ -45,32 +49,32 @@ export function aggregateIngredient(input: AggregationInput): NutritionItem[] {
 /**
  * 聚合多个食材的营养数据，合并同名营养素。
  */
-export function aggregateIngredients(inputs: AggregationInput[]): NutritionItem[] {
-  const merged: Record<string, { amount: number; amount_per_100g: number; unit: string }> = {}
+export function aggregateIngredients(input: AggregationInputMulti): NutritionItem[] {
+  const merged = new Map<string, { amount: number; unit: string }>()
 
-  for (const input of inputs) {
-    const items = aggregateIngredient(input)
-    for (const item of items) {
-      const key = item.nutrient_name
-      if (merged[key]) {
-        merged[key].amount += item.amount
-        merged[key].amount_per_100g += item.amount_per_100g
+  for (const item of input.items) {
+    const factor = item.quantity_g / 100
+    for (const n of item.nutrition_data) {
+      const existing = merged.get(n.nutrient_name)
+      if (existing) {
+        existing.amount += n.amount_per_100g * factor
       } else {
-        merged[key] = {
-          amount: item.amount,
-          amount_per_100g: item.amount_per_100g,
-          unit: item.unit,
-        }
+        merged.set(n.nutrient_name, {
+          amount: n.amount_per_100g * factor,
+          unit: n.unit,
+        })
       }
     }
   }
 
-  return Object.entries(merged).map(([name, data]) => ({
+  const totalQuantityG = input.items.reduce((s, i) => s + i.quantity_g, 0)
+
+  return Array.from(merged.entries()).map(([name, data]) => ({
     nutrient_name: name,
     amount: Math.round(data.amount * 100) / 100,
-    amount_per_100g: Math.round(data.amount_per_100g * 100) / 100,
+    amount_per_100g: totalQuantityG > 0 ? Math.round((data.amount / totalQuantityG) * 100 * 100) / 100 : 0,
     unit: data.unit,
-    nrv_pct: calcNRV(name, data.amount_per_100g),
+    nrv_pct: totalQuantityG > 0 ? calcNRV(name, (data.amount / totalQuantityG) * 100) : undefined,
   }))
 }
 

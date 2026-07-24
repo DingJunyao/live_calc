@@ -2,8 +2,8 @@
 
 import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
 import { calculateCost, type CostInput, type CostCalcIngredient, type CostCalcProduct, type CostCalcPriceRecord, type CostCalcUnit, type CostCalcHierarchy } from '../business/costCalculator'
-import { aggregateIngredients, type AggregationInput } from '../business/nutritionAggregator'
-import type { UnitInfo, EntityOverride, DensityInfo } from '../business/unitConverter'
+import { aggregateIngredients, type AggregationInput, type AggregationInputMulti } from '../business/nutritionAggregator'
+import { convert, type UnitInfo, type EntityOverride, type DensityInfo } from '../business/unitConverter'
 
 // ============================================================
 // 辅助函数
@@ -313,7 +313,7 @@ export async function getRecipeNutrition(params: Record<string, string>, _query?
     })
   }
 
-  const items = aggregateIngredients(aggregationInputs)
+  const items = aggregateIngredients({ items: aggregationInputs })
 
   // 按营养素分类：核心营养素 vs 全部
   const coreNames = ['能量', '蛋白质', '脂肪', '碳水化合物', '膳食纤维', '钠', '钙', '铁', '钾', '维生素A', '维生素C', '维生素B1', '维生素B2', '维生素B12', '维生素D', '维生素E', '维生素K']
@@ -327,64 +327,30 @@ export async function getRecipeNutrition(params: Record<string, string>, _query?
   }
 }
 
-/** 将食材用量转换为克。 */
+/** 将食材用量转换为克。使用共享单位转换模块。 */
 async function convertToGrams(quantity: number | null, unitId: number | null, ingredientId: number): Promise<number | null> {
   if (quantity == null || quantity <= 0 || unitId == null) return null
   if (unitId === GRAM_UNIT_ID) return quantity
 
-  const units = await getAll('units')
-  const fromUnit = units.find((u: any) => u.id === unitId)
-  if (!fromUnit) return null
+  try {
+    const units = await getAll('units') as UnitInfo[]
+    const overrides = await getAll('entity_unit_overrides') as EntityOverride[]
+    const densities = await getAll('entity_densities') as DensityInfo[]
 
-  if (fromUnit.unit_type === 'mass' && fromUnit.si_factor != null) {
-    const gramUnit = units.find((u: any) => u.id === GRAM_UNIT_ID)
-    if (gramUnit?.si_factor) {
-      return quantity * (fromUnit.si_factor / gramUnit.si_factor)
-    }
+    const result = convert({
+      value: quantity,
+      from_unit_id: unitId,
+      to_unit_id: GRAM_UNIT_ID,
+      entity_type: 'ingredient',
+      entity_id: ingredientId,
+      units,
+      overrides,
+      densities,
+    })
+    return result.value
+  } catch {
+    return null
   }
-
-  // 尝试通过密度转换（volume → mass）
-  if (fromUnit.unit_type === 'volume') {
-    const overrides = await getAll('entity_unit_overrides')
-    const densities = await getAll('entity_densities')
-
-    const override = overrides.find((o: any) => o.entity_type === 'ingredient' && o.entity_id === ingredientId)
-    if (override?.weight_per_unit && override?.weight_unit_id) {
-      const weightUnit = units.find((u: any) => u.id === override.weight_unit_id)
-      if (weightUnit?.si_factor) {
-        const massInKg = quantity * override.weight_per_unit * weightUnit.si_factor
-        const gramUnit = units.find((u: any) => u.id === GRAM_UNIT_ID)
-        if (gramUnit?.si_factor) {
-          return massInKg / gramUnit.si_factor
-        }
-      }
-    }
-
-    const density = densities.find((d: any) => d.entity_type === 'ingredient' && d.entity_id === ingredientId)
-    if (density?.density && density.density > 0) {
-      // 体积 L = quantity * fromUnit.siFactor
-      // 质量 g = (L * density_kg_per_m3 / 1000) * 1000 = L * density_kg_per_m3
-      const liters = quantity * (fromUnit.si_factor ?? 1)
-      const grams = liters * (density.density / 1000) * 1000
-      return grams
-    }
-
-    // 无密度数据，假设 1 mL = 1 g（水）
-    if (fromUnit.unit_type === 'volume') {
-      return quantity
-    }
-  }
-
-  // 计数单位：尝试查 piece_weight
-  if (fromUnit.unit_type === 'count') {
-    const ingredient = await getById('ingredients', ingredientId)
-    if (ingredient?.piece_weight) {
-      return quantity * ingredient.piece_weight
-    }
-  }
-
-  // 无法转换时返回 null
-  return null
 }
 
 // ============================================================

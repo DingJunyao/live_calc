@@ -175,14 +175,38 @@ export function calculateCost(input: CostInput): CostResult {
     // 无直接商品价格，尝试层级回退
     const fallback = findFallbackPrice(ing.ingredient_id, input)
     if (fallback != null) {
-      // 回退价格的单位可能与食材用量单位不一致
-      // 简化处理：先用 effectiveQty 乘以回退单价
-      const fallbackCost = effectiveQty * fallback.pricePerUnit
+      // 单位转换：将食材用量从 ing.unit_id 转换为回退价格的单位
+      let convertedQty = effectiveQty
+      const recipeUnit = input.units.find(u => u.id === ing.unit_id)
+      const priceUnit = input.units.find(u => u.id === fallback.unit_id)
+
+      if (recipeUnit && priceUnit && ing.unit_id !== fallback.unit_id) {
+        if (recipeUnit.unit_type === priceUnit.unit_type && recipeUnit.si_factor != null && priceUnit.si_factor != null) {
+          // 同类型：si_factor 比值
+          convertedQty = effectiveQty * (recipeUnit.si_factor / priceUnit.si_factor)
+        } else {
+          // 跨类型：查密度
+          const density = findCostDensity(ing.ingredient_id, ing.unit_id, fallback.unit_id, input)
+          if (density != null) {
+            if (isCostMass(recipeUnit.unit_type) && isCostVolume(priceUnit.unit_type)) {
+              const kg = effectiveQty * (recipeUnit.si_factor ?? 1)
+              const liters = kg / density
+              convertedQty = liters / (priceUnit.si_factor ?? 1)
+            } else if (isCostVolume(recipeUnit.unit_type) && isCostMass(priceUnit.unit_type)) {
+              const liters = effectiveQty * (recipeUnit.si_factor ?? 1)
+              const kg = liters * density
+              convertedQty = kg / (priceUnit.si_factor ?? 1)
+            }
+          }
+        }
+      }
+
+      const fallbackCost = convertedQty * fallback.pricePerUnit
       perIngredient.push({
         ingredient_id: ing.ingredient_id,
         ingredient_name: ing.ingredient_name,
         cost: fallbackCost,
-        quantity: String(effectiveQty),
+        quantity: String(convertedQty),
         unit_price: fallback.pricePerUnit,
         source: 'fallback',
         source_ingredient_id: fallback.sourceIngredientId,
@@ -264,7 +288,7 @@ function calculateWeightedPrice(
 function findFallbackPrice(
   ingredientId: number,
   input: CostInput,
-): { pricePerUnit: number; sourceIngredientId: number; productId?: number } | null {
+): { pricePerUnit: number; unit_id: number; sourceIngredientId: number; productId?: number } | null {
   // 按优先级排序：FALLBACK(0) < SUBSTITUTABLE(1) < CONTAINS(2)
   const order: Record<string, number> = { FALLBACK: 0, SUBSTITUTABLE: 1, CONTAINS: 2 }
   const hierarchies = input.hierarchies
@@ -283,6 +307,7 @@ function findFallbackPrice(
       if (price != null) {
         return {
           pricePerUnit: price.pricePerUnit,
+          unit_id: price.unit_id,
           sourceIngredientId: h.parent_id,
           productId: price.product_id,
         }

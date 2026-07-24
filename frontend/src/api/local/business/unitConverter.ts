@@ -43,10 +43,18 @@ export interface ConvertResult {
  * 在两个单位之间转换数值。纯函数。
  *
  * 策略：
- * 1. 同类型（mass→mass, volume→volume）：si_factor 比值
- * 2. 跨类型（mass↔volume）：密度桥接
+ * 1. 同类型（mass→mass, volume→volume）：si_factor 比值（直接链式归约到 SI 基准）
+ * 2. 跨类型（mass↔volume）：密度桥接（密度 kg/m³ → kg/L）
  * 3. 计数单位（count）：实体单位覆盖 weight_per_unit
  * 4. 最大递归 5 层防止循环
+ *
+ * 链式换算说明：
+ * - 同类型单位转换已通过 SI 因子一步到位：value × (from_si / to_si)
+ *   （相当于 from→SI→to 的二段链）
+ * - 跨类型转换以密度为单一桥接点：mass↔density↔volume
+ * - 更长链（如 count→mass→volume）需调用方分步，或通过实体覆盖的
+ *   weight_per_unit 将 count 先转为 mass/volume 再经密度桥接。
+ *   当前实现中 count→volume 分支已内置此二层链（line 109-117）。
  */
 export function convert(input: ConvertInput): ConvertResult {
   const { value, from_unit_id, to_unit_id, entity_type, entity_id, units, overrides = [], densities = [] } = input
