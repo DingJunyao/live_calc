@@ -1,5 +1,9 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:live_calc/features/home/screens/home_screen.dart';
+import 'package:live_calc/features/prices/screens/price_list_screen.dart';
+import 'package:live_calc/features/recipes/screens/recipe_list_screen.dart';
+import 'package:live_calc/features/profile/screens/profile_screen.dart';
 import 'package:go_router/go_router.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -67,22 +71,22 @@ GoRouter createAppRouter(WidgetRef ref) {
           GoRoute(
             path: '/home',
             name: 'home',
-            builder: (_, __) => const Scaffold(body: Center(child: Text('首页 - 待实现'))),
+            builder: (_, __) => const HomeScreen(),
           ),
           GoRoute(
             path: '/prices',
             name: 'prices',
-            builder: (_, __) => const Scaffold(body: Center(child: Text('记价 - 待实现'))),
+            builder: (_, __) => const PriceListScreen(),
           ),
           GoRoute(
             path: '/recipes',
             name: 'recipes',
-            builder: (_, __) => const Scaffold(body: Center(child: Text('菜谱 - 待实现'))),
+            builder: (_, __) => const RecipeListScreen(),
           ),
           GoRoute(
             path: '/profile',
             name: 'profile',
-            builder: (_, __) => const Scaffold(body: Center(child: Text('我的 - 待实现'))),
+            builder: (_, __) => const ProfileScreen(),
           ),
         ],
       ),
