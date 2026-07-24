@@ -142,12 +142,8 @@ export async function refresh(_params: Record<string, string>, data?: any): Prom
   const recipes = await loadRecipes()
   const support = await loadSupportingData()
   const todayRecs = await getTodayRecommendationsFromDb()
+  // 排除今天其它餐已用的菜谱（不排除当前正在刷新的餐次）
   const todayRecipeIds = todayRecs
-    .filter((r: any) => r.recipe_id != null)
-    .map((r: any) => r.recipe_id)
-
-  // 排除今天其它餐已用的菜谱
-  const otherRecipes = todayRecs
     .filter((r: any) => r.meal_type !== mealType && r.recipe_id != null)
     .map((r: any) => r.recipe_id)
 

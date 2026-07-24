@@ -38,10 +38,13 @@ export interface RecommenderInput {
  * 4. 返回选中的菜谱
  */
 export function recommend(input: RecommenderInput): MealRecommendation {
-  const { recipes, today_recipes, meal_type } = input
+  const { recipes, today_recipes, meal_type, blacklisted_ingredient_ids = [] } = input
 
   // 排除今天已用过的菜谱
   let candidates = recipes.filter(r => !today_recipes.includes(r.id))
+
+  // 黑名单过滤：因未传入菜谱-原料关联数据，此处仅保留接口
+  // （完整实现需检查 recipe_ingredients 以精确过滤含黑名单原料的菜谱）
 
   if (candidates.length === 0) {
     return { meal_type, recipe: null }
