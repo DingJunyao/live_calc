@@ -182,12 +182,12 @@ addRoute('/ingredients/:parent_id/hierarchy/:child_id', {
 addRoute('/merchants/map-config', { get: merchants.getMapConfig })
 addRoute('/merchants/favorites', { get: merchants.listFavorites })
 addRoute('/merchants/coordinates', { get: merchants.getCoordinates })
+addRoute('/merchants/places', { get: merchants.listUserPlaces })
 addRoute('/merchants/:id', { get: merchants.getMerchant, put: merchants.updateMerchant, delete: merchants.deleteMerchant })
 addRoute('/merchants/:id/favorite', { post: merchants.addFavorite, delete: merchants.removeFavorite })
 addRoute('/merchants/:id/prices', { get: merchants.getMerchantPrices })
 addRoute('/merchants/:id/product-prices', { get: merchants.getMerchantProductPrices })
 addRoute('/merchants', { get: merchants.listMerchants, post: merchants.createMerchant })
-addRoute('/merchants/places', { get: merchants.listUserPlaces })
 
 // ---- Nutrition ----
 addRoute('/nutrition/ingredients', { get: nutrition.listNutritionIngredients })
