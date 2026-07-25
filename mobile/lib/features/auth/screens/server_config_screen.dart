@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_client.dart';
@@ -67,34 +68,41 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(Icons.calculate, size: 64, color: theme.colorScheme.primary),
+                  ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: SvgPicture.asset('assets/images/logo.svg'),
+                      ),
+                    ),
                   const SizedBox(height: 16),
-                  Text('LivCost', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('生计', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Text('Enter Backend Server URL', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outline)),
+                  Text('生活成本计算器', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outline)),
                   const SizedBox(height: 48),
                   TextFormField(
                     controller: _urlController,
                     decoration: const InputDecoration(
-                      labelText: 'Backend URL',
+                      labelText: '后端地址',
                       hintText: 'http://192.168.x.x:8000',
                       prefixIcon: Icon(Icons.dns_outlined),
                     ),
                     keyboardType: TextInputType.url,
                     validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Please enter server address';
-                      if (!v.trim().startsWith('http')) return 'Must start with http:// or https://';
+                      if (v == null || v.trim().isEmpty) return '请输入后端地址';
+                      if (!v.trim().startsWith('http')) return '必须以 http:// 或 https:// 开头';
                       return null;
                     },
                   ),
                   const SizedBox(height: 8),
-                  if (_error != null) Column(children: [Text('Error:', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)), Text(_error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12))],),
+                  if (_error != null) Column(children: [Text('连接失败：', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)), Text(_error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12))],),
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _loading ? null : _connect,
                     child: _loading
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Connect'),
+                        : const Text('连接'),
                   ),
                 ],
               ),
