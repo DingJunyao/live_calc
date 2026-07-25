@@ -303,33 +303,34 @@ async function importFromRepo() {
       }
       await recipeTx.done
 
-      // 下载本批菜谱的图片
+      // 下载本批菜谱的图片（每个图片独立事务，一张失败不影响其他）
       if (pendingImages.length > 0) {
         totalImages += pendingImages.length
-        const imgTx = db.transaction('images', 'readwrite')
         for (const { recipeId, imagePath } of pendingImages) {
           try {
-            // URL encode 中文路径，但保留斜杠
             const encodedPath = imagePath.split('/').map(s => encodeURIComponent(s)).join('/')
             const imgUrl = imagePath.startsWith('http')
               ? imagePath
               : `${IMG_BASE}/${encodedPath}`
             const imgResp = await fetch(imgUrl)
-            if (imgResp.ok) {
-              const blob = await imgResp.blob()
-              await imgTx.store.add({
-                entity_type: 'recipes',
-                entity_id: recipeId,
-                path: imagePath,
-                blob,
-                mime_type: blob.type || 'image/jpeg',
-                created_at: new Date().toISOString(),
-              })
-              downloadedImages++
-            }
-          } catch { /* skip failed downloads */ }
+            if (!imgResp.ok) continue
+            const blob = await imgResp.blob()
+            // 每个图片单独事务
+            const singleTx = db.transaction('images', 'readwrite')
+            await singleTx.store.add({
+              entity_type: 'recipes',
+              entity_id: recipeId,
+              path: imagePath,
+              blob,
+              mime_type: blob.type || 'image/jpeg',
+              created_at: new Date().toISOString(),
+            })
+            await singleTx.done
+            downloadedImages++
+          } catch (e) {
+            console.warn(`[img] 图片下载失败: ${imagePath}`, e)
+          }
         }
-        await imgTx.done
       }
     }
 
