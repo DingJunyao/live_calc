@@ -9,7 +9,7 @@ import { convert, type UnitInfo, type EntityOverride, type DensityInfo } from '.
 // 辅助函数
 // ============================================================
 
-const GRAM_UNIT_ID = 3 // 标准克单位 ID
+const GRAM_UNIT_ID = 2 // 克单位 ID（单位表中 id=2 为克）
 
 /** 将食材名解析为 ingredient_id。按名称精确匹配，再按别名匹配。 */
 async function resolveIngredientId(name: string): Promise<number | null> {
@@ -205,7 +205,7 @@ export async function getRecipeCost(params: Record<string, string>, _query?: any
 
 export async function batchCost(_params: Record<string, string>, data?: any): Promise<any> {
   const recipeIds: number[] = data?.recipe_ids || data?.recipeIds || []
-  if (recipeIds.length === 0) throw { status: 400, message: 'recipe_ids 不能为空' }
+  if (recipeIds.length === 0) return { items: [], total: 0 }
 
   // 预加载所有相关数据
   const allRecipes = await getAll('recipes')
@@ -386,7 +386,7 @@ export async function getCostHistory(params: Record<string, string>, query?: any
 
   const days = parseInt(query?.days) || 90
   const input = await buildCostInput(id, recipe)
-  if (!input) return { items: [] }
+  if (!input) return []
 
   // 获取所有价格记录中最早的日期
   const allDates = input.price_records
@@ -394,7 +394,7 @@ export async function getCostHistory(params: Record<string, string>, query?: any
     .filter(Boolean)
     .sort()
 
-  if (allDates.length === 0) return { items: [] }
+  if (allDates.length === 0) return []
 
   const earliestDate = new Date(allDates[0])
   const endDate = new Date()
@@ -446,7 +446,7 @@ export async function getCostHistory(params: Record<string, string>, query?: any
     })
   }
 
-  return { items }
+  return items
 }
 
 export async function getCostHistoryRange(params: Record<string, string>, query?: any): Promise<any> {
@@ -458,14 +458,14 @@ export async function getCostHistoryRange(params: Record<string, string>, query?
   const offsetDays = parseInt(query?.offset_days) || 0
 
   const input = await buildCostInput(id, recipe)
-  if (!input) return { items: [] }
+  if (!input) return []
 
   const allDates = input.price_records
     .map(r => r.recorded_at?.split('T')[0])
     .filter(Boolean)
     .sort()
 
-  if (allDates.length === 0) return { items: [] }
+  if (allDates.length === 0) return []
 
   const earliestDate = new Date(allDates[0])
   const endDate = new Date()
@@ -550,7 +550,7 @@ export async function getCostHistoryRange(params: Record<string, string>, query?
     })
   }
 
-  return { items }
+  return items
 }
 
 // ============================================================

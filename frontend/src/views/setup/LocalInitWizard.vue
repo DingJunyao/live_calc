@@ -250,6 +250,18 @@ async function importFromRepo() {
     importProgress.value = 55
     importMessage.value = `(3/4) 已为 ${productCount} 个原料创建商品，正在下载菜谱（0/${recipeFiles.length}）...`
 
+    // 构建单位名→ID 映射（供菜谱原料匹配使用）
+    const allUnits = await db.getAll('units')
+    const unitNameToId: Record<string, number> = {}
+    for (const u of allUnits) {
+      unitNameToId[u.name] = u.id; if (u.abbreviation) unitNameToId[u.abbreviation] = u.id
+    }
+    unitNameToId['g'] = unitNameToId['克'] || 2; unitNameToId['ml'] = unitNameToId['mL'] || 5
+    unitNameToId['l'] = unitNameToId['升'] || 4; unitNameToId['kg'] = unitNameToId['千克'] || 1
+    unitNameToId['片'] = unitNameToId['克'] || 2; unitNameToId['根'] = unitNameToId['个'] || 6
+    unitNameToId['瓣'] = unitNameToId['个'] || 6; unitNameToId['颗'] = unitNameToId['个'] || 6
+    unitNameToId['只'] = unitNameToId['个'] || 6
+
     // 逐个下载并导入菜谱（并行一批 10 个）
     let recipeCount = 0
     const totalRecipes = recipeFiles.length
@@ -299,12 +311,15 @@ async function importFromRepo() {
 
         for (let j = 0; j < ingredients.length; j++) {
           const ing = ingredients[j]
-          // 按名称匹配 ingredient_id（HowToCook 数据无此字段）
+          // 按名称匹配 ingredient_id
           const matchedId = ing.ingredient_id || ingredientNameToId[ing.ingredient_name || ing.name || '']
+          // 按名称匹配 unit_id（unitNameToId 已在循环外预载好）
+          const unitStr = ing.unit || ''
+          const matchedUnitId = ing.unit_id || unitNameToId[unitStr] || unitNameToId[unitStr.toLowerCase()] || null
           await recipeTx.objectStore('recipe_ingredients').put({
             recipe_id: recipeId, ingredient_id: matchedId || null,
             ingredient_name: ing.ingredient_name || ing.name || '',
-            quantity: ing.quantity || null, unit_id: ing.unit_id || null,
+            quantity: ing.quantity || null, unit_id: matchedUnitId,
             unit: ing.unit || null, quantity_range: ing.quantity_range || null,
             is_optional: ing.is_optional || false, note: ing.note || null,
             sort_order: j + 1,

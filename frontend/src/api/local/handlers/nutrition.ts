@@ -23,9 +23,26 @@ export async function getNutritionIngredient(params: Record<string, string>): Pr
 
 export async function getIngredientNutrition(params: Record<string, string>): Promise<any> {
   const id = parseInt(params.id)
-  if (!Number.isFinite(id)) return { items: [], total: 0 }
+  if (!Number.isFinite(id)) return { items: [], total: 0, nutrition: { core_nutrients: {}, all_nutrients: {} } }
   const all = await getByIndex('nutrition_data', 'by_ingredient_id', id)
-  return { items: all, total: all.length }
+  // 构建前端需要的 nutrition 格式：{ core_nutrients: { "能量": { value, unit }, ... }, all_nutrients: { "铁": { value, unit }, ... } }
+  const coreNames = ['能量', '蛋白质', '脂肪', '碳水化合物', '钠']
+  const allNutrients: Record<string, any> = {}
+  const coreNutrients: Record<string, any> = {}
+  for (const n of all) {
+    const key = n.nutrient_name || ''
+    const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g' }
+    allNutrients[key] = entry
+    if (coreNames.includes(key)) coreNutrients[key] = entry
+  }
+  return {
+    items: all,
+    total: all.length,
+    nutrition: {
+      core_nutrients: coreNutrients,
+      all_nutrients: allNutrients,
+    },
+  }
 }
 
 export async function getIngredientNutritionBase(params: Record<string, string>): Promise<any> {
@@ -35,7 +52,7 @@ export async function getIngredientNutritionBase(params: Record<string, string>)
   const result: Record<string, any> = {}
   for (const n of all) {
     result[n.nutrient_name || n.nutrient_id] = {
-      value: n.value_per_100g ?? n.value,
+      value: n.amount_per_100g ?? n.value ?? 0,
       unit: n.unit,
     }
   }
@@ -174,18 +191,48 @@ export async function getProductNutrition(params: Record<string, string>): Promi
   const product = await getById('products', id)
   if (!product) throw { status: 404, message: `Product ${id} not found` }
 
-  // Product nutrition is stored in custom_nutrition_data or falls back to ingredient nutrition
-  if (product.custom_nutrition_data) {
-    return product.custom_nutrition_data
-  }
-
-  // Fall back to ingredient nutrition
+  // Mixin 机制：从原料营养数据为基础，用 custom_nutrition_data 覆盖
+  let baseNutrients: any[] = []
   if (product.ingredient_id) {
-    const nutrition = await getByIndex('nutrition_data', 'by_ingredient_id', product.ingredient_id)
-    return { items: nutrition, source: 'ingredient' }
+    baseNutrients = await getByIndex('nutrition_data', 'by_ingredient_id', product.ingredient_id)
   }
 
-  return { items: [], source: 'none' }
+  // 构建基础营养映射
+  const coreNames = ['能量', '蛋白质', '脂肪', '碳水化合物', '钠']
+  const allNutrients: Record<string, any> = {}
+  const coreNutrients: Record<string, any> = {}
+  for (const n of baseNutrients) {
+    const key = n.nutrient_name || ''
+    const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g' }
+    allNutrients[key] = entry
+    if (coreNames.includes(key)) coreNutrients[key] = entry
+  }
+
+  // 用 custom_nutrition_data 覆盖（mixin）
+  let source = 'ingredient'
+  if (product.custom_nutrition_data) {
+    source = 'custom'
+    const cnd = product.custom_nutrition_data
+    let customItems: any[] = []
+    if (Array.isArray(cnd)) customItems = cnd
+    else if (cnd?.items) customItems = cnd.items
+    else if (cnd?.nutrients) customItems = cnd.nutrients
+
+    for (const n of customItems) {
+      const key = n.nutrient_name || n.name || ''
+      if (!key) continue
+      const entry = { value: n.amount_per_100g ?? n.value ?? 0, unit: n.unit || n.unit_name || 'g' }
+      allNutrients[key] = entry
+      if (coreNames.includes(key)) coreNutrients[key] = entry
+    }
+  }
+
+  return {
+    items: Object.entries(allNutrients).map(([k, v]) => ({ nutrient_name: k, ...v })),
+    total: Object.keys(allNutrients).length,
+    source,
+    nutrition: { core_nutrients: coreNutrients, all_nutrients: allNutrients },
+  }
 }
 
 export async function updateProductNutrition(params: Record<string, string>, data?: any): Promise<any> {

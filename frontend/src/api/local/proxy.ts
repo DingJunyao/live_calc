@@ -191,6 +191,7 @@ addRoute('/ingredients/hierarchy', { post: hierarchy.createHierarchy })
 addRoute('/ingredients/hierarchy/:id', { get: hierarchy.getHierarchy })
 addRoute('/ingredients/:id', { get: ingredients.getIngredient, put: ingredients.updateIngredient, delete: ingredients.deleteIngredient })
 addRoute('/ingredients', { get: ingredients.listIngredients, post: ingredients.createIngredient })
+addRoute('/ingredients/:id/hierarchy', { get: hierarchy.getHierarchy })
 addRoute('/ingredients/:parent_id/hierarchy/:child_id', {
   post: hierarchy.addHierarchyRelation,
   put: hierarchy.updateHierarchyRelation,

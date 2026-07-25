@@ -78,6 +78,43 @@ export function aggregateIngredients(input: AggregationInputMulti): NutritionIte
   }))
 }
 
+/** 中文营养素名 → 英文 NRV 键名映射 */
+const NUTRIENT_NAME_MAP: Record<string, string> = {
+  '能量': 'energy', '热量': 'energy',
+  '蛋白质': 'protein',
+  '脂肪': 'fat', '总脂肪': 'fat',
+  '碳水化合物': 'carbohydrate',
+  '膳食纤维': 'dietary_fiber',
+  '钠': 'sodium',
+  '维生素A': 'vitamin_a', '维生素A (IU)': 'vitamin_a', '维生素A (RAE)': 'vitamin_a',
+  '维生素C': 'vitamin_c',
+  '维生素D': 'vitamin_d', '维生素D (IU)': 'vitamin_d',
+  '维生素E': 'vitamin_e',
+  '维生素K': 'vitamin_k',
+  '维生素B1（硫胺素）': 'thiamin',
+  '维生素B2（核黄素）': 'riboflavin',
+  '维生素B3（烟酸）': 'niacin',
+  '维生素B5（泛酸）': 'pantothenic_acid',
+  '维生素B6': 'vitamin_b6',
+  '维生素B12': 'vitamin_b12',
+  '叶酸': 'folate',
+  '生物素': 'biotin',
+  '钙': 'calcium',
+  '磷': 'phosphorus',
+  '钾': 'potassium',
+  '镁': 'magnesium',
+  '铁': 'iron',
+  '锌': 'zinc',
+  '碘': 'iodine',
+  '硒': 'selenium',
+  '铜': 'copper',
+  '氟': 'fluoride',
+  '锰': 'manganese',
+  '铬': 'chromium',
+  '钼': 'molybdenum',
+  '胆固醇': 'cholesterol',
+}
+
 /**
  * 中国 NRV% 参考值表（GB 28050-2011）。
  * 键为营养素名的规范化键（小写 + 下划线），值为每日参考摄入量。
@@ -125,7 +162,14 @@ const NRV_TABLE: Record<string, number> = {
 export function calcNRV(nutrientName: string, amountPer100g: number): number | undefined {
   if (amountPer100g == null || amountPer100g === 0) return undefined
 
-  // 对营养素名做规范化匹配
+  // 先查中文→英文映射
+  const mappedKey = NUTRIENT_NAME_MAP[nutrientName]
+  if (mappedKey) {
+    const nrv = NRV_TABLE[mappedKey]
+    if (nrv && nrv > 0) return Math.round((amountPer100g / nrv) * 100 * 10) / 10
+  }
+
+  // 再尝试规范化匹配
   const key = nutrientName
     .toLowerCase()
     .replace(/[^a-z一-鿿]/g, '_')
