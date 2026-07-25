@@ -28,9 +28,22 @@ export function resolveImageUrl(path: string | null | undefined): string {
 
   if (path.startsWith('http')) return path
   const base = import.meta.env.VITE_API_URL || '/api/v1'
+  const isLocal = import.meta.env.VITE_STORAGE_MODE === 'local'
+
+  // 本地模式：没有后端图片服务，直接走仓库远程兜底
+  if (isLocal) {
+    // http(s) 已在上面返回，/static/ 和 recipes/ 等走仓库基址
+    if (path.startsWith('/static/images/')) {
+      const key = path.slice('/static/images/'.length)
+      // 本地模式无法提供图片服务，但仓库可能有
+      const repoBase = import.meta.env.VITE_DATA_REPO_IMAGE_BASE || DEFAULT_REPO_BASE
+      return `${repoBase}/${key}`
+    }
+    const repoBase = import.meta.env.VITE_DATA_REPO_IMAGE_BASE || DEFAULT_REPO_BASE
+    return `${repoBase}/${path}`
+  }
 
   // 旧格式 /static/images/recipes/xxx.jpg → 提取 key → 走动态图片端点
-  // 无论本地还是 S3，统一由后端 /api/v1/images/ 按当前存储后端分流
   if (path.startsWith('/static/images/')) {
     const key = path.slice('/static/images/'.length)
     return `${base}/images/${key}`

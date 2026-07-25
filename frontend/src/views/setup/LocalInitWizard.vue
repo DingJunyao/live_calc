@@ -257,7 +257,7 @@ async function importFromRepo() {
         const { json } = result.value
         if (!json.name) continue
 
-        const recipeId = json.id || Date.now() + recipeCount
+        const recipeId = json.id || recipeCount + 1
         const ingredients = json.ingredients || []
         delete json.ingredients
 

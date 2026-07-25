@@ -96,6 +96,7 @@ export async function createRecipe(_params: Record<string, string>, data?: any):
 
 export async function getRecipe(params: Record<string, string>, _query?: any): Promise<any> {
   const id = parseInt(params.id)
+  if (!Number.isFinite(id)) throw { status: 400, message: `无效的菜谱ID: ${params.id}` }
   const recipe = await getById('recipes', id)
   if (!recipe || recipe.is_active === false) {
     throw { status: 404, message: `菜谱 ${id} 未找到` }
