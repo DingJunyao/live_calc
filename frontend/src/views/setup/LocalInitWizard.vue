@@ -82,23 +82,144 @@ async function importFromRepo() {
   importMessage.value = '正在导入基础单位和分类...'
   try {
     await seedBasicData()
-    importMessage.value = '基础数据导入完成！正在尝试从 HowToCook 仓库导入菜谱...'
-    // Try to fetch from HowToCook repo to validate connectivity
-    try {
-      const response = await fetch(
-        'https://raw.githubusercontent.com/Anduin2017/HowToCook/refs/heads/master/dishes/README.md'
-      )
-      if (response.ok) {
-        importMessage.value = '已连接到数据仓库。完整导入功能将在后续版本中完善。'
-      } else {
-        importMessage.value = '数据仓库暂时不可用，基础数据已就绪。'
+    importMessage.value = '正在从 HowToCook 数据仓库下载数据...'
+
+    // 下载仓库 ZIP
+    const zipUrl = 'https://github.com/DingJunyao/HowToCook_json/archive/refs/heads/main.zip'
+    const response = await fetch(zipUrl)
+    if (!response.ok) throw new Error(`下载失败: ${response.status}`)
+    const blob = await response.blob()
+
+    importMessage.value = '正在解析数据...'
+    const { BlobReader, ZipReader, TextWriter } = await import('@zip.js/zip.js')
+    const reader = new ZipReader(new BlobReader(blob))
+    const entries = await reader.getEntries()
+
+    // 提取 ZIP 中的 out/ 目录文件
+    const prefix = 'HowToCook_json-main/out/'
+    const dataFiles: Record<string, string> = {}
+    const recipeFiles: Array<{ name: string; json: any }> = []
+
+    for (const entry of entries) {
+      if (!entry.filename.startsWith(prefix)) continue
+      const relPath = entry.filename.slice(prefix.length)
+      if (!relPath || entry.dir) continue
+
+      const text = await entry.getData!(new TextWriter())
+      if (relPath === 'ingredients.json' || relPath === 'nutritions.json' || relPath === 'units.json' || relPath === 'ingredients_raw.json' || relPath === 'matched_ingredients.json') {
+        dataFiles[relPath] = text
+      } else if (relPath.endsWith('.json') && relPath.includes('/')) {
+        // 分类目录下的菜谱 JSON
+        try {
+          recipeFiles.push({ name: relPath, json: JSON.parse(text) })
+        } catch { /* skip invalid */ }
       }
-    } catch {
-      importMessage.value = '数据仓库连接失败，基础数据已就绪。'
     }
+
+    await reader.close()
+
+    importMessage.value = `数据解析完成，正在写入数据库（${recipeFiles.length} 个菜谱）...`
+    const { getDb } = await import('@/api/local/database')
+    const db = await getDb()
+
+    // 导入单位
+    if (dataFiles['units.json']) {
+      const units = JSON.parse(dataFiles['units.json'])
+      if (Array.isArray(units) && units.length > 0) {
+        const tx = db.transaction('units', 'readwrite')
+        for (const u of units) {
+          if (u.id || u.name) await tx.store.put({ id: u.id, name: u.name, abbreviation: u.abbreviation || u.name, unit_type: u.unit_type || 'count', si_factor: u.si_factor, is_si_base: u.is_si_base || false, is_common: true, display_order: u.display_order || 99 })
+        }
+        await tx.done
+      }
+    }
+
+    // 导入原料
+    let ingredientCount = 0
+    if (dataFiles['ingredients.json']) {
+      const ingredients = JSON.parse(dataFiles['ingredients.json'])
+      if (Array.isArray(ingredients)) {
+        const tx = db.transaction('ingredients', 'readwrite')
+        for (const ing of ingredients) {
+          if (ing.name) {
+            await tx.store.put({ id: ing.id, name: ing.name, category_id: ing.category_id || null, aliases: ing.aliases || [], is_active: true, created_at: new Date().toISOString() })
+            ingredientCount++
+          }
+        }
+        await tx.done
+      }
+    }
+
+    // 导入营养数据
+    let nutritionCount = 0
+    if (dataFiles['nutritions.json']) {
+      const nutritions = JSON.parse(dataFiles['nutritions.json'])
+      if (Array.isArray(nutritions)) {
+        const tx = db.transaction('nutrition_data', 'readwrite')
+        for (const n of nutritions) {
+          if (n.ingredient_id != null) {
+            await tx.store.add({ ingredient_id: n.ingredient_id, nutrient_name: n.nutrient_name, amount_per_100g: n.amount_per_100g, unit: n.unit, source: 'howtocook', is_verified: true })
+            nutritionCount++
+          }
+        }
+        await tx.done
+      }
+    }
+
+    // 导入菜谱
+    let recipeCount = 0
+    if (recipeFiles.length > 0) {
+      const recipeTx = db.transaction(['recipes', 'recipe_ingredients'], 'readwrite')
+      for (const { name, json } of recipeFiles) {
+        if (!json.name) continue
+        const recipeId = json.id || recipeCount + 1
+        const ingredients = json.ingredients || []
+        delete json.ingredients
+
+        await recipeTx.objectStore('recipes').put({
+          id: recipeId,
+          name: json.name,
+          category: json.category || null,
+          difficulty: json.difficulty || null,
+          total_time_minutes: json.total_time || json.total_time_minutes || null,
+          servings: json.servings || null,
+          cooking_steps: json.steps || [],
+          tips: json.tips || [],
+          description: json.description || '',
+          images: json.images || [],
+          tags: json.tags || null,
+          is_public: true,
+          is_active: true,
+          source: 'json_repo',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+
+        for (let i = 0; i < ingredients.length; i++) {
+          const ing = ingredients[i]
+          await recipeTx.objectStore('recipe_ingredients').put({
+            recipe_id: recipeId,
+            ingredient_id: ing.ingredient_id || null,
+            ingredient_name: ing.ingredient_name || ing.name || '',
+            quantity: ing.quantity || null,
+            unit_id: ing.unit_id || null,
+            unit: ing.unit || null,
+            quantity_range: ing.quantity_range || null,
+            is_optional: ing.is_optional || false,
+            note: ing.note || null,
+            sort_order: i + 1,
+          })
+        }
+        recipeCount++
+      }
+      await recipeTx.done
+    }
+
+    importMessage.value = `导入完成！${ingredientCount} 个原料，${nutritionCount} 条营养数据，${recipeCount} 个菜谱。`
     step.value = 3
   } catch (e: any) {
     importMessage.value = '导入失败：' + (e?.message || '未知错误')
+    console.error('[repo-import]', e)
   } finally {
     importing.value = false
   }
