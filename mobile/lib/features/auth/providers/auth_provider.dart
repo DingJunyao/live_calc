@@ -1,4 +1,6 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import '../../../core/api/auth_interceptor.dart';
 import '../models/login_request.dart';
 import '../models/user.dart';
@@ -45,7 +47,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<bool> login(String username, String password) async {
     state = const AuthState(status: AuthStatus.loading);
     try {
-      final response = await _repository.login(LoginRequest(username: username, password: password));
+      final passwordHash = sha256.convert(utf8.encode(password)).toString();
+      final response = await _repository.login(LoginRequest(username: username, passwordHash: passwordHash));
       try { await AuthInterceptor.saveTokens(response.accessToken, response.refreshToken); } catch (_) {}
       final user = await _repository.getCurrentUser();
       state = AuthState(status: AuthStatus.authenticated, user: user);
@@ -60,10 +63,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String username, required String email, required String password,
     String? phone, String? inviteCode,
   }) async {
+    final passwordHash = sha256.convert(utf8.encode(password)).toString();
     state = const AuthState(status: AuthStatus.loading);
     try {
       final response = await _repository.register(
-        username: username, email: email, password: password,
+        username: username, email: email, passwordHash: passwordHash,
         phone: phone, inviteCode: inviteCode,
       );
       try { await AuthInterceptor.saveTokens(response.accessToken, response.refreshToken); } catch (_) {}
@@ -89,5 +93,3 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
 final isLoggedInProvider = Provider<bool>((ref) {
   return ref.watch(authProvider).status == AuthStatus.authenticated;
 });
-
-

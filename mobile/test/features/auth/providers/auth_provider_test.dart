@@ -12,7 +12,7 @@ void main() {
   late MockAuthRepository mockRepo;
 
   setUpAll(() {
-    registerFallbackValue(const LoginRequest(username: '', password: ''));
+    registerFallbackValue(const LoginRequest(username: '', passwordHash: ''));
     TestWidgetsFlutterBinding.ensureInitialized();
     // Mock all FlutterSecureStorage platform channels
     for (final channel in [
@@ -67,3 +67,4 @@ void main() {
     });
   });
 }
+

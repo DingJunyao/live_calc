@@ -10,7 +10,7 @@ class LiveCalcApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
      final router = createAppRouter(ref);
      return MaterialApp.router(
-       title: '生记',
+       title: '生计 - 生活成本计算器',
        theme: AppTheme.lightTheme,
        darkTheme: AppTheme.darkTheme,
        routerConfig: router,

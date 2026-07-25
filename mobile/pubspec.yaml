@@ -1,4 +1,4 @@
-﻿name: live_calc
+﻿name: com_a4ding_livecalc
 description: 鐢熻 - Live Calculator App
 publish_to: 'none'
 version: 1.0.0+1
@@ -23,6 +23,7 @@ dependencies:
   flutter_native_splash: ^2.4.0
   cupertino_icons: ^1.0.8
   path: ^1.9.0
+  crypto: ^3.0.2
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
 
@@ -41,4 +42,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+
 

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/home_provider.dart';
@@ -28,7 +28,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('生记'),
+        title: const Text('LiveCost'),
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu),
@@ -39,7 +39,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.read(homeProvider.notifier).refresh(),
-            tooltip: '换一换',
+            tooltip: 'Shuffle',
           ),
         ],
       ),
@@ -57,14 +57,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: [
                     Icon(Icons.today, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text('今日推荐', style: theme.textTheme.titleLarge),
+                    Text('Today', style: theme.textTheme.titleLarge),
                   ],
                 ),
               ),
               if (state.loading)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 48),
-                  child: LoadingIndicator(message: '加载推荐中...'),
+                  child: LoadingIndicator(message: 'Loading...'),
                 )
               else if (state.error != null)
                 Padding(
@@ -80,7 +80,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: MealCard(
                     meal: meal,
                     onTap: meal.recipeId != null
-                        ? () => context.push('/recipes/' + meal.recipeId.toString())
+                        ? () => context.push('/recipes/${meal.recipeId}')
                         : null,
                   ),
                 )),

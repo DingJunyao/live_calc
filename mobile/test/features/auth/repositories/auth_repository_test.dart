@@ -42,9 +42,10 @@ void main() {
         statusCode: 200,
       ));
 
-      final response = await repository.login(const LoginRequest(username: 'test', password: 'pass'));
+      final response = await repository.login(const LoginRequest(username: 'test', passwordHash: 'pass'));
       expect(response.accessToken, 'abc');
       expect(response.refreshToken, 'def');
     });
   });
 }
+

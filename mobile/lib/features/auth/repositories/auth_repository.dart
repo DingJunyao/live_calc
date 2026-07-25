@@ -1,4 +1,4 @@
-import '../../../core/api/api_client.dart';
+﻿import '../../../core/api/api_client.dart';
 import '../models/auth_config.dart';
 import '../models/login_request.dart';
 import '../models/user.dart';
@@ -21,11 +21,11 @@ class AuthRepository {
   Future<LoginResponse> register({
     required String username,
     required String email,
-    required String password,
+    required String passwordHash,
     String? phone,
     String? inviteCode,
   }) async {
-    final data = <String, dynamic>{'username': username, 'email': email, 'password': password};
+    final data = <String, dynamic>{'username': username, 'email': email, 'password_hash': passwordHash};
     if (phone != null) data['phone'] = phone;
     if (inviteCode != null) data['invite_code'] = inviteCode;
     final response = await _client.dio.post('/auth/register', data: data);
@@ -37,3 +37,4 @@ class AuthRepository {
     return User.fromJson(response.data as Map<String, dynamic>);
   }
 }
+
