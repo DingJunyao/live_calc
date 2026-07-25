@@ -238,9 +238,13 @@ async function importFromRepo() {
     let recipeCount = 0
     const totalRecipes = recipeFiles.length
     const BATCH_SIZE = 10
+    const IMG_BASE = 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out'
+    let totalImages = 0
+    let downloadedImages = 0
+
     for (let i = 0; i < totalRecipes; i += BATCH_SIZE) {
       const batch = recipeFiles.slice(i, i + BATCH_SIZE)
-      const pct = 50 + Math.round((i / totalRecipes) * 45)
+      const pct = 50 + Math.round((i / totalRecipes) * 40)
       importProgress.value = pct
       importMessage.value = `(4/4) 正在导入菜谱 ${Math.min(i + BATCH_SIZE, totalRecipes)}/${totalRecipes}...`
 
@@ -251,6 +255,9 @@ async function importFromRepo() {
         return { name: file.name, json }
       }))
 
+      // 收集本批菜谱中需要下载图片的条目
+      const pendingImages: Array<{ recipeId: number; imagePath: string }> = []
+
       const recipeTx = db.transaction(['recipes', 'recipe_ingredients'], 'readwrite')
       for (const result of results) {
         if (result.status !== 'fulfilled' || !result.value) continue
@@ -259,6 +266,7 @@ async function importFromRepo() {
 
         const recipeId = json.id || recipeCount + 1
         const ingredients = json.ingredients || []
+        const images = json.images || []
         delete json.ingredients
 
         await recipeTx.objectStore('recipes').put({
@@ -267,7 +275,7 @@ async function importFromRepo() {
           total_time_minutes: json.total_time || json.total_time_minutes || null,
           servings: json.servings || null,
           cooking_steps: json.steps || [], tips: json.tips || [],
-          description: json.description || '', images: json.images || [],
+          description: json.description || '', images,
           tags: json.tags || null,
           is_public: true, is_active: true, source: 'json_repo',
           created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -284,13 +292,47 @@ async function importFromRepo() {
             sort_order: j + 1,
           })
         }
+
+        // 记录待下载图片
+        for (const imgPath of images) {
+          if (imgPath && typeof imgPath === 'string') {
+            pendingImages.push({ recipeId, imagePath: imgPath })
+          }
+        }
         recipeCount++
       }
       await recipeTx.done
+
+      // 下载本批菜谱的图片
+      if (pendingImages.length > 0) {
+        totalImages += pendingImages.length
+        const imgTx = db.transaction('images', 'readwrite')
+        for (const { recipeId, imagePath } of pendingImages) {
+          try {
+            const imgUrl = imagePath.startsWith('http')
+              ? imagePath
+              : `${IMG_BASE}/${imagePath}`
+            const imgResp = await fetch(imgUrl)
+            if (imgResp.ok) {
+              const blob = await imgResp.blob()
+              await imgTx.store.add({
+                entity_type: 'recipes',
+                entity_id: recipeId,
+                path: imagePath,
+                blob,
+                mime_type: blob.type || 'image/jpeg',
+                created_at: new Date().toISOString(),
+              })
+              downloadedImages++
+            }
+          } catch { /* skip failed downloads */ }
+        }
+        await imgTx.done
+      }
     }
 
     importProgress.value = 100
-    importMessage.value = `导入完成！${ingredientCount} 个原料，${nutritionCount} 条营养数据，${recipeCount} 个菜谱。`
+    importMessage.value = `导入完成！${ingredientCount} 个原料，${nutritionCount} 条营养数据，${recipeCount} 个菜谱，${downloadedImages} 张图片。`
     step.value = 3
   } catch (e: any) {
     importMessage.value = '导入失败：' + (e?.message || '未知错误')
