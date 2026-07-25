@@ -37,7 +37,7 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // Settings section
-          Text('Settings', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.outline)),
+          Text('设置', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.outline)),
           const SizedBox(height: 8),
           Card(child: Column(children: [
             ListTile(leading: const Icon(Icons.scale), title: const Text('单位偏好'), onTap: () {}),
@@ -51,7 +51,7 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // My data section
-          Text('My Data', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.outline)),
+          Text('我的数据', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.outline)),
           const SizedBox(height: 8),
           Card(child: Column(children: [
             ListTile(leading: const Icon(Icons.rate_review_outlined), title: const Text('我的提议'), onTap: () => context.push('/profile/proposals')),
@@ -77,4 +77,5 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 }
+
 
