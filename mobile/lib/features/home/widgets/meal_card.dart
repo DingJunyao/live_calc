@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../models/meal_recommendation.dart';
 
 class MealCard extends StatelessWidget {
@@ -13,6 +13,15 @@ class MealCard extends StatelessWidget {
       case 'lunch': return Icons.lunch_dining;
       case 'dinner': return Icons.dinner_dining;
       default: return Icons.restaurant;
+    }
+  }
+
+  String _mealLabel(String type) {
+    switch (type) {
+      case 'breakfast': return '早餐';
+      case 'lunch': return '午餐';
+      case 'dinner': return '晚餐';
+      default: return type;
     }
   }
 
@@ -33,16 +42,16 @@ class MealCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(meal.mealType, style: theme.textTheme.labelMedium?.copyWith(
+                    Text(_mealLabel(meal.mealType), style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.outline,
                     )),
                     const SizedBox(height: 4),
-                    Text(meal.recipe?.name ?? 'TBD', style: theme.textTheme.titleMedium),
+                    Text(meal.recipeName ?? '未设置', style: theme.textTheme.titleMedium),
                   ],
                 ),
               ),
-              if (meal.recipe?.costEstimate != null)
-                Text('\u00A5${meal.recipe!.costEstimate!.toStringAsFixed(1)}', style: theme.textTheme.titleMedium?.copyWith(
+              if (meal.estimatedCost != null)
+                Text('¥${meal.estimatedCost!.toStringAsFixed(1)}', style: theme.textTheme.titleMedium?.copyWith(
                   color: theme.colorScheme.primary,
                 )),
             ],
@@ -52,4 +61,3 @@ class MealCard extends StatelessWidget {
     );
   }
 }
-

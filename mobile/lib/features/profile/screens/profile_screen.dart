@@ -40,13 +40,13 @@ class ProfileScreen extends ConsumerWidget {
           Text('设置', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.outline)),
           const SizedBox(height: 8),
           Card(child: Column(children: [
-            
+            ListTile(leading: const Icon(Icons.scale), title: const Text('单位偏好'), onTap: () {}),
             const Divider(height: 1),
-            
+            ListTile(leading: const Icon(Icons.restaurant), title: const Text('营养目标'), onTap: () {}),
             const Divider(height: 1),
-            
+            ListTile(leading: const Icon(Icons.attach_money), title: const Text('预算设置'), onTap: () {}),
             const Divider(height: 1),
-            
+            ListTile(leading: const Icon(Icons.dns), title: const Text('服务器地址'), onTap: () => context.push('/server-config')),
           ])),
           const SizedBox(height: 24),
 
@@ -77,7 +77,5 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 }
-
-
 
 

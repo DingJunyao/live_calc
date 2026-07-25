@@ -1,4 +1,4 @@
-﻿class Merchant {
+class Merchant {
   final int id;
   final String name;
   final String? address;
@@ -23,4 +23,3 @@
     );
   }
 }
-

@@ -75,12 +75,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 )
               else if (state.recommendation != null)
-                ...state.recommendation!.recommendations.map((meal) => Padding(
+                ...state.recommendation!.meals.map((meal) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   child: MealCard(
                     meal: meal,
-                    onTap: meal.recipe?.id != null
-                        ? () => context.push('/recipes/${meal.recipe?.id}')
+                    onTap: meal.recipeId != null
+                        ? () => context.push('/recipes/${meal.recipeId}')
                         : null,
                   ),
                 )),
@@ -93,8 +93,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
-
-
 
 
 
