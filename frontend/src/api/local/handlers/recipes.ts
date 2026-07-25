@@ -26,10 +26,15 @@ async function resolveIngredientId(name: string): Promise<number | null> {
 /** 获取菜谱的原料列表，附带食材名。 */
 async function getRecipeIngredients(recipeId: number): Promise<any[]> {
   const ingredients = await getByIndex('recipe_ingredients', 'by_recipe_id', recipeId)
-  // 附加食材名
+  // 附加食材名（无 ingredient_id 的跳过，用 ingredient_name 字段）
   for (const ri of ingredients) {
+    if (ri.ingredient_id == null) {
+      ri.ingredient_name = ri.ingredient_name || '未知原料'
+      ri.ingredient = null
+      continue
+    }
     const ing = await getById('ingredients', ri.ingredient_id)
-    ri.ingredient_name = ing?.name || `#${ri.ingredient_id}`
+    ri.ingredient_name = ing?.name || ri.ingredient_name || `#${ri.ingredient_id}`
     ri.ingredient = ing || null
   }
   return ingredients.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
@@ -229,6 +234,10 @@ export async function batchCost(_params: Record<string, string>, data?: any): Pr
 
     // 填充食材名
     for (const ri of ries) {
+      if (ri.ingredient_id == null) {
+        ri.ingredient_name = ri.ingredient_name || '未知原料'
+        continue
+      }
       const ing = allIngredients.find((i: any) => i.id === ri.ingredient_id) || await getById('ingredients', ri.ingredient_id)
       ri.ingredient_name = ing?.name || `#${ri.ingredient_id}`
     }
@@ -606,6 +615,7 @@ export async function getMerchantCosts(params: Record<string, string>, _query?: 
     }
 
     // 将价格分配到各商家
+    if (ri.ingredient_id == null) continue
     const ingredientName = (await getById('ingredients', ri.ingredient_id))?.name || `#${ri.ingredient_id}`
 
     if (prices.length === 0) {
@@ -729,8 +739,8 @@ async function buildCostInput(recipeId: number, recipe: any): Promise<CostInput>
   const allDensities = await getAll('entity_densities')
   const allHierarchies = await getAll('ingredient_hierarchy')
 
-  // 收集食材 ID
-  const ingredientIds = [...new Set(recipeIngredients.map((ri: any) => ri.ingredient_id))]
+  // 收集食材 ID（过滤掉 null）
+  const ingredientIds = [...new Set(recipeIngredients.map((ri: any) => ri.ingredient_id).filter((id: any) => id != null))]
 
   // 加载食材名
   const ingredientNames: Record<number, string> = {}
