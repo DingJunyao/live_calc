@@ -292,3 +292,16 @@ addRoute('/agent/sessions', { get: agents.listSessions, post: agents.createSessi
 // ---- Export / Import ----
 addRoute('/export/data', { get: getExportData })
 addRoute('/import/data/upload', { post: uploadImport })
+
+// ---- Places ----
+addRoute('/places', { get: merchants.listUserPlaces, post: merchants.createUserPlace })
+
+// ---- Products extra routes ----
+addRoute('/products/entity/:id/latest-price-by-merchant', { get: products.getLatestPriceByMerchant })
+addRoute('/products/history/:productName', { get: products.getProductHistory })
+
+// ---- Nutrition extra routes ----
+addRoute('/nutrition/ingredients/:id/recipes', { get: nutrition.getIngredientRecipes })
+
+// ---- Units with trailing slash (alias for /units) ----
+addRoute('/units/', { get: units.listUnits, post: units.createUnit })

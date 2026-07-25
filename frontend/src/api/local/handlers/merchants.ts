@@ -117,3 +117,10 @@ export async function listUserPlaces(): Promise<any> {
   const all = await getAll('user_places')
   return { items: all, total: all.length }
 }
+
+export async function createUserPlace(_params: Record<string, string>, data?: any): Promise<any> {
+  const id = await addOne('user_places', {
+    ...data, created_at: new Date().toISOString(),
+  })
+  return getById('user_places', id as number)
+}

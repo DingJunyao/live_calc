@@ -216,3 +216,9 @@ export async function searchNutrition(_params: Record<string, string>, query?: a
   )
   return { items: matched, total: matched.length }
 }
+
+export async function getIngredientRecipes(params: Record<string, string>): Promise<any> {
+  const id = parseInt(params.id)
+  if (!Number.isFinite(id)) return []
+  return getByIndex('recipe_ingredients', 'by_ingredient_id', id)
+}

@@ -228,3 +228,15 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
     latest_record: records[0],
   }
 }
+
+export async function getLatestPriceByMerchant(params: Record<string, string>): Promise<any> {
+  // Return per-merchant pricing for a product
+  const id = parseInt(params.id)
+  if (!Number.isFinite(id)) return []
+  const records = await getByIndex('product_records', 'by_product_id', id)
+  return records
+}
+
+export async function getProductHistory(params: Record<string, string>): Promise<any> {
+  return { items: [], total: 0 }
+}
