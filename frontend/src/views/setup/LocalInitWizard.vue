@@ -299,8 +299,10 @@ async function importFromRepo() {
 
         for (let j = 0; j < ingredients.length; j++) {
           const ing = ingredients[j]
+          // 按名称匹配 ingredient_id（HowToCook 数据无此字段）
+          const matchedId = ing.ingredient_id || ingredientNameToId[ing.ingredient_name || ing.name || '']
           await recipeTx.objectStore('recipe_ingredients').put({
-            recipe_id: recipeId, ingredient_id: ing.ingredient_id || null,
+            recipe_id: recipeId, ingredient_id: matchedId || null,
             ingredient_name: ing.ingredient_name || ing.name || '',
             quantity: ing.quantity || null, unit_id: ing.unit_id || null,
             unit: ing.unit || null, quantity_range: ing.quantity_range || null,

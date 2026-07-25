@@ -459,7 +459,8 @@ const getIngredientFallbackChain = (ingredient: RecipeIngredient): string | null
   return item?.fallback_chain || null
 }
 
-const goToIngredient = (ingredientId: number) => {
+const goToIngredient = (ingredientId: number | null | undefined) => {
+  if (ingredientId == null) return
   router.push(`/data/ingredients/${ingredientId}`)
 }
 
