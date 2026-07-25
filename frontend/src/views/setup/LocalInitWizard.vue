@@ -309,9 +309,11 @@ async function importFromRepo() {
         const imgTx = db.transaction('images', 'readwrite')
         for (const { recipeId, imagePath } of pendingImages) {
           try {
+            // URL encode 中文路径，但保留斜杠
+            const encodedPath = imagePath.split('/').map(s => encodeURIComponent(s)).join('/')
             const imgUrl = imagePath.startsWith('http')
               ? imagePath
-              : `${IMG_BASE}/${imagePath}`
+              : `${IMG_BASE}/${encodedPath}`
             const imgResp = await fetch(imgUrl)
             if (imgResp.ok) {
               const blob = await imgResp.blob()
