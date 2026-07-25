@@ -1,4 +1,4 @@
-import '../../../core/api/api_client.dart';
+﻿import '../../../core/api/api_client.dart';
 import '../models/ingredient.dart';
 
 class IngredientRepository {
@@ -10,7 +10,7 @@ class IngredientRepository {
     if (search != null) params['search'] = search;
     if (category != null) params['category'] = category;
     final response = await _client.dio.get('/ingredients', queryParameters: params);
-    final list = response.data as List<dynamic>;
+    final list = (response.data is List) ? response.data as List : (response.data['items'] as List);
     return list.map((e) => Ingredient.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -19,3 +19,4 @@ class IngredientRepository {
     return Ingredient.fromJson(response.data as Map<String, dynamic>);
   }
 }
+

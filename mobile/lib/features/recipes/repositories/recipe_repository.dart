@@ -10,7 +10,7 @@ class RecipeRepository {
     final params = <String, dynamic>{'page': page, 'page_size': pageSize};
     if (search != null) params['search'] = search;
     final response = await _client.dio.get('/recipes', queryParameters: params);
-    final list = response.data as List<dynamic>;
+    final list = (response.data is List) ? response.data as List : (response.data['items'] as List);
     return list.map((e) => RecipeSummary.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -19,3 +19,4 @@ class RecipeRepository {
     return RecipeDetail.fromJson(response.data as Map<String, dynamic>);
   }
 }
+

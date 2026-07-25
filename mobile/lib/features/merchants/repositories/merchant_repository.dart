@@ -1,4 +1,4 @@
-import '../../../core/api/api_client.dart';
+﻿import '../../../core/api/api_client.dart';
 import '../models/merchant.dart';
 
 class MerchantRepository {
@@ -9,7 +9,7 @@ class MerchantRepository {
     final params = <String, dynamic>{'page': page, 'page_size': pageSize};
     if (search != null) params['search'] = search;
     final response = await _client.dio.get('/merchants', queryParameters: params);
-    final list = response.data as List<dynamic>;
+    final list = (response.data is List) ? response.data as List : (response.data['items'] as List);
     return list.map((e) => Merchant.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -18,3 +18,4 @@ class MerchantRepository {
     return Merchant.fromJson(response.data as Map<String, dynamic>);
   }
 }
+

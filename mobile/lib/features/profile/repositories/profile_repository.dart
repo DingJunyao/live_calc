@@ -1,4 +1,4 @@
-import '../../../core/api/api_client.dart';
+﻿import '../../../core/api/api_client.dart';
 import '../models/proposal.dart';
 import '../models/user_place.dart';
 
@@ -8,13 +8,14 @@ class ProfileRepository {
 
   Future<List<Proposal>> getProposals({int page = 1, int pageSize = 50}) async {
     final response = await _client.dio.get('/proposals', queryParameters: {'page': page, 'page_size': pageSize});
-    final list = response.data as List<dynamic>;
+    final list = (response.data is List) ? response.data as List : (response.data['items'] as List);
     return list.map((e) => Proposal.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<List<UserPlace>> getPlaces() async {
     final response = await _client.dio.get('/places');
-    final list = response.data as List<dynamic>;
+    final list = (response.data is List) ? response.data as List : (response.data['items'] as List);
     return list.map((e) => UserPlace.fromJson(e as Map<String, dynamic>)).toList();
   }
 }
+
