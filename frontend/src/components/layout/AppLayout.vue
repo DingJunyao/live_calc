@@ -259,6 +259,15 @@ const handleMobileDrawerUpdate = (value: boolean) => {
   overflow-y: auto;
 }
 
+/* 修复各视图中的 v-app-bar 定位（它们被 router-view 渲染在 v-main 内部，
+   Vuetify 布局系统无法正确为其设置 position:fixed + left 偏移）。
+   改用 CSS 自定义属性从布局系统读取侧边栏偏移量。 */
+:deep(.v-app-bar) {
+  position: fixed !important;
+  left: var(--v-layout-left, 0px) !important;
+  width: calc(100% - var(--v-layout-left, 0px) - var(--v-layout-right, 0px)) !important;
+}
+
 /* 移动端抽屉的遮罩层 */
 :deep(.v-navigation-drawer--temporary) {
   z-index: 1000 !important;
