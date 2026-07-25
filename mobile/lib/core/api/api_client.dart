@@ -19,7 +19,7 @@ class ApiClient {
       request: true,
       requestBody: true,
       responseBody: true,
-      logPrint: (obj) => debugPrint(obj.toString()),
+      logPrint: (obj) => print(obj.toString()),
     ));
   }
 
@@ -36,5 +36,7 @@ class ApiClient {
 
   String get baseUrl => _baseUrl;
 }
+
+
 
 
