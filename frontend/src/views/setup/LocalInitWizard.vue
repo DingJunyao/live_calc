@@ -215,7 +215,24 @@ async function importFromRepo() {
       }
     } catch { /* optional */ }
     importProgress.value = 50
-    importMessage.value = `(3/4) ${nutritionCount} 条营养数据已导入，正在下载菜谱（0/${recipeFiles.length}）...`
+    importMessage.value = `(3/4) ${nutritionCount} 条营养数据已导入，正在为原料创建商品...`
+
+    // 为每个原料创建对应的商品（产品和原料 1:1）
+    let productCount = 0
+    try {
+      const tx = db.transaction('products', 'readwrite')
+      for (const [name, ingId] of Object.entries(ingredientNameToId)) {
+        await tx.store.put({
+          name, ingredient_id: ingId as number,
+          is_active: true, price_weight: 50,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        })
+        productCount++
+      }
+      await tx.done
+    } catch { /* optional */ }
+    importProgress.value = 55
+    importMessage.value = `(3/4) 已为 ${productCount} 个原料创建商品，正在下载菜谱（0/${recipeFiles.length}）...`
 
     // 逐个下载并导入菜谱（并行一批 10 个）
     let recipeCount = 0
