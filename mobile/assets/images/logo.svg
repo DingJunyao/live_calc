@@ -1,28 +1,18 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs>
-    <style>
-      .uuid-01cd9cfd-65d2-460e-bee7-68964a985474 {
-        fill: #fff;
-      }
-
-      .uuid-b67dd0b2-6dac-44c7-875a-5bac3c254d2b {
-        fill: #558b2f;
-      }
-    </style>
-  </defs>
-  <g id="uuid-c0ef9174-33e2-45dc-af52-09d862d2e3dc" data-name="图层 2">
-    <rect class="uuid-b67dd0b2-6dac-44c7-875a-5bac3c254d2b" width="1024" height="1024"/>
+  
+  <g id="uuid-c0ef9174-33e2-45dc-af52-09d862d2e3dc" data-name="鍥惧眰 2">
+    <rect fill="#558B2F" width="1024" height="1024"/>
   </g>
-  <g id="uuid-7f7d8e40-185a-4d51-bd20-da17e99775f5" data-name="图层 7">
+  <g id="uuid-7f7d8e40-185a-4d51-bd20-da17e99775f5" data-name="鍥惧眰 7">
     <g>
-      <rect class="uuid-01cd9cfd-65d2-460e-bee7-68964a985474" x="151.21" y="457.89" width="721.58" height="54.11"/>
-      <rect class="uuid-01cd9cfd-65d2-460e-bee7-68964a985474" x="710.79" y="190.34" width="54.11" height="643.32"/>
-      <rect class="uuid-01cd9cfd-65d2-460e-bee7-68964a985474" x="359.07" y="349.67" width="297.61" height="54.11"/>
-      <rect class="uuid-01cd9cfd-65d2-460e-bee7-68964a985474" x="277.91" y="241.45" width="324.66" height="54.11"/>
-      <rect class="uuid-01cd9cfd-65d2-460e-bee7-68964a985474" x="413.18" y="190.34" width="54.11" height="267.55"/>
-      <rect class="uuid-01cd9cfd-65d2-460e-bee7-68964a985474" x="250.85" y="190.34" width="54.11" height="213.44"/>
-      <path class="uuid-01cd9cfd-65d2-460e-bee7-68964a985474" d="M602.57,620.22v159.33h-292.55v-159.33h292.55M656.68,566.11H255.91v267.55h400.77v-267.55h0Z"/>
+      <rect fill="#FFFFFF" x="151.21" y="457.89" width="721.58" height="54.11"/>
+      <rect fill="#FFFFFF" x="710.79" y="190.34" width="54.11" height="643.32"/>
+      <rect fill="#FFFFFF" x="359.07" y="349.67" width="297.61" height="54.11"/>
+      <rect fill="#FFFFFF" x="277.91" y="241.45" width="324.66" height="54.11"/>
+      <rect fill="#FFFFFF" x="413.18" y="190.34" width="54.11" height="267.55"/>
+      <rect fill="#FFFFFF" x="250.85" y="190.34" width="54.11" height="213.44"/>
+      <path fill="#FFFFFF" d="M602.57,620.22v159.33h-292.55v-159.33h292.55M656.68,566.11H255.91v267.55h400.77v-267.55h0Z"/>
     </g>
   </g>
 </svg>

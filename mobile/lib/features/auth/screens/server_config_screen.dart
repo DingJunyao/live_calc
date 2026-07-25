@@ -84,13 +84,13 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
                   TextFormField(
                     controller: _urlController,
                     decoration: const InputDecoration(
-                      labelText: '后端地址',
-                      hintText: 'http://192.168.x.x:8000',
+                      labelText: '服务器地址',
+                      hintText: 'https://example.com',
                       prefixIcon: Icon(Icons.dns_outlined),
                     ),
                     keyboardType: TextInputType.url,
                     validator: (v) {
-                      if (v == null || v.trim().isEmpty) return '请输入后端地址';
+                      if (v == null || v.trim().isEmpty) return '请输入服务器地址';
                       if (!v.trim().startsWith('http')) return '必须以 http:// 或 https:// 开头';
                       return null;
                     },
