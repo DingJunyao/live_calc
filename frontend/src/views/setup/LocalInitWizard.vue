@@ -101,11 +101,9 @@ const importProgress = ref(0) // 0-100，0 表示不确定
 
 async function importFromRepo() {
   importing.value = true
-  importMessage.value = '正在导入基础单位和分类...'
+  importProgress.value = 5
+  importMessage.value = '正在从 HowToCook 数据仓库获取文件列表...'
   try {
-    await seedBasicData()
-    importMessage.value = '正在从 HowToCook 数据仓库获取文件列表...'
-    importProgress.value = 5
 
     const RAW_BASE = 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out'
     const API_BASE = 'https://api.github.com/repos/DingJunyao/HowToCook_json/contents/out'
@@ -124,6 +122,18 @@ async function importFromRepo() {
 
     const { getDb } = await import('@/api/local/database')
     const db = await getDb()
+
+    // 清空旧数据（保留基础单位和分类，它们由 seedBasicData 和仓库数据覆盖）
+    for (const store of ['ingredients', 'nutrition_data', 'products', 'product_records',
+      'recipes', 'recipe_ingredients', 'merchants', 'ingredient_hierarchy',
+      'entity_unit_overrides', 'entity_densities', 'meal_recommendations', 'images',
+      'blacklist_groups', 'blacklist_group_ingredients', 'blacklist_subscriptions', 'user_places']) {
+      const tx = db.transaction(store, 'readwrite')
+      await tx.store.clear()
+      await tx.done
+    }
+    importProgress.value = 12
+    await seedBasicData() // 确保基础单位和分类存在
 
     // 下载并导入单位
     try {
