@@ -127,7 +127,7 @@
               <v-card elevation="0" class="ma-4 overflow-hidden">
                 <!-- 主图片 -->
                 <v-img
-                  :src="displayRecipe?.image_urls?.[selectedImageIndex] || getImageUrl(displayRecipe?.images[selectedImageIndex])"
+                  :src="localImageUrls[selectedImageIndex] || displayRecipe?.image_urls?.[selectedImageIndex] || getImageUrl(displayRecipe?.images[selectedImageIndex])"
                   height="max(320px, 33vh)"
                   cover
                   class="bg-surface-variant cursor-pointer recipe-main-img"
@@ -156,7 +156,7 @@
                   <v-img
                     v-for="(img, index) in displayRecipe?.images"
                     :key="index"
-                    :src="displayRecipe?.image_urls?.[index] || getImageUrl(img)"
+                    :src="displayRecipe?.image_urls?.[index] || localImageUrls[index] || getImageUrl(img)"
                     width="60"
                     height="60"
                     cover
@@ -406,7 +406,7 @@
         <!-- 主图片 -->
         <img
           v-if="recipe?.images?.length"
-          :src="displayRecipe?.image_urls?.[lightboxIndex] || getImageUrl(displayRecipe?.images[lightboxIndex])"
+          :src="localImageUrls[lightboxIndex] || displayRecipe?.image_urls?.[lightboxIndex] || getImageUrl(displayRecipe?.images[lightboxIndex])"
           class="lightbox-image"
           @click.stop
         />
@@ -436,7 +436,7 @@
           <v-img
             v-for="(img, index) in displayRecipe?.images"
             :key="index"
-            :src="displayRecipe?.image_urls?.[index] || getImageUrl(img)"
+            :src="displayRecipe?.image_urls?.[index] || localImageUrls[index] || getImageUrl(img)"
             width="48"
             height="48"
             cover
@@ -885,6 +885,11 @@ const loadData = async () => {
     // 基本数据到位，立即渲染页面
     loading.value = false
 
+    // 本地模式：从 IndexedDB 加载图片 Blob
+    if (import.meta.env.VITE_STORAGE_MODE === 'local') {
+      loadLocalImages()
+    }
+
     // 后台分别加载成本、营养和成本历史，互不影响
     loadCostData()
     loadNutritionData()
@@ -1075,6 +1080,20 @@ const chartData = computed(() => {
 })
 
 const getImageUrl = resolveImageUrl
+
+// 本地模式：从 IndexedDB 加载图片 Blob
+const localImageUrls = ref<string[]>([])
+
+async function loadLocalImages() {
+  if (!recipe.value?.images?.length) return
+  const { loadLocalImageBlob } = await import('@/utils/image')
+  const urls = await Promise.all(
+    recipe.value.images.map((_: any, i: number) =>
+      loadLocalImageBlob('recipes', recipe.value!.id, recipe.value!.images[i])
+    )
+  )
+  localImageUrls.value = urls.filter(Boolean) as string[]
+}
 
 // 灯箱相关方法
 const openLightbox = (index: number) => {
