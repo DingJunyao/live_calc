@@ -39,7 +39,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.read(homeProvider.notifier).refresh(),
-            tooltip: 'Shuffle',
+            tooltip: '换一换',
           ),
         ],
       ),
@@ -57,14 +57,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: [
                     Icon(Icons.today, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text('Today', style: theme.textTheme.titleLarge),
+                    Text('今日推荐', style: theme.textTheme.titleLarge),
                   ],
                 ),
               ),
               if (state.loading)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 48),
-                  child: LoadingIndicator(message: 'Loading...'),
+                  child: LoadingIndicator(message: '加载中...'),
                 )
               else if (state.error != null)
                 Padding(
@@ -93,3 +93,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
+
+
+

@@ -175,25 +175,6 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
     }
 
     return Scaffold(
-      drawer: NavigationDrawer(
-        onDestinationSelected: (i) {
-          Navigator.of(context).pop();
-        },
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text('\u751f\u8bb0', style: Theme.of(context).textTheme.titleLarge),
-          ),
-          const NavigationDrawerDestination(icon: Icon(Icons.search), label: Text('\u641c\u7d22')),
-          const Divider(),
-          const NavigationDrawerDestination(icon: Icon(Icons.science_outlined), label: Text('\u539f\u6599\u7ba1\u7406')),
-          const NavigationDrawerDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('\u5546\u54c1\u7ba1\u7406')),
-          const NavigationDrawerDestination(icon: Icon(Icons.store_outlined), label: Text('\u5546\u5bb6\u7ba1\u7406')),
-          const NavigationDrawerDestination(icon: Icon(Icons.map_outlined), label: Text('\u5546\u5bb6\u5730\u56fe')),
-          const NavigationDrawerDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('\u62a5\u8868')),
-          const NavigationDrawerDestination(icon: Icon(Icons.settings_outlined), label: Text('\u8bbe\u7f6e')),
-        ],
-      ),
       body: Row(
         children: [
           if (MediaQuery.of(context).size.width >= 600)
@@ -231,5 +212,9 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
     context.go(_tabRoutes[index]);
   }
 }
+
+
+
+
 
 
