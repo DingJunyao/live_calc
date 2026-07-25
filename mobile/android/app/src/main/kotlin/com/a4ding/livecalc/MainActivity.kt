@@ -1,4 +1,4 @@
-﻿package com.a4ding.livecalc
+package com.a4ding.livecalc
 
 import io.flutter.embedding.android.FlutterActivity
 
