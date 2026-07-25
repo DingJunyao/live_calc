@@ -7,12 +7,13 @@ class HomeRepository {
   HomeRepository({ApiClient? client}) : _client = client ?? ApiClient.instance;
 
   Future<DailyRecommendation> getTodayRecommendation() async {
-    final response = await _client.dio.get('/meals/today');
+    final response = await _client.dio.get('/recommendations');
     return DailyRecommendation.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<DailyRecommendation> refreshToday() async {
-    final response = await _client.dio.post('/meals/today/refresh');
+    final response = await _client.dio.post('/recommendations/refresh');
     return DailyRecommendation.fromJson(response.data as Map<String, dynamic>);
   }
 }
+

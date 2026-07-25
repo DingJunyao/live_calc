@@ -1,4 +1,4 @@
-// price_record.dart - 价格记录数据模型
+﻿// price_record.dart - 价格记录数据模型
 
 class PriceRecord {
   final int id;
@@ -30,8 +30,8 @@ class PriceRecord {
       id: json['id'] as int,
       productId: json['product_id'] as int? ?? 0,
       productName: json['product_name'] as String? ?? json['name'] as String? ?? '',
-      amount: (json['amount'] as num?)?.toDouble() ?? 0,
-      quantity: (json['quantity'] as num?)?.toDouble() ?? 1,
+      amount: double.tryParse(json['amount']?.toString() ?? '') ?? 0,
+      quantity: double.tryParse(json['quantity']?.toString() ?? '') ?? 1,
       unit: json['unit'] as String? ?? '个',
       merchantId: json['merchant_id'] as int?,
       merchantName: json['merchant_name'] as String? ?? json['merchant'] as String?,
@@ -42,3 +42,4 @@ class PriceRecord {
 
   double get unitPrice => quantity > 0 ? amount / quantity : amount;
 }
+

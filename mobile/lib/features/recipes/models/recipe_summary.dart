@@ -22,10 +22,11 @@
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       description: json['description'] as String?,
-      estimatedCost: (json['estimated_cost'] as num?)?.toDouble(),
+      estimatedCost: double.tryParse(json['estimated_cost']?.toString() ?? ''),
       imageUrl: json['image_url'] as String?,
-      ingredientCount: json['ingredient_count'] as int? ?? 0,
+      ingredientCount: (json['ingredient_count'] as num?)?.toInt() ?? ((json['ingredients'] as List?)?.length ?? 0),
       isPublic: json['is_public'] as bool? ?? false,
     );
   }
 }
+
