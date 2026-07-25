@@ -295,6 +295,10 @@ export async function getAll<T = any>(storeName: any): Promise<T[]> {
 
 /** 按主键获取单条记录 */
 export async function getById<T = any>(storeName: any, id: number | string): Promise<T | undefined> {
+  if (id == null || (typeof id === 'number' && !Number.isFinite(id))) {
+    console.error(`[getById] invalid key for store "${storeName}":`, id)
+    throw { status: 400, message: `无效的查询键: ${id}` }
+  }
   const db = await getDb()
   return (db as any).get(storeName, id)
 }

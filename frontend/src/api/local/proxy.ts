@@ -102,8 +102,13 @@ export function parseRoute(method: string, url: string): RouteResult {
 // ============================================================
 
 export async function localGet(url: string, query?: any): Promise<any> {
-  const { handler, pathParams } = parseRoute('get', url)
-  return handler(pathParams, query)
+  try {
+    const { handler, pathParams } = parseRoute('get', url)
+    return handler(pathParams, query)
+  } catch (e: any) {
+    console.error(`[localGet] error for ${url}:`, e)
+    throw e
+  }
 }
 
 export async function localPost(url: string, data?: any): Promise<any> {
