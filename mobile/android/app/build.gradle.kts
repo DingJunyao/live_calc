@@ -5,7 +5,7 @@
 }
 
 android {
-    namespace = "com.example.livecalc_mobile"
+    namespace = "com.a4ding.livecalc"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
