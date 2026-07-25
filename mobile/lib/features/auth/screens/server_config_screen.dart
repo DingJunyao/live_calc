@@ -71,30 +71,30 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
                   const SizedBox(height: 16),
                   Text('LiveCost', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Text('Life Cost Calculator', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outline)),
+                  Text('Backend Server Address', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outline)),
                   const SizedBox(height: 48),
                   TextFormField(
                     controller: _urlController,
                     decoration: const InputDecoration(
-                      labelText: 'Server URL',
-                      hintText: 'https://example.com',
+                      labelText: 'Backend URL (FastAPI)',
+                      hintText: 'http://192.168.x.x:8000',
                       prefixIcon: Icon(Icons.dns_outlined),
                     ),
                     keyboardType: TextInputType.url,
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Please enter server address';
-                      if (!v.trim().startsWith('http')) return 'Address must start with http:// or https://';
+                      if (!v.trim().startsWith('http')) return 'Must start with http:// or https://';
                       return null;
                     },
                   ),
                   const SizedBox(height: 8),
-                  if (_error != null) Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+                  if (_error != null) Column(children: [Text('Error:', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)), Text(_error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12))],),
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _loading ? null : _connect,
                     child: _loading
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Connect'),
+                        : const Text('Connect & Verify'),
                   ),
                 ],
               ),
@@ -105,3 +105,4 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
     );
   }
 }
+
