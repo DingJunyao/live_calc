@@ -237,6 +237,13 @@ addRoute('/admin/email-config/templates/:key', { get: admin.getEmailTemplate, pu
 addRoute('/admin/translation-config', { get: admin.getTranslationConfig, put: admin.updateTranslationConfig })
 addRoute('/admin/translation-config/test', { post: admin.testTranslationConnection })
 
+	// ---- Entity Unit Overrides (exact paths before param paths) ----
+	addRoute('/entities/:entityType/:entityId/units/unmapped-units', { get: units.getEntityUnmappedUnits })
+	addRoute('/entities/:entityType/:entityId/units/:unitId', { put: units.updateEntityUnit, delete: units.deleteEntityUnit })
+	addRoute('/entities/:entityType/:entityId/units', { get: units.listEntityUnits, post: units.createEntityUnit })
+	addRoute('/entities/:entityType/:entityId/density/:densityId', { delete: units.deleteEntityDensity })
+	addRoute('/entities/:entityType/:entityId/density', { get: units.getEntityDensity, post: units.createEntityDensity })
+
 // ---- Recipes (exact sub-paths before param paths) ----
 addRoute('/recipes/batch-cost', { post: recipes.batchCost })
 addRoute('/recipes', { get: recipes.listRecipes, post: recipes.createRecipe })

@@ -67,3 +67,57 @@ export async function listUnitConversions(params: Record<string, string>): Promi
   const all = await getAll('unit_conversions')
   return all.filter((c: any) => c.from_unit_id === id || c.to_unit_id === id)
 }
+
+// ---- Entity Unit Overrides ----
+export async function listEntityUnits(params: Record<string, string>): Promise<any> {
+  const { entityType, entityId } = params
+  const all = await getByIndex('entity_unit_overrides', 'by_entity', [entityType, parseInt(entityId)])
+  return all
+}
+
+export async function createEntityUnit(_params: Record<string, string>, data?: any): Promise<any> {
+  const entityType = _params.entityType
+  const entityId = parseInt(_params.entityId)
+  const id = await addOne('entity_unit_overrides', {
+    ...data, entity_type: entityType, entity_id: entityId,
+    created_at: new Date().toISOString(),
+  })
+  return getById('entity_unit_overrides', id as number)
+}
+
+export async function updateEntityUnit(params: Record<string, string>, data?: any): Promise<any> {
+  const id = parseInt(params.unitId)
+  await putOne('entity_unit_overrides', { id, ...data, updated_at: new Date().toISOString() })
+  return getById('entity_unit_overrides', id)
+}
+
+export async function deleteEntityUnit(params: Record<string, string>): Promise<any> {
+  await deleteOne('entity_unit_overrides', parseInt(params.unitId))
+  return { ok: true }
+}
+
+export async function getEntityUnmappedUnits(params: Record<string, string>): Promise<any> {
+  return []
+}
+
+// ---- Entity Densities ----
+export async function getEntityDensity(params: Record<string, string>): Promise<any> {
+  const { entityType, entityId } = params
+  const all = await getByIndex('entity_densities', 'by_entity', [entityType, parseInt(entityId)])
+  return all.length > 0 ? all[0] : null
+}
+
+export async function createEntityDensity(_params: Record<string, string>, data?: any): Promise<any> {
+  const entityType = _params.entityType
+  const entityId = parseInt(_params.entityId)
+  const id = await addOne('entity_densities', {
+    ...data, entity_type: entityType, entity_id: entityId,
+    created_at: new Date().toISOString(),
+  })
+  return getById('entity_densities', id as number)
+}
+
+export async function deleteEntityDensity(params: Record<string, string>): Promise<any> {
+  await deleteOne('entity_densities', parseInt(params.densityId))
+  return { ok: true }
+}

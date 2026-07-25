@@ -50,7 +50,7 @@ export async function deleteIngredient(params: Record<string, string>): Promise<
 
 export async function listCategories(): Promise<any> {
   const all = await getAll('ingredient_categories')
-  return { items: all, total: all.length }
+  return all
 }
 
 export async function searchByName(params: Record<string, string>, query?: any): Promise<any> {
