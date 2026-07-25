@@ -82,132 +82,150 @@ async function importFromRepo() {
   importMessage.value = '正在导入基础单位和分类...'
   try {
     await seedBasicData()
-    importMessage.value = '正在从 HowToCook 数据仓库下载数据...'
+    importMessage.value = '正在从 HowToCook 数据仓库获取文件列表...'
 
-    // 下载仓库 ZIP
-    const zipUrl = 'https://github.com/DingJunyao/HowToCook_json/archive/refs/heads/main.zip'
-    const response = await fetch(zipUrl)
-    if (!response.ok) throw new Error(`下载失败: ${response.status}`)
-    const blob = await response.blob()
+    const RAW_BASE = 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out'
+    const API_BASE = 'https://api.github.com/repos/DingJunyao/HowToCook_json/contents/out'
 
-    importMessage.value = '正在解析数据...'
-    const { BlobReader, ZipReader, TextWriter } = await import('@zip.js/zip.js')
-    const reader = new ZipReader(new BlobReader(blob))
-    const entries = await reader.getEntries()
+    // 获取文件列表
+    const listResp = await fetch(API_BASE)
+    if (!listResp.ok) throw new Error(`获取文件列表失败: ${listResp.status}`)
+    const files: Array<{ name: string; type: string; download_url: string }> = await listResp.json()
 
-    // 提取 ZIP 中的 out/ 目录文件
-    const prefix = 'HowToCook_json-main/out/'
-    const dataFiles: Record<string, string> = {}
-    const recipeFiles: Array<{ name: string; json: any }> = []
+    // 分类数据文件
+    const dataFiles = ['ingredients.json', 'nutritions.json', 'units.json', 'ingredients_raw.json', 'matched_ingredients.json']
+    const recipeFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.json') && !dataFiles.includes(f.name))
 
-    for (const entry of entries) {
-      if (!entry.filename.startsWith(prefix)) continue
-      const relPath = entry.filename.slice(prefix.length)
-      if (!relPath || entry.dir) continue
+    importMessage.value = `发现 ${recipeFiles.length} 个菜谱文件，正在下载（0/${recipeFiles.length + dataFiles.length}）...`
 
-      const text = await entry.getData!(new TextWriter())
-      if (relPath === 'ingredients.json' || relPath === 'nutritions.json' || relPath === 'units.json' || relPath === 'ingredients_raw.json' || relPath === 'matched_ingredients.json') {
-        dataFiles[relPath] = text
-      } else if (relPath.endsWith('.json') && relPath.includes('/')) {
-        // 分类目录下的菜谱 JSON
-        try {
-          recipeFiles.push({ name: relPath, json: JSON.parse(text) })
-        } catch { /* skip invalid */ }
-      }
-    }
-
-    await reader.close()
-
-    importMessage.value = `数据解析完成，正在写入数据库（${recipeFiles.length} 个菜谱）...`
     const { getDb } = await import('@/api/local/database')
     const db = await getDb()
+    let progress = 0
 
-    // 导入单位
-    if (dataFiles['units.json']) {
-      const units = JSON.parse(dataFiles['units.json'])
-      if (Array.isArray(units) && units.length > 0) {
-        const tx = db.transaction('units', 'readwrite')
-        for (const u of units) {
-          if (u.id || u.name) await tx.store.put({ id: u.id, name: u.name, abbreviation: u.abbreviation || u.name, unit_type: u.unit_type || 'count', si_factor: u.si_factor, is_si_base: u.is_si_base || false, is_common: true, display_order: u.display_order || 99 })
+    // 下载并导入单位
+    try {
+      const unitsResp = await fetch(`${RAW_BASE}/units.json`)
+      if (unitsResp.ok) {
+        const units = await unitsResp.json()
+        if (Array.isArray(units) && units.length > 0) {
+          const tx = db.transaction('units', 'readwrite')
+          for (const u of units) {
+            if (u.name) {
+              await tx.store.put({
+                id: u.id, name: u.name, abbreviation: u.abbreviation || u.name,
+                unit_type: u.unit_type || 'count', si_factor: u.si_factor ?? null,
+                is_si_base: u.is_si_base || false, is_common: true, display_order: u.display_order || 99,
+                plural_form: null,
+              })
+            }
+          }
+          await tx.done
         }
-        await tx.done
       }
-    }
+    } catch { /* optional */ }
+    progress++
+    importMessage.value = `正在下载数据文件（${progress}/${recipeFiles.length + dataFiles.length}）...`
 
-    // 导入原料
+    // 下载并导入原料
     let ingredientCount = 0
-    if (dataFiles['ingredients.json']) {
-      const ingredients = JSON.parse(dataFiles['ingredients.json'])
-      if (Array.isArray(ingredients)) {
-        const tx = db.transaction('ingredients', 'readwrite')
-        for (const ing of ingredients) {
-          if (ing.name) {
-            await tx.store.put({ id: ing.id, name: ing.name, category_id: ing.category_id || null, aliases: ing.aliases || [], is_active: true, created_at: new Date().toISOString() })
-            ingredientCount++
+    try {
+      const ingResp = await fetch(`${RAW_BASE}/ingredients.json`)
+      if (ingResp.ok) {
+        const ingredients = await ingResp.json()
+        if (Array.isArray(ingredients)) {
+          const tx = db.transaction('ingredients', 'readwrite')
+          for (const ing of ingredients) {
+            if (ing.name) {
+              await tx.store.put({
+                id: ing.id, name: ing.name, category_id: ing.category_id || null,
+                aliases: ing.aliases || [], is_active: true,
+                created_at: new Date().toISOString(),
+              })
+              ingredientCount++
+            }
           }
+          await tx.done
         }
-        await tx.done
       }
-    }
+    } catch { /* optional */ }
+    progress++
+    importMessage.value = `正在下载营养数据...`
 
-    // 导入营养数据
+    // 下载并导入营养数据
     let nutritionCount = 0
-    if (dataFiles['nutritions.json']) {
-      const nutritions = JSON.parse(dataFiles['nutritions.json'])
-      if (Array.isArray(nutritions)) {
-        const tx = db.transaction('nutrition_data', 'readwrite')
-        for (const n of nutritions) {
-          if (n.ingredient_id != null) {
-            await tx.store.add({ ingredient_id: n.ingredient_id, nutrient_name: n.nutrient_name, amount_per_100g: n.amount_per_100g, unit: n.unit, source: 'howtocook', is_verified: true })
-            nutritionCount++
+    try {
+      const nutResp = await fetch(`${RAW_BASE}/nutritions.json`)
+      if (nutResp.ok) {
+        const nutritions = await nutResp.json()
+        if (Array.isArray(nutritions)) {
+          const tx = db.transaction('nutrition_data', 'readwrite')
+          const seen = new Set<string>()
+          for (const n of nutritions) {
+            if (n.ingredient_id != null && n.nutrient_name && n.amount_per_100g != null) {
+              const key = `${n.ingredient_id}-${n.nutrient_name}`
+              if (seen.has(key)) continue
+              seen.add(key)
+              await tx.store.add({
+                ingredient_id: n.ingredient_id,
+                nutrient_name: n.nutrient_name,
+                amount_per_100g: n.amount_per_100g,
+                unit: n.unit || 'g',
+                source: n.source || 'howtocook', is_verified: true,
+              })
+              nutritionCount++
+            }
           }
+          await tx.done
         }
-        await tx.done
       }
-    }
+    } catch { /* optional */ }
+    progress++
 
-    // 导入菜谱
+    // 逐个下载并导入菜谱（并行一批 10 个）
     let recipeCount = 0
-    if (recipeFiles.length > 0) {
+    const BATCH_SIZE = 10
+    for (let i = 0; i < recipeFiles.length; i += BATCH_SIZE) {
+      const batch = recipeFiles.slice(i, i + BATCH_SIZE)
+      importMessage.value = `正在导入菜谱（${recipeCount}/${recipeFiles.length}）...`
+
+      const results = await Promise.allSettled(batch.map(async (file: any) => {
+        const resp = await fetch(file.download_url)
+        if (!resp.ok) return null
+        const json = await resp.json()
+        return { name: file.name, json }
+      }))
+
       const recipeTx = db.transaction(['recipes', 'recipe_ingredients'], 'readwrite')
-      for (const { name, json } of recipeFiles) {
+      for (const result of results) {
+        if (result.status !== 'fulfilled' || !result.value) continue
+        const { json } = result.value
         if (!json.name) continue
-        const recipeId = json.id || recipeCount + 1
+
+        const recipeId = json.id || Date.now() + recipeCount
         const ingredients = json.ingredients || []
         delete json.ingredients
 
         await recipeTx.objectStore('recipes').put({
-          id: recipeId,
-          name: json.name,
-          category: json.category || null,
-          difficulty: json.difficulty || null,
+          id: recipeId, name: json.name,
+          category: json.category || null, difficulty: json.difficulty || null,
           total_time_minutes: json.total_time || json.total_time_minutes || null,
           servings: json.servings || null,
-          cooking_steps: json.steps || [],
-          tips: json.tips || [],
-          description: json.description || '',
-          images: json.images || [],
+          cooking_steps: json.steps || [], tips: json.tips || [],
+          description: json.description || '', images: json.images || [],
           tags: json.tags || null,
-          is_public: true,
-          is_active: true,
-          source: 'json_repo',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          is_public: true, is_active: true, source: 'json_repo',
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         })
 
-        for (let i = 0; i < ingredients.length; i++) {
-          const ing = ingredients[i]
+        for (let j = 0; j < ingredients.length; j++) {
+          const ing = ingredients[j]
           await recipeTx.objectStore('recipe_ingredients').put({
-            recipe_id: recipeId,
-            ingredient_id: ing.ingredient_id || null,
+            recipe_id: recipeId, ingredient_id: ing.ingredient_id || null,
             ingredient_name: ing.ingredient_name || ing.name || '',
-            quantity: ing.quantity || null,
-            unit_id: ing.unit_id || null,
-            unit: ing.unit || null,
-            quantity_range: ing.quantity_range || null,
-            is_optional: ing.is_optional || false,
-            note: ing.note || null,
-            sort_order: i + 1,
+            quantity: ing.quantity || null, unit_id: ing.unit_id || null,
+            unit: ing.unit || null, quantity_range: ing.quantity_range || null,
+            is_optional: ing.is_optional || false, note: ing.note || null,
+            sort_order: j + 1,
           })
         }
         recipeCount++
