@@ -69,14 +69,14 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
                 children: [
                   Icon(Icons.calculate, size: 64, color: theme.colorScheme.primary),
                   const SizedBox(height: 16),
-                  Text('LiveCost', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('LivCost', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Text('Backend Server Address', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outline)),
+                  Text('Enter Backend Server URL', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outline)),
                   const SizedBox(height: 48),
                   TextFormField(
                     controller: _urlController,
                     decoration: const InputDecoration(
-                      labelText: 'Backend URL (FastAPI)',
+                      labelText: 'Backend URL',
                       hintText: 'http://192.168.x.x:8000',
                       prefixIcon: Icon(Icons.dns_outlined),
                     ),
@@ -94,7 +94,7 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
                     onPressed: _loading ? null : _connect,
                     child: _loading
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Connect & Verify'),
+                        : const Text('Connect'),
                   ),
                 ],
               ),
