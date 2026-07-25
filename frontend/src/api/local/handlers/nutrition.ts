@@ -14,15 +14,16 @@ export async function listNutritionIngredients(_params: Record<string, string>, 
 
 export async function getNutritionIngredient(params: Record<string, string>): Promise<any> {
   const id = parseInt(params.id)
+  if (!Number.isFinite(id)) return { nutrition_data: [], calories: 0 }
   const ingredient = await getById('ingredients', id)
-  if (!ingredient) throw { status: 404, message: `Ingredient ${id} not found` }
-  // Attach nutrition data
+  if (!ingredient) return { nutrition_data: [], calories: 0 }
   const nutrition = await getByIndex('nutrition_data', 'by_ingredient_id', id)
   return { ...ingredient, nutrition_data: nutrition || [] }
 }
 
 export async function getIngredientNutrition(params: Record<string, string>): Promise<any> {
   const id = parseInt(params.id)
+  if (!Number.isFinite(id)) return { items: [], total: 0 }
   const all = await getByIndex('nutrition_data', 'by_ingredient_id', id)
   return { items: all, total: all.length }
 }

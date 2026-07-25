@@ -267,6 +267,17 @@ addRoute('/meals/recommendations/generate', { post: meals.generate })
 addRoute('/meals/recommendations/refresh', { post: meals.refresh })
 addRoute('/meals/recommendations', { get: meals.getRecommendations })
 
+// ---- Proposals (local mode: always empty) ----
+const emptyList = async () => []
+const emptyOk = async () => ({ ok: true })
+addRoute('/proposals/preview', { post: async () => ({}) })
+addRoute('/proposals/policies', { get: emptyList, put: emptyOk })
+addRoute('/proposals/revert-by-user', { post: emptyOk })
+addRoute('/proposals/:id/review', { post: emptyOk })
+addRoute('/proposals/:id/revert', { post: emptyOk })
+addRoute('/proposals/:id', { get: async () => ({}) })
+addRoute('/proposals', { get: emptyList, post: async () => ({ id: 0, status: 'pending' }) })
+
 // ---- Sparklines ----
 addRoute('/sparklines/products', { get: sparklines.getProductSparklines })
 addRoute('/sparklines/ingredients', { get: sparklines.getIngredientSparklines })
