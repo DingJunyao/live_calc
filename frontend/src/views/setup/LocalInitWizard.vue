@@ -33,7 +33,17 @@
                 :disabled="importing"
               />
             </v-list>
-            <v-progress-linear v-if="importing" indeterminate class="mt-4" />
+            <!-- 导入进度显示 -->
+            <template v-if="importing">
+              <v-progress-linear
+                :model-value="importProgress"
+                :indeterminate="importProgress === 0"
+                class="mt-4 mb-2"
+                color="primary"
+                height="6"
+              />
+              <div class="text-caption text-center text-medium-emphasis">{{ importMessage }}</div>
+            </template>
           </template>
 
           <!-- Step 2: Upload ZIP -->
@@ -48,6 +58,17 @@
               :loading="importing"
             />
             <v-btn variant="text" @click="step = 1" :disabled="importing">返回</v-btn>
+            <!-- 导入进度 -->
+            <template v-if="importing">
+              <v-progress-linear
+                :model-value="importProgress"
+                :indeterminate="importProgress === 0"
+                class="mt-4 mb-2"
+                color="primary"
+                height="6"
+              />
+              <div class="text-caption text-center text-medium-emphasis">{{ importMessage }}</div>
+            </template>
           </template>
 
           <!-- Step 3: Complete -->
@@ -76,6 +97,7 @@ const router = useRouter()
 const step = ref(1)
 const importing = ref(false)
 const importMessage = ref('')
+const importProgress = ref(0) // 0-100，0 表示不确定
 
 async function importFromRepo() {
   importing.value = true
@@ -83,6 +105,7 @@ async function importFromRepo() {
   try {
     await seedBasicData()
     importMessage.value = '正在从 HowToCook 数据仓库获取文件列表...'
+    importProgress.value = 5
 
     const RAW_BASE = 'https://raw.githubusercontent.com/DingJunyao/HowToCook_json/main/out'
     const API_BASE = 'https://api.github.com/repos/DingJunyao/HowToCook_json/contents/out'
@@ -96,11 +119,11 @@ async function importFromRepo() {
     const dataFiles = ['ingredients.json', 'nutritions.json', 'units.json', 'ingredients_raw.json', 'matched_ingredients.json']
     const recipeFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.json') && !dataFiles.includes(f.name))
 
-    importMessage.value = `发现 ${recipeFiles.length} 个菜谱文件，正在下载（0/${recipeFiles.length + dataFiles.length}）...`
+    importMessage.value = `发现 ${recipeFiles.length} 个菜谱文件`
+    importProgress.value = 10
 
     const { getDb } = await import('@/api/local/database')
     const db = await getDb()
-    let progress = 0
 
     // 下载并导入单位
     try {
@@ -125,7 +148,8 @@ async function importFromRepo() {
         }
       }
     } catch { /* optional */ }
-    importMessage.value = `(1/4) 单位已导入，正在导入原料...`
+    importProgress.value = 20
+    importMessage.value = '(1/4) 单位已导入，正在导入原料...'
 
     // 下载并导入原料（ingredients.json 是对象，key=原料名）
     let ingredientCount = 0
@@ -143,7 +167,7 @@ async function importFromRepo() {
             const ingId = ing.id || idCounter++
             await tx.store.put({
               id: ingId, name,
-              category_id: null, // categories are Chinese strings, map later
+              category_id: null,
               aliases: ing.aliases || [],
               is_active: true, created_at: new Date().toISOString(),
             })
@@ -154,6 +178,7 @@ async function importFromRepo() {
         }
       }
     } catch { /* optional */ }
+    importProgress.value = 40
     importMessage.value = `(2/4) ${ingredientCount} 个原料已导入，正在下载营养数据...`
 
     // 下载并导入营养数据（nutritions.json 是数组，每项含 nutrients[] 子数组）
@@ -189,14 +214,18 @@ async function importFromRepo() {
         }
       }
     } catch { /* optional */ }
-    importMessage.value = `(3/4) 营养数据已导入，正在下载菜谱（0/${recipeFiles.length}）...`
+    importProgress.value = 50
+    importMessage.value = `(3/4) ${nutritionCount} 条营养数据已导入，正在下载菜谱（0/${recipeFiles.length}）...`
 
     // 逐个下载并导入菜谱（并行一批 10 个）
     let recipeCount = 0
+    const totalRecipes = recipeFiles.length
     const BATCH_SIZE = 10
-    for (let i = 0; i < recipeFiles.length; i += BATCH_SIZE) {
+    for (let i = 0; i < totalRecipes; i += BATCH_SIZE) {
       const batch = recipeFiles.slice(i, i + BATCH_SIZE)
-      importMessage.value = `(4/4) 正在导入菜谱 ${Math.min(i + BATCH_SIZE, recipeFiles.length)}/${recipeFiles.length}...`
+      const pct = 50 + Math.round((i / totalRecipes) * 45)
+      importProgress.value = pct
+      importMessage.value = `(4/4) 正在导入菜谱 ${Math.min(i + BATCH_SIZE, totalRecipes)}/${totalRecipes}...`
 
       const results = await Promise.allSettled(batch.map(async (file: any) => {
         const resp = await fetch(file.download_url)
@@ -243,6 +272,7 @@ async function importFromRepo() {
       await recipeTx.done
     }
 
+    importProgress.value = 100
     importMessage.value = `导入完成！${ingredientCount} 个原料，${nutritionCount} 条营养数据，${recipeCount} 个菜谱。`
     step.value = 3
   } catch (e: any) {
@@ -288,9 +318,11 @@ async function handleZipUpload(event: any) {
   if (!file) return
 
   importing.value = true
+  importProgress.value = 5
   importMessage.value = '正在解析 ZIP 数据包...'
   try {
     await seedBasicData()
+    importProgress.value = 10
 
     const { BlobReader, ZipReader } = await import('@zip.js/zip.js')
     const reader = new ZipReader(new BlobReader(file))
@@ -321,6 +353,7 @@ async function handleZipUpload(event: any) {
       imported += items.length
     }
 
+    importProgress.value = 30
     importMessage.value = `解析完成（${imported} 条记录 + ${recipeFiles.length} 个菜谱），正在写入数据库...`
 
     // 按依赖顺序导入
@@ -412,8 +445,10 @@ async function handleZipUpload(event: any) {
 
 async function skipImport() {
   importing.value = true
+  importProgress.value = 50
   try {
     await seedBasicData()
+    importProgress.value = 100
     importMessage.value = '基础单位和分类已就绪。'
     step.value = 3
   } catch (e: any) {
