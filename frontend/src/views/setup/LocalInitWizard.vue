@@ -106,16 +106,18 @@ async function importFromRepo() {
     try {
       const unitsResp = await fetch(`${RAW_BASE}/units.json`)
       if (unitsResp.ok) {
-        const units = await unitsResp.json()
-        if (Array.isArray(units) && units.length > 0) {
+        const unitsJson = await unitsResp.json()
+        const units = Array.isArray(unitsJson) ? unitsJson : Object.values(unitsJson)
+        if (units.length > 0) {
           const tx = db.transaction('units', 'readwrite')
           for (const u of units) {
-            if (u.name) {
+            if (u.name || u.abbreviation) {
               await tx.store.put({
-                id: u.id, name: u.name, abbreviation: u.abbreviation || u.name,
+                id: u.id, name: u.name || u.abbreviation,
+                abbreviation: u.abbreviation || u.name || '',
                 unit_type: u.unit_type || 'count', si_factor: u.si_factor ?? null,
-                is_si_base: u.is_si_base || false, is_common: true, display_order: u.display_order || 99,
-                plural_form: null,
+                is_si_base: u.is_si_base || false, is_common: true,
+                display_order: u.display_order || 99, plural_form: null,
               })
             }
           }
@@ -123,54 +125,62 @@ async function importFromRepo() {
         }
       }
     } catch { /* optional */ }
-    progress++
-    importMessage.value = `正在下载数据文件（${progress}/${recipeFiles.length + dataFiles.length}）...`
+    importMessage.value = `(1/4) 单位已导入，正在导入原料...`
 
-    // 下载并导入原料
+    // 下载并导入原料（ingredients.json 是对象，key=原料名）
     let ingredientCount = 0
+    const ingredientNameToId: Record<string, number> = {}
     try {
       const ingResp = await fetch(`${RAW_BASE}/ingredients.json`)
       if (ingResp.ok) {
-        const ingredients = await ingResp.json()
-        if (Array.isArray(ingredients)) {
+        const ingObj: Record<string, any> = await ingResp.json()
+        const entries = Object.entries(ingObj)
+        if (entries.length > 0) {
           const tx = db.transaction('ingredients', 'readwrite')
-          for (const ing of ingredients) {
-            if (ing.name) {
-              await tx.store.put({
-                id: ing.id, name: ing.name, category_id: ing.category_id || null,
-                aliases: ing.aliases || [], is_active: true,
-                created_at: new Date().toISOString(),
-              })
-              ingredientCount++
-            }
+          let idCounter = 1
+          for (const [key, ing] of entries) {
+            const name = ing.name || key
+            const ingId = ing.id || idCounter++
+            await tx.store.put({
+              id: ingId, name,
+              category_id: null, // categories are Chinese strings, map later
+              aliases: ing.aliases || [],
+              is_active: true, created_at: new Date().toISOString(),
+            })
+            ingredientNameToId[name] = ingId
+            ingredientCount++
           }
           await tx.done
         }
       }
     } catch { /* optional */ }
-    progress++
-    importMessage.value = `正在下载营养数据...`
+    importMessage.value = `(2/4) ${ingredientCount} 个原料已导入，正在下载营养数据...`
 
-    // 下载并导入营养数据
+    // 下载并导入营养数据（nutritions.json 是数组，每项含 nutrients[] 子数组）
     let nutritionCount = 0
     try {
       const nutResp = await fetch(`${RAW_BASE}/nutritions.json`)
       if (nutResp.ok) {
-        const nutritions = await nutResp.json()
+        const nutritions: any[] = await nutResp.json()
         if (Array.isArray(nutritions)) {
           const tx = db.transaction('nutrition_data', 'readwrite')
           const seen = new Set<string>()
-          for (const n of nutritions) {
-            if (n.ingredient_id != null && n.nutrient_name && n.amount_per_100g != null) {
-              const key = `${n.ingredient_id}-${n.nutrient_name}`
+          for (const item of nutritions) {
+            const ingName = item.ingredient_name
+            const ingId = ingredientNameToId[ingName]
+            if (!ingId || !item.nutrients) continue
+            for (const n of item.nutrients) {
+              if (!n.name || n.value == null) continue
+              const key = `${ingId}-${n.name}`
               if (seen.has(key)) continue
               seen.add(key)
               await tx.store.add({
-                ingredient_id: n.ingredient_id,
-                nutrient_name: n.nutrient_name,
-                amount_per_100g: n.amount_per_100g,
+                ingredient_id: ingId,
+                nutrient_name: n.name,
+                amount_per_100g: n.value,
                 unit: n.unit || 'g',
-                source: n.source || 'howtocook', is_verified: true,
+                source: n.name_en ? 'usda' : 'howtocook',
+                is_verified: true,
               })
               nutritionCount++
             }
@@ -179,14 +189,14 @@ async function importFromRepo() {
         }
       }
     } catch { /* optional */ }
-    progress++
+    importMessage.value = `(3/4) 营养数据已导入，正在下载菜谱（0/${recipeFiles.length}）...`
 
     // 逐个下载并导入菜谱（并行一批 10 个）
     let recipeCount = 0
     const BATCH_SIZE = 10
     for (let i = 0; i < recipeFiles.length; i += BATCH_SIZE) {
       const batch = recipeFiles.slice(i, i + BATCH_SIZE)
-      importMessage.value = `正在导入菜谱（${recipeCount}/${recipeFiles.length}）...`
+      importMessage.value = `(4/4) 正在导入菜谱 ${Math.min(i + BATCH_SIZE, recipeFiles.length)}/${recipeFiles.length}...`
 
       const results = await Promise.allSettled(batch.map(async (file: any) => {
         const resp = await fetch(file.download_url)
