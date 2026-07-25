@@ -1,5 +1,7 @@
-import 'package:dio/dio.dart';
+﻿import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'auth_interceptor.dart';
+
 
 class ApiClient {
   static ApiClient? _instance;
@@ -13,6 +15,12 @@ class ApiClient {
       headers: {'Content-Type': 'application/json'},
     ));
     dio.interceptors.add(AuthInterceptor(dio));
+    dio.interceptors.add(LogInterceptor(
+      request: true,
+      requestBody: true,
+      responseBody: true,
+      logPrint: (obj) => debugPrint(obj.toString()),
+    ));
   }
 
   static ApiClient get instance {
@@ -28,3 +36,5 @@ class ApiClient {
 
   String get baseUrl => _baseUrl;
 }
+
+

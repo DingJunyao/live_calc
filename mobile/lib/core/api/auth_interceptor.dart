@@ -12,15 +12,13 @@ class AuthInterceptor extends Interceptor {
   AuthInterceptor(this._dio);
 
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final timezone = Intl.defaultLocale ?? DateTime.now().timeZoneName;
-    options.headers['X-Timezone'] = timezone;
-    _storage.read(key: _tokenKey).then((token) {
-      if (token != null) {
-        options.headers['Authorization'] = 'Bearer $token';
-      }
-      handler.next(options);
-    });
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    options.headers['X-Timezone'] = Intl.defaultLocale ?? DateTime.now().timeZoneName;
+    try {
+      final token = await _storage.read(key: _tokenKey);
+      if (token != null) options.headers['Authorization'] = 'Bearer $token';
+    } catch (_) {}
+    handler.next(options);
   }
 
   @override
