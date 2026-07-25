@@ -338,8 +338,14 @@ export async function getRecipeNutrition(params: Record<string, string>, _query?
 
   return {
     items,
-    core_nutrients: coreNutrients,
-    all_nutrients: allNutrients,
+    per_serving_nutrition: {
+      core_nutrients: Object.fromEntries(coreNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrv_pct: n.nrv_pct }])),
+      all_nutrients: Object.fromEntries(allNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrv_pct: n.nrv_pct }])),
+    },
+    calories: allNutrients.find(n => n.nutrient_name === '能量')?.amount || 0,
+    protein: allNutrients.find(n => n.nutrient_name === '蛋白质')?.amount || 0,
+    fat: allNutrients.find(n => n.nutrient_name === '脂肪')?.amount || 0,
+    carbohydrate: allNutrients.find(n => n.nutrient_name === '碳水化合物')?.amount || 0,
   }
 }
 
