@@ -20,27 +20,22 @@ const DEFAULT_REPO_BASE =
 export function resolveImageUrl(path: string | null | undefined): string {
   if (!path) return ''
 
-  // Local mode: images stored in IndexedDB blobs, return empty string.
-  // Consumers should use loadLocalImageBlob() for async blob loading.
-  if (import.meta.env.VITE_STORAGE_MODE === 'local') {
-    return ''
-  }
-
   if (path.startsWith('http')) return path
   const base = import.meta.env.VITE_API_URL || '/api/v1'
   const isLocal = import.meta.env.VITE_STORAGE_MODE === 'local'
 
   // 本地模式：没有后端图片服务，直接走仓库远程兜底
+  // 图片路径含中文需 URL encode，否则浏览器加载失败
   if (isLocal) {
     // http(s) 已在上面返回，/static/ 和 recipes/ 等走仓库基址
     if (path.startsWith('/static/images/')) {
       const key = path.slice('/static/images/'.length)
       // 本地模式无法提供图片服务，但仓库可能有
       const repoBase = import.meta.env.VITE_DATA_REPO_IMAGE_BASE || DEFAULT_REPO_BASE
-      return `${repoBase}/${key}`
+      return `${repoBase}/${key.split('/').map(s => encodeURIComponent(s)).join('/')}`
     }
     const repoBase = import.meta.env.VITE_DATA_REPO_IMAGE_BASE || DEFAULT_REPO_BASE
-    return `${repoBase}/${path}`
+    return `${repoBase}/${path.split('/').map(s => encodeURIComponent(s)).join('/')}`
   }
 
   // 旧格式 /static/images/recipes/xxx.jpg → 提取 key → 走动态图片端点

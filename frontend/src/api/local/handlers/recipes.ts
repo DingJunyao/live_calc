@@ -31,10 +31,12 @@ async function getRecipeIngredients(recipeId: number): Promise<any[]> {
     if (ri.ingredient_id == null) {
       ri.ingredient_name = ri.ingredient_name || '未知原料'
       ri.ingredient = null
+      ri.name = ri.ingredient_name  // 组件模板用 ingredient.name
       continue
     }
     const ing = await getById('ingredients', ri.ingredient_id)
     ri.ingredient_name = ing?.name || ri.ingredient_name || `#${ri.ingredient_id}`
+    ri.name = ri.ingredient_name  // 组件模板用 ingredient.name
     ri.ingredient = ing || null
   }
   return ingredients.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
