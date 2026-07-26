@@ -259,13 +259,26 @@ export async function updateProductNutrition(params: Record<string, string>, dat
   const product = await getById('products', id)
   if (!product) throw { status: 404, message: `Product ${id} not found` }
 
+  // 提取自定义营养素数据
+  let customData: any = null
+  if (data === null || data === undefined) {
+    // 显式 null = 清除自定义覆盖，完全回退到原料营养
+    customData = null
+  } else {
+    const nutrients = data?.nutrients || data
+    if (Array.isArray(nutrients) && nutrients.length > 0) {
+      customData = nutrients
+    }
+    // 空数组 = 清除覆盖，回退到原料
+  }
+
   await putOne('products', {
     ...product,
     id,
-    custom_nutrition_data: data?.nutrients || data,
+    custom_nutrition_data: customData,
     updated_at: new Date().toISOString(),
   })
-  return data?.nutrients || data
+  return { ok: true }
 }
 
 export async function searchNutrition(_params: Record<string, string>, query?: any): Promise<any> {
