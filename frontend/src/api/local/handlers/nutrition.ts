@@ -1,6 +1,7 @@
 // Nutrition handler — ingredient/product nutrition data and weighted price lookups.
 
 import { getAll, getById, putOne, getByIndex, getDb, paginate } from '../database'
+import { calcNRV } from '../business/nutritionAggregator'
 
 export async function listNutritionIngredients(_params: Record<string, string>, query?: any): Promise<any> {
   const name = query?.name || query?.search
@@ -35,7 +36,8 @@ export async function getIngredientNutrition(params: Record<string, string>): Pr
     if (key.includes('热量') || key.includes('能量') || key.includes('calorie') || key.includes('energy')) {
       key = '能量'
     }
-    const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g' }
+    const nrpPct = calcNRV(n.nutrient_name || '', n.amount_per_100g ?? 0)
+    const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g', nrp_pct: nrpPct }
     // 只保留第一个匹配的能量值（避免多个热量字段重复）
     if (key === '能量' && allNutrients[key]) continue
     allNutrients[key] = entry
@@ -105,7 +107,7 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
 
   // Find latest price record across all products
   let latestRec: any = null
-  let total = 0
+  let totalUnitPrice = 0
   let count = 0
   const productIds = products.map((p: any) => p.id)
 
@@ -113,24 +115,33 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
     const records = await getByIndex('product_records', 'by_product_id', pid)
     if (records.length === 0) continue
     const sorted = records.sort((a: any, b: any) => (b.recorded_at || '').localeCompare(a.recorded_at || ''))
-    // Simple average
+    // 按标准量计算单价：price / standard_quantity，结果以 standard_unit 为基准
     for (const rec of records) {
-      const price = rec.price || rec.unit_price || 0
-      if (price > 0) {
-        total += price
-        count++
-      }
+      const price = rec.price ?? rec.unit_price ?? 0
+      if (price <= 0) continue
+      const qty = rec.standard_quantity ?? rec.quantity ?? 1
+      if (qty <= 0) continue
+      totalUnitPrice += price / qty
+      count++
     }
     if (!latestRec || (sorted[0]?.recorded_at || '') > (latestRec.recorded_at || '')) {
       latestRec = sorted[0]
     }
   }
 
-  if (count === 0) return { price: null, unit: null, records: 0 }
+  if (count === 0) return { average_price: null, unit: null, records: 0 }
+
+  // 默认以「斤」显示：若单价单位是「克」，×500 转成元/斤
+  let displayUnit = latestRec?.unit_name || '斤'
+  let displayPrice = totalUnitPrice / count
+  if (displayUnit === '克') {
+    displayPrice *= 500
+    displayUnit = '斤'
+  }
 
   return {
-    price: total / count,
-    unit: latestRec?.unit_name || latestRec?.unit || '斤',
+    average_price: Math.round(displayPrice * 10000) / 10000,
+    unit: displayUnit,
     records: count,
     latest_record: latestRec || null,
   }
@@ -210,7 +221,8 @@ export async function getProductNutrition(params: Record<string, string>): Promi
       key = '能量'
     }
     if (key === '能量' && allNutrients[key]) continue
-    const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g' }
+    const nrpPct = calcNRV(n.nutrient_name || '', n.amount_per_100g ?? 0)
+    const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g', nrp_pct: nrpPct }
     allNutrients[key] = entry
     if (coreNames.includes(key)) coreNutrients[key] = entry
   }
@@ -228,7 +240,9 @@ export async function getProductNutrition(params: Record<string, string>): Promi
     for (const n of customItems) {
       const key = n.nutrient_name || n.name || ''
       if (!key) continue
-      const entry = { value: n.amount_per_100g ?? n.value ?? 0, unit: n.unit || n.unit_name || 'g' }
+      const val = n.amount_per_100g ?? n.value ?? 0
+      const nrpPct = calcNRV(key, val)
+      const entry = { value: val, unit: n.unit || n.unit_name || 'g', nrp_pct: nrpPct }
       allNutrients[key] = entry
       if (coreNames.includes(key)) coreNutrients[key] = entry
     }
@@ -246,7 +260,8 @@ export async function getProductNutrition(params: Record<string, string>): Promi
     for (const n of customItems) {
       const key = n.nutrient_name || n.name || ''
       if (!key) continue
-      const entry = { value: n.amount_per_100g ?? n.value ?? 0, unit: n.unit || n.unit_name || 'g' }
+      const val = n.amount_per_100g ?? n.value ?? 0
+      const entry = { value: val, unit: n.unit || n.unit_name || 'g' }
       customAll[key] = entry
       if (coreNames.includes(key)) customCore[key] = entry
     }

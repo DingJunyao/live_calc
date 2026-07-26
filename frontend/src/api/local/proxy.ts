@@ -144,7 +144,7 @@ import * as meals from './handlers/meals'
 import * as sparklines from './handlers/sparklines'
 import * as usda from './handlers/usda'
 import * as agents from './handlers/agents'
-import { getExportData, uploadImport } from './handlers/exportImport'
+import { getExportData, uploadImport, listTasks, getTask } from './handlers/exportImport'
 
 // ---- Auth ----
 addRoute('/auth/config', { get: auth.getConfig })
@@ -293,6 +293,8 @@ addRoute('/agent/sessions', { get: agents.listSessions, post: agents.createSessi
 // ---- Export / Import ----
 addRoute('/export/data', { get: getExportData })
 addRoute('/import/data/upload', { post: uploadImport })
+addRoute('/import/tasks', { get: listTasks })
+addRoute('/import/task/:id', { get: getTask })
 
 // ---- Places ----
 addRoute('/places', { get: merchants.listUserPlaces, post: merchants.createUserPlace })

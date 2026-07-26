@@ -26,18 +26,27 @@ async function resolveIngredientId(name: string): Promise<number | null> {
 /** 获取菜谱的原料列表，附带食材名。 */
 async function getRecipeIngredients(recipeId: number): Promise<any[]> {
   const ingredients = await getByIndex('recipe_ingredients', 'by_recipe_id', recipeId)
+  // 预加载单位 ID→名称映射
+  const allUnits = await getAll('units')
+  const unitIdToName: Record<number, string> = {}
+  for (const u of allUnits) {
+    if (u.id != null && u.name) unitIdToName[u.id] = u.name
+  }
+
   // 附加食材名（无 ingredient_id 的跳过，用 ingredient_name 字段）
   for (const ri of ingredients) {
     if (ri.ingredient_id == null) {
       ri.ingredient_name = ri.ingredient_name || '未知原料'
       ri.ingredient = null
       ri.name = ri.ingredient_name  // 组件模板用 ingredient.name
+      ri.unit = ri.unit || unitIdToName[ri.unit_id] || ''
       continue
     }
     const ing = await getById('ingredients', ri.ingredient_id)
     ri.ingredient_name = ing?.name || ri.ingredient_name || `#${ri.ingredient_id}`
     ri.name = ri.ingredient_name  // 组件模板用 ingredient.name
     ri.ingredient = ing || null
+    ri.unit = ri.unit || unitIdToName[ri.unit_id] || ''
   }
   return ingredients.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 }
@@ -339,8 +348,8 @@ export async function getRecipeNutrition(params: Record<string, string>, _query?
   return {
     items,
     per_serving_nutrition: {
-      core_nutrients: Object.fromEntries(coreNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrv_pct: n.nrv_pct }])),
-      all_nutrients: Object.fromEntries(allNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrv_pct: n.nrv_pct }])),
+      core_nutrients: Object.fromEntries(coreNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrp_pct: n.nrv_pct }])),
+      all_nutrients: Object.fromEntries(allNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrp_pct: n.nrv_pct }])),
     },
     calories: allNutrients.find(n => n.nutrient_name === '能量')?.amount || 0,
     protein: allNutrients.find(n => n.nutrient_name === '蛋白质')?.amount || 0,

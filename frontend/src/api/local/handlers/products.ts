@@ -30,7 +30,37 @@ export async function getEntity(params: Record<string, string>): Promise<any> {
     const ing = await getById('ingredients', product.ingredient_id)
     ingredientName = ing?.name || ''
   }
-  return { ...product, barcodes: barcodes || [], ingredient_name: ingredientName }
+  // Attach latest price（复用自身的 getLatestPrice 计算逻辑）
+  let latestPrice: number | null = null
+  let latestPriceUnit: string | null = null
+  try {
+    const records = await getByIndex('product_records', 'by_product_id', id)
+    if (records.length > 0) {
+      let total = 0, count = 0
+      for (const rec of records) {
+        const p = rec.price ?? rec.unit_price ?? 0
+        if (p <= 0) continue
+        const qty = rec.standard_quantity ?? rec.quantity ?? 1
+        if (qty <= 0) continue
+        total += p / qty
+        count++
+      }
+      if (count > 0) {
+        let up = total / count
+        let u = records[0]?.unit_name || '斤'
+        if (u === '克') { up *= 500; u = '斤' }
+        latestPrice = Math.round(up * 10000) / 10000
+        latestPriceUnit = u
+      }
+    }
+  } catch { /* latest price is optional */ }
+  return {
+    ...product,
+    barcodes: barcodes || [],
+    ingredient_name: ingredientName,
+    latest_price: latestPrice,
+    latest_price_unit: latestPriceUnit,
+  }
 }
 
 export async function createEntity(_params: Record<string, string>, data?: any): Promise<any> {
@@ -103,6 +133,13 @@ export async function listRecords(_params: Record<string, string>, query?: any):
   const endDate = query?.end_date || query?.endDate
   if (endDate) {
     all = all.filter((r: any) => (r.recorded_at || '') <= endDate)
+  }
+
+  // 运行时空缺字段兜底（兼容旧导入数据）
+  for (const r of all) {
+    if (r.original_unit == null) r.original_unit = r.original_unit_name || ''
+    if (r.unit_name == null) r.unit_name = r.standard_unit_name || ''
+    if (r.original_quantity == null) r.original_quantity = r.quantity ?? 1
   }
 
   // Sort by recorded_at descending
@@ -211,25 +248,34 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
   const records = await getByIndex('product_records', 'by_product_id', productId)
 
   if (records.length === 0) {
-    return { price: null, unit: null, records: 0 }
+    return { average_price: null, unit: null, records: 0 }
   }
 
   records.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
 
-  // Simple average of all records
-  let total = 0
+  // 按标准量计算单价：price / standard_quantity
+  let totalUnitPrice = 0
   let count = 0
   for (const rec of records) {
-    const p = rec.price ?? rec.unit_price
-    if (p && p > 0) {
-      total += p
-      count++
-    }
+    const p = rec.price ?? rec.unit_price ?? 0
+    if (p <= 0) continue
+    const qty = rec.standard_quantity ?? rec.quantity ?? 1
+    if (qty <= 0) continue
+    totalUnitPrice += p / qty
+    count++
+  }
+
+  // 默认以「斤」显示：若单价单位是「克」，×500 转成元/斤
+  let displayUnit = records[0]?.unit_name || '斤'
+  let displayPrice = count > 0 ? totalUnitPrice / count : 0
+  if (displayUnit === '克') {
+    displayPrice *= 500
+    displayUnit = '斤'
   }
 
   return {
-    price: count > 0 ? total / count : null,
-    unit: records[0]?.unit_name || records[0]?.unit || '斤',
+    average_price: displayPrice > 0 ? Math.round(displayPrice * 10000) / 10000 : null,
+    unit: displayUnit,
     records: count,
     latest_record: records[0],
   }
@@ -238,9 +284,20 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
 export async function getLatestPriceByMerchant(params: Record<string, string>): Promise<any> {
   // Return per-merchant pricing for a product
   const id = parseInt(params.id)
-  if (!Number.isFinite(id)) return []
+  if (!Number.isFinite(id)) return { prices: [], unit: null }
   const records = await getByIndex('product_records', 'by_product_id', id)
-  return records
+  // 前端模板期望 { prices: [...], unit: "..." }
+  return {
+    prices: records.map((r: any) => ({
+      unit_name: r.unit_name || r.original_unit_name || '',
+      price: r.price ?? 0,
+      quantity: r.original_quantity ?? 1,
+      merchant_id: r.merchant_id,
+      merchant_name: r.merchant_name || '',
+      recorded_at: r.recorded_at,
+    })),
+    unit: records[0]?.unit_name || '斤',
+  }
 }
 
 export async function getProductHistory(params: Record<string, string>): Promise<any> {
