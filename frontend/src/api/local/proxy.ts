@@ -299,6 +299,7 @@ addRoute('/places', { get: merchants.listUserPlaces, post: merchants.createUserP
 
 // ---- Products extra routes ----
 addRoute('/products/entity/:id/latest-price-by-merchant', { get: products.getLatestPriceByMerchant })
+addRoute('/products/entity/:id/nutrition', { put: nutrition.updateProductNutrition })
 addRoute('/products/history/:productName', { get: products.getProductHistory })
 
 // ---- Nutrition extra routes ----
