@@ -227,11 +227,30 @@ export async function getProductNutrition(params: Record<string, string>): Promi
     }
   }
 
+  // 构建 custom_nutrition_data（前端编辑表单需要区分哪些是用户自定义的）
+  const customAll: Record<string, any> = {}
+  const customCore: Record<string, any> = {}
+  if (product.custom_nutrition_data) {
+    const cnd = product.custom_nutrition_data
+    let customItems: any[] = []
+    if (Array.isArray(cnd)) customItems = cnd
+    else if (cnd?.items) customItems = cnd.items
+    else if (cnd?.nutrients) customItems = cnd.nutrients
+    for (const n of customItems) {
+      const key = n.nutrient_name || n.name || ''
+      if (!key) continue
+      const entry = { value: n.amount_per_100g ?? n.value ?? 0, unit: n.unit || n.unit_name || 'g' }
+      customAll[key] = entry
+      if (coreNames.includes(key)) customCore[key] = entry
+    }
+  }
+
   return {
     items: Object.entries(allNutrients).map(([k, v]) => ({ nutrient_name: k, ...v })),
     total: Object.keys(allNutrients).length,
     source,
     nutrition: { core_nutrients: coreNutrients, all_nutrients: allNutrients },
+    custom_nutrition_data: { core_nutrients: customCore, all_nutrients: customAll },
   }
 }
 

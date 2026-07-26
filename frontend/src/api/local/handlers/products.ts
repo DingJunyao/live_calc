@@ -24,7 +24,13 @@ export async function getEntity(params: Record<string, string>): Promise<any> {
   if (!product) throw { status: 404, message: `Product ${id} not found` }
   // Attach barcodes
   const barcodes = await getByIndex('product_barcodes', 'by_product_id', id)
-  return { ...product, barcodes: barcodes || [] }
+  // Attach ingredient name
+  let ingredientName = ''
+  if (product.ingredient_id) {
+    const ing = await getById('ingredients', product.ingredient_id)
+    ingredientName = ing?.name || ''
+  }
+  return { ...product, barcodes: barcodes || [], ingredient_name: ingredientName }
 }
 
 export async function createEntity(_params: Record<string, string>, data?: any): Promise<any> {
