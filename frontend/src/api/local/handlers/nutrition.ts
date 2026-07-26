@@ -25,13 +25,19 @@ export async function getIngredientNutrition(params: Record<string, string>): Pr
   const id = parseInt(params.id)
   if (!Number.isFinite(id)) return { items: [], total: 0, nutrition: { core_nutrients: {}, all_nutrients: {} } }
   const all = await getByIndex('nutrition_data', 'by_ingredient_id', id)
-  // 构建前端需要的 nutrition 格式：{ core_nutrients: { "能量": { value, unit }, ... }, all_nutrients: { "铁": { value, unit }, ... } }
-  const coreNames = ['能量', '蛋白质', '脂肪', '碳水化合物', '钠']
+  // 构建前端需要的 nutrition 格式
+  const coreNames = ['能量', '热量', '蛋白质', '脂肪', '碳水化合物', '钠']
   const allNutrients: Record<string, any> = {}
   const coreNutrients: Record<string, any> = {}
   for (const n of all) {
-    const key = n.nutrient_name || ''
+    let key = n.nutrient_name || ''
+    // 统一能量键名：USDA → 能量，HowToCook → 热量
+    if (key.includes('热量') || key.includes('能量') || key.includes('calorie') || key.includes('energy')) {
+      key = '能量'
+    }
     const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g' }
+    // 只保留第一个匹配的能量值（避免多个热量字段重复）
+    if (key === '能量' && allNutrients[key]) continue
     allNutrients[key] = entry
     if (coreNames.includes(key)) coreNutrients[key] = entry
   }
@@ -61,34 +67,30 @@ export async function getIngredientNutritionBase(params: Record<string, string>)
 
 export async function updateIngredientNutrition(params: Record<string, string>, data?: any): Promise<any> {
   const ingredientId = parseInt(params.id)
-  const nutrients = data?.nutrients || data
+  const nutrients: any[] = Array.isArray(data?.nutrients) ? data.nutrients : (Array.isArray(data) ? data : [])
 
-  // Use a single readwrite transaction for both delete and insert
   const db = await getDb()
+
+  // 先将前端字段名映射为数据库字段
+  const mapped = nutrients.map(n => ({
+    nutrient_name: n.nutrient_name || n.name || '',
+    amount_per_100g: n.amount_per_100g ?? n.value ?? 0,
+    unit: n.unit || 'g',
+    source: n.source || 'custom',
+    is_verified: true,
+    ingredient_id: ingredientId,
+  })).filter(n => n.nutrient_name)
+
+  if (mapped.length === 0) return { items: [], message: 'no nutrients' }
+
+  // Delete-all-then-insert：编辑表单加载了全部营养素，发回的是完整列表
   const tx = db.transaction('nutrition_data', 'readwrite')
   const store = tx.store
-
-  // Delete existing records for this ingredient
-  const index = store.index('by_ingredient_id')
-  const existing = await index.getAll(ingredientId)
-  for (const item of existing) {
-    await store.delete(item.id)
-  }
-
-  // Insert new records
-  for (const n of (Array.isArray(nutrients) ? nutrients : [nutrients])) {
-    await store.add({
-      ...n,
-      ingredient_id: ingredientId,
-      is_verified: true,
-      source: 'custom',
-      created_at: new Date().toISOString(),
-    })
-  }
-
+  const existing = await store.index('by_ingredient_id').getAll(ingredientId)
+  for (const item of existing) await store.delete(item.id)
+  for (const n of mapped) await store.add({ ...n, created_at: new Date().toISOString() })
   await tx.done
 
-  // Read back the inserted data
   const created = await getByIndex('nutrition_data', 'by_ingredient_id', ingredientId)
   return { items: created }
 }
@@ -198,11 +200,16 @@ export async function getProductNutrition(params: Record<string, string>): Promi
   }
 
   // 构建基础营养映射
-  const coreNames = ['能量', '蛋白质', '脂肪', '碳水化合物', '钠']
+  const coreNames = ['能量', '热量', '蛋白质', '脂肪', '碳水化合物', '钠']
   const allNutrients: Record<string, any> = {}
   const coreNutrients: Record<string, any> = {}
   for (const n of baseNutrients) {
-    const key = n.nutrient_name || ''
+    let key = n.nutrient_name || ''
+    // 统一能量键名
+    if (key.includes('热量') || key.includes('能量') || key.includes('calorie') || key.includes('energy')) {
+      key = '能量'
+    }
+    if (key === '能量' && allNutrients[key]) continue
     const entry = { value: n.amount_per_100g ?? 0, unit: n.unit || 'g' }
     allNutrients[key] = entry
     if (coreNames.includes(key)) coreNutrients[key] = entry
