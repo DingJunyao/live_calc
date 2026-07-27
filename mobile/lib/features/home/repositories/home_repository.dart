@@ -1,4 +1,5 @@
-﻿import '../../../core/api/api_client.dart';
+/// Home repository: calls backend api to fetch today's meal recommendations.
+import '../../../core/api/api_client.dart';
 import '../models/meal_recommendation.dart';
 
 class HomeRepository {
@@ -7,12 +8,12 @@ class HomeRepository {
   HomeRepository({ApiClient? client}) : _client = client ?? ApiClient.instance;
 
   Future<DailyRecommendation> getTodayRecommendation() async {
-    final response = await _client.dio.get('/meals/today');
+    final response = await _client.dio.get('/meals/recommendations');
     return DailyRecommendation.fromJson(response.data as Map<String, dynamic>);
   }
 
-  Future<DailyRecommendation> refreshToday() async {
-    final response = await _client.dio.post('/meals/today/refresh');
+  Future<DailyRecommendation> triggerGenerate() async {
+    final response = await _client.dio.post('/meals/recommendations/generate');
     return DailyRecommendation.fromJson(response.data as Map<String, dynamic>);
   }
 }

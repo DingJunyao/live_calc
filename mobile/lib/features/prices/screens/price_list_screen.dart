@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../models/price_record.dart';
 import '../providers/price_provider.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/error_display.dart';
@@ -63,14 +64,34 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
           final r = state.records[i];
           return ListTile(
             title: Text(r.productName),
-            subtitle: Text(r.merchantName ?? ''),
+            subtitle: Text(_recordSubtitle(r)),
             trailing: Text(
-              '¥${r.unitPrice.toStringAsFixed(2)}',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              '¥${r.price.toStringAsFixed(2)}',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
           );
         },
       ),
     );
+  }
+
+  /// 副标题：商家 · 数量+单位（如 “永辉 · 1.15kg”）。
+  String _recordSubtitle(PriceRecord r) {
+    final parts = <String>[];
+    if (r.merchantName != null && r.merchantName!.isNotEmpty) {
+      parts.add(r.merchantName!);
+    }
+    parts.add('${_fmtQty(r.quantity)}${r.unit}');
+    return parts.join(' · ');
+  }
+
+  /// 整数不带小数，否则最多两位并去掉尾随 0。
+  String _fmtQty(double q) {
+    if (q == q.truncateToDouble()) return q.toInt().toString();
+    var s = q.toStringAsFixed(2);
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    s = s.replaceFirst(RegExp(r'\.$'), '');
+    return s;
   }
 }

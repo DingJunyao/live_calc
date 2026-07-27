@@ -1,6 +1,5 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:intl/intl.dart';
 
 class AuthInterceptor extends Interceptor {
   final Dio _dio;
@@ -13,7 +12,7 @@ class AuthInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
-    options.headers['X-Timezone'] = Intl.defaultLocale ?? DateTime.now().timeZoneName;
+    options.headers['X-Timezone'] = _formatUtcOffset();
     try {
       final token = await _storage.read(key: _tokenKey);
       if (token != null) options.headers['Authorization'] = 'Bearer $token';
@@ -46,6 +45,19 @@ class AuthInterceptor extends Interceptor {
     handler.next(err);
   }
 
+  /// Formats timezone offset as ASCII-safe UTC+HH:mm (e.g. UTC+08:00, UTC-05:00).
+  String _formatUtcOffset() {
+    final offset = DateTime.now().timeZoneOffset;
+    final totalMinutes = offset.inMinutes;
+    final sign = totalMinutes.isNegative ? '-' : '+';
+    final absMinutes = totalMinutes.abs();
+    final hours = absMinutes ~/ 60;
+    final minutes = absMinutes % 60;
+    final hh = hours.toString().padLeft(2, '0');
+    final mm = minutes.toString().padLeft(2, '0');
+    return 'UTC' + sign + hh + ':' + mm;
+  }
+
   static Future<void> saveTokens(String accessToken, String refreshToken) async {
     final storage = const FlutterSecureStorage();
     await storage.write(key: _tokenKey, value: accessToken);
@@ -60,4 +72,3 @@ class AuthInterceptor extends Interceptor {
 
   static Future<String?> get accessToken => const FlutterSecureStorage().read(key: _tokenKey);
 }
-

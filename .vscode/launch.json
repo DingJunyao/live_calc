@@ -33,6 +33,12 @@
             // "program": "${workspaceFolder}/backend/run.py",
             "cwd": "${workspaceFolder}/backend",
             "jinja": true
+        },
+        {
+            "name": "Flutter",
+            "type": "dart",
+            "request": "launch",
+            "program": "mobile/lib/main.dart" 
         }
     ]
 }

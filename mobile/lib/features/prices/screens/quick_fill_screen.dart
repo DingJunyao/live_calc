@@ -44,7 +44,10 @@ class _QuickFillScreenState extends ConsumerState<QuickFillScreen> {
   Future<void> _loadMerchants() async {
     try {
       final resp = await _repo.client.dio.get('/merchants');
-      final list = resp.data as List<dynamic>;
+      // ?? /merchants ???? {items, total, ...}??????? List ???
+      final list = (resp.data is List)
+          ? resp.data as List<dynamic>
+          : (resp.data['items'] as List<dynamic>);
       setState(() {
         _merchants = list.cast<Map<String, dynamic>>();
         _filteredMerchants = _merchants;
@@ -112,15 +115,21 @@ class _QuickFillScreenState extends ConsumerState<QuickFillScreen> {
       final price = double.tryParse(priceStr);
       if (price == null || price <= 0) continue;
 
+      final name = row.nameController.text.trim();
+      // ???? id ?????????
+      if (row.productId == null && name.isEmpty) continue;
+
       try {
-        await _repo.client.dio.post('/products', data: {
-          'name': row.nameController.text.trim(),
-          'amount': price,
-          'quantity': 1,
-          'unit': row.unit,
-          'merchant_id': _selectedMerchantId,
-        });
-        saved++;
+        await _repo.createRecord(
+          productId: row.productId,
+          productName: row.productId == null ? name : null,
+          price: price,
+          quantity: 1,
+          unit: row.unit,
+          merchantId: _selectedMerchantId,
+         recordType: 'price',
+        );
+         saved++;
       } catch (_) {}
     }
 

@@ -1,4 +1,4 @@
-﻿class MealRecommendation {
+class MealRecommendation {
   final String mealType; // breakfast, lunch, dinner
   final int? recipeId;
   final String? recipeName;
@@ -14,26 +14,29 @@
   });
 
   factory MealRecommendation.fromJson(Map<String, dynamic> json) {
+    final recipe = json['recipe'] as Map<String, dynamic>?;
     return MealRecommendation(
       mealType: json['meal_type'] as String? ?? '',
-      recipeId: json['recipe_id'] as int?,
-      recipeName: json['recipe_name'] as String?,
-      estimatedCost: (json['estimated_cost'] as num?)?.toDouble(),
-      imageUrl: json['image_url'] as String?,
+      recipeId: recipe?['id'] as int?,
+      recipeName: recipe?['name'] as String?,
+      estimatedCost: (recipe?['cost_estimate'] as num?)?.toDouble(),
+      imageUrl: (recipe?['image_urls'] as List<dynamic>?)?.firstOrNull?.toString(),
     );
   }
 }
 
 class DailyRecommendation {
   final String date;
+  final String status;
   final List<MealRecommendation> meals;
 
-  const DailyRecommendation({required this.date, required this.meals});
+  const DailyRecommendation({required this.date, this.status = 'ready', this.meals = const []});
 
   factory DailyRecommendation.fromJson(Map<String, dynamic> json) {
     return DailyRecommendation(
       date: json['date'] as String? ?? '',
-      meals: (json['meals'] as List<dynamic>?)
+      status: json['status'] as String? ?? 'ready',
+      meals: (json['recommendations'] as List<dynamic>?)
               ?.map((e) => MealRecommendation.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
