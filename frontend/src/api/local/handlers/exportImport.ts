@@ -372,7 +372,7 @@ export async function uploadImport(
         }
       } else {
         // 单菜谱
-        const result = await importRecipe(db, data)
+        const result = await importRecipe(db, data, resolveLocalUnitId)
         recipeCount++
         ingredientCount += result.count
         if (result.images.length > 0) {

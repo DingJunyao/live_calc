@@ -318,8 +318,31 @@ export async function searchNutrition(_params: Record<string, string>, query?: a
   return { items: matched, total: matched.length }
 }
 
-export async function getIngredientRecipes(params: Record<string, string>): Promise<any> {
+export async function getIngredientRecipes(params: Record<string, string>, query?: any): Promise<any> {
   const id = parseInt(params.id)
-  if (!Number.isFinite(id)) return []
-  return getByIndex('recipe_ingredients', 'by_ingredient_id', id)
+  if (!Number.isFinite(id)) return { items: [], total: 0 }
+
+  const skip = parseInt(query?.skip) || 0
+  const limit = parseInt(query?.limit) || 50
+
+  // 查含该原料的菜谱关联，按 recipe_id 去重后取菜谱详情
+  const ris = await getByIndex('recipe_ingredients', 'by_ingredient_id', id)
+  const recipeIds = [...new Set(ris.map((r: any) => r.recipe_id))]
+
+  const items: any[] = []
+  for (const rid of recipeIds) {
+    const rec = await getById('recipes', rid)
+    if (!rec || rec.is_active === false) continue
+    items.push({
+      id: rec.id,
+      name: rec.name,
+      images: rec.images || [],
+      category: rec.category,
+      difficulty: rec.difficulty,
+      servings: rec.servings,
+      // local 模式单用户，菜谱可见性与发布无关；缺字段时按公开处理，避免误标「未发布」
+      is_public: rec.is_public ?? true,
+    })
+  }
+  return { items: items.slice(skip, skip + limit), total: items.length }
 }

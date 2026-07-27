@@ -94,6 +94,7 @@ export function calculateCost(input: CostInput): CostResult {
   for (const ing of input.ingredients) {
     if (ing.is_optional) {
       perIngredient.push({
+        recipe_ingredient_id: ing.recipe_ingredient_id,
         ingredient_id: ing.ingredient_id,
         ingredient_name: ing.ingredient_name,
         cost: 0,
@@ -111,6 +112,7 @@ export function calculateCost(input: CostInput): CostResult {
 
     if (effectiveQty <= 0) {
       perIngredient.push({
+        recipe_ingredient_id: ing.recipe_ingredient_id,
         ingredient_id: ing.ingredient_id,
         ingredient_name: ing.ingredient_name,
         cost: 0,
@@ -159,6 +161,7 @@ export function calculateCost(input: CostInput): CostResult {
 
         const ingredientCost = convertedQty * weightedPrice.pricePerUnit
         perIngredient.push({
+          recipe_ingredient_id: ing.recipe_ingredient_id,
           ingredient_id: ing.ingredient_id,
           ingredient_name: ing.ingredient_name,
           cost: ingredientCost,
@@ -203,6 +206,7 @@ export function calculateCost(input: CostInput): CostResult {
 
       const fallbackCost = convertedQty * fallback.pricePerUnit
       perIngredient.push({
+        recipe_ingredient_id: ing.recipe_ingredient_id,
         ingredient_id: ing.ingredient_id,
         ingredient_name: ing.ingredient_name,
         cost: fallbackCost,
@@ -218,6 +222,7 @@ export function calculateCost(input: CostInput): CostResult {
 
     // 所有途径均失败，记零
     perIngredient.push({
+      recipe_ingredient_id: ing.recipe_ingredient_id,
       ingredient_id: ing.ingredient_id,
       ingredient_name: ing.ingredient_name,
       cost: 0,

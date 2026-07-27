@@ -118,6 +118,14 @@ export async function autocomplete(_params: Record<string, string>, query?: any)
 export async function listRecords(_params: Record<string, string>, query?: any): Promise<any> {
   let all = await getAll('product_records')
 
+  // 按原料过滤：查出该原料下所有商品 id，再筛价格记录（原料详情页用）
+  const ingredientId = query?.ingredient_id
+  if (ingredientId) {
+    const products = await getByIndex('products', 'by_ingredient_id', parseInt(ingredientId))
+    const productIds = products.map((p: any) => p.id)
+    all = all.filter((r: any) => productIds.includes(r.product_id))
+  }
+
   const productId = query?.product_id
   if (productId) {
     all = all.filter((r: any) => r.product_id === parseInt(productId))

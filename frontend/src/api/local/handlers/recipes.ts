@@ -2,7 +2,7 @@
 
 import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
 import { calculateCost, type CostInput, type CostCalcIngredient, type CostCalcProduct, type CostCalcPriceRecord, type CostCalcUnit, type CostCalcHierarchy } from '../business/costCalculator'
-import { aggregateIngredients, type AggregationInput, type AggregationInputMulti } from '../business/nutritionAggregator'
+import { aggregateIngredients, calcNRV, type AggregationInput, type AggregationInputMulti } from '../business/nutritionAggregator'
 import { convert, type UnitInfo, type EntityOverride, type DensityInfo } from '../business/unitConverter'
 
 // ============================================================
@@ -201,6 +201,7 @@ export async function getRecipeCost(params: Record<string, string>, _query?: any
     currency: result.currency,
     cost_per_serving: result.cost_per_serving,
     cost_breakdown: result.per_ingredient.map(pi => ({
+      recipe_ingredient_id: pi.recipe_ingredient_id,
       ingredient_id: pi.ingredient_id,
       ingredient_name: pi.ingredient_name,
       quantity: pi.quantity,
@@ -348,8 +349,8 @@ export async function getRecipeNutrition(params: Record<string, string>, _query?
   return {
     items,
     per_serving_nutrition: {
-      core_nutrients: Object.fromEntries(coreNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrp_pct: n.nrv_pct }])),
-      all_nutrients: Object.fromEntries(allNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrp_pct: n.nrv_pct }])),
+      core_nutrients: Object.fromEntries(coreNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrp_pct: calcNRV(n.nutrient_name, n.amount) }])),
+      all_nutrients: Object.fromEntries(allNutrients.map(n => [n.nutrient_name, { value: n.amount, unit: n.unit, amount_per_100g: n.amount_per_100g, nrp_pct: calcNRV(n.nutrient_name, n.amount) }])),
     },
     calories: allNutrients.find(n => n.nutrient_name === '能量')?.amount || 0,
     protein: allNutrients.find(n => n.nutrient_name === '蛋白质')?.amount || 0,
