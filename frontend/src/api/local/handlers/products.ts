@@ -1,6 +1,8 @@
 // Products handler — product entities, price records, barcodes, weights.
 
 import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
+import { aggregatePrices } from '../business/priceNormalize'
+import type { UnitInfo, EntityOverride, DensityInfo } from '../business/unitConverter'
 
 // ============================================================
 // Product Entity CRUD
@@ -36,21 +38,18 @@ export async function getEntity(params: Record<string, string>): Promise<any> {
   try {
     const records = await getByIndex('product_records', 'by_product_id', id)
     if (records.length > 0) {
-      let total = 0, count = 0
-      for (const rec of records) {
-        const p = rec.price ?? rec.unit_price ?? 0
-        if (p <= 0) continue
-        const qty = rec.standard_quantity ?? rec.quantity ?? 1
-        if (qty <= 0) continue
-        total += p / qty
-        count++
-      }
-      if (count > 0) {
-        let up = total / count
-        let u = records[0]?.unit_name || '斤'
-        if (u === '克') { up *= 500; u = '斤' }
-        latestPrice = Math.round(up * 10000) / 10000
-        latestPriceUnit = u
+      // 按单位类型分组归一化，避免质量/计数混算（鸡蛋类问题的根因）
+      const [units, overrides, densities] = await Promise.all([
+        getAll('units') as Promise<UnitInfo[]>,
+        getAll('entity_unit_overrides') as Promise<EntityOverride[]>,
+        getAll('entity_densities') as Promise<DensityInfo[]>,
+      ])
+      // 覆盖表按 ingredient 维护，用 product.ingredient_id 查找；缺则回退到商品 id
+      const entId = product.ingredient_id ?? id
+      const agg = aggregatePrices(records, units, overrides, densities, 'ingredient', entId)
+      if (agg.average_price != null) {
+        latestPrice = agg.average_price
+        latestPriceUnit = agg.unit
       }
     }
   } catch { /* latest price is optional */ }
@@ -261,30 +260,22 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
 
   records.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
 
-  // 按标准量计算单价：price / standard_quantity
-  let totalUnitPrice = 0
-  let count = 0
-  for (const rec of records) {
-    const p = rec.price ?? rec.unit_price ?? 0
-    if (p <= 0) continue
-    const qty = rec.standard_quantity ?? rec.quantity ?? 1
-    if (qty <= 0) continue
-    totalUnitPrice += p / qty
-    count++
-  }
-
-  // 默认以「斤」显示：若单价单位是「克」，×500 转成元/斤
-  let displayUnit = records[0]?.unit_name || '斤'
-  let displayPrice = count > 0 ? totalUnitPrice / count : 0
-  if (displayUnit === '克') {
-    displayPrice *= 500
-    displayUnit = '斤'
-  }
+  // 按单位类型分组归一化：质量记录返回 ¥/斤，计数记录单独 ¥/个，不混算
+  const product = await getById('products', productId)
+  const [units, overrides, densities] = await Promise.all([
+    getAll('units') as Promise<UnitInfo[]>,
+    getAll('entity_unit_overrides') as Promise<EntityOverride[]>,
+    getAll('entity_densities') as Promise<DensityInfo[]>,
+  ])
+  const entId = product?.ingredient_id ?? productId
+  const agg = aggregatePrices(records, units, overrides, densities, 'ingredient', entId)
 
   return {
-    average_price: displayPrice > 0 ? Math.round(displayPrice * 10000) / 10000 : null,
-    unit: displayUnit,
-    records: count,
+    average_price: agg.average_price,
+    unit: agg.average_price != null ? agg.unit : null,
+    min_price: agg.min_price,
+    max_price: agg.max_price,
+    records: agg.records,
     latest_record: records[0],
   }
 }

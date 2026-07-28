@@ -1208,6 +1208,8 @@ import { formatToLocalDate, formatToLocalDateTimeShort } from '@/utils/timezone'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useUserUnits } from '@/composables/useUserUnits'
 import { buildNutrientDefinitions } from '@/composables/nutrientDefinitions'
+import { normalizeRecordToJin } from '@/api/local/business/priceNormalize'
+import type { UnitInfo, EntityOverride, DensityInfo } from '@/api/local/business/unitConverter'
 
 const { ask } = useConfirmDialog()
 const userStore = useUserStore()
@@ -1630,6 +1632,37 @@ const entityUnits = ref<EntityUnitOverride[]>([])
 const unmappedUnits = ref<UnmappedUnitItem[]>([])
 const entityDensity = ref<EntityDensity | null>(null)
 const loadingUnits = ref(false)
+// 价格趋势归一化所需的辅助数据：单位表、实体单位覆盖（按 ingredient）、密度
+const priceUnits = ref<UnitInfo[]>([])
+const priceOverrides = ref<EntityOverride[]>([])
+const priceDensities = ref<DensityInfo[]>([])
+const loadPriceNormalizeData = async () => {
+  try {
+    const [u, ov] = await Promise.all([
+      api.get('/units/'),
+      // 覆盖表按 ingredient 维护；商品页用其 ingredient_id 查找
+      product.value?.ingredient_id
+        ? api.get(`/entities/ingredient/${product.value.ingredient_id}/units`)
+        : Promise.resolve([]),
+    ])
+    const uArr: any[] = Array.isArray(u) ? u : (u?.items || [])
+    priceUnits.value = uArr.map((x: any) => ({
+      id: x.id, unit_type: x.unit_type, si_factor: x.si_factor, abbreviation: x.abbreviation, name: x.name,
+    }))
+    const ovArr: any[] = Array.isArray(ov) ? ov : (ov?.items || ov || [])
+    priceOverrides.value = ovArr.map((x: any) => ({
+      entity_type: x.entity_type || 'ingredient',
+      entity_id: x.entity_id ?? product.value?.ingredient_id ?? 0,
+      base_unit_id: x.base_unit_id ?? null,
+      conversion_factor: x.conversion_factor ?? null,
+      weight_per_unit: x.weight_per_unit ?? null,
+      weight_unit_id: x.weight_unit_id ?? null,
+      weight_unit_name: x.weight_unit_name,
+    }))
+  } catch (e) {
+    console.error('加载价格归一化数据失败', e)
+  }
+}
 const showUnitDialog = ref(false)
 const showDensityDialog = ref(false)
 const savingUnit = ref(false)
@@ -2094,15 +2127,26 @@ const chartData = computed(() => {
 
     const dateKey = date.toISOString().split('T')[0]
 
-    // 计算单价，使用 standard_quantity（克）统一单位
-    // 归一化到 ¥/斤（1斤=500g），确保不同单位的记录可比较
-    const standardQty = parseFloat(String(record.standard_quantity))
-    const price = parseFloat(String(record.price)) || 0
-    // 先归一化到 ¥/斤，再按用户质量偏好单位折算（convertFromJin 未知单位时保持斤）
-    const unitPriceJin = standardQty && standardQty > 0
-      ? price * 500 / standardQty
-      : price / (parseFloat(String(record.original_quantity)) || 1)
-    const unitPrice = convertFromJin(unitPriceJin) ?? unitPriceJin
+    // 按记录单位类型归一化到 ¥/斤：质量记录直接换算，计数记录经
+    // weight_per_unit 折算；无法归一化（如纯计数且无覆盖）的记录跳过，
+    // 不污染质量口径的趋势。这是鸡蛋「价格趋势很离谱」的根因。
+    const np = normalizeRecordToJin(
+      {
+        price: parseFloat(String(record.price)) || 0,
+        standard_quantity: record.standard_quantity,
+        quantity: record.quantity,
+        unit_id: record.unit_id,
+        standard_unit_id: record.standard_unit_id,
+      },
+      priceUnits.value,
+      priceOverrides.value,
+      priceDensities.value,
+      'ingredient',
+      product.value?.ingredient_id ?? 0,
+    )
+    if (np.pricePerJin == null) continue
+    // 再按用户质量偏好单位折算（convertFromJin 未知单位时保持斤）
+    const unitPrice = convertFromJin(np.pricePerJin) ?? np.pricePerJin
 
     if (!dailyMap.has(dateKey)) {
       dailyMap.set(dateKey, [])
@@ -2243,9 +2287,10 @@ const loadData = async () => {
     loadPriceRecords()
     loadChartPriceRecords(daysAgo(30))  // 图表默认加载近 30 天（月）
     loadNutritionData()
-    loadEntityUnits()
-    loadDensity()
-    loadUnmappedUnits()
+   loadEntityUnits()
+   loadDensity()
+   loadPriceNormalizeData()
+   loadUnmappedUnits()
     loadSiblingProducts()
   } catch (e: any) {
     console.error('加载商品失败', e)

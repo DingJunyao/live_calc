@@ -2,6 +2,8 @@
 
 import { getAll, getById, putOne, getByIndex, getDb, paginate } from '../database'
 import { calcNRV } from '../business/nutritionAggregator'
+import { aggregatePrices } from '../business/priceNormalize'
+import type { UnitInfo, EntityOverride, DensityInfo } from '../business/unitConverter'
 
 export async function listNutritionIngredients(_params: Record<string, string>, query?: any): Promise<any> {
   const name = query?.name || query?.search
@@ -105,44 +107,31 @@ export async function getLatestPrice(params: Record<string, string>): Promise<an
     return { price: null, unit: null, records: 0 }
   }
 
-  // Find latest price record across all products
+  // 收集该食材所有商品的价格记录，统一归一化后聚合
+  // （避免质量/计数记录混算，鸡蛋类 ¥0.23/个、¥108/斤 的根因）
+  const [units, overrides, densities] = await Promise.all([
+    getAll('units') as Promise<UnitInfo[]>,
+    getAll('entity_unit_overrides') as Promise<EntityOverride[]>,
+    getAll('entity_densities') as Promise<DensityInfo[]>,
+  ])
+  const allRecords: any[] = []
   let latestRec: any = null
-  let totalUnitPrice = 0
-  let count = 0
-  const productIds = products.map((p: any) => p.id)
-
-  for (const pid of productIds) {
-    const records = await getByIndex('product_records', 'by_product_id', pid)
-    if (records.length === 0) continue
-    const sorted = records.sort((a: any, b: any) => (b.recorded_at || '').localeCompare(a.recorded_at || ''))
-    // 按标准量计算单价：price / standard_quantity，结果以 standard_unit 为基准
-    for (const rec of records) {
-      const price = rec.price ?? rec.unit_price ?? 0
-      if (price <= 0) continue
-      const qty = rec.standard_quantity ?? rec.quantity ?? 1
-      if (qty <= 0) continue
-      totalUnitPrice += price / qty
-      count++
-    }
-    if (!latestRec || (sorted[0]?.recorded_at || '') > (latestRec.recorded_at || '')) {
+  for (const p of products) {
+    const recs = await getByIndex('product_records', 'by_product_id', p.id)
+    allRecords.push(...recs)
+    const sorted = recs.sort((a: any, b: any) => (b.recorded_at || '').localeCompare(a.recorded_at || ''))
+    if (sorted.length > 0 && (!latestRec || (sorted[0]?.recorded_at || '') > (latestRec.recorded_at || ''))) {
       latestRec = sorted[0]
     }
   }
 
-  if (count === 0) return { average_price: null, unit: null, records: 0 }
-
-  // 默认以「斤」显示：若单价单位是「克」，×500 转成元/斤
-  let displayUnit = latestRec?.unit_name || '斤'
-  let displayPrice = totalUnitPrice / count
-  if (displayUnit === '克') {
-    displayPrice *= 500
-    displayUnit = '斤'
-  }
-
+  const agg = aggregatePrices(allRecords, units, overrides, densities, 'ingredient', id)
   return {
-    average_price: Math.round(displayPrice * 10000) / 10000,
-    unit: displayUnit,
-    records: count,
+    average_price: agg.average_price,
+    unit: agg.average_price != null ? agg.unit : null,
+    min_price: agg.min_price,
+    max_price: agg.max_price,
+    records: agg.records,
     latest_record: latestRec || null,
   }
 }

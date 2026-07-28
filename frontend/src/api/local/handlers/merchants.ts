@@ -5,8 +5,15 @@ import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from
 export async function listMerchants(_params: Record<string, string>, query?: any): Promise<any> {
   const name = query?.name || query?.search
   const lower = name?.toLowerCase()
-  return paginate('merchants', { page: query?.page, page_size: query?.page_size }, (m: any) => {
+  // 默认隐藏已关闭（is_open === false）的商家；仅当 include_closed 为真时才显示。
+  const includeClosed = query?.include_closed === true || query?.include_closed === 'true'
+  // 前端按 offset/limit 风格传参（skip/limit），兼容 page/page_size。
+  const limit = query?.limit != null ? Number(query.limit) : Number(query?.page_size) || 20
+  const skip = query?.skip != null ? Number(query.skip) : (Number(query?.page || 1) - 1) * limit
+  const page = Math.floor(skip / limit) + 1
+  return paginate('merchants', { page, page_size: limit }, (m: any) => {
     if (m.is_active === false) return false
+    if (!includeClosed && m.is_open === false) return false
     if (lower && !m.name?.toLowerCase().includes(lower)) return false
     return true
   })
@@ -70,10 +77,16 @@ export async function removeFavorite(params: Record<string, string>): Promise<an
   return { ok: true }
 }
 
-export async function getCoordinates(): Promise<any> {
+export async function getCoordinates(_params: Record<string, string>, query?: any): Promise<any> {
   const all = await getAll('merchants')
   const coords = all
-    .filter((m: any) => m.latitude && m.longitude && m.is_active !== false)
+    .filter((m: any) => {
+      if (!m.latitude || !m.longitude || m.is_active === false) return false
+      // 默认排除已关闭商家，与列表行为一致；include_closed=true 时显示
+      const includeClosed = query?.include_closed === true || query?.include_closed === 'true'
+      if (!includeClosed && m.is_open === false) return false
+      return true
+    })
     .map((m: any) => ({
       id: m.id,
       name: m.name,

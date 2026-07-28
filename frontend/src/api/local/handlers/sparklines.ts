@@ -2,6 +2,14 @@
 // 为商品/食材提供近期的价格记录，以日期-价格对形式返回。
 
 import { getAll, getByIndex } from '../database'
+import { normalizeRecordToJin } from '../business/priceNormalize'
+import type { UnitInfo, EntityOverride, DensityInfo } from '../business/unitConverter'
+
+/** getById 的安全包装（sparklines 模块未导入 getById，这里局部复用 getAll 查找）。 */
+async function getByIdSafe(store: string, id: number): Promise<any> {
+  const all = await getAll(store)
+  return all.find((x: any) => x.id === id)
+}
 
 /** 获取单个商品的最新 N 条价格记录。 */
 async function getProductSparklineData(productId: number, limit: number = 30): Promise<number[]> {
@@ -11,7 +19,21 @@ async function getProductSparklineData(productId: number, limit: number = 30): P
   // 按 recorded_at 降序排序
   records.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
 
-  return records.slice(0, limit).map((r: any) => r.price ?? r.unit_price ?? 0)
+  // 预加载归一化所需的辅助表
+  const product = await getByIdSafe('products', productId)
+  const [units, overrides, densities] = await Promise.all([
+    getAll('units') as Promise<UnitInfo[]>,
+    getAll('entity_unit_overrides') as Promise<EntityOverride[]>,
+    getAll('entity_densities') as Promise<DensityInfo[]>,
+  ])
+  const entId = product?.ingredient_id ?? productId
+  // 每条记录折算到 ¥/斤；无法归一化（纯计数且无覆盖）的记录过滤掉
+  return records.slice(0, limit)
+    .map((r: any) => {
+      const np = normalizeRecordToJin(r, units, overrides, densities, 'ingredient', entId)
+      return np.pricePerJin
+    })
+    .filter((v: number | null): v is number => v != null)
 }
 
 /**
@@ -50,6 +72,11 @@ export async function getIngredientSparklines(_params: Record<string, string>, q
 
   const allProducts = await getAll('products')
   const allRecords = await getAll('product_records')
+  const [units, overrides, densities] = await Promise.all([
+    getAll('units') as Promise<UnitInfo[]>,
+    getAll('entity_unit_overrides') as Promise<EntityOverride[]>,
+    getAll('entity_densities') as Promise<DensityInfo[]>,
+  ])
 
   // 按 recorded_at 降序排序
   allRecords.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
@@ -63,11 +90,15 @@ export async function getIngredientSparklines(_params: Record<string, string>, q
     )
     const productIds = ingredientProducts.map((p: any) => p.id)
 
-    // 找出这些商品的价格记录，v-sparkline 只接收 number[] 格式
+    // 折算到 ¥/斤，避免按个计价的记录拉爆趋势（鸡蛋问题）
     const records = allRecords
       .filter((r: any) => productIds.includes(r.product_id))
       .slice(0, 30)
-      .map((r: any) => r.price ?? r.unit_price ?? 0)
+      .map((r: any) => {
+        const np = normalizeRecordToJin(r, units, overrides, densities, 'ingredient', ingredientId)
+        return np.pricePerJin
+      })
+      .filter((v: number | null): v is number => v != null)
 
     result[ingredientId] = records
   }
