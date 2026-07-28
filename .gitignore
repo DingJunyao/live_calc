@@ -15,3 +15,6 @@ scripts/.fonts/
 
 # vite-plugin-pwa dev 模式生成的 service worker 产物（开发产物，不入库）
 frontend/dev-dist/
+
+# Flutter 移动端 app（仅 feat/mobile-app 分支含，master 不含；忽略其本地残留）
+mobile/
