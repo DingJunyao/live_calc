@@ -128,7 +128,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                         if (r.estimatedCost != null)
                           Text('¥${r.estimatedCost!.toStringAsFixed(1)}',
                             style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.primary)),
-                        Text('${r.ingredientCount} 种食材',
+                        Text('${r.servings} 人份',
                             style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline)),
                       ],
                     ),

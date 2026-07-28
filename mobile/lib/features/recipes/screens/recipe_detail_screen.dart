@@ -71,8 +71,12 @@ class RecipeDetailScreen extends ConsumerWidget {
                           child: Row(children: [
                             Icon(Icons.circle, size: 8, color: theme.colorScheme.primary),
                             const SizedBox(width: 12),
-                            Expanded(child: Text(ing.name)),
-                            Text('${ing.quantity} ${ing.unit}', style: theme.textTheme.bodyMedium),
+                           Expanded(child: Text(ing.name)),
+                            Text(
+                              (ing.quantity != null && ing.quantity!.isNotEmpty)
+                                  ? '${ing.quantity}${(ing.unit != null && ing.unit!.isNotEmpty) ? ' ${ing.unit}' : ''}'
+                                  : '适量',
+                              style: theme.textTheme.bodyMedium),
                             if (ing.estimatedCost != null) ...[
                               const SizedBox(width: 12),
                               Text('\u00A5${ing.estimatedCost!.toStringAsFixed(1)}',
