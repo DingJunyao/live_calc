@@ -213,9 +213,9 @@
         </v-list-item>
 
         <v-list-item
-          v-if="!isLocalMode"
-          prepend-icon="mdi-robot-outline"
-          title="Agent 任务台"
+        v-if="!isLocalMode"
+        prepend-icon="mdi-robot-outline"
+        title="Agent 任务台"
           subtitle="发起 Agent 维护任务、审批 SQL、对话流"
           to="/admin/agent-console"
         >

@@ -149,7 +149,8 @@ export async function getEmailTemplate(params: Record<string, string>): Promise<
 // ============================================================
 
 export async function getTranslationConfig(): Promise<any> {
-  return {
+  // 默认结构：未保存过时使用；已保存则合并返回（确保 API key 等配置可持久化读回）
+  const defaults = {
     ai: {
       providers: {
         claude_code: { enabled: false },
@@ -165,6 +166,16 @@ export async function getTranslationConfig(): Promise<any> {
       },
     },
   }
+  const saved = await getConfigValue('translation_config')
+  if (!saved) return defaults
+  // 浅合并：保留已保存的 provider key，补齐缺失的默认字段
+  const merged = JSON.parse(JSON.stringify(defaults))
+  for (const group of ['ai', 'machine']) {
+    if (saved?.[group]?.providers) {
+      merged[group].providers = { ...merged[group].providers, ...saved[group].providers }
+    }
+  }
+  return merged
 }
 
 export async function updateTranslationConfig(_params: Record<string, string>, data?: any): Promise<any> {

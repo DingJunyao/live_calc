@@ -1,7 +1,9 @@
 // Agent 会话处理 — 管理浏览器端 Agent 会话的生命周期。
 // 会话存储在 IndexedDB 的 agent_sessions 表中。
+// 本地模式：会话 id 为自增数字（与云端/控制台 currentSid:number 一致）；
+// listSessions 返回数组；额外提供 PUT 更新用于持久化对话渲染与 AI 消息历史。
 
-import { getAll, getById, addOne, putOne } from '../database'
+import { getAll, addOne, putOne } from '../database'
 
 // ============================================================
 // 任务类型
@@ -34,14 +36,25 @@ const TASK_TYPES = [
 // 辅助函数
 // ============================================================
 
-function generateId(): string {
-  const ts = Date.now().toString(36)
-  const rand = Math.random().toString(36).substring(2, 8)
-  return `agent_${ts}_${rand}`
+/** 生成自增数字 id：基于已有最大 id（兼容历史字符串 id） */
+async function nextId(): Promise<number> {
+  const all: any[] = await getAll('agent_sessions')
+  let max = 0
+  for (const s of all) {
+    const n = Number(s.id)
+    if (Number.isFinite(n) && n > max) max = n
+  }
+  return Math.max(Date.now(), max + 1)
 }
 
 function nowISO(): string {
   return new Date().toISOString()
+}
+
+/** 按 id 查找（兼容历史字符串 id） */
+function findById(all: any[], id: string | number): any | undefined {
+  const n = Number(id)
+  return all.find((s: any) => Number(s.id) === n)
 }
 
 // ============================================================
@@ -50,70 +63,100 @@ function nowISO(): string {
 
 /** GET /agent/task-types — 返回可用任务类型列表 */
 export async function getTaskTypes(): Promise<any> {
-  return TASK_TYPES
+  // 控制台按 task_type / title 字段渲染与启动，映射成兼容结构
+  return TASK_TYPES.map((t) => ({
+    task_type: t.id,
+    title: t.name,
+    description: t.description,
+  }))
 }
 
-/** POST /agent/sessions — 创建新会话 */
+/** POST /agent/sessions — 创建新会话，返回 { session_id } */
 export async function createSession(_params: Record<string, string>, data?: any): Promise<any> {
+  const taskType = data?.task_type || 'data_analysis'
+  const meta = TASK_TYPES.find((t) => t.id === taskType)
+  const now = nowISO()
   const session = {
-    id: generateId(),
-    task_type: data?.task_type || 'data_analysis',
-    title: data?.title || '新对话',
+    id: await nextId(),
+    task_type: taskType,
+    title: data?.title || meta?.name || '新对话',
     status: 'running' as const,
-    created_at: nowISO(),
-    updated_at: nowISO(),
-    messages: [] as any[],
+    provider: data?.provider || 'anthropic',
+    created_at: now,
+    updated_at: now,
+    /** 供历史回放的渲染消息（RenderMessage[]） */
+    renders: [] as any[],
+    /** AI API 原始消息历史（用于插话续跑） */
+    ai_messages: [] as any[],
   }
 
   await addOne('agent_sessions', session)
-  return session
+  return { session_id: session.id }
 }
 
-/** GET /agent/sessions — 列出所有会话 */
-export async function listSessions(): Promise<any> {
+/** GET /agent/sessions — 列出会话（数组，按创建时间降序；支持 ?limit） */
+export async function listSessions(_params: Record<string, string>, query?: any): Promise<any> {
   const all: any[] = await getAll('agent_sessions')
-  // 返回按创建时间降序排列
-  const sorted = all.sort((a, b) => {
-    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  })
-  return { items: sorted, total: sorted.length }
+  all.sort(
+    (a, b) =>
+      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+  )
+  const limit = Math.max(1, Number(query?.limit) || 50)
+  return all.slice(0, limit)
 }
 
 /** GET /agent/sessions/:id — 获取会话详情 */
 export async function getSession(params: Record<string, string>): Promise<any> {
   const all: any[] = await getAll('agent_sessions')
-  const session = all.find((s: any) => s.id === params.id)
+  const session = findById(all, params.id)
   if (!session) throw { status: 404, message: `Session ${params.id} not found` }
   return session
+}
+
+/** PUT /agent/sessions/:id — 更新会话（持久化 renders / ai_messages / status） */
+export async function updateSession(
+  params: Record<string, string>,
+  data?: any,
+): Promise<any> {
+  const all: any[] = await getAll('agent_sessions')
+  const session = findById(all, params.id)
+  if (!session) throw { status: 404, message: `Session ${params.id} not found` }
+  const updated = {
+    ...session,
+    ...(data || {}),
+    id: session.id,
+    updated_at: nowISO(),
+  }
+  await putOne('agent_sessions', updated)
+  return updated
 }
 
 /** POST /agent/sessions/:id/cancel — 取消会话 */
 export async function cancelSession(params: Record<string, string>): Promise<any> {
   const all: any[] = await getAll('agent_sessions')
-  const session = all.find((s: any) => s.id === params.id)
+  const session = findById(all, params.id)
   if (!session) throw { status: 404, message: `Session ${params.id} not found` }
 
-  session.status = 'cancelled'
-  session.updated_at = nowISO()
-  await putOne('agent_sessions', session)
-  return session
+  const updated = { ...session, status: 'cancelled', updated_at: nowISO() }
+  await putOne('agent_sessions', updated)
+  return updated
 }
 
-/** POST /agent/sessions/:id/messages — 添加用户消息（stub） */
+/** POST /agent/sessions/:id/messages — 添加用户消息（本地由 composable 处理续跑，此 handler 保留兼容） */
 export async function postMessage(params: Record<string, string>, data?: any): Promise<any> {
   const all: any[] = await getAll('agent_sessions')
-  const session = all.find((s: any) => s.id === params.id)
+  const session = findById(all, params.id)
   if (!session) throw { status: 404, message: `Session ${params.id} not found` }
 
   const msg = {
     role: 'user',
-    content: data?.content || '',
+    content: data?.content || data?.text || '',
     created_at: nowISO(),
   }
 
-  session.messages = session.messages || []
-  session.messages.push(msg)
-  session.updated_at = nowISO()
-  await putOne('agent_sessions', session)
+  const messages = session.messages || []
+  messages.push(msg)
+  const updated = { ...session, messages, updated_at: nowISO() }
+  await putOne('agent_sessions', updated)
   return msg
 }

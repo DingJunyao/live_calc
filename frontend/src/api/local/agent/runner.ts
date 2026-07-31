@@ -49,6 +49,8 @@ export interface AgentConfig {
   provider: 'anthropic' | 'openai'
   apiKey: string
   model: string
+  /** 自定义 API 基址（OpenAI 兼容 / Anthropic 兼容端点） */
+  baseUrl?: string
 }
 
 // ============================================================
@@ -84,6 +86,7 @@ export async function* runAgent(
   config: AgentConfig,
   task: string,
   signal?: AbortSignal,
+  initialMessages?: any[],
 ): AsyncGenerator<AgentProgress> {
   const toolsPayload = TOOLS.map((t: ToolDefinition) => ({
     name: t.name,
@@ -91,7 +94,11 @@ export async function* runAgent(
     input_schema: t.parameters,
   }))
 
-  const messages: any[] = [{ role: 'user', content: task }]
+  // 支持续跑：调用方可传入已有消息历史（插话/多轮）；否则用初始任务文本开始
+  const messages: any[] =
+    Array.isArray(initialMessages) && initialMessages.length
+      ? initialMessages
+      : [{ role: 'user', content: task }]
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     if (signal?.aborted) {
@@ -255,12 +262,16 @@ async function callAnthropic(
     tools,
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  // baseUrl 形如 https://api.anthropic.com；补 /v1/messages
+  const base = (config.baseUrl || 'https://api.anthropic.com').replace(/\/$/, '')
+  const response = await fetch(`${base}/v1/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': config.apiKey,
       'anthropic-version': '2023-06-01',
+      // 允许浏览器直连（Anthropic 官方 CORS 开关）
+      'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify(body),
     signal,
@@ -301,7 +312,9 @@ async function callOpenAI(
     tools: openaiTools.length > 0 ? openaiTools : undefined,
   }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  // baseUrl 形如 https://api.openai.com/v1；补 /chat/completions
+  const obase = (config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '')
+  const response = await fetch(`${obase}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

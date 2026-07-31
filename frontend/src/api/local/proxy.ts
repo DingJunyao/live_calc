@@ -307,7 +307,7 @@ addRoute('/sparklines/ingredients', { get: sparklines.getIngredientSparklines })
 addRoute('/agent/task-types', { get: agents.getTaskTypes })
 addRoute('/agent/sessions/:id/messages', { post: agents.postMessage })
 addRoute('/agent/sessions/:id/cancel', { post: agents.cancelSession })
-addRoute('/agent/sessions/:id', { get: agents.getSession })
+addRoute('/agent/sessions/:id', { get: agents.getSession, put: agents.updateSession })
 addRoute('/agent/sessions', { get: agents.listSessions, post: agents.createSession })
 
 // ---- Export / Import ----
