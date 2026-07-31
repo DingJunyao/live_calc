@@ -1,6 +1,6 @@
 <template>
   <v-dialog :model-value="modelValue" max-width="720" persistent @update:model-value="emit('update:modelValue', $event)">
-    <v-card>
+    <v-card class="paste-card">
       <v-card-title class="d-flex align-center">
         粘贴导入价格
         <v-spacer />
@@ -38,29 +38,23 @@
         <v-table v-if="rows.length > 0" density="compact" class="paste-preview-table">
           <thead>
             <tr>
-              <th style="width: 36px"></th>
+              <th style="width: 28px"></th>
               <th>商品</th>
-              <th style="width: 90px">价格</th>
-              <th style="width: 70px">数量</th>
-              <th style="width: 70px">单位</th>
+              <th style="width: 56px">价格</th>
+              <th style="width: 48px">数量</th>
+              <th style="width: 44px">单位</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(row, i) in rows" :key="i">
-              <td class="text-center">
-                <v-icon v-if="row.status === 'matched'" color="success" size="small">mdi-check-circle</v-icon>
-                <v-icon v-else-if="row.status === 'unmatched'" color="warning" size="small">mdi-alert-circle</v-icon>
-                <v-icon v-else color="error" size="small">mdi-close-circle</v-icon>
-              </td>
-              <td>
-                <template v-if="row.status === 'invalid'">{{ row.name || '（' + row.error + '）' }}</template>
-                <template v-else>
-                  <!-- 未展开：可点击商品名 -->
-                  <span v-if="!row.editing" class="paste-editable" @click="openEditor(row)">
-                    {{ row.name }}<v-icon size="x-small" class="ml-1">mdi-chevron-down</v-icon>
-                  </span>
-                  <!-- 展开：内联搜索面板 -->
-                  <div v-else class="paste-inline-panel">
+              <template v-if="row.editing">
+                <!-- 展开态：整行合并为单个单元格，面板撑满表格宽度，不受 fixed 列宽约束（避免下拉框/按钮被截断） -->
+                <td colspan="5" class="paste-expanded-cell">
+                  <div class="paste-inline-panel">
+                    <div class="d-flex align-center justify-space-between mb-1">
+                      <span class="text-body-2 font-weight-medium">{{ row.name }}</span>
+                      <span class="text-caption text-medium-emphasis">{{ row.price ?? '—' }} · {{ row.quantity }}{{ row.unit }}</span>
+                    </div>
                     <v-autocomplete
                       v-model:search="row.productSearch"
                       :items="row.suggestions"
@@ -95,18 +89,34 @@
                       @update:search="onIngredientSearch(row, $event)"
                       @update:model-value="(v: any) => { if (v) chooseAttach(row, v) }"
                     />
-                    <div class="d-flex align-center ga-2 mt-1">
+                    <div class="d-flex align-center ga-2 mt-1 flex-wrap">
                       <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-plus" @click="chooseNewSame(row)">
                         创建同名原料 + 商品
                       </v-btn>
                       <v-btn size="small" variant="text" @click="cancelEdit(row)">取消</v-btn>
                     </div>
                   </div>
-                </template>
-              </td>
-              <td>{{ row.price ?? '—' }}</td>
-              <td>{{ row.quantity }}</td>
-              <td>{{ row.unit }}</td>
+                </td>
+              </template>
+              <template v-else>
+                <td class="text-center">
+                  <v-icon v-if="row.status === 'matched'" color="success" size="small">mdi-check-circle</v-icon>
+                  <v-icon v-else-if="row.status === 'unmatched'" color="warning" size="small">mdi-alert-circle</v-icon>
+                  <v-icon v-else color="error" size="small">mdi-close-circle</v-icon>
+                </td>
+                <td>
+                  <template v-if="row.status === 'invalid'">{{ row.name || '（' + row.error + '）' }}</template>
+                  <template v-else>
+                    <!-- 未展开：可点击商品名 -->
+                    <span class="paste-editable" @click="openEditor(row)">
+                      {{ row.name }}<v-icon size="x-small" class="ml-1">mdi-chevron-down</v-icon>
+                    </span>
+                  </template>
+                </td>
+                <td>{{ row.price ?? '—' }}</td>
+                <td>{{ row.quantity }}</td>
+                <td>{{ row.unit }}</td>
+              </template>
             </tr>
           </tbody>
         </v-table>
@@ -243,7 +253,13 @@ async function doParse() {
       ingredientSuggestions: [],
     }))
     const okRows = rows.value.filter(r => r.ok)
-    await Promise.all(okRows.map(r => tryAutoMatch(r)))
+    // 分批并发匹配：一次齐发数百请求会把后端 autocomplete（851 商品全表扫描 + Python 遍历）
+    // 打爆，后面的请求在浏览器/proxy 排队超过 10s 超时→tryAutoMatch catch 静默吞→unmatched。
+    // 与 doImport 的 CONCURRENCY 对齐限流，200 行约 2-3s 完成，不再超时。
+    const MATCH_CONCURRENCY = 5
+    for (let i = 0; i < okRows.length; i += MATCH_CONCURRENCY) {
+      await Promise.all(okRows.slice(i, i + MATCH_CONCURRENCY).map(r => tryAutoMatch(r)))
+    }
   } finally {
     parsing.value = false
   }
@@ -498,10 +514,26 @@ async function doImport() {
 </script>
 
 <style scoped>
+.paste-card {
+  /* 禁用滚动容器的 scroll anchoring：展开/折叠面板时浏览器会错锚到下方元素、
+     把 v-card 的 scrollTop 推到 ~909，导致展开内容跑到视口上方（诊断日志实测） */
+  overflow-anchor: none;
+}
+.paste-preview-table :deep(table) {
+  /* 固定列宽：table-layout 必须作用在 <table> 元素上（.paste-preview-table 是 v-table 外层 div，
+     直接加无效——前几轮 fixed 没生效即因此）。展开/折叠时名称列宽度恒定，不再撑宽
+     挤压其他列、引发换行 reflow 把当前行挤出可视区（用户两次观察到列宽变化是症状源头） */
+  table-layout: fixed;
+}
 .paste-preview-table :deep(th),
 .paste-preview-table :deep(td) {
-  padding: 4px 8px !important;
+  padding: 4px 6px !important;
   font-size: 13px;
+  overflow-wrap: anywhere; /* 长商品名在固定列宽内换行，不撑宽 */
+}
+.paste-inline-panel,
+.paste-inline-field {
+  min-width: 0; /* 配合 fixed 列宽，autocomplete 不撑破名称列 */
 }
 .paste-editable {
   cursor: pointer;
@@ -519,5 +551,6 @@ async function doImport() {
 }
 .paste-inline-field :deep(input) {
   font-size: 16px; /* 防 iOS 缩放 */
+  min-width: 0;
 }
 </style>
