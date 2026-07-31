@@ -253,7 +253,13 @@ async function doParse() {
       ingredientSuggestions: [],
     }))
     const okRows = rows.value.filter(r => r.ok)
-    await Promise.all(okRows.map(r => tryAutoMatch(r)))
+    // 分批并发匹配：一次齐发数百请求会把后端 autocomplete（851 商品全表扫描 + Python 遍历）
+    // 打爆，后面的请求在浏览器/proxy 排队超过 10s 超时→tryAutoMatch catch 静默吞→unmatched。
+    // 与 doImport 的 CONCURRENCY 对齐限流，200 行约 2-3s 完成，不再超时。
+    const MATCH_CONCURRENCY = 5
+    for (let i = 0; i < okRows.length; i += MATCH_CONCURRENCY) {
+      await Promise.all(okRows.slice(i, i + MATCH_CONCURRENCY).map(r => tryAutoMatch(r)))
+    }
   } finally {
     parsing.value = false
   }
