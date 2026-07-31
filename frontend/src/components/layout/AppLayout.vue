@@ -50,10 +50,10 @@
         <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" />
         <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" />
         <v-list-item prepend-icon="mdi-store" title="商家管理" to="/data/merchants" />
-        <v-list-item prepend-icon="mdi-account" title="个人中心" to="/profile" />
-        <v-divider v-if="userStore.user?.is_admin" class="my-2" />
+        <v-list-item :prepend-icon="isLocalMode ? 'mdi-cog' : 'mdi-account'" :title="isLocalMode ? '设置' : '个人中心'" to="/profile" />
+        <v-divider v-if="userStore.user?.is_admin && !isLocalMode" class="my-2" />
         <v-list-item
-          v-if="userStore.user?.is_admin"
+          v-if="userStore.user?.is_admin && !isLocalMode"
           prepend-icon="mdi-shield-account"
           title="后台管理"
           to="/admin"
@@ -150,10 +150,10 @@
         <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-store" title="商家管理" to="/data/merchants" @click="closeDrawer" />
-        <v-list-item prepend-icon="mdi-account" title="个人中心" to="/profile" @click="closeDrawer" />
-        <v-divider v-if="userStore.user?.is_admin" class="my-2" />
+        <v-list-item :prepend-icon="isLocalMode ? 'mdi-cog' : 'mdi-account'" :title="isLocalMode ? '设置' : '个人中心'" to="/profile" @click="closeDrawer" />
+        <v-divider v-if="userStore.user?.is_admin && !isLocalMode" class="my-2" />
         <v-list-item
-          v-if="userStore.user?.is_admin"
+          v-if="userStore.user?.is_admin && !isLocalMode"
           prepend-icon="mdi-shield-account"
           title="后台管理"
           to="/admin"

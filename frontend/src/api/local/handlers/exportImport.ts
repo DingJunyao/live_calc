@@ -131,7 +131,10 @@ async function importRecipe(
  */
 export async function listTasks(_params: Record<string, string>, _query?: any): Promise<any> {
   const all = await getAll('import_tasks')
-  return all.sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
+  // 确保每条记录带回 id 字段（前端 ImportTask 需要 id 用于轮询/取消）
+  return all
+    .map((t: any) => (t.id != null ? t : { ...t, id: t._auto_id ?? undefined }))
+    .sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
 }
 
 /**
@@ -447,7 +450,43 @@ export async function uploadImport(
   const taskId = await addOne('import_tasks', taskRecord)
 
   // 也放内存缓存，供 getTask 立即返回
-  taskCache.set(taskId, { id: taskId, ...taskRecord })
+  const fullRecord = { id: taskId, ...taskRecord }
+  taskCache.set(taskId, fullRecord)
 
   return { task_id: taskId }
+}
+
+/**
+ * POST /import/task/:id/cancel — 取消导入任务（本地任务同步完成，标记 cancelled）。
+ */
+export async function cancelTask(params: Record<string, string>): Promise<any> {
+  const id = parseInt(params.id)
+  if (!Number.isFinite(id)) throw { status: 400, message: 'Invalid task id' }
+  const db = await getDb()
+  const existing = await db.get('import_tasks', id)
+  // 已完成/失败的无法取消；仅对 running/pending 标记 cancelled（本地任务几乎瞬时完成）
+  const status = existing?.status
+  if (existing && (status === 'running' || status === 'pending')) {
+    await db.put('import_tasks', { ...existing, status: 'cancelled', updated_at: new Date().toISOString() })
+  }
+  taskCache.delete(id)
+  return { message: '任务已取消' }
+}
+
+/**
+ * POST /import/data/import-from-repo & import-from-local — 本地模式降级。
+ * 本地无 git/服务器文件系统访问能力，返回明确错误而非 404。
+ */
+export async function importFromRepo(): Promise<any> {
+  throw {
+    status: 501,
+    message: '本地模式不支持从 Git 仓库导入，请使用「上传 ZIP」导入数据',
+  }
+}
+
+export async function importFromLocal(): Promise<any> {
+  throw {
+    status: 501,
+    message: '本地模式不支持从服务器路径导入，请使用「上传 ZIP」导入数据',
+  }
 }

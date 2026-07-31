@@ -19,7 +19,7 @@
 
     <v-row>
       <!-- 从仓库导入 -->
-      <v-col cols="12" md="6" lg="4">
+      <v-col v-if="!isLocalMode" cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2" color="github">mdi-source-repository</v-icon>
@@ -56,7 +56,7 @@
       </v-col>
 
       <!-- 从本地路径导入 -->
-      <v-col cols="12" md="6" lg="4">
+      <v-col v-if="!isLocalMode" cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2" color="primary">mdi-folder-open</v-icon>
@@ -177,23 +177,40 @@
                 已映射: {{ usdaStats.mapped_pct || 0 }}%
               </v-chip>
             </div>
-            <v-alert v-else type="info" variant="tonal" density="compact">
-              <div class="text-caption">统计数据暂不可用，请先下载 USDA 数据。</div>
+           <v-alert v-else type="info" variant="tonal" density="compact">
+             <div class="text-caption">统计数据暂不可用，请先下载 USDA 数据。</div>
+           </v-alert>
+            <v-alert v-if="isLocalMode" type="info" variant="tonal" density="compact" class="mt-3">
+              <div class="text-caption">
+                本地模式：请点「前往 USDA 下载页」下载 Foundation / SR Legacy 的 JSON zip 包，再点「上传 ZIP」导入。
+              </div>
             </v-alert>
-          </v-card-text>
-          <v-divider />
-          <v-card-actions class="pa-4">
-            <v-spacer />
+         </v-card-text>
+         <v-divider />
+         <v-card-actions class="pa-4 d-flex flex-wrap justify-end ga-2">
+           <v-btn
+             v-if="!isLocalMode"
+             color="deep-orange"
+             variant="tonal"
+             size="large"
+             :loading="usdaDownloading"
+             :disabled="usdaDownloading"
+             @click="downloadUsdaData"
+           >
+             <v-icon start>mdi-download</v-icon>
+             下载 USDA
+           </v-btn>
             <v-btn
+              v-else
               color="deep-orange"
               variant="tonal"
               size="large"
-              :loading="usdaDownloading"
-              :disabled="usdaDownloading"
-              @click="downloadUsdaData"
+              href="https://fdc.nal.usda.gov/download-datasets.html"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              <v-icon start>mdi-download</v-icon>
-              下载 USDA
+              <v-icon start>mdi-open-in-new</v-icon>
+              前往 USDA 下载页
             </v-btn>
             <v-btn
               color="deep-orange"
@@ -202,7 +219,6 @@
               :loading="usdaUploading"
               :disabled="usdaUploading"
               @click="triggerUsdaUpload"
-              class="ml-2"
             >
               <v-icon start>mdi-upload</v-icon>
               上传 ZIP
@@ -212,7 +228,7 @@
       </v-col>
 
       <!-- 行政区划 -->
-      <v-col cols="12" md="6" lg="4">
+      <v-col v-if="!isLocalMode" cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2" color="blue">mdi-map-marker-multiple</v-icon>
@@ -516,6 +532,8 @@ const router = useRouter()
 
 const goBack = () => router.back()
 
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
+
 // 各卡片提交中状态
 const submitting = reactive({ aiPieceWeight: false,
   repo: false,
@@ -605,18 +623,24 @@ onMounted(async () => {
   fetchTasks(10)
 
   // 加载本地导入路径配置（只读展示用，失败降级为「未配置」）
-  api
-    .get('/import/data/local-path-config')
-    .then((cfg: any) => {
-      localPathConfig.configured = !!cfg?.configured
-      localPathConfig.path = cfg?.path || ''
-    })
-    .catch(() => {
-      localPathConfig.configured = false
-    })
-    .finally(() => {
-      localPathConfig.loaded = true
-    })
+  if (isLocalMode.value) {
+    // 本地模式无服务器文件系统，「从本地路径导入」卡片隐藏，跳过该调用
+    localPathConfig.configured = false
+    localPathConfig.loaded = true
+  } else {
+    api
+      .get('/import/data/local-path-config')
+      .then((cfg: any) => {
+        localPathConfig.configured = !!cfg?.configured
+        localPathConfig.path = cfg?.path || ''
+      })
+      .catch(() => {
+        localPathConfig.configured = false
+      })
+      .finally(() => {
+        localPathConfig.loaded = true
+      })
+  }
 
   // 加载翻译配置
   try {
@@ -650,7 +674,10 @@ onMounted(async () => {
   }
 
   // 加载行政区划状态
-  await loadRegionStatus()
+  if (!isLocalMode.value) {
+    // 本地模式不消费行政区划数据，卡片隐藏，跳过该调用
+    await loadRegionStatus()
+  }
 
   // 恢复最近的 agent 会话到任务列表（刷新后重建）
   try {

@@ -4,7 +4,7 @@
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
     <v-app-bar-title class="text-h6">后台管理</v-app-bar-title>
     <template #append>
-      <v-chip color="primary" variant="tonal" size="small">
+      <v-chip v-if="!isLocalMode" color="primary" variant="tonal" size="small">
         <v-icon start size="small">mdi-shield-account</v-icon>
         管理员
       </v-chip>
@@ -213,6 +213,7 @@
         </v-list-item>
 
         <v-list-item
+          v-if="!isLocalMode"
           prepend-icon="mdi-robot-outline"
           title="Agent 任务台"
           subtitle="发起 Agent 维护任务、审批 SQL、对话流"

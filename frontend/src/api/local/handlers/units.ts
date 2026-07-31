@@ -3,10 +3,12 @@
 import { getAll, getById, addOne, putOne, getByIndex } from '../database'
 
 export async function listUnits(_params: Record<string, string>, query?: any): Promise<any> {
+  // 与云端 List[UnitResponse] 契约对齐：返回数组。
+  // 之前返回 { items, total } 会让直接期望数组的调用方（如 UnitsView）渲染崩溃，
+  // 进而导致导航栏后退按钮等交互失效。
   const all = await getAll('units')
   const unitType = query?.unit_type
-  const filtered = unitType ? all.filter((u: any) => u.unit_type === unitType) : all
-  return { items: filtered, total: filtered.length }
+  return unitType ? all.filter((u: any) => u.unit_type === unitType) : all
 }
 
 export async function getUnit(params: Record<string, string>): Promise<any> {

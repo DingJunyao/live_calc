@@ -18,6 +18,21 @@
   </v-app-bar>
 
   <v-container fluid class="pa-0 agent-container">
+    <div
+      v-if="isLocalMode"
+      class="d-flex flex-column align-center justify-center text-center"
+      style="height: 100%"
+    >
+      <v-icon size="56" class="mb-4" color="grey-lighten-1">mdi-cloud-off-outline</v-icon>
+      <div class="text-h6 mb-2">本地模式不支持 Agent 任务台</div>
+      <div class="text-body-2 text-medium-emphasis" style="max-width: 420px">
+        Agent 任务依赖后端 SSE 流式服务（Claude Code runner）才能运行，纯前端本地模式无法提供此能力。请切换至云端模式使用。
+      </div>
+      <v-btn variant="tonal" color="primary" class="mt-4" @click="$router.push('/admin')">
+        返回管理后台
+      </v-btn>
+    </div>
+    <template v-else>
     <v-alert
       v-if="errorMsg"
       type="error"
@@ -242,6 +257,7 @@
         </v-list>
       </div>
     </v-navigation-drawer>
+    </template>
   </v-container>
 </template>
 
@@ -259,6 +275,11 @@ import AgentApprovalCard from '@/components/agent/AgentApprovalCard.vue'
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const route = useRoute()
 const router = useRouter()
+
+/** 本地模式：Agent 任务台依赖后端 SSE 流式服务（Claude Code runner），纯前端无法运行 */
+const isLocalMode = computed(
+  () => import.meta.env.VITE_STORAGE_MODE === 'local',
+)
 
 const {
   messages,
@@ -495,6 +516,8 @@ async function onDecide(aid: number, approved: boolean) {
 
 // ---------- 生命周期 ----------
 onMounted(async () => {
+  // 本地模式无后端 SSE 流式服务，跳过加载（页面展示不可用提示）
+  if (isLocalMode.value) return
   await loadMeta()
   // URL 带 session_id 时自动回放
   const sidParam = route.query.session_id

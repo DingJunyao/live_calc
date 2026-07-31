@@ -2,7 +2,7 @@
   <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
   <v-app-bar elevation="0" color="background" density="comfortable" fixed>
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-    <v-app-bar-title class="text-h6">个人中心</v-app-bar-title>
+    <v-app-bar-title class="text-h6">{{ isLocalMode ? '设置' : '个人中心' }}</v-app-bar-title>
   </v-app-bar>
 
   <v-container fluid>
@@ -54,7 +54,8 @@
     <!-- 设置列表 -->
     <v-card class="ma-4" elevation="0">
       <v-list>
-        <v-list-item @click="openAccountDialog">
+        <v-list-subheader v-if="isLocalMode">个人偏好</v-list-subheader>
+        <v-list-item v-if="!isLocalMode" @click="openAccountDialog">
           <template #prepend>
             <v-icon>mdi-account-edit</v-icon>
           </template>
@@ -106,7 +107,7 @@
           </template>
         </v-list-item>
 
-        <v-list-item @click="router.push('/profile/proposals')">
+        <v-list-item v-if="!isLocalMode" @click="router.push('/profile/proposals')">
           <template #prepend>
             <v-icon>mdi-clipboard-text-clock</v-icon>
           </template>
@@ -150,6 +151,7 @@
           </template>
         </v-list-item>
 
+        <v-list-subheader v-if="isLocalMode">数据备份</v-list-subheader>
         <v-list-item @click="exportDialog = true">
           <template #prepend>
             <v-icon>mdi-export</v-icon>
@@ -170,6 +172,72 @@
           </template>
         </v-list-item>
 
+        <template v-if="isLocalMode">
+          <v-list-subheader>数据规则</v-list-subheader>
+          <v-list-item @click="router.push('/admin/units')">
+            <template #prepend>
+              <v-icon>mdi-ruler</v-icon>
+            </template>
+            <v-list-item-title>单位管理</v-list-item-title>
+            <v-list-item-subtitle>计量单位与换算关系</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/blacklist-groups')">
+            <template #prepend>
+              <v-icon>mdi-shield-alert</v-icon>
+            </template>
+            <v-list-item-title>原料黑名单分组</v-list-item-title>
+            <v-list-item-subtitle>分组管理与原料映射</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-subheader>系统集成</v-list-subheader>
+          <v-list-item @click="router.push('/admin/map-settings')">
+            <template #prepend>
+              <v-icon>mdi-map-marker-path</v-icon>
+            </template>
+            <v-list-item-title>地图配置</v-list-item-title>
+            <v-list-item-subtitle>地图服务 API 密钥</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/ai-config')">
+            <template #prepend>
+              <v-icon>mdi-robot</v-icon>
+            </template>
+            <v-list-item-title>AI 与机翻配置</v-list-item-title>
+            <v-list-item-subtitle>AI 服务与机翻密钥设置</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-subheader>数据维护</v-list-subheader>
+          <v-list-item @click="router.push('/admin/data-maintenance')">
+            <template #prepend>
+              <v-icon>mdi-database-cog</v-icon>
+            </template>
+            <v-list-item-title>数据维护中心</v-list-item-title>
+            <v-list-item-subtitle>菜谱导入、USDA 数据管理</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/agent-console')">
+            <template #prepend>
+              <v-icon>mdi-robot-outline</v-icon>
+            </template>
+            <v-list-item-title>Agent 任务台</v-list-item-title>
+            <v-list-item-subtitle>发起 Agent 维护任务、对话流</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+        </template>
+
         <v-list-item>
           <template #prepend>
             <v-icon>mdi-information</v-icon>
@@ -184,7 +252,7 @@
     </v-card>
 
     <!-- 退出登录按钮 -->
-    <v-card class="ma-4" elevation="0">
+    <v-card v-if="!isLocalMode" class="ma-4" elevation="0">
       <v-btn block color="error" variant="text" @click="logout">
         <v-icon start>mdi-logout</v-icon>
         退出登录
@@ -587,6 +655,8 @@ const themeModeLabel = computed(() => {
       return ''
   }
 })
+
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 
 const search = ref('')
 

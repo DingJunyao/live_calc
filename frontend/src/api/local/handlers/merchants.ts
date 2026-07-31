@@ -127,13 +127,56 @@ export async function getMapConfig(): Promise<any> {
 }
 
 export async function listUserPlaces(): Promise<any> {
+  // 与云端 List[UserPlaceResponse] 对齐：返回数组，默认地点优先。
   const all = await getAll('user_places')
-  return { items: all, total: all.length }
+  return all.sort(
+    (a: any, b: any) =>
+      Number(!!b.is_default) - Number(!!a.is_default) ||
+      (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+      (a.created_at || '').localeCompare(b.created_at || ''),
+  )
 }
 
 export async function createUserPlace(_params: Record<string, string>, data?: any): Promise<any> {
+  if (data?.is_default) {
+    // 设为默认前清除其他默认，保证全局唯一
+    const all = await getAll('user_places')
+    for (const p of all) {
+      if (p.is_default) await putOne('user_places', { ...p, is_default: false })
+    }
+  }
   const id = await addOne('user_places', {
-    ...data, created_at: new Date().toISOString(),
+    ...data,
+    is_default: !!data?.is_default,
+    sort_order: data?.sort_order ?? 0,
+    created_at: new Date().toISOString(),
   })
   return getById('user_places', id as number)
+}
+
+export async function updateUserPlace(params: Record<string, string>, data?: any): Promise<any> {
+  const id = parseInt(params.id)
+  const existing = await getById('user_places', id)
+  if (!existing) throw { status: 404, message: '常用地点不存在' }
+  await putOne('user_places', { ...existing, ...data, id })
+  return getById('user_places', id)
+}
+
+export async function deleteUserPlace(params: Record<string, string>): Promise<any> {
+  const id = parseInt(params.id)
+  await deleteOne('user_places', id)
+  return { message: '常用地点已删除' }
+}
+
+export async function setDefaultUserPlace(params: Record<string, string>): Promise<any> {
+  const id = parseInt(params.id)
+  const target = await getById('user_places', id)
+  if (!target) throw { status: 404, message: '常用地点不存在' }
+  // 清除其他默认，保证全局唯一
+  const all = await getAll('user_places')
+  for (const p of all) {
+    if (p.id !== id && p.is_default) await putOne('user_places', { ...p, is_default: false })
+  }
+  await putOne('user_places', { ...target, is_default: true })
+  return getById('user_places', id)
 }

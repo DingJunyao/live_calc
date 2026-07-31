@@ -138,6 +138,7 @@ import * as merchants from './handlers/merchants'
 import * as nutrition from './handlers/nutrition'
 import * as hierarchy from './handlers/hierarchy'
 import * as blacklist from './handlers/blacklist'
+import * as blGroups from './handlers/blacklistGroups'
 import * as admin from './handlers/admin'
 import * as recipes from './handlers/recipes'
 import * as meals from './handlers/meals'
@@ -145,6 +146,7 @@ import * as sparklines from './handlers/sparklines'
 import * as usda from './handlers/usda'
 import * as agents from './handlers/agents'
 import { getExportData, uploadImport, listTasks, getTask } from './handlers/exportImport'
+import { cancelTask, importFromRepo, importFromLocal } from './handlers/exportImport'
 
 // ---- Auth ----
 addRoute('/auth/config', { get: auth.getConfig })
@@ -165,6 +167,14 @@ addRoute('/usda/preview-nutrition', { get: usda.previewNutrition })
 addRoute('/usda/match/ingredient/:ingredientId', { post: usda.matchIngredient })
 addRoute('/usda/match/product/:productId', { post: usda.matchProduct })
 addRoute('/admin/usda/download', { post: usda.downloadUsda })
+addRoute('/admin/usda/upload', { post: usda.uploadUsda })
+addRoute('/admin/usda/translate', { post: usda.translateUsda })
+addRoute('/admin/usda/translate-nutrients', { post: usda.translateNutrients })
+addRoute('/admin/usda/statistics', { get: usda.getStatistics })
+addRoute('/admin/usda/unmapped-nutrients', { get: usda.getUnmappedNutrients })
+addRoute('/admin/usda/tasks/:id', { get: usda.getTaskById })
+addRoute('/admin/usda/tasks', { get: usda.listTasks })
+addRoute('/admin/usda/task', { get: usda.getTask })
 
 // ---- Units ----
 addRoute('/units', { get: units.listUnits, post: units.createUnit })
@@ -243,6 +253,16 @@ addRoute('/admin/email-config/templates/:key', { get: admin.getEmailTemplate, pu
 addRoute('/admin/translation-config', { get: admin.getTranslationConfig, put: admin.updateTranslationConfig })
 addRoute('/admin/translation-config/test', { post: admin.testTranslationConnection })
 
+// ---- Admin: Blacklist Groups (CRUD + AI/过敏原降级) ----
+// 精确路径必须在参数路径 :id 之前注册，否则会被 :id 捕获
+addRoute('/admin/blacklist-groups/allergens-status', { get: blGroups.allergensStatus })
+addRoute('/admin/blacklist-groups/seed-allergens', { post: blGroups.seedAllergens })
+addRoute('/admin/blacklist-groups/:id/ingredients/:ingredientId', { delete: blGroups.removeIngredient })
+addRoute('/admin/blacklist-groups/:id/ingredients', { post: blGroups.addIngredients })
+addRoute('/admin/blacklist-groups/:id/ai-match', { post: blGroups.aiMatch })
+addRoute('/admin/blacklist-groups/:id', { put: blGroups.updateGroup, delete: blGroups.deleteGroup })
+addRoute('/admin/blacklist-groups', { get: blGroups.listGroups, post: blGroups.createGroup })
+
 	// ---- Entity Unit Overrides (exact paths before param paths) ----
 	addRoute('/entities/:entityType/:entityId/units/unmapped-units', { get: units.getEntityUnmappedUnits })
 	addRoute('/entities/:entityType/:entityId/units/:unitId', { put: units.updateEntityUnit, delete: units.deleteEntityUnit })
@@ -293,10 +313,16 @@ addRoute('/agent/sessions', { get: agents.listSessions, post: agents.createSessi
 // ---- Export / Import ----
 addRoute('/export/data', { get: getExportData })
 addRoute('/import/data/upload', { post: uploadImport })
+addRoute('/import/data/import-from-repo', { post: importFromRepo })
+addRoute('/import/data/import-from-local', { post: importFromLocal })
 addRoute('/import/tasks', { get: listTasks })
+addRoute('/import/task/:id/cancel', { post: cancelTask })
 addRoute('/import/task/:id', { get: getTask })
 
 // ---- Places ----
+// 精确子路径必须在 :id 参数路径之前注册
+addRoute('/places/:id/default', { put: merchants.setDefaultUserPlace })
+addRoute('/places/:id', { put: merchants.updateUserPlace, delete: merchants.deleteUserPlace })
 addRoute('/places', { get: merchants.listUserPlaces, post: merchants.createUserPlace })
 
 // ---- Products extra routes ----

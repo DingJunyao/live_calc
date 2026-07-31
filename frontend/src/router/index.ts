@@ -230,15 +230,17 @@ router.beforeEach(async (to, from, next) => {
     }
     // Block admin pages not relevant in single-user local mode
     const blockedInLocal: string[] = [
+      'admin',
       'admin-proposals',
       'admin-users',
       'admin-invite-codes',
       'admin-storage',
       'admin-email-config',
       'admin-images-unused',
+      'profile-proposals',
     ]
     if (blockedInLocal.includes(to.name as string)) {
-      next('/admin')
+      next('/profile')
       return
     }
     next()
