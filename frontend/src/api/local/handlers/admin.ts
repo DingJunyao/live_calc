@@ -43,23 +43,19 @@ export async function getConfig(_params: Record<string, string>, query?: any): P
 }
 
 export async function getStats(): Promise<any> {
-  const [products, records, ingredients, recipes, merchants, units, categories] = await Promise.all([
-    countAll('products'),
+  // 与云端 AdminStatsResponse 契约对齐：{ users, products, recipes, merchants }。
+  // 注意云端 products 字段数的是 ProductRecord（价格记录）表，而非商品实体表，
+  // 否则前端 AdminDashboard 读 stats.products 会拿到 undefined 而恒为 0。
+  const [priceRecords, recipes, merchants] = await Promise.all([
     countAll('product_records'),
-    countAll('ingredients'),
     countAll('recipes'),
     countAll('merchants'),
-    countAll('units'),
-    countAll('ingredient_categories'),
   ])
   return {
-    total_products: products,
-    total_price_records: records,
-    total_ingredients: ingredients,
-    total_recipes: recipes,
-    total_merchants: merchants,
-    total_units: units,
-    total_categories: categories,
+    users: 1, // 本地模式为单用户实例
+    products: priceRecords,
+    recipes,
+    merchants,
   }
 }
 

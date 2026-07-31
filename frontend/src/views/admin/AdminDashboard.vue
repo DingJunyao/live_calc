@@ -14,7 +14,7 @@
   <v-container class="pa-4">
     <!-- 统计卡片 -->
     <v-row class="ma-2 mb-4">
-      <v-col cols="12" sm="6" lg="3">
+      <v-col v-if="!isLocalMode" cols="12" sm="6" lg="3">
         <v-card
           elevation="0"
           class="user-stats-card"
@@ -35,7 +35,7 @@
         </v-card>
       </v-col>
 
-      <v-col cols="12" sm="6" lg="3">
+      <v-col cols="12" sm="6" :lg="isLocalMode ? 4 : 3">
         <v-card elevation="0">
           <v-card-text class="text-center pa-4">
             <v-avatar color="success" variant="tonal" size="48" class="mb-2">
@@ -48,7 +48,7 @@
         </v-card>
       </v-col>
 
-      <v-col cols="12" sm="6" lg="3">
+      <v-col cols="12" sm="6" :lg="isLocalMode ? 4 : 3">
         <v-card elevation="0">
           <v-card-text class="text-center pa-4">
             <v-avatar color="warning" variant="tonal" size="48" class="mb-2">
@@ -61,7 +61,7 @@
         </v-card>
       </v-col>
 
-      <v-col cols="12" sm="6" lg="3">
+      <v-col cols="12" sm="6" :lg="isLocalMode ? 4 : 3">
         <v-card elevation="0">
           <v-card-text class="text-center pa-4">
             <v-avatar color="info" variant="tonal" size="48" class="mb-2">
