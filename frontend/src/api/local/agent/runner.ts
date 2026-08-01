@@ -180,6 +180,9 @@ export async function* runAgent(
     }
     messages.push(assistantMsg)
 
+    // Anthropic requires all tool_result blocks in a single user message; collect first, send after loop
+    const anthropicToolResults: any[] = []
+
     // ---- 逐个执行工具 ----
     for (const tc of toolCalls) {
       if (signal?.aborted) {
@@ -205,15 +208,10 @@ export async function* runAgent(
 
       // ---- 把结果加入消息 ----
       if (config.provider === 'anthropic') {
-        messages.push({
-          role: 'user',
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: tc.id,
-              content: typeof result === 'string' ? result : JSON.stringify(result),
-            },
-          ],
+        anthropicToolResults.push({
+          type: 'tool_result',
+          tool_use_id: tc.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result),
         })
       } else {
         messages.push({
@@ -222,6 +220,10 @@ export async function* runAgent(
           content: typeof result === 'string' ? result : JSON.stringify(result),
         })
       }
+    }
+    // Anthropic: send all collected tool_result blocks in one user message
+    if (config.provider === 'anthropic' && anthropicToolResults.length) {
+      messages.push({ role: 'user', content: anthropicToolResults })
     }
   }
 

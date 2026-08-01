@@ -792,8 +792,9 @@ async function fillPieceWeight() {
 async function inferDensities() {
   submitting.aiDensities = true
   try {
-    const provider = aiInferProvider.value || 'claude_code'
-    if (provider === 'claude_code') {
+   const provider = aiInferProvider.value || 'claude_code'
+    // 本地模式：后端任务端点不存在，统一走 Agent 会话（runner 驱动）
+    if (provider === 'claude_code' || isLocalMode.value) {
       const { session_id } = await createSession('infer_densities', aiForce.value)
       agentTasks.value.unshift({
         session_id,
@@ -820,8 +821,9 @@ async function inferDensities() {
 async function onTranslateFoods() {
   submitting.translateFoods = true
   try {
-    const provider = translateProvider.value || 'claude_code'
-    if (provider === 'claude_code') {
+   const provider = translateProvider.value || 'claude_code'
+    // 本地模式：后端任务端点不存在，统一走 Agent 会话（runner 驱动）
+    if (provider === 'claude_code' || isLocalMode.value) {
       const { session_id } = await createSession('usda_translate', aiForce.value)
       agentTasks.value.unshift({
         session_id,
@@ -850,8 +852,9 @@ async function onTranslateFoods() {
 async function onTranslateNutrients() {
   submitting.translateNutrients = true
   try {
-    const provider = translateProvider.value || 'claude_code'
-    if (provider === 'claude_code') {
+   const provider = translateProvider.value || 'claude_code'
+    // 本地模式：后端任务端点不存在，统一走 Agent 会话（runner 驱动）
+    if (provider === 'claude_code' || isLocalMode.value) {
       const { session_id } = await createSession('unmapped_nutrient_translate', aiForce.value)
       agentTasks.value.unshift({
         session_id,

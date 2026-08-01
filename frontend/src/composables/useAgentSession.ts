@@ -22,8 +22,12 @@ import {
 } from '@/api/agent'
 import type { AgentProvider } from '@/api/agent'
 import { api } from '@/api'
-import { runAgent } from '@/api/local/agent/runner'
-import type { AgentProgress } from '@/api/local/agent/runner'
+import {
+  executeAgentRun,
+  resolveAgentConfig,
+  buildPrompt,
+  type RenderMessage as SRenderMessage,
+} from '@/api/local/agent/sessionRunner'
 
 /**
  * 渲染用的消息项（assistant 文本气泡 / tool 卡片）。
@@ -279,113 +283,8 @@ export function useAgentSession() {
   let localSid: number | null = null
   let localProvider: 'anthropic' | 'openai' | null = null
 
-  const TASK_PROMPTS: Record<string, string> = {
-    data_analysis: '请分析本地数据：用工具查询商品、食材、菜谱的价格与营养信息，给出整体情况与值得关注的发现。',
-    nutrition_audit: '请审核食材营养数据：逐个检查食材的营养信息是否完整，找出缺失关键营养素的数据；如需补充可调用 update_nutrition 工具。',
-    price_analysis: '请分析商品价格：用工具查询商品与价格记录，找出价格异常或更优购买方案。',
-    inventory_check: '请检查数据完整性：用 read_statistics 等工具统计各表数据量，发现缺失或不一致的数据并报告。',
-  }
-  function buildPrompt(taskType: string): string {
-    return TASK_PROMPTS[taskType] || `请执行任务：${taskType}。可调用工具查询本地数据后用中文总结。`
-  }
-
-  /** 从「AI 与机翻配置」解析 runner 所需配置 */
-  async function resolveLocalConfig(provider: AgentProvider): Promise<{
-    provider: 'anthropic' | 'openai'
-    apiKey: string
-    model: string
-    baseUrl?: string
-  }> {
-    if (provider === 'claude_code') {
-      throw new Error('本地模式不支持 claude_code，请在 AI 配置中选择 OpenAI 或 Anthropic 兼容。')
-    }
-    const cfg: any = await api.get('/admin/translation-config')
-    const p = cfg?.ai?.providers?.[provider]
-    if (!p || !p.api_key) {
-      throw new Error(`未配置 ${provider} 的 API Key，请先在「AI 与机翻配置」中填写并保存。`)
-    }
-    return {
-      provider,
-      apiKey: p.api_key,
-      model: p.model || (provider === 'anthropic' ? 'claude-sonnet-4-6' : 'gpt-4o-mini'),
-      baseUrl: p.base_url,
-    }
-  }
-
-  function mkAssistant(content: string): RenderMessage {
-    return {
-      key: nextKey(),
-      role: 'assistant',
-      content,
-      toolName: null,
-      toolUseId: null,
-      toolInput: null,
-      toolResult: null,
-      toolDone: false,
-    }
-  }
-
-  /** 把 runner 的 AgentProgress 映射到渲染消息 */
-  function applyLocalProgress(p: AgentProgress) {
-    switch (p.type) {
-      case 'text': {
-        const last = localRenders[localRenders.length - 1]
-        if (last && last.role === 'assistant') {
-          last.content = (last.content ?? '') + p.content
-        } else {
-          localRenders.push(mkAssistant(p.content))
-        }
-        messages.value = [...localRenders]
-        break
-      }
-      case 'tool_use': {
-        localRenders.push({
-          key: nextKey(),
-          role: 'tool',
-          content: null,
-          toolName: p.name,
-          toolUseId: null,
-          toolInput: p.input,
-          toolResult: null,
-          toolDone: false,
-        })
-        messages.value = [...localRenders]
-        break
-      }
-      case 'tool_result': {
-        const target = [...localRenders].reverse().find((m) => m.role === 'tool' && !m.toolDone)
-        if (target) {
-          target.toolResult = p.result
-          target.toolDone = true
-        } else {
-          localRenders.push({
-            key: nextKey(),
-            role: 'tool',
-            content: null,
-            toolName: p.name,
-            toolUseId: null,
-            toolInput: null,
-            toolResult: p.result,
-            toolDone: true,
-          })
-        }
-        messages.value = [...localRenders]
-        void persistLocal()
-        break
-      }
-      case 'error': {
-        error.value = p.message
-        status.value = 'failed'
-        void persistLocal()
-        break
-      }
-      case 'done': {
-        status.value = 'success'
-        void persistLocal()
-        break
-      }
-    }
-  }
+  // TASK_PROMPTS / buildPrompt / resolveAgentConfig / applyProgress 已抽取到
+  // @/api/local/agent/sessionRunner，composable 与 handler 共用。
 
   /** 持久化当前本地会话的渲染消息与 AI 消息历史 */
   async function persistLocal() {
@@ -413,18 +312,25 @@ export function useAgentSession() {
     localAbort = new AbortController()
     localProvider = provider === 'claude_code' ? null : provider
     connected.value = true
+    // 初始消息：续跑用传入历史，否则用任务提示
+    localAiMessages =
+      Array.isArray(initialMessages) && initialMessages.length
+        ? initialMessages
+        : [{ role: 'user', content: prompt }]
     try {
-      const config = await resolveLocalConfig(provider)
-      localAiMessages =
-        Array.isArray(initialMessages) && initialMessages.length
-          ? initialMessages
-          : [{ role: 'user', content: prompt }]
-      // runner 直接 mutate localAiMessages（续跑/持久化复用）
-      const gen = runAgent(config, prompt, localAbort.signal, localAiMessages)
-      for await (const prog of gen) {
-        if (localAbort?.signal.aborted) break
-        applyLocalProgress(prog)
-      }
+      const config = await resolveAgentConfig(provider)
+      // executeAgentRun 把 runner 进度累积到 localRenders（原地修改）
+      const { status: finalStatus, error: errMsg } = await executeAgentRun(
+        config,
+        prompt,
+        localRenders,
+        localAiMessages,
+        localAbort.signal,
+      )
+      messages.value = [...localRenders]
+      status.value = finalStatus
+      if (errMsg) error.value = errMsg
+      await persistLocal()
     } catch (e: any) {
       error.value = e?.message || '本地 Agent 运行失败'
       status.value = 'failed'

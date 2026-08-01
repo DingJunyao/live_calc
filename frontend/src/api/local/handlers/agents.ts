@@ -4,6 +4,12 @@
 // listSessions 返回数组；额外提供 PUT 更新用于持久化对话渲染与 AI 消息历史。
 
 import { getAll, addOne, putOne } from '../database'
+import {
+  executeAgentRun,
+  resolveAgentConfig,
+  type AgentProviderLike,
+  type RenderMessage,
+} from '../agent/sessionRunner'
 
 // ============================================================
 // 任务类型
@@ -80,9 +86,10 @@ export async function createSession(_params: Record<string, string>, data?: any)
     id: await nextId(),
     task_type: taskType,
     title: data?.title || meta?.name || '新对话',
-    status: 'running' as const,
-    provider: data?.provider || 'anthropic',
-    created_at: now,
+   status: 'running' as const,
+   provider: data?.provider || 'anthropic',
+   error: null as string | null,
+   created_at: now,
     updated_at: now,
     /** 供历史回放的渲染消息（RenderMessage[]） */
     renders: [] as any[],
@@ -91,7 +98,41 @@ export async function createSession(_params: Record<string, string>, data?: any)
   }
 
   await addOne('agent_sessions', session)
+  // 本地模式：创建后即触发后台运行（composable 路径也复用本 handler 创建会话）
+  void runSessionInBackground(session.id, session.task_type, session.provider)
   return { session_id: session.id }
+}
+
+/** 后台运行 Agent 会话：解析配置 → 驱动 runner → 持久化状态。失败时写入 error/status。 */
+async function runSessionInBackground(
+  sid: number,
+  taskType: string,
+  providerKey: string,
+) {
+  const renders: RenderMessage[] = []
+  const aiMessages: any[] = []
+  try {
+    const config = await resolveAgentConfig(providerKey as AgentProviderLike)
+    const { status: finalStatus, error: errMsg } = await executeAgentRun(
+      config,
+      taskType,
+      renders,
+      aiMessages,
+    )
+    await updateSession({ id: String(sid) }, {
+      renders,
+      ai_messages: aiMessages,
+      status: finalStatus,
+      error: errMsg || null,
+    })
+  } catch (e: any) {
+    await updateSession({ id: String(sid) }, {
+      renders,
+      ai_messages: aiMessages,
+      status: 'failed',
+      error: e?.message || '运行失败',
+    })
+  }
 }
 
 /** GET /agent/sessions — 列出会话（数组，按创建时间降序；支持 ?limit） */
