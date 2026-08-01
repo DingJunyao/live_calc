@@ -447,7 +447,7 @@
         </div>
 
         <!-- 价格记录列表 -->
-        <v-list v-else-if="priceRecords.length > 0" lines="two">
+        <v-list v-else-if="priceRecords.length > 0" lines="three">
           <v-list-item v-for="record in priceRecords" :key="record.id">
             <template #prepend>
               <v-avatar color="tertiary-container" size="40">
@@ -519,19 +519,22 @@
         </v-card-title>
         <v-divider />
 
-        <v-list v-if="recipes.length > 0" lines="two">
+        <v-list v-if="recipes.length > 0" lines="three">
           <v-list-item
             v-for="recipe in recipes"
             :key="recipe.id"
             @click="goToRecipe(recipe.id)"
           >
             <template #prepend>
-              <v-avatar color="secondary" size="36">
+              <v-avatar color="secondary" size="40">
                 <v-icon color="white">mdi-food</v-icon>
               </v-avatar>
             </template>
             <v-list-item-title>{{ recipe.name }}<v-chip v-if="!recipe.is_public" size="x-small" color="warning" variant="tonal" class="ml-2">未发布</v-chip></v-list-item-title>
-            <v-list-item-subtitle v-if="recipe.category">{{ recipe.category }}</v-list-item-subtitle>
+            <v-list-item-subtitle v-if="recipe.category || recipe.usages?.length">
+              <div v-if="recipe.category">{{ recipe.category }}</div>
+              <div v-if="recipe.usages?.length" class="text-caption text-medium-emphasis mt-1">{{ formatUsages(recipe) }}</div>
+            </v-list-item-subtitle>
             <template #append>
               <v-icon>mdi-chevron-right</v-icon>
             </template>
@@ -1825,11 +1828,20 @@ interface PriceRecord {
   recorded_at: string
 }
 
+interface IngredientUsage {
+  quantity: string | null
+  quantity_range: { min: number; max: number } | null
+  unit: string | null
+  original_quantity: any
+}
+
 interface Recipe {
   id: number
   name: string
   category?: string
   is_public?: boolean
+  servings?: number
+  usages?: IngredientUsage[]
 }
 
 interface Unit {
@@ -3371,6 +3383,34 @@ const loadNutritionData = async () => {
 }
 
 // 加载关联菜谱
+// 单条用量 → 文本，对齐菜谱详情 RecipeIngredientCard 的显示规则
+const formatUsageText = (u: IngredientUsage): string => {
+  const qty = u.quantity ? String(u.quantity) : ''
+  const range = u.quantity_range as { min?: number; max?: number } | null
+  const unit = u.unit || ''
+  if (qty && range && (range.min != null || range.max != null)) {
+    return `${range.min ?? ''}~${range.max ?? ''} ${unit}（推荐 ${qty} ${unit}）`.trim()
+  }
+  if (qty) return `${qty} ${unit}`.trim()
+  if (range && (range.min != null || range.max != null)) {
+    return `${range.min ?? ''}~${range.max ?? ''} ${unit}`.trim()
+  }
+  if (u.original_quantity != null && u.original_quantity !== '') {
+    return String(u.original_quantity)
+  }
+  return '-'
+}
+
+// 一个菜谱里该食材的全部用量：数值类加「/ N 份」，模糊量(适量/少许)不加；多条用分号合并
+const formatUsages = (recipe: Recipe): string => {
+  const servings = recipe.servings || 1
+  return (recipe.usages || []).map(u => {
+    const text = formatUsageText(u)
+    const isNumeric = !!(u.quantity || u.quantity_range)
+    return isNumeric ? `${text} / ${servings} 份` : text
+  }).join('；')
+}
+
 const loadRecipes = async () => {
   try {
     const skip = (recipePage.value - 1) * recipePageSize.value
