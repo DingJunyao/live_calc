@@ -143,6 +143,10 @@ interface LocalDB extends DBSchema {
     key: number
     value: any
   }
+  'regions': {
+    key: number
+    value: any
+  }
 }
 
 type StoreName = keyof LocalDB
@@ -152,7 +156,7 @@ type StoreName = keyof LocalDB
 // ============================================================
 
 const DB_NAME = 'livecalc'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let dbInstance: IDBPDatabase<LocalDB> | null = null
 
@@ -160,125 +164,137 @@ export async function getDb(): Promise<IDBPDatabase<LocalDB>> {
   if (dbInstance) return dbInstance
 
   dbInstance = await openDB<LocalDB>(DB_NAME, DB_VERSION, {
-    upgrade(db, _oldVersion, _newVersion, _transaction) {
-      // ---- 单位 ----
-      const unitsStore = db.createObjectStore('units', { keyPath: 'id', autoIncrement: true })
-      unitsStore.createIndex('by_type', 'unit_type')
+    upgrade(db, oldVersion, _newVersion, _transaction) {
+      // v1: ?? schema
+      if (oldVersion < 1) {
+        // ---- ?? ----
+        const unitsStore = db.createObjectStore('units', { keyPath: 'id', autoIncrement: true })
+        unitsStore.createIndex('by_type', 'unit_type')
 
-      // ---- 单位换算 ----
-      const unitConvStore = db.createObjectStore('unit_conversions', { keyPath: 'id', autoIncrement: true })
-      unitConvStore.createIndex('by_from_unit', 'from_unit_id')
-      unitConvStore.createIndex('by_to_unit', 'to_unit_id')
+        // ---- ???? ----
+        const unitConvStore = db.createObjectStore('unit_conversions', { keyPath: 'id', autoIncrement: true })
+        unitConvStore.createIndex('by_from_unit', 'from_unit_id')
+        unitConvStore.createIndex('by_to_unit', 'to_unit_id')
 
-      // ---- 食材分类 ----
-      db.createObjectStore('ingredient_categories', { keyPath: 'id', autoIncrement: true })
+        // ---- ???? ----
+        db.createObjectStore('ingredient_categories', { keyPath: 'id', autoIncrement: true })
 
-      // ---- 食材 ----
-      const ingredientsStore = db.createObjectStore('ingredients', { keyPath: 'id', autoIncrement: true })
-      ingredientsStore.createIndex('by_name', 'name')
-      ingredientsStore.createIndex('by_category_id', 'category_id')
+        // ---- ?? ----
+        const ingredientsStore = db.createObjectStore('ingredients', { keyPath: 'id', autoIncrement: true })
+        ingredientsStore.createIndex('by_name', 'name')
+        ingredientsStore.createIndex('by_category_id', 'category_id')
 
-      // ---- 营养数据 ----
-      const nutritionStore = db.createObjectStore('nutrition_data', { keyPath: 'id', autoIncrement: true })
-      nutritionStore.createIndex('by_ingredient_id', 'ingredient_id')
+        // ---- ???? ----
+        const nutritionStore = db.createObjectStore('nutrition_data', { keyPath: 'id', autoIncrement: true })
+        nutritionStore.createIndex('by_ingredient_id', 'ingredient_id')
 
-      // ---- 商品 ----
-      const productsStore = db.createObjectStore('products', { keyPath: 'id', autoIncrement: true })
-      productsStore.createIndex('by_name', 'name')
-      productsStore.createIndex('by_ingredient_id', 'ingredient_id')
+        // ---- ?? ----
+        const productsStore = db.createObjectStore('products', { keyPath: 'id', autoIncrement: true })
+        productsStore.createIndex('by_name', 'name')
+        productsStore.createIndex('by_ingredient_id', 'ingredient_id')
 
-      // ---- 价格记录 ----
-      const recordStore = db.createObjectStore('product_records', { keyPath: 'id', autoIncrement: true })
-      recordStore.createIndex('by_product_id', 'product_id')
-      recordStore.createIndex('by_merchant_id', 'merchant_id')
-      recordStore.createIndex('by_recorded_at', 'recorded_at')
+        // ---- ???? ----
+        const recordStore = db.createObjectStore('product_records', { keyPath: 'id', autoIncrement: true })
+        recordStore.createIndex('by_product_id', 'product_id')
+        recordStore.createIndex('by_merchant_id', 'merchant_id')
+        recordStore.createIndex('by_recorded_at', 'recorded_at')
 
-      // ---- 商品权重覆盖 ----
-      const weightStore = db.createObjectStore('product_weight_overrides', { keyPath: 'id', autoIncrement: true })
-      weightStore.createIndex('by_product_id', 'product_id')
+        // ---- ?????? ----
+        const weightStore = db.createObjectStore('product_weight_overrides', { keyPath: 'id', autoIncrement: true })
+        weightStore.createIndex('by_product_id', 'product_id')
 
-      // ---- 商品条码 ----
-      const barcodeStore = db.createObjectStore('product_barcodes', { keyPath: 'id', autoIncrement: true })
-      barcodeStore.createIndex('by_product_id', 'product_id')
-      barcodeStore.createIndex('by_code', 'code', { unique: true })
+        // ---- ???? ----
+        const barcodeStore = db.createObjectStore('product_barcodes', { keyPath: 'id', autoIncrement: true })
+        barcodeStore.createIndex('by_product_id', 'product_id')
+        barcodeStore.createIndex('by_code', 'code', { unique: true })
 
-      // ---- 菜谱 ----
-      const recipesStore = db.createObjectStore('recipes', { keyPath: 'id', autoIncrement: true })
-      recipesStore.createIndex('by_name', 'name')
+        // ---- ?? ----
+        const recipesStore = db.createObjectStore('recipes', { keyPath: 'id', autoIncrement: true })
+        recipesStore.createIndex('by_name', 'name')
 
-      // ---- 菜谱原料 ----
-      const recipeIngStore = db.createObjectStore('recipe_ingredients', { keyPath: 'id', autoIncrement: true })
-      recipeIngStore.createIndex('by_recipe_id', 'recipe_id')
-      recipeIngStore.createIndex('by_ingredient_id', 'ingredient_id')
+        // ---- ???? ----
+        const recipeIngStore = db.createObjectStore('recipe_ingredients', { keyPath: 'id', autoIncrement: true })
+        recipeIngStore.createIndex('by_recipe_id', 'recipe_id')
+        recipeIngStore.createIndex('by_ingredient_id', 'ingredient_id')
 
-      // ---- 菜谱成本历史 ----
-      const costHistStore = db.createObjectStore('recipe_cost_history', { keyPath: 'id', autoIncrement: true })
-      costHistStore.createIndex('by_recipe_id', 'recipe_id')
-      costHistStore.createIndex('by_recorded_at', 'recorded_at')
+        // ---- ?????? ----
+        const costHistStore = db.createObjectStore('recipe_cost_history', { keyPath: 'id', autoIncrement: true })
+        costHistStore.createIndex('by_recipe_id', 'recipe_id')
+        costHistStore.createIndex('by_recorded_at', 'recorded_at')
 
-      // ---- 商家 ----
-      const merchantsStore = db.createObjectStore('merchants', { keyPath: 'id', autoIncrement: true })
-      merchantsStore.createIndex('by_name', 'name')
+        // ---- ?? ----
+        const merchantsStore = db.createObjectStore('merchants', { keyPath: 'id', autoIncrement: true })
+        merchantsStore.createIndex('by_name', 'name')
 
-      // ---- 商家收藏 ----
-      const favStore = db.createObjectStore('merchant_favorites', { keyPath: 'id', autoIncrement: true })
-      favStore.createIndex('by_merchant_id', 'merchant_id')
+        // ---- ???? ----
+        const favStore = db.createObjectStore('merchant_favorites', { keyPath: 'id', autoIncrement: true })
+        favStore.createIndex('by_merchant_id', 'merchant_id')
 
-      // ---- 用户地点 ----
-      db.createObjectStore('user_places', { keyPath: 'id', autoIncrement: true })
+        // ---- ???? ----
+        db.createObjectStore('user_places', { keyPath: 'id', autoIncrement: true })
 
-      // ---- 食材层级关系 ----
-      const hierStore = db.createObjectStore('ingredient_hierarchy', { keyPath: 'id', autoIncrement: true })
-      hierStore.createIndex('by_parent', 'parent_id')
-      hierStore.createIndex('by_child', 'child_id')
+        // ---- ?????? ----
+        const hierStore = db.createObjectStore('ingredient_hierarchy', { keyPath: 'id', autoIncrement: true })
+        hierStore.createIndex('by_parent', 'parent_id')
+        hierStore.createIndex('by_child', 'child_id')
 
-      // ---- 实体单位覆盖 ----
-      const euOverrideStore = db.createObjectStore('entity_unit_overrides', { keyPath: 'id', autoIncrement: true })
-      euOverrideStore.createIndex('by_entity', ['entity_type', 'entity_id'])
+        // ---- ?????? ----
+        const euOverrideStore = db.createObjectStore('entity_unit_overrides', { keyPath: 'id', autoIncrement: true })
+        euOverrideStore.createIndex('by_entity', ['entity_type', 'entity_id'])
 
-      // ---- 实体密度 ----
-      const densityStore = db.createObjectStore('entity_densities', { keyPath: 'id', autoIncrement: true })
-      densityStore.createIndex('by_entity', ['entity_type', 'entity_id'])
+        // ---- ???? ----
+        const densityStore = db.createObjectStore('entity_densities', { keyPath: 'id', autoIncrement: true })
+        densityStore.createIndex('by_entity', ['entity_type', 'entity_id'])
 
-      // ---- USDA 食品 ----
-      const usdaStore = db.createObjectStore('usda_foods', { keyPath: 'fdc_id' })
-      usdaStore.createIndex('by_name', 'description')
+        // ---- USDA ?? ----
+        const usdaStore = db.createObjectStore('usda_foods', { keyPath: 'fdc_id' })
+        usdaStore.createIndex('by_name', 'description')
 
-      // ---- USDA 食品营养素 ----
-      const usdaNutStore = db.createObjectStore('usda_food_nutrients', { keyPath: 'id', autoIncrement: true })
-      usdaNutStore.createIndex('by_fdc_id', 'fdc_id')
+        // ---- USDA ????? ----
+        const usdaNutStore = db.createObjectStore('usda_food_nutrients', { keyPath: 'id', autoIncrement: true })
+        usdaNutStore.createIndex('by_fdc_id', 'fdc_id')
 
-      // ---- 黑名单分组 ----
-      const blGroupStore = db.createObjectStore('blacklist_groups', { keyPath: 'id', autoIncrement: true })
-      blGroupStore.createIndex('by_name', 'name')
+        // ---- ????? ----
+        const blGroupStore = db.createObjectStore('blacklist_groups', { keyPath: 'id', autoIncrement: true })
+        blGroupStore.createIndex('by_name', 'name')
 
-      // ---- 黑名单分组食材 ----
-      const blIngStore = db.createObjectStore('blacklist_group_ingredients', { keyPath: 'id', autoIncrement: true })
-      blIngStore.createIndex('by_group_id', 'group_id')
-      blIngStore.createIndex('by_ingredient_id', 'ingredient_id')
+        // ---- ??????? ----
+        const blIngStore = db.createObjectStore('blacklist_group_ingredients', { keyPath: 'id', autoIncrement: true })
+        blIngStore.createIndex('by_group_id', 'group_id')
+        blIngStore.createIndex('by_ingredient_id', 'ingredient_id')
 
-      // ---- 黑名单订阅 ----
-      const blSubStore = db.createObjectStore('blacklist_subscriptions', { keyPath: 'id', autoIncrement: true })
-      blSubStore.createIndex('by_group_id', 'group_id')
+        // ---- ????? ----
+        const blSubStore = db.createObjectStore('blacklist_subscriptions', { keyPath: 'id', autoIncrement: true })
+        blSubStore.createIndex('by_group_id', 'group_id')
 
-      // ---- 餐食推荐 ----
-      const mealStore = db.createObjectStore('meal_recommendations', { keyPath: 'id', autoIncrement: true })
-      mealStore.createIndex('by_date', 'date')
+        // ---- ???? ----
+        const mealStore = db.createObjectStore('meal_recommendations', { keyPath: 'id', autoIncrement: true })
+        mealStore.createIndex('by_date', 'date')
 
-      // ---- 系统配置 ----
-      db.createObjectStore('system_config', { keyPath: 'key' })
+        // ---- ???? ----
+        db.createObjectStore('system_config', { keyPath: 'key' })
 
-      // ---- 图片 ----
-      const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true })
-      imagesStore.createIndex('by_entity', ['entity_type', 'entity_id'])
+        // ---- ?? ----
+        const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true })
+        imagesStore.createIndex('by_entity', ['entity_type', 'entity_id'])
 
-      // ---- 导入任务 ----
-      db.createObjectStore('import_tasks', { keyPath: 'id', autoIncrement: true })
+        // ---- ???? ----
+        db.createObjectStore('import_tasks', { keyPath: 'id', autoIncrement: true })
 
-      // ---- Agent 会话 ----
-      db.createObjectStore('agent_sessions', { keyPath: 'id', autoIncrement: true })
+        // ---- Agent ?? ----
+        db.createObjectStore('agent_sessions', { keyPath: 'id', autoIncrement: true })
+      }
+
+      // v2: ????
+      if (oldVersion < 2) {
+        const regionStore = db.createObjectStore('regions', { keyPath: 'id' })
+        regionStore.createIndex('by_parent', 'parent_id')
+        regionStore.createIndex('by_level', 'level')
+        regionStore.createIndex('by_code', 'code', { unique: true })
+      }
     },
   })
+
 
   return dbInstance
 }

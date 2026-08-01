@@ -228,7 +228,7 @@
       </v-col>
 
       <!-- 行政区划 -->
-      <v-col v-if="!isLocalMode" cols="12" md="6" lg="4">
+      <v-col cols="12" md="6" lg="4">
         <v-card class="rounded-lg h-100">
           <v-card-title class="d-flex align-center py-4">
             <v-icon class="mr-2" color="blue">mdi-map-marker-multiple</v-icon>
@@ -674,10 +674,7 @@ onMounted(async () => {
   }
 
   // 加载行政区划状态
-  if (!isLocalMode.value) {
-    // 本地模式不消费行政区划数据，卡片隐藏，跳过该调用
-    await loadRegionStatus()
-  }
+  await loadRegionStatus()
 
   // 恢复最近的 agent 会话到任务列表（刷新后重建）
   try {
@@ -948,7 +945,7 @@ async function loadRegionStatus() {
     const data = await api.get('/admin/regions/seed-status')
     regionStatus.value = data
   } catch (e: any) {
-    // 非致命，静默（管理员未登录或网络问题不阻塞页面）
+    console.error("[loadRegionStatus] error:", e)
   }
 }
 

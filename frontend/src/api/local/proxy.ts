@@ -145,6 +145,7 @@ import * as meals from './handlers/meals'
 import * as sparklines from './handlers/sparklines'
 import * as usda from './handlers/usda'
 import * as agents from './handlers/agents'
+import * as regions from './handlers/regions'
 import { getExportData, uploadImport, listTasks, getTask } from './handlers/exportImport'
 import { cancelTask, importFromRepo, importFromLocal } from './handlers/exportImport'
 
@@ -335,3 +336,9 @@ addRoute('/nutrition/ingredients/:id/recipes', { get: nutrition.getIngredientRec
 
 // ---- Units with trailing slash (alias for /units) ----
 addRoute('/units/', { get: units.listUnits, post: units.createUnit })
+
+// ---- Regions (administrative divisions) ----
+addRoute('/regions', { get: regions.listRegions })
+addRoute('/regions/:id', { get: regions.getRegion })
+addRoute('/admin/regions/seed-status', { get: regions.seedStatus })
+addRoute('/admin/regions/seed', { post: regions.seedRegions })
