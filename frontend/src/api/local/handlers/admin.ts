@@ -15,6 +15,34 @@ async function setConfigValue(key: string, value: any): Promise<void> {
   await db.put('system_config', { key, value: plain })
 }
 
+/** 把网络异常转成可读文案（重点标注 CORS 问题） */
+function friendlyErr(e: any): string {
+  const name = e?.name || ''
+  const msg = e?.message || String(e)
+  if (name === 'TypeError' || /Failed to fetch|NetworkError|CORS/i.test(msg)) {
+    return `浏览器无法连接该端点（可能是 CORS 被拒、域名不通或证书问题）：${msg}`
+  }
+  if (name === 'TimeoutError' || /timeout|aborted/i.test(msg)) {
+    return `请求超时：${msg}`
+  }
+  return `${name || 'Error'}: ${msg}`
+}
+
+/** 带超时的 fetch：用 AbortController + setTimeout 保证一定中止（AbortSignal.timeout 在某些跨域场景下不触发） */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  ms: number,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function getMapConfig(): Promise<any> {
   const config = await getConfigValue('map_config')
   return config || {
@@ -187,6 +215,98 @@ export async function updateTranslationConfig(_params: Record<string, string>, d
 }
 
 export async function testTranslationConnection(_params: Record<string, string>, data?: any): Promise<any> {
-  // Local mode: no real provider to test, always return success
-  return { provider: data?.provider || 'unknown', ok: true, detail: '本地模式跳过连接测试' }
+  // 本地模式：对 AI provider 发起一次最小请求验证连通性（浏览器直连，需端点支持 CORS）
+  const provider = data?.provider || 'unknown'
+  const cfg = await getTranslationConfig()
+  const section =
+    cfg?.ai?.providers?.[provider] ?? cfg?.machine?.providers?.[provider]
+
+ // 机器翻译 / claude_code：本地无法测试（需服务端签名或 CLI）
+  const UNSUPPORTED = ['claude_code', 'baidu', 'aliyun']
+  if (UNSUPPORTED.includes(provider)) {
+    return {
+      provider,
+      ok: false,
+      detail: '本地模式不支持测试该 provider（需服务端能力）',
+    }
+  }
+
+  // DeepL：简单的 POST /translate
+  if (provider === 'deepl') {
+    const authKey = section?.auth_key
+    if (!authKey) return { provider, ok: false, detail: '未配置 Auth Key' }
+    const isFree = String(authKey).endsWith(':fx')
+    const host = isFree ? 'https://api-free.deepl.com' : 'https://api.deepl.com'
+    try {
+      const res = await fetchWithTimeout(`${host}/v2/translate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `DeepL-Auth-Key ${authKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ text: 'Water', target_lang: 'ZH' }).toString(),
+      }, 15000)
+      if (!res.ok) {
+        const t = await res.text().catch(() => '')
+        return { provider, ok: false, detail: `DeepL ${res.status}: ${t || res.statusText}` }
+      }
+      const j = await res.json()
+      const out = j?.translations?.[0]?.text
+      return {
+        provider,
+        ok: !!out,
+        detail: out ? `连接成功（Water → ${out}）` : '调用成功但无有效译文',
+      }
+    } catch (e: any) {
+      return { provider, ok: false, detail: friendlyErr(e) }
+    }
+  }
+
+  // OpenAI / Anthropic：发一次最小对话请求
+  if (provider === 'openai' || provider === 'anthropic') {
+    const apiKey = section?.api_key
+    const model = section?.model
+    if (!apiKey) return { provider, ok: false, detail: '未配置 API Key' }
+    if (!model) return { provider, ok: false, detail: '未配置 Model' }
+
+    try {
+      if (provider === 'anthropic') {
+        const base = String(section.base_url || 'https://api.anthropic.com').replace(/\/$/, '')
+        const res = await fetchWithTimeout(`${base}/v1/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({ model, max_tokens: 8, messages: [{ role: 'user', content: 'ping' }] }),
+        }, 20000)
+        if (!res.ok) {
+          const t = await res.text().catch(() => '')
+          return { provider, ok: false, detail: `Anthropic ${res.status}: ${t || res.statusText}` }
+        }
+        return { provider, ok: true, detail: '连接成功' }
+      } else {
+        const obase = String(section.base_url || 'https://api.openai.com/v1').replace(/\/$/, '')
+        const res = await fetchWithTimeout(`${obase}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ model, max_tokens: 8, messages: [{ role: 'user', content: 'ping' }] }),
+        }, 20000)
+        if (!res.ok) {
+          const t = await res.text().catch(() => '')
+          return { provider, ok: false, detail: `OpenAI ${res.status}: ${t || res.statusText}` }
+        }
+        return { provider, ok: true, detail: '连接成功' }
+      }
+    } catch (e: any) {
+      return { provider, ok: false, detail: friendlyErr(e) }
+    }
+  }
+
+  return { provider, ok: false, detail: '未知的 provider' }
 }
