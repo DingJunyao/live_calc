@@ -10,7 +10,9 @@ async function getConfigValue(key: string): Promise<any> {
 
 async function setConfigValue(key: string, value: any): Promise<void> {
   const db = await getDb()
-  await db.put('system_config', { key, value })
+  // 剥离 Vue 响应式 Proxy（结构化克隆无法克隆 Proxy，会抛 DataCloneError）
+  const plain = JSON.parse(JSON.stringify(value))
+  await db.put('system_config', { key, value: plain })
 }
 
 export async function getMapConfig(): Promise<any> {
