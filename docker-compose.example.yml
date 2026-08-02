@@ -22,7 +22,7 @@ services:
     env_file:
       - backend/.env          # 不存在则 compose 报错：先 cp backend/.env.example backend/.env
     volumes:
-      - ./data:/app/data
-      - ./static:/app/static
-      - ./logs:/app/logs
+      - ./backend/data:/app/data
+      - ./backend/static:/app/static
+      - ./backend/logs:/app/logs
     restart: unless-stopped

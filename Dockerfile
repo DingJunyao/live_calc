@@ -35,7 +35,11 @@ ENV VITE_API_URL=${VITE_API_URL} \
 
 # 拷源码并构建（.dockerignore 已排除 node_modules，不会覆盖上面装的）
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build \
+    # public/ 下的源文件（logo.svg/favicon.ico/pwa-*.png 等）从 Windows 构建上下文
+    # COPY 进 Linux 后权限可能不可读，nginx try_files 命中后由 static 模块读取会 403。
+    # 统一放开读权限（a+r 给文件可读、a+X 只给目录加可遍历位），vite 生成的 assets 本就 644 不受影响。
+    && chmod -R a+rX dist
 # 产物：/build/dist
 
 
