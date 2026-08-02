@@ -8,7 +8,11 @@ import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
+import shutil
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
+import requests
 from sqlalchemy.orm import Session
 
 from app.models.recipe import Recipe, RecipeIngredient
@@ -31,6 +35,7 @@ from app.models.blacklist_group_subscription import BlacklistGroupSubscription
 
 from .reachability import ExportSet, collect_full_set, collect_mine_set
 from . import serializers as S
+from app.services.storage.factory import get_storage
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "static"  # backend/static
 
@@ -56,41 +61,169 @@ def _ingredient_name_map(db: Session, ing_ids: set | None) -> dict:
     return {i.id: i.name for i in q.all()}
 
 
-def _collect_image_files(manifest: dict, recipes_payload: list, products_payload: list) -> list:
-    """扫描已序列化的图片相对路径，返回 [(zip内路径, 物理绝对路径)]。
+def _download_remote_images(image_urls: list, is_admin: bool,
+                            max_workers: int = 8, timeout: int = 30):
+    """并发下载外链图到临时目录。
 
-    外链 http(s):// 跳过并计入 manifest.notes。
+    - is_admin=True：去掉 URL query（下原图）；否则原样（瘦身图）。
+    返回 (downloaded, failed, tmpdir_path)：
+      downloaded: {原 url: (zip 内相对路径, 临时文件绝对路径)}
+      failed: 下载失败数
+      tmpdir_path: 临时目录（调用方负责清理）
+    """
+    tmpdir = tempfile.mkdtemp(prefix="export_img_")
+
+    def fetch(url):
+        fetch_url = url.split("?", 1)[0] if is_admin else url
+        try:
+            resp = requests.get(fetch_url, timeout=timeout)
+            resp.raise_for_status()
+        except Exception:
+            return None
+        # 提取 basename 时统一去掉 query
+        clean_url = url.split("?", 1)[0]
+        base = clean_url.rsplit("/", 1)[-1] or "image"
+        base = _UNSAFE_FILENAME.sub("_", base).strip() or "image"
+        return url, base, resp.content
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        results = list(ex.map(fetch, image_urls))
+
+    downloaded = {}
+    used_rels = set()
+    failed = 0
+    for r in results:
+        if r is None:
+            failed += 1
+            continue
+        url, base, content = r
+
+        # 去重：在扩展名前加 _2, _3 等
+        name, ext = base.rsplit(".", 1) if "." in base else (base, "")
+        rel = f"images/{name}.{ext}" if ext else f"images/{name}"
+        n = 2
+        while rel in used_rels:
+            rel = f"images/{name}_{n}.{ext}" if ext else f"images/{name}_{n}"
+            n += 1
+        used_rels.add(rel)
+
+        tmp_path = Path(tmpdir) / base
+        tmp_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path.write_bytes(content)
+        downloaded[url] = (rel, str(tmp_path))
+
+    return downloaded, failed, tmpdir
+
+
+def _collect_image_files(manifest: dict, recipes_payload: list, products_payload: list,
+                         user=None) -> tuple:
+    """扫描图片，返回 (files, tmpdir_to_clean)。
+
+    三类图：
+    - http(s) 外链：下载（admin 去 query 下原图）；成功改写 JSON 为 images/<basename>、失败保留外链。
+    - 本地图（STATIC_DIR 存在）：直接打包。
+    - storage key 图（recipes/xxx 等，本地缺失但图在 S3）：storage.get(key) 读 S3 打包到原 key，JSON 不改写。
+
+    管理员（user.is_admin）仅影响 http 外链下载（去 query）；storage.get 直读 S3 原图，无 query 问题。
     """
     files = []
-    skipped = 0
     seen = set()
+    skipped_local_missing = 0
+    s3_downloaded = 0
+    s3_missing = 0
 
-    def _handle(rel: str | None):
-        nonlocal skipped
-        if not rel:
-            return
-        if rel.startswith("http://") or rel.startswith("https://"):
-            skipped += 1
-            return
-        phys = STATIC_DIR / rel
-        if not phys.exists():
-            skipped += 1
-            return
-        if rel in seen:
-            return
-        seen.add(rel)
-        files.append((rel, phys))
+    # 预加载 storage：本地图缺失时从 S3 读（图物理在 S3、DB 存 storage key）
+    try:
+        storage = get_storage()
+    except Exception:
+        storage = None
+
+    # 1) 收集去重的外链 URL
+    remote_urls: list = []
+    seen_urls: set = set()
+
+    def _is_remote(rel):
+        return rel and (rel.startswith("http://") or rel.startswith("https://"))
 
     for r in recipes_payload:
         for img in r.get("images", []):
-            _handle(img)
+            if _is_remote(img) and img not in seen_urls:
+                seen_urls.add(img)
+                remote_urls.append(img)
     for p in products_payload:
-        _handle(p.get("image_url"))
+        url = p.get("image_url")
+        if _is_remote(url) and url not in seen_urls:
+            seen_urls.add(url)
+            remote_urls.append(url)
 
-    if skipped:
-        manifest.setdefault("notes", []).append(f"{skipped} 个图片为外链或缺失，未打包")
-    manifest.setdefault("image_summary", {})["skipped_remote"] = skipped
-    return files
+    # 2) 下载外链
+    is_admin = bool(getattr(user, "is_admin", False))
+    downloaded, dl_failed, tmpdir = _download_remote_images(remote_urls, is_admin)
+
+    # 3) 遍历 payload：改写外链 + 收集打包（本地图 / storage key）
+    def _handle(rel, payload_obj, key, idx=None):
+        nonlocal skipped_local_missing, s3_downloaded, s3_missing
+        if not rel:
+            return
+        if _is_remote(rel):
+            if rel not in downloaded:
+                return  # 失败：保留外链，不打包
+            pack_rel, phys = downloaded[rel]
+            if idx is not None:
+                payload_obj[key][idx] = pack_rel
+            else:
+                payload_obj[key] = pack_rel
+        else:
+            phys = STATIC_DIR / rel
+            if phys.exists():
+                pack_rel = rel
+            elif storage is not None:
+                # storage key 图：图在 S3、DB 存 key。直读 S3 bytes（不经 CDN，无 UA/query 问题）。
+                # 统一打包到 images/<key>（与本地图片模式一致，避免与 recipes/*.json 混杂），JSON 改写。
+                try:
+                    data = storage.get(rel)
+                except Exception:
+                    s3_missing += 1
+                    return
+                tmp_name = _UNSAFE_FILENAME.sub("_", rel.replace("/", "_"))
+                tmp_path = Path(tmpdir) / tmp_name
+                tmp_path.write_bytes(data)
+                phys = tmp_path
+                pack_rel = "images/" + rel
+                if idx is not None:
+                    payload_obj[key][idx] = pack_rel
+                else:
+                    payload_obj[key] = pack_rel
+                s3_downloaded += 1
+            else:
+                skipped_local_missing += 1
+                return
+        if pack_rel in seen:
+            return
+        seen.add(pack_rel)
+        files.append((pack_rel, str(phys)))
+
+    for r in recipes_payload:
+        for i, img in enumerate(r.get("images", [])):
+            _handle(img, r, "images", i)
+    for p in products_payload:
+        _handle(p.get("image_url"), p, "image_url")
+
+    # 4) manifest 统计
+    summary = manifest.setdefault("image_summary", {})
+    summary["downloaded"] = len(downloaded)
+    summary["failed"] = dl_failed
+    summary["s3_downloaded"] = s3_downloaded
+    summary["s3_missing"] = s3_missing
+    summary["skipped_local_missing"] = skipped_local_missing
+    summary["skipped_remote"] = dl_failed  # 向后兼容旧字段
+    if downloaded or dl_failed or s3_downloaded or s3_missing:
+        manifest.setdefault("notes", []).append(
+            f"{len(downloaded)} 个外链图下载打包、{dl_failed} 个外链失败，"
+            f"{s3_downloaded} 个 S3 图读取打包、{s3_missing} 个 S3 缺失"
+        )
+
+    return files, tmpdir
 
 
 def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
@@ -426,33 +559,37 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
         "notes": [],
     }
 
-    # ---- 图片收集（image_summary 统计统一由 _collect_image_files 负责）----
-    image_files = _collect_image_files(manifest, recipes_payload, products_payload)
+    # ---- 图片收集（外链图下载打包；image_summary 由 _collect_image_files 统一维护）----
+    image_files, img_tmpdir = _collect_image_files(manifest, recipes_payload, products_payload, user)
 
     # ---- 写 zip ----
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
-        for fname, payload in recipe_file_index:
-            zf.writestr(fname, json.dumps(payload, ensure_ascii=False, indent=2))
-        zf.writestr("ingredients.json", json.dumps(ingredients_doc, ensure_ascii=False, indent=2))
-        zf.writestr("nutritions.json", json.dumps(nutritions_payload, ensure_ascii=False, indent=2))
-        zf.writestr("units.json", json.dumps(units_payload, ensure_ascii=False, indent=2))
-        zf.writestr("unit_conversions.json", json.dumps(conversions_payload, ensure_ascii=False, indent=2))
-        zf.writestr("ingredient_categories.json", json.dumps(categories_payload, ensure_ascii=False, indent=2))
-        zf.writestr("ingredient_hierarchy.json", json.dumps(hierarchy_payload, ensure_ascii=False, indent=2))
-        zf.writestr("entity_densities.json", json.dumps(densities_payload, ensure_ascii=False, indent=2))
-        zf.writestr("entity_unit_overrides.json", json.dumps(unit_overrides_payload, ensure_ascii=False, indent=2))
-        zf.writestr("products.json", json.dumps(products_payload, ensure_ascii=False, indent=2))
-        zf.writestr("product_barcodes.json", json.dumps(barcodes_payload, ensure_ascii=False, indent=2))
-        zf.writestr("product_ingredient_links.json", json.dumps(links_payload, ensure_ascii=False, indent=2))
-        zf.writestr("price_records.json", json.dumps(records_payload, ensure_ascii=False, indent=2))
-        zf.writestr("merchants.json", json.dumps(merchants_payload, ensure_ascii=False, indent=2))
-        zf.writestr("user_places.json", json.dumps(places_payload, ensure_ascii=False, indent=2))
-        zf.writestr("blacklist_groups.json", json.dumps(bl_groups_payload, ensure_ascii=False, indent=2))
-        zf.writestr("user_ingredient_blacklist.json", json.dumps(bl_entries_payload, ensure_ascii=False, indent=2))
-        zf.writestr("blacklist_group_subscriptions.json", json.dumps(bl_subs_payload, ensure_ascii=False, indent=2))
-        for rel, phys in image_files:
-            zf.write(phys, rel)
-
-    return buf.getvalue(), manifest
+    try:
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            # ↓↓↓ 以下所有 zf.writestr(...) 与现有完全一致（逐行对照，勿漏勿改序）↓↓↓
+            zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            for fname, payload in recipe_file_index:
+                zf.writestr(fname, json.dumps(payload, ensure_ascii=False, indent=2))
+            zf.writestr("ingredients.json", json.dumps(ingredients_doc, ensure_ascii=False, indent=2))
+            zf.writestr("nutritions.json", json.dumps(nutritions_payload, ensure_ascii=False, indent=2))
+            zf.writestr("units.json", json.dumps(units_payload, ensure_ascii=False, indent=2))
+            zf.writestr("unit_conversions.json", json.dumps(conversions_payload, ensure_ascii=False, indent=2))
+            zf.writestr("ingredient_categories.json", json.dumps(categories_payload, ensure_ascii=False, indent=2))
+            zf.writestr("ingredient_hierarchy.json", json.dumps(hierarchy_payload, ensure_ascii=False, indent=2))
+            zf.writestr("entity_densities.json", json.dumps(densities_payload, ensure_ascii=False, indent=2))
+            zf.writestr("entity_unit_overrides.json", json.dumps(unit_overrides_payload, ensure_ascii=False, indent=2))
+            zf.writestr("products.json", json.dumps(products_payload, ensure_ascii=False, indent=2))
+            zf.writestr("product_barcodes.json", json.dumps(barcodes_payload, ensure_ascii=False, indent=2))
+            zf.writestr("product_ingredient_links.json", json.dumps(links_payload, ensure_ascii=False, indent=2))
+            zf.writestr("price_records.json", json.dumps(records_payload, ensure_ascii=False, indent=2))
+            zf.writestr("merchants.json", json.dumps(merchants_payload, ensure_ascii=False, indent=2))
+            zf.writestr("user_places.json", json.dumps(places_payload, ensure_ascii=False, indent=2))
+            zf.writestr("blacklist_groups.json", json.dumps(bl_groups_payload, ensure_ascii=False, indent=2))
+            zf.writestr("user_ingredient_blacklist.json", json.dumps(bl_entries_payload, ensure_ascii=False, indent=2))
+            zf.writestr("blacklist_group_subscriptions.json", json.dumps(bl_subs_payload, ensure_ascii=False, indent=2))
+            for rel, phys in image_files:
+                zf.write(phys, rel)
+        return buf.getvalue(), manifest
+    finally:
+        if img_tmpdir:
+            shutil.rmtree(img_tmpdir, ignore_errors=True)
