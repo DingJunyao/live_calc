@@ -71,13 +71,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('\u751f\u8ba1'),
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
-          ),
-        ),
+       title: const Text('\u751f\u8ba1'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

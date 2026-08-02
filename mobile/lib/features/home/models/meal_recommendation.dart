@@ -2,8 +2,12 @@ class MealRecommendation {
   final String mealType; // breakfast, lunch, dinner
   final int? recipeId;
   final String? recipeName;
-  final double? estimatedCost;
-  final String? imageUrl;
+ final double? estimatedCost;
+ final String? imageUrl;
+  final double? calories;
+  final double? proteinG;
+  final double? carbsG;
+  final double? fatG;
 
   const MealRecommendation({
     required this.mealType,
@@ -11,16 +15,25 @@ class MealRecommendation {
     this.recipeName,
     this.estimatedCost,
     this.imageUrl,
+    this.calories,
+    this.proteinG,
+    this.carbsG,
+    this.fatG,
   });
 
   factory MealRecommendation.fromJson(Map<String, dynamic> json) {
     final recipe = json['recipe'] as Map<String, dynamic>?;
+    final nutrition = recipe?['nutrition_per_serving'] as Map<String, dynamic>?;
     return MealRecommendation(
       mealType: json['meal_type'] as String? ?? '',
       recipeId: recipe?['id'] as int?,
       recipeName: recipe?['name'] as String?,
       estimatedCost: (recipe?['cost_estimate'] as num?)?.toDouble(),
       imageUrl: (recipe?['image_urls'] as List<dynamic>?)?.firstOrNull?.toString(),
+      calories: (nutrition?['calories'] as num?)?.toDouble(),
+      proteinG: (nutrition?['protein_g'] as num?)?.toDouble(),
+      carbsG: (nutrition?['carbs_g'] as num?)?.toDouble(),
+      fatG: (nutrition?['fat_g'] as num?)?.toDouble(),
     );
   }
 }
