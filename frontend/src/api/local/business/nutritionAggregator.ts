@@ -49,19 +49,31 @@ export function aggregateIngredient(input: AggregationInput): NutritionItem[] {
 /**
  * 聚合多个食材的营养数据，合并同名营养素。
  */
+// Energy units that should be converted from kJ to kcal (1 kcal = 4.184 kJ)
+const KJ_UNITS = new Set(['kj', '千焦', '千焦(kj)', '千焦（kj）'])
+
 export function aggregateIngredients(input: AggregationInputMulti): NutritionItem[] {
   const merged = new Map<string, { amount: number; unit: string }>()
 
   for (const item of input.items) {
     const factor = item.quantity_g / 100
     for (const n of item.nutrition_data) {
+      // Normalize energy: USDA data may store it as kJ; convert to kcal
+      // (1 kcal = 4.184 kJ) to match the cloud backend and avoid ~4x inflation.
+      const isEnergy = n.nutrient_name === '能量' || n.nutrient_name === '热量'
+      let unitVal = n.unit || ''
+      let amountVal = n.amount_per_100g
+      if (isEnergy && KJ_UNITS.has(unitVal.toLowerCase())) {
+        amountVal = amountVal * 0.239006
+        unitVal = 'kcal'
+      }
       const existing = merged.get(n.nutrient_name)
       if (existing) {
-        existing.amount += n.amount_per_100g * factor
+        existing.amount += amountVal * factor
       } else {
         merged.set(n.nutrient_name, {
-          amount: n.amount_per_100g * factor,
-          unit: n.unit,
+          amount: amountVal * factor,
+          unit: unitVal,
         })
       }
     }

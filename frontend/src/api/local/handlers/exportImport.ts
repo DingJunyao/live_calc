@@ -115,6 +115,7 @@ async function importRecipe(
         unit_id: resolveUnitId ? resolveUnitId(ing.unit_id, ing.unit) : (ing.unit_id ?? null),
         is_optional: ing.is_optional ?? false,
         note: ing.note ?? '',
+        original_quantity: ing.original_quantity ?? null,
         sort_order: i,
       }
       // 用 addOne 让 DB 自增 id

@@ -9,6 +9,7 @@ export interface CostCalcIngredient {
   quantity_range: [number, number] | null  // [min, max]
   unit_id: number
   is_optional: boolean
+  original_quantity?: string | null
 }
 
 export interface CostCalcProduct {
@@ -87,6 +88,26 @@ export interface CostResult {
  * 6. 处理 quantity_range（用平均值）
  * 7. 可选食材成本为零
  */
+const GRAM_UNIT_ID = 2 // 克 unit ID in local DB
+
+/** 模糊量关键词 → 默认克数映射（与云端 VAGUE_QUANTITY_GRAM_MAP 对齐） */
+const VAGUE_QUANTITY_GRAM_MAP: Record<string, number> = {
+  '适量': 100,
+  '少许': 5,
+}
+
+/**
+ * 解析 original_quantity 中的模糊量关键词。
+ * @returns 克数 或 null（无匹配）
+ */
+function resolveVagueQuantity(original?: string | null): number | null {
+  if (!original) return null
+  const text = typeof original === 'string' ? original : String(original)
+  for (const [keyword, grams] of Object.entries(VAGUE_QUANTITY_GRAM_MAP)) {
+    if (text.includes(keyword)) return grams
+  }
+  return null
+}
 export function calculateCost(input: CostInput): CostResult {
   const perIngredient: CostPerIngredient[] = []
   let totalCost = 0
@@ -105,12 +126,27 @@ export function calculateCost(input: CostInput): CostResult {
       continue
     }
 
-    // 获取有效用量（quantity_range 取平均值）
-    const effectiveQty = ing.quantity ?? (
-      ing.quantity_range ? (ing.quantity_range[0] + ing.quantity_range[1]) / 2 : 0
-    )
+    // 获取有效用量：quantity → quantity_range 平均值 → original_quantity 模糊量回退
+    let effectiveQty: number
+    let effectiveUnitId = ing.unit_id
 
-    if (effectiveQty <= 0) {
+    const rawQty = ing.quantity
+    if (rawQty != null && Number.isFinite(Number(rawQty)) && Number(rawQty) > 0) {
+      effectiveQty = Number(rawQty)
+    } else if (ing.quantity_range && ing.quantity_range[0] != null && ing.quantity_range[1] != null) {
+      effectiveQty = (ing.quantity_range[0] + ing.quantity_range[1]) / 2
+    } else {
+      // 模糊量回退：检查 original_quantity 中的关键词（适量→100g, 少许→5g）
+      const vague = resolveVagueQuantity(ing.original_quantity)
+      if (vague != null) {
+        effectiveQty = vague
+        effectiveUnitId = GRAM_UNIT_ID
+      } else {
+        effectiveQty = 0
+      }
+    }
+
+    if (!Number.isFinite(effectiveQty) || effectiveQty <= 0) {
       perIngredient.push({
         recipe_ingredient_id: ing.recipe_ingredient_id,
         ingredient_id: ing.ingredient_id,
@@ -142,7 +178,7 @@ export function calculateCost(input: CostInput): CostResult {
             convertedQty = effectiveQty * (recipeUnit.si_factor / priceUnit.si_factor)
           } else {
             // 跨类型：查密度
-            const density = findCostDensity(ing.ingredient_id, ing.unit_id, weightedPrice.unit_id, input)
+            const density = findCostDensity(ing.ingredient_id, effectiveUnitId, weightedPrice.unit_id, input)
             if (density != null) {
               if (isCostMass(recipeUnit.unit_type) && isCostVolume(priceUnit.unit_type)) {
                 // mass→volume: mass / density
@@ -160,6 +196,7 @@ export function calculateCost(input: CostInput): CostResult {
         }
 
         const ingredientCost = convertedQty * weightedPrice.pricePerUnit
+        if (!Number.isFinite(ingredientCost)) continue
         perIngredient.push({
           recipe_ingredient_id: ing.recipe_ingredient_id,
           ingredient_id: ing.ingredient_id,
@@ -180,7 +217,7 @@ export function calculateCost(input: CostInput): CostResult {
     if (fallback != null) {
       // 单位转换：将食材用量从 ing.unit_id 转换为回退价格的单位
       let convertedQty = effectiveQty
-      const recipeUnit = input.units.find(u => u.id === ing.unit_id)
+      const recipeUnit = input.units.find(u => u.id === effectiveUnitId)
       const priceUnit = input.units.find(u => u.id === fallback.unit_id)
 
       if (recipeUnit && priceUnit && ing.unit_id !== fallback.unit_id) {
@@ -189,7 +226,7 @@ export function calculateCost(input: CostInput): CostResult {
           convertedQty = effectiveQty * (recipeUnit.si_factor / priceUnit.si_factor)
         } else {
           // 跨类型：查密度
-          const density = findCostDensity(ing.ingredient_id, ing.unit_id, fallback.unit_id, input)
+          const density = findCostDensity(ing.ingredient_id, effectiveUnitId, fallback.unit_id, input)
           if (density != null) {
             if (isCostMass(recipeUnit.unit_type) && isCostVolume(priceUnit.unit_type)) {
               const kg = effectiveQty * (recipeUnit.si_factor ?? 1)
@@ -205,6 +242,7 @@ export function calculateCost(input: CostInput): CostResult {
       }
 
       const fallbackCost = convertedQty * fallback.pricePerUnit
+      if (!Number.isFinite(fallbackCost)) continue
       perIngredient.push({
         recipe_ingredient_id: ing.recipe_ingredient_id,
         ingredient_id: ing.ingredient_id,
@@ -217,6 +255,35 @@ export function calculateCost(input: CostInput): CostResult {
         product_id: fallback.productId,
       })
       totalCost += fallbackCost
+      continue
+    }
+
+    // No direct/fallback price — try CONTAINS aggregation (weighted avg from child ingredient prices)
+    const containsResult = findContainsPrice(ing.ingredient_id, input)
+    if (containsResult != null) {
+      // CONTAINS price is per-gram; convert recipe quantity to grams
+      const gramUnit = input.units.find(u => u.name === '克')
+      let convertedQty = effectiveQty
+      const recipeUnit = input.units.find(u => u.id === effectiveUnitId)
+      if (recipeUnit && gramUnit && effectiveUnitId !== gramUnit.id) {
+        if (recipeUnit.unit_type === 'mass' && recipeUnit.si_factor != null && gramUnit.si_factor != null) {
+          convertedQty = effectiveQty * (recipeUnit.si_factor / gramUnit.si_factor)
+        }
+        // count/volume types can't easily convert to grams without density/piece_weight
+      }
+
+      const containsCost = convertedQty * containsResult.pricePerGram
+      if (!Number.isFinite(containsCost)) continue
+      perIngredient.push({
+        recipe_ingredient_id: ing.recipe_ingredient_id,
+        ingredient_id: ing.ingredient_id,
+        ingredient_name: ing.ingredient_name,
+        cost: containsCost,
+        quantity: String(convertedQty),
+        unit_price: containsResult.pricePerGram,
+        source: 'contains',
+      })
+      totalCost += containsCost
       continue
     }
 
@@ -234,8 +301,8 @@ export function calculateCost(input: CostInput): CostResult {
 
   const servings = input.servings || 1
   return {
-    total_cost: Math.round(totalCost * 100) / 100,
-    cost_per_serving: Math.round((totalCost / servings) * 100) / 100,
+    total_cost: Number.isFinite(totalCost) ? Math.round(totalCost * 100) / 100 : 0,
+    cost_per_serving: Number.isFinite(totalCost) ? Math.round((totalCost / servings) * 100) / 100 : 0,
     per_ingredient: perIngredient,
     currency: 'CNY',
   }
@@ -295,12 +362,12 @@ function findFallbackPrice(
   input: CostInput,
 ): { pricePerUnit: number; unit_id: number; sourceIngredientId: number; productId?: number } | null {
   // 按优先级排序：FALLBACK(0) < SUBSTITUTABLE(1) < CONTAINS(2)
-  const order: Record<string, number> = { FALLBACK: 0, SUBSTITUTABLE: 1, CONTAINS: 2 }
+  const order: Record<string, number> = { FALLBACK: 0, SUBSTITUTABLE: 1 }
   const hierarchies = input.hierarchies
     .filter(h => h.child_id === ingredientId)
     .sort((a, b) => {
-      const oa = order[a.relation_type] ?? 99
-      const ob = order[b.relation_type] ?? 99
+      const oa = order[(a.relation_type || '').toUpperCase()] ?? 99
+      const ob = order[(b.relation_type || '').toUpperCase()] ?? 99
       if (oa !== ob) return oa - ob
       return (b.strength ?? 0) - (a.strength ?? 0)
     })
@@ -323,6 +390,68 @@ function findFallbackPrice(
   return null
 }
 
+/**
+ * CONTAINS aggregation: compute a weighted-average price-per-gram from child
+ * ingredient prices. Mirrors cloud _aggregate_child_prices().
+ *
+ * For each CONTAINS child, get its direct weighted price (no fallback chain),
+ * convert to per-gram, then weight by hierarchy strength.
+ */
+function findContainsPrice(
+  ingredientId: number,
+  input: CostInput,
+): { pricePerGram: number } | null {
+  // Find all CONTAINS children of this ingredient, sorted by strength desc
+  const hierarchies = input.hierarchies
+    .filter(h => h.parent_id === ingredientId && (h.relation_type || '').toUpperCase() === 'CONTAINS')
+    .sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0))
+
+  if (hierarchies.length === 0) return null
+
+  const gramUnit = input.units.find(u => u.name === '\u514B')
+  if (!gramUnit || gramUnit.si_factor == null) return null
+
+  const childPrices: { pricePerGram: number; strength: number }[] = []
+  let totalStrength = 0
+
+  for (const h of hierarchies) {
+    const childProducts = input.products.filter(p => p.ingredient_id === h.child_id)
+    if (childProducts.length === 0) continue
+
+    // Child's direct weighted price (no fallback chain — mirrors cloud _get_child_price_per_gram)
+    const weighted = calculateWeightedPrice(childProducts, input.price_records, input.weight_overrides)
+    if (weighted == null) continue
+
+    // Convert per-unit price to per-gram
+    const priceUnit = input.units.find(u => u.id === weighted.unit_id)
+    let pricePerGram = weighted.pricePerUnit
+    if (priceUnit && priceUnit.si_factor != null && priceUnit.unit_type === 'mass') {
+      // gramPrice = pricePerUnit * gramSiFactor / priceSiFactor
+      pricePerGram = weighted.pricePerUnit * gramUnit.si_factor / priceUnit.si_factor
+    } else if (priceUnit && priceUnit.unit_type !== 'mass') {
+      // Non-mass price unit (count/volume) — can't reliably convert to per-gram
+      continue
+    }
+
+    if (!Number.isFinite(pricePerGram) || pricePerGram <= 0) continue
+
+    const strength = h.strength ?? 50
+    childPrices.push({ pricePerGram, strength })
+    totalStrength += strength
+  }
+
+  if (childPrices.length === 0) return null
+
+  // Weighted average
+  let weightedAvg: number
+  if (totalStrength > 0) {
+    weightedAvg = childPrices.reduce((sum, p) => sum + p.pricePerGram * p.strength, 0) / totalStrength
+  } else {
+    weightedAvg = childPrices.reduce((sum, p) => sum + p.pricePerGram, 0) / childPrices.length
+  }
+
+  return { pricePerGram: weightedAvg }
+}
 function isCostMass(type: string): boolean {
   return type === 'mass'
 }

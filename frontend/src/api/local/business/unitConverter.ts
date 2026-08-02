@@ -15,6 +15,7 @@ export interface EntityOverride {
   conversion_factor: number | null
   weight_per_unit: number | null
   weight_unit_id: number | null
+  weight_unit_name?: string | null
 }
 
 export interface DensityInfo {
@@ -107,7 +108,10 @@ export function convert(input: ConvertInput): ConvertResult {
   if (fromUnit.unit_type === 'count' || toUnit.unit_type === 'count') {
     const override = findOverride(entity_type, entity_id, overrides)
     if (override?.weight_per_unit != null && override?.weight_unit_id != null) {
-      const weightUnit = units.find(u => u.id === override.weight_unit_id)
+      // Resolve the weight unit: prefer name match over ID, because cloud-exported
+      // override records carry cloud DB unit IDs that may not align with local seed IDs
+      // (e.g. cloud 克=3 but local 斤=3). weight_unit_name is always authoritative.
+      const weightUnit = resolveWeightUnit(override, units)
       if (weightUnit && toUnit.si_factor != null && weightUnit.si_factor != null) {
         if (fromUnit.unit_type === 'count' && isMassType(toUnit.unit_type)) {
           // count → mass: value * weight_per_unit * weight_unit_si_factor / toUnit_si_factor
@@ -183,6 +187,18 @@ function findDensity(
 /**
  * 查找 entity_unit_overrides 中的匹配记录。
  */
+/** Resolve the weight unit from an override, preferring name over ID.
+ *  Cloud-exported records carry cloud unit IDs; local seed IDs differ,
+ *  so weight_unit_name (always present, always correct) is authoritative. */
+function resolveWeightUnit(override: EntityOverride, units: UnitInfo[]): UnitInfo | undefined {
+  // 1) If weight_unit_name exists, match by name (handles ID mismatch)
+  if (override.weight_unit_name) {
+    const byName = units.find(u => u.name === override.weight_unit_name)
+    if (byName) return byName
+  }
+  // 2) Fallback to ID lookup
+  return units.find(u => u.id === override.weight_unit_id)
+}
 function findOverride(
   entityType?: string, entityId?: number,
   overrides?: EntityOverride[],

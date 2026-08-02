@@ -42,6 +42,11 @@ interface LocalDB extends DBSchema {
     value: any
     indexes: { 'by_product_id': number; 'by_merchant_id': number; 'by_recorded_at': string }
   }
+  'user_merchant_product_orders': {
+    key: number
+    value: any
+    indexes: { 'by_merchant_id': number }
+  }
   'product_weight_overrides': {
     key: number
     value: any
@@ -156,7 +161,7 @@ type StoreName = keyof LocalDB
 // ============================================================
 
 const DB_NAME = 'livecalc'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 let dbInstance: IDBPDatabase<LocalDB> | null = null
 
@@ -291,6 +296,12 @@ export async function getDb(): Promise<IDBPDatabase<LocalDB>> {
         regionStore.createIndex('by_parent', 'parent_id')
         regionStore.createIndex('by_level', 'level')
         regionStore.createIndex('by_code', 'code', { unique: true })
+      }
+
+      // v3: Quick Fill custom product order (per user x merchant x product x day)
+      if (oldVersion < 3) {
+        const orderStore = db.createObjectStore('user_merchant_product_orders', { keyPath: 'id', autoIncrement: true })
+        orderStore.createIndex('by_merchant_id', 'merchant_id')
       }
     },
   })

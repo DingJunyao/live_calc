@@ -218,6 +218,7 @@ addRoute('/merchants/:id', { get: merchants.getMerchant, put: merchants.updateMe
 addRoute('/merchants/:id/favorite', { post: merchants.addFavorite, delete: merchants.removeFavorite })
 addRoute('/merchants/:id/prices', { get: merchants.getMerchantPrices })
 addRoute('/merchants/:id/product-prices', { get: merchants.getMerchantProductPrices })
+addRoute('/merchants/:id/product-orders', { post: merchants.saveProductOrders })
 addRoute('/merchants', { get: merchants.listMerchants, post: merchants.createMerchant })
 
 // ---- Nutrition ----

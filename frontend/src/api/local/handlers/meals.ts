@@ -1,8 +1,9 @@
 // Meals handler — 餐食推荐，编排 IndexedDB 数据加载并调用推荐算法。
 
-import { getDb, getAll, getByIndex, addOne, putOne, deleteOne } from '../database'
+import { getDb, getAll, getByIndex, addOne, putOne, deleteOne, getById } from '../database'
 import { recommend, type MealRecipe, type MealRecommendation } from '../business/mealRecommender'
 import { resolveHierarchy } from '../business/hierarchyResolver'
+import * as recipes from './recipes'
 
 // ============================================================
 // 内部辅助
@@ -94,28 +95,14 @@ export async function getRecommendations(_params: Record<string, string>, _query
   const cached = await getTodayRecommendationsFromDb()
 
   if (cached.length > 0) {
-    return {
-      status: 'ready',
-      date: today,
-      recommendations: MEAL_TYPES.map(mt => {
-        const found = cached.find((c: any) => c.meal_type === mt)
-        return found
-          ? {
-              meal_type: mt,
-              recipe: found.recipe_id
-                ? {
-                    id: found.recipe_id,
-                    name: found.recipe_name,
-                    category: found.recipe_category,
-                    cost_estimate: found.cost_estimate,
-                    calories_per_serving: found.calories_per_serving,
-                    protein_per_serving: found.protein_per_serving,
-                  }
-                : null,
-            }
-          : { meal_type: mt, recipe: null }
-      }),
-    }
+    const cachedResults: MealRecommendation[] = MEAL_TYPES.map(mt => {
+      const found = cached.find((c: any) => c.meal_type === mt)
+      return {
+        meal_type: mt,
+        recipe: found?.recipe_id ? { id: found.recipe_id } : null,
+      }
+    })
+    return await buildResponse(cachedResults)
   }
 
   // 无缓存，自动生成
@@ -167,10 +154,7 @@ export async function refresh(_params: Record<string, string>, data?: any): Prom
 
   await saveRecommendation(today, result)
 
-  return {
-    date: today,
-    recommendations: [result],
-  }
+  return await buildResponse([result])
 }
 
 // ============================================================
@@ -210,11 +194,7 @@ async function generateAll(): Promise<any> {
     results.push(result)
   }
 
-  return {
-    status: 'ready',
-    date: today,
-    recommendations: results,
-  }
+  return await buildResponse(results)
 }
 
 async function saveRecommendation(date: string, rec: MealRecommendation): Promise<void> {
@@ -229,4 +209,101 @@ async function saveRecommendation(date: string, rec: MealRecommendation): Promis
     protein_per_serving: rec.recipe?.protein_per_serving ?? null,
     created_at: new Date().toISOString(),
   })
+}
+
+// ============================================================
+// Response building: enrich recipe brief with cost + nutrition
+// ============================================================
+
+function getCurrentMeal(): 'breakfast' | 'lunch' | 'dinner' | null {
+  const h = new Date().getHours()
+  if (h >= 5 && h < 10) return 'breakfast'
+  if (h >= 10 && h < 14) return 'lunch'
+  if (h >= 14 && h < 22) return 'dinner'
+  return null
+}
+
+function round1(v: number): number { return Math.round(v * 10) / 10 }
+function round2(v: number): number { return Math.round(v * 100) / 100 }
+
+/** Compute full RecipeBrief (cost + nutrition + images) for one recipe. */
+async function buildRecipeBrief(recipeId: number): Promise<any | null> {
+  const recipe = await getById('recipes', recipeId)
+  if (!recipe) return null
+  const servings = recipe.servings || 1
+
+  let cost_estimate: number | null = null
+  let nutrition_per_serving: { calories: number; protein_g: number; carbs_g: number; fat_g: number } | null = null
+
+  try {
+    const cost = await recipes.getRecipeCost({ id: String(recipeId) })
+    if (cost?.cost_per_serving != null && Number.isFinite(cost.cost_per_serving)) {
+      cost_estimate = round2(cost.cost_per_serving)
+    }
+  } catch { /* no price records — leave null */ }
+
+  try {
+    const nutrition = await recipes.getRecipeNutrition({ id: String(recipeId) })
+    // getRecipeNutrition returns totals for the whole recipe; divide by servings
+    if (servings > 0 && nutrition) {
+      nutrition_per_serving = {
+        calories: round1((nutrition.calories || 0) / servings),
+        protein_g: round1((nutrition.protein || 0) / servings),
+        carbs_g: round1((nutrition.carbohydrate || 0) / servings),
+        fat_g: round1((nutrition.fat || 0) / servings),
+      }
+    }
+  } catch { /* no nutrition data — leave null */ }
+
+  return {
+    id: recipeId,
+    name: recipe.name || '',
+    category: recipe.category || undefined,
+    images: recipe.images || [],
+    image_urls: [],
+    servings,
+    cost_estimate,
+    nutrition_per_serving,
+  }
+}
+
+/** Build the full daily-recommendations response: enrich each recipe with
+ *  cost/nutrition/images, add is_current_meal, and compute daily totals. */
+async function buildResponse(results: MealRecommendation[]): Promise<any> {
+  const today = getTodayDate()
+  const currentMeal = getCurrentMeal()
+  const recommendations = []
+  const totals = { cost: 0, calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }
+
+  for (const r of results) {
+    const recipe = r.recipe ? await buildRecipeBrief(r.recipe.id) : null
+    recommendations.push({
+      meal_type: r.meal_type,
+      recipe,
+      is_current_meal: r.meal_type === currentMeal,
+    })
+    if (recipe) {
+      if (recipe.cost_estimate != null && Number.isFinite(recipe.cost_estimate)) totals.cost += recipe.cost_estimate
+      const n = recipe.nutrition_per_serving
+      if (n) {
+        totals.calories += Number.isFinite(n.calories) ? n.calories : 0
+        totals.protein_g += Number.isFinite(n.protein_g) ? n.protein_g : 0
+        totals.carbs_g += Number.isFinite(n.carbs_g) ? n.carbs_g : 0
+        totals.fat_g += Number.isFinite(n.fat_g) ? n.fat_g : 0
+      }
+    }
+  }
+
+  return {
+    status: 'ready',
+    date: today,
+    recommendations,
+    totals: {
+      cost: round2(totals.cost),
+      calories: round1(totals.calories),
+      protein_g: round1(totals.protein_g),
+      carbs_g: round1(totals.carbs_g),
+      fat_g: round1(totals.fat_g),
+    },
+  }
 }

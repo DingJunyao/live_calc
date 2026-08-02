@@ -103,11 +103,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { MealRecommendation } from '@/api/meals'
 import { useUserUnits } from '@/composables/useUserUnits'
-import { resolveImageUrl } from '@/utils/image'
+import { resolveImageUrl, loadLocalImageBlob } from '@/utils/image'
 
 const router = useRouter()
 const { energyUnit, toDisplayCalorie } = useUserUnits()
@@ -121,8 +121,37 @@ const emit = defineEmits<{
   refresh: [mealType: string]
 }>()
 
+// Local-mode image blob URL (cleaned up on unmount / recipe change)
+const localImageUrl = ref<string | null>(null)
+let currentObjectUrl: string | null = null
+
+async function refreshLocalImage() {
+  if (currentObjectUrl) {
+    URL.revokeObjectURL(currentObjectUrl)
+    currentObjectUrl = null
+  }
+  localImageUrl.value = null
+
+  const recipe = props.recommendation.recipe
+  if (!recipe?.id || !recipe.images?.length) return
+
+  const url = await loadLocalImageBlob('recipes', recipe.id, recipe.images[0])
+  if (url) {
+    currentObjectUrl = url
+    localImageUrl.value = url
+  }
+}
+
+watch(() => props.recommendation.recipe?.id, refreshLocalImage, { immediate: true })
+
+onUnmounted(() => {
+  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl)
+})
+
 const recipeImage = computed(() => {
   const recipe = props.recommendation.recipe
+  // Local-mode blob URL takes priority (user-uploaded images)
+  if (localImageUrl.value) return localImageUrl.value
   // 优先使用已解析的 image_urls（S3 直连，零开销）
   if (recipe?.image_urls?.[0]) return recipe.image_urls[0]
   const images = recipe?.images

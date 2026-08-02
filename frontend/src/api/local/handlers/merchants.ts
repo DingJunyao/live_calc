@@ -116,7 +116,131 @@ export async function getMerchantProductPrices(params: Record<string, string>): 
       latestByProduct[rec.product_id] = rec
     }
   }
-  return { items: Object.values(latestByProduct), total: Object.keys(latestByProduct).length }
+  const records = Object.values(latestByProduct)
+  if (records.length === 0) return { items: [], total: 0 }
+
+  // Join products -> ingredients -> ingredient_categories so the Quick Fill
+  // page can sort/group exactly like cloud mode (category sort_order, then
+  // pinyin). Also compute custom_sort_score from the last 3 days of learned
+  // fill-order records (mirrors the cloud backend's weighted logic).
+  const [products, ingredients, categories] = await Promise.all([
+    getAll('products'),
+    getAll('ingredients'),
+    getAll('ingredient_categories'),
+  ])
+  // user_merchant_product_orders was added in DB v3; if the upgrade hasn't
+  // applied yet (HMR stale connection, or an old tab holding the v2 DB open),
+  // getAll would throw and break the whole list. Degrade to empty instead.
+  const orderRecords = await safeGetAll('user_merchant_product_orders')
+  const productMap = new Map(products.map((p: any) => [p.id, p]))
+  const ingredientMap = new Map(ingredients.map((i: any) => [i.id, i]))
+  const categoryMap = new Map(categories.map((c: any) => [c.id, c]))
+
+  const customScores = computeCustomSortScores(orderRecords, merchantId)
+
+  const items = records.map((rec: any) => {
+    const product = productMap.get(rec.product_id)
+    const ingredient = product?.ingredient_id ? ingredientMap.get(product.ingredient_id) : undefined
+    const category = ingredient?.category_id != null ? categoryMap.get(ingredient.category_id) : undefined
+    return {
+      ...rec,
+      product_name: product?.name ?? '',
+      category_id: category?.id ?? ingredient?.category_id ?? null,
+      category_display_name: category?.display_name ?? null,
+      category_sort_order: category?.sort_order ?? null,
+      custom_sort_score: customScores.get(rec.product_id),
+    }
+  })
+
+  return { items, total: items.length }
+}
+
+/** Read a store that may not exist yet; return [] on failure (DB not upgraded). */
+async function safeGetAll(storeName: string): Promise<any[]> {
+  try {
+    return await getAll(storeName as any)
+  } catch {
+    return []
+  }
+}
+
+/** Local-date string (YYYY-MM-DD) N days before today, in the user's timezone. */
+function localDateDaysAgo(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toLocaleDateString('en-CA')
+}
+
+/**
+ * Weighted sort score per product from the last 3 days of fill-order records.
+ * Mirrors the cloud backend: today x3, yesterday x2, day-before x1, averaged
+ * by total weight. Products with no recent order get no score (undefined).
+ */
+function computeCustomSortScores(orderRecords: any[], merchantId: number): Map<number, number> {
+  const weights: Record<string, number> = {
+    [localDateDaysAgo(0)]: 3,
+    [localDateDaysAgo(1)]: 2,
+    [localDateDaysAgo(2)]: 1,
+  }
+  const productWeights: Record<number, number> = {}
+  const productCounts: Record<number, number> = {}
+  for (const rec of orderRecords) {
+    if (rec.merchant_id !== merchantId) continue
+    const w = weights[rec.session_date]
+    if (!w) continue
+    const pid = rec.product_id
+    productWeights[pid] = (productWeights[pid] || 0) + rec.sort_order * w
+    productCounts[pid] = (productCounts[pid] || 0) + w
+  }
+  const scores = new Map<number, number>()
+  for (const pid of Object.keys(productWeights).map(Number)) {
+    scores.set(pid, productWeights[pid] / productCounts[pid])
+  }
+  return scores
+}
+
+export async function saveProductOrders(params: Record<string, string>, data?: any): Promise<any> {
+  const merchantId = parseInt(params.id)
+  const productIds: number[] = Array.isArray(data?.product_ids) ? data.product_ids : []
+  const sessionDate: string = data?.session_date || new Date().toLocaleDateString('en-CA')
+
+  // Load existing records for this (merchant, session_date) to upsert by product_id.
+  // Mirrors cloud: duplicate product_ids in one request take the last sort_order.
+  const all = await getAll('user_merchant_product_orders')
+  const existingByPid = new Map<number, any>()
+  for (const rec of all) {
+    if (rec.merchant_id === merchantId && rec.session_date === sessionDate) {
+      existingByPid.set(rec.product_id, rec)
+    }
+  }
+
+  const seen = new Map<number, any>()
+  for (let idx = 0; idx < productIds.length; idx++) {
+    const pid = productIds[idx]
+    const record = seen.get(pid) || existingByPid.get(pid)
+    if (record) {
+      // Last sort_order wins for duplicates; pre-existing record queued below.
+      record.sort_order = idx
+      seen.set(pid, record)
+    } else {
+      const id = await addOne('user_merchant_product_orders', {
+        merchant_id: merchantId,
+        product_id: pid,
+        session_date: sessionDate,
+        sort_order: idx,
+        created_at: new Date().toISOString(),
+      })
+      seen.set(pid, { id })
+    }
+  }
+
+  for (const rec of seen.values()) {
+    if (rec.id != null && existingByPid.has(rec.product_id)) {
+      await putOne('user_merchant_product_orders', { ...rec })
+    }
+  }
+
+  return { message: 'ok' }
 }
 
 export async function getMapConfig(): Promise<any> {

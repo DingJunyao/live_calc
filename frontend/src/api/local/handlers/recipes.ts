@@ -9,7 +9,17 @@ import { convert, type UnitInfo, type EntityOverride, type DensityInfo } from '.
 // 辅助函数
 // ============================================================
 
-const GRAM_UNIT_ID = 2 // 克单位 ID（单位表中 id=2 为克）
+const GRAM_UNIT_ID = 2
+/** 模糊量关键词 → 默认克数（与云端 VAGUE_QUANTITY_GRAM_MAP 对齐） */
+const VAGUE_GRAM_MAP: Record<string, number> = { '适量': 100, '少许': 5 }
+function resolveVagueQty(original?: string | null): number {
+  if (!original) return 0
+  const text = typeof original === 'string' ? original : String(original)
+  for (const [kw, grams] of Object.entries(VAGUE_GRAM_MAP)) {
+    if (text.includes(kw)) return grams
+  }
+  return 0
+} // 克单位 ID（单位表中 id=2 为克）
 
 /** 将食材名解析为 ingredient_id。按名称精确匹配，再按别名匹配。 */
 async function resolveIngredientId(name: string): Promise<number | null> {
@@ -255,7 +265,7 @@ export async function batchCost(_params: Record<string, string>, data?: any): Pr
     }
 
     const ingredientIds = [...new Set(ries.map((ri: any) => ri.ingredient_id))]
-    const products = allProducts.filter((p: any) => p.is_active !== false && ingredientIds.includes(p.ingredient_id))
+    const products = allProducts.filter((p: any) => p.is_active !== false)
     const productIds = products.map((p: any) => p.id)
     const records = allRecords.filter((r: any) => productIds.includes(r.product_id))
 
@@ -519,9 +529,19 @@ export async function getCostHistoryRange(params: Record<string, string>, query?
     let validCount = 0
 
     for (const ing of input.ingredients) {
-      if (ing.is_optional || (ing.quantity == null && ing.quantity_range == null)) continue
-      const effQty = ing.quantity ?? (ing.quantity_range ? (ing.quantity_range[0] + ing.quantity_range[1]) / 2 : 0)
-      if (effQty <= 0) continue
+      if (ing.is_optional) continue
+      // 解析有效用量：quantity → quantity_range → original_quantity 模糊量回退
+      let effQty
+      if (ing.quantity != null && Number.isFinite(Number(ing.quantity)) && Number(ing.quantity) > 0) {
+        effQty = Number(ing.quantity)
+      } else if (ing.quantity_range && ing.quantity_range[0] != null && ing.quantity_range[1] != null) {
+        effQty = (ing.quantity_range[0] + ing.quantity_range[1]) / 2
+      } else {
+        // 模糊量回退
+        effQty = resolveVagueQty(ing.original_quantity)
+      }
+      if (!Number.isFinite(effQty) || effQty <= 0) continue
+      const numQty = effQty
 
       const ingProducts = input.products.filter(p => p.ingredient_id === ing.ingredient_id)
       if (ingProducts.length === 0) continue
@@ -541,9 +561,9 @@ export async function getCostHistoryRange(params: Record<string, string>, query?
       }
 
       if (prices.length > 0) {
-        totalMin += Math.min(...prices) * effQty
-        totalMax += Math.max(...prices) * effQty
-        totalAvg += (prices.reduce((s, p) => s + p, 0) / prices.length) * effQty
+        totalMin += Math.min(...prices) * numQty
+        totalMax += Math.max(...prices) * numQty
+        totalAvg += (prices.reduce((s, p) => s + p, 0) / prices.length) * numQty
         validCount++
       }
     }
@@ -554,9 +574,9 @@ export async function getCostHistoryRange(params: Record<string, string>, query?
     items.push({
       date: dateStr,
       recorded_at: recordedAt,
-      min_cost: Math.round(totalMin * 100) / 100,
-      max_cost: Math.round(totalMax * 100) / 100,
-      avg_cost: Math.round(totalAvg * 100) / 100,
+      min_cost: Number.isFinite(totalMin) ? Math.round(totalMin * 100) / 100 : 0,
+      max_cost: Number.isFinite(totalMax) ? Math.round(totalMax * 100) / 100 : 0,
+      avg_cost: Number.isFinite(totalAvg) ? Math.round(totalAvg * 100) / 100 : 0,
     })
   }
 
@@ -769,12 +789,12 @@ async function buildCostInput(recipeId: number, recipe: any): Promise<CostInput>
 
   // 加载商品
   const allProducts = await getAll('products')
-  const products = allProducts.filter((p: any) => p.is_active !== false && ingredientIds.includes(p.ingredient_id))
+  const products = allProducts.filter((p: any) => p.is_active !== false)
 
   // 加载价格记录
-  const productIds = products.map((p: any) => p.id)
+  const productIdSet = new Set(products.map((p: any) => p.id))
   const allRecords = await getAll('product_records')
-  const records = allRecords.filter((r: any) => productIds.includes(r.product_id))
+  const records = allRecords.filter((r: any) => productIdSet.has(r.product_id))
 
   // 构建 ingredients 数组
   const ingredients: CostCalcIngredient[] = recipeIngredients.map((ri: any) => ({
@@ -785,6 +805,7 @@ async function buildCostInput(recipeId: number, recipe: any): Promise<CostInput>
     quantity_range: ri.quantity_range,
     unit_id: ri.unit_id,
     is_optional: ri.is_optional,
+    original_quantity: ri.original_quantity,
   }))
 
   return {
