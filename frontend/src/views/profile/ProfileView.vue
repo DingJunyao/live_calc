@@ -55,6 +55,16 @@
     <v-card class="ma-4" elevation="0">
       <v-list>
         <v-list-subheader v-if="isLocalMode">个人偏好</v-list-subheader>
+        <v-list-item v-if="isLocalMode" @click="openRegionDialog">
+          <template #prepend>
+            <v-icon>mdi-map-marker</v-icon>
+          </template>
+          <v-list-item-title>所在地区编辑</v-list-item-title>
+          <v-list-item-subtitle>国家 / 省 / 市 / 区</v-list-item-subtitle>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
         <v-list-item v-if="!isLocalMode" @click="openAccountDialog">
           <template #prepend>
             <v-icon>mdi-account-edit</v-icon>
@@ -357,6 +367,42 @@
           <v-spacer />
           <v-btn variant="text" :disabled="savingAccount" @click="accountDialog = false">取消</v-btn>
           <v-btn color="primary" :loading="savingAccount" @click="saveAccount">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 所在地区编辑对话框（本地模式） -->
+    <v-dialog v-model="regionDialog" max-width="520">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          所在地区编辑
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="regionDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <div class="text-caption text-medium-emphasis mb-2">选择你所在的地区，用于价格与地图默认定位</div>
+          <div class="d-flex flex-wrap ga-2 mb-2">
+            <v-select v-model="regionSelections[0]" :items="regionItems[0]" item-title="name" item-value="id"
+              label="国家/地区" variant="outlined" density="compact" class="region-select flex-grow-1"
+              :loading="regionLoading[0]" hide-details="auto" clearable @update:model-value="onRegionChange(0)" />
+            <v-select v-if="regionSelections[0] && regionItems[1].length >= 0" v-model="regionSelections[1]"
+              :items="regionItems[1]" item-title="name" item-value="id" label="省/州" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[1]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(1)" />
+            <v-select v-if="regionSelections[1] && regionItems[2].length >= 0" v-model="regionSelections[2]"
+              :items="regionItems[2]" item-title="name" item-value="id" label="城市" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[2]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(2)" />
+            <v-select v-if="regionSelections[2] && regionItems[3].length >= 0" v-model="regionSelections[3]"
+              :items="regionItems[3]" item-title="name" item-value="id" label="区/县" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[3]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(3)" />
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="savingRegion" @click="regionDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingRegion" @click="saveRegion">保存</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -668,6 +714,9 @@ const exporting = ref(false)
 
 // 用户信息编辑
 const accountDialog = ref(false)
+// 所在地区编辑（本地模式专用对话框）
+const regionDialog = ref(false)
+const savingRegion = ref(false)
 const savingAccount = ref(false)
 const accountForm = ref({
   username: '',
@@ -1019,6 +1068,80 @@ async function saveAccount() {
     notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
   } finally {
     savingAccount.value = false
+  }
+}
+
+// 所在地区编辑（本地模式）：初始化地区选择器并打开对话框
+async function openRegionDialog() {
+  const u = userStore.user as any
+  currentRegionId.value = u?.region_id ?? null
+  regionSelections.value = [null, null, null, null]
+  regionItems.value = [[], [], [], []]
+  if (regionItems.value[0].length === 0) {
+    await loadRegionLevel(0, null)
+  }
+  if (currentRegionId.value) {
+    try {
+      const detail = await api.get(`/regions/${currentRegionId.value}`)
+      const ancestors: Array<{ id: number; name: string; level: number }> = detail?.ancestors || []
+      regionNames.value[currentRegionId.value] = detail?.name || ''
+      for (const a of ancestors) {
+        regionNames.value[a.id] = a.name
+      }
+      const chain = [...ancestors, { id: currentRegionId.value, name: detail?.name || '', level: ancestors.length }]
+      for (let i = 0; i < chain.length; i++) {
+        if (i > 0) {
+          await loadRegionLevel(i, chain[i - 1].id)
+        }
+        regionSelections.value[i] = chain[i].id
+      }
+      if (chain.length < 4) {
+        const last = chain[chain.length - 1]
+        const lastItem = regionItems.value[chain.length - 1]?.find(r => r.id === last.id)
+        if (lastItem?.has_children) {
+          await loadRegionLevel(chain.length, last.id)
+        }
+      }
+    } catch {
+      currentRegionId.value = null
+    }
+  }
+  regionDialog.value = true
+}
+
+// 所在地区编辑（本地模式）：仅保存 region_id
+async function saveRegion() {
+  savingRegion.value = true
+  try {
+    let newRegionId: number | null = null
+    for (let i = 3; i >= 0; i--) {
+      if (regionSelections.value[i]) {
+        newRegionId = regionSelections.value[i]!
+        break
+      }
+    }
+    if (newRegionId === currentRegionId.value) {
+      regionDialog.value = false
+      return
+    }
+    await api.put('/auth/me/account', { region_id: newRegionId })
+    await userStore.fetchUser()
+    currentRegionId.value = newRegionId
+    if (newRegionId) {
+      for (let i = 0; i < 4; i++) {
+        const id = regionSelections.value[i]
+        if (id) {
+          const item = regionItems.value[i]?.find(r => r.id === id)
+          if (item) regionNames.value[id] = item.name
+        }
+      }
+    }
+    regionDialog.value = false
+    notify('已更新', 'success')
+  } catch (e: any) {
+    notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
+  } finally {
+    savingRegion.value = false
   }
 }
 
