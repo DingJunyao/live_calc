@@ -27,7 +27,10 @@ export default defineConfig(({ mode }) => {
       registerType: 'autoUpdate',
       injectRegister: 'auto',          // 自动注入 SW 注册脚本
       devOptions: {
-        enabled: true,               // vite dev 下 localhost 可测安装
+        // dev 模式禁用 SW：Workbox NavigationRoute 会缓存旧 index.html，
+        // 导致代码改了但浏览器完整刷新后仍跑旧逻辑（404 / 旧组件）。
+        // 如需在 dev 模式测 PWA 安装，临时改回 true。
+        enabled: false,
         // dev 模式 dev-dist 仅含 sw.js / workbox-*.js（均被默认 globIgnores 排除），
         // workbox 的 globPatterns（为 build 扫 dist 设计）套用到 dev-dist 必然空匹配 → 控制台警告。
         // 官方开关：dev-dist 补一个空 suppress-warnings.js，并把 dev 用 globPatterns 临时指向它。
