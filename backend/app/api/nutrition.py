@@ -809,21 +809,27 @@ async def get_ingredient_recipes(
     """
     try:
         from app.models.recipe import Recipe, RecipeIngredient
+        from app.models.unit import Unit
 
-        # 查询包含该食材的菜谱ID
-        recipe_ingredients_query = db.query(RecipeIngredient).filter(
-            RecipeIngredient.ingredient_id == ingredient_id
+        # 含该食材且当前用户可见的菜谱（去重，按菜谱分页）
+        base_query = (
+            db.query(Recipe)
+            .join(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+            .filter(
+                RecipeIngredient.ingredient_id == ingredient_id,
+                or_(
+                    Recipe.user_id == current_user.id,
+                    Recipe.is_public == True,
+                ),
+            )
+            .distinct()
         )
 
-        total = recipe_ingredients_query.count()
+        total = base_query.count()
 
-        # 分页查询
-        recipe_ingredients = recipe_ingredients_query.offset(skip).limit(limit).all()
+        recipes = base_query.order_by(Recipe.id).offset(skip).limit(limit).all()
 
-        # 提取菜谱ID列表
-        recipe_ids = [ri.recipe_id for ri in recipe_ingredients]
-
-        if not recipe_ids:
+        if not recipes:
             return {
                 "items": [],
                 "total": 0,
@@ -831,14 +837,29 @@ async def get_ingredient_recipes(
                 "page_size": limit
             }
 
-        # 查询菜谱详情（当前用户的菜谱和公共导入的菜谱）
-        recipes = db.query(Recipe).filter(
-            Recipe.id.in_(recipe_ids),
-            or_(
-                Recipe.user_id == current_user.id,
-                Recipe.is_public == True
+        recipe_ids = [r.id for r in recipes]
+
+        # 一次性查出这些菜谱里该食材的所有引用行（含单位缩写），按菜谱分组
+        # 一个菜谱可能多次引用同一食材，全部保留
+        usage_rows = (
+            db.query(RecipeIngredient, Unit)
+            .outerjoin(Unit, Unit.id == RecipeIngredient.unit_id)
+            .filter(
+                RecipeIngredient.ingredient_id == ingredient_id,
+                RecipeIngredient.recipe_id.in_(recipe_ids),
             )
-        ).all()
+            .order_by(RecipeIngredient.recipe_id, RecipeIngredient.id)
+            .all()
+        )
+
+        usages_by_recipe = {}
+        for ri, unit in usage_rows:
+            usages_by_recipe.setdefault(ri.recipe_id, []).append({
+                "quantity": ri.quantity,
+                "quantity_range": ri.quantity_range,
+                "unit": unit.abbreviation if unit else None,
+                "original_quantity": ri.original_quantity,
+            })
 
         # 构建返回数据
         items = []
@@ -854,7 +875,8 @@ async def get_ingredient_recipes(
                 "difficulty": recipe.difficulty,
                 "tags": recipe.tags or [],
                 "created_at": recipe.created_at,
-                "updated_at": recipe.updated_at
+                "updated_at": recipe.updated_at,
+                "usages": usages_by_recipe.get(recipe.id, []),
             })
 
         return {

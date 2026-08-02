@@ -63,7 +63,7 @@ export function useThemeToggle() {
     vuetifyBound = true
     // 把实际主题应用到 Vuetify（immediate 确保首次调用即同步）
     watch(actualTheme, (newTheme) => {
-      vuetifyTheme.global.name.value = newTheme
+      vuetifyTheme.change(newTheme)
       // 同步 html data-theme，驱动 index.html 里 body 防闪背景跟随主题
       document.documentElement.setAttribute('data-theme', newTheme)
     }, { immediate: true })

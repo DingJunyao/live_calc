@@ -216,6 +216,7 @@
     <PasteImportDialog
       v-model="pasteDialog"
       :merchant-id="selectedMerchantId"
+      :history-product-names="historyProductNames"
       @imported="onPasteImported"
     />
   </v-container>
@@ -379,6 +380,14 @@ const hiddenCount = computed(() => {
     return pid && hiddenIds.has(pid)
   }).length
 })
+
+// 全部历史商品名（按页面顺序：分类序 + 组内拼音，不过滤隐藏），
+// 供「粘贴导入」对话框的「复制模板」使用——模板要完整清单。
+const historyProductNames = computed(() =>
+  historyRows.value
+    .map(r => r.productName)
+    .filter((n): n is string => !!n && n.trim().length > 0)
+)
 
 // --- 单位加载 ---
 const loadUnits = async () => {

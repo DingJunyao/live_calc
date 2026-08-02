@@ -18,6 +18,18 @@
           hide-details
         />
 
+        <div class="d-flex justify-end mb-1">
+          <v-btn
+            variant="text"
+            size="small"
+            prepend-icon="mdi-clipboard-outline"
+            :disabled="historyProductNames.length === 0"
+            @click="templateDialog = true"
+          >
+            复制模板
+          </v-btn>
+        </div>
+
         <v-textarea
           v-model="rawText"
           label="粘贴价格文本（每行一条，格式：名称 价格[/单位]）"
@@ -149,6 +161,42 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <!-- 复制模板：二级对话框，独立于主对话框 -->
+  <v-dialog v-model="templateDialog" max-width="560">
+    <v-card>
+      <v-card-title class="d-flex align-center">
+        复制模板
+        <v-spacer />
+        <v-btn icon="mdi-close" variant="text" size="small" @click="templateDialog = false" />
+      </v-card-title>
+      <v-card-text>
+        <div class="text-caption text-medium-emphasis mb-2">
+          每行为商品名加一个空格，复制后在空格后填价格即可。
+        </div>
+        <v-textarea
+          :model-value="templateText"
+          readonly
+          rows="10"
+          variant="outlined"
+          hide-details
+          class="template-preview"
+        />
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="templateDialog = false">关闭</v-btn>
+        <v-btn
+          color="primary"
+          variant="tonal"
+          :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'"
+          @click="copyTemplate"
+        >
+          {{ copied ? '已复制' : '复制' }}
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -157,6 +205,7 @@ import { api } from '@/api'
 import { getLocalDateTimeString } from '@/utils/timezone'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { parsePasteText, type ParsedPriceLine } from '@/utils/pastePriceParser'
+import { copyText } from '@/utils/clipboard'
 import { useUserUnits } from '@/composables/useUserUnits'
 const { priceUnitName } = useUserUnits()
 
@@ -178,10 +227,13 @@ interface ImportResult {
   failures: { name: string; reason: string }[]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   merchantId: number | null
-}>()
+  historyProductNames?: string[]
+}>(), {
+  historyProductNames: () => [],
+})
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -195,6 +247,8 @@ const importing = ref(false)
 const rows = ref<ImportRow[]>([])
 const result = ref<ImportResult | null>(null)
 const progress = ref({ current: 0, total: 0 })
+const templateDialog = ref(false)
+const copied = ref(false)
 
 // 模块级 timer（WeakMap 以 row 为 key，随 row 回收自动清理，避免内存泄漏）
 const productTimers = new WeakMap<ImportRow, ReturnType<typeof setTimeout>>()
@@ -207,6 +261,11 @@ const summaryText = computed(() => {
   const invalid = rows.value.filter(r => r.status === 'invalid').length
   return `已匹配 ${matched} · 待处理 ${unmatched} · 无法识别 ${invalid}`
 })
+
+// 复制模板文本：每行「商品名 」+ 尾随空格，按快速填写页面顺序（分类序 + 组内拼音）
+const templateText = computed(() =>
+  props.historyProductNames.map(n => `${n} `).join('\n')
+)
 
 const importableRows = computed(() => rows.value.filter(r => r.status === 'matched' && r.ok))
 const importableCount = computed(() => importableRows.value.length)
@@ -226,6 +285,15 @@ watch(() => props.modelValue, (val) => {
     result.value = null
   }
 })
+
+// 复制模板到剪贴板（兼容 http/https），成功后按钮短暂显示「已复制」
+async function copyTemplate() {
+  const ok = await copyText(templateText.value)
+  if (ok) {
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  }
+}
 
 // 解析 + 自动精确匹配
 async function doParse() {
@@ -552,5 +620,9 @@ async function doImport() {
 .paste-inline-field :deep(input) {
   font-size: 16px; /* 防 iOS 缩放 */
   min-width: 0;
+}
+.template-preview :deep(textarea) {
+  font-family: monospace; /* 等宽字体，模板各行对齐易读 */
+  white-space: pre; /* 保留尾随空格，不自动换行 */
 }
 </style>
