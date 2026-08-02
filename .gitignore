@@ -18,3 +18,5 @@ frontend/dev-dist/
 
 # Flutter 移动端 app（仅 feat/mobile-app 分支含，master 不含；忽略其本地残留）
 mobile/
+
+docker-compose.yml
