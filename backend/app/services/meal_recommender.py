@@ -10,8 +10,7 @@ import logging
 import random
 import threading
 from typing import Dict, List, Optional, Set, Tuple
-from zoneinfo import ZoneInfo
-from app.utils.date_range_utils import utc_datetime_to_local_date
+from app.utils.date_range_utils import utc_datetime_to_local_date, _zone
 
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text
@@ -294,7 +293,7 @@ async def _build_response_from_records(
     tz: str = "UTC",
 ) -> Dict:
     """从 daily_recommendations 记录构建完整响应。"""
-    now = datetime.datetime.now(ZoneInfo(tz))
+    now = datetime.datetime.now(_zone(tz))
     current_meal = _get_current_meal(now.hour)
     today = utc_datetime_to_local_date(datetime.datetime.now(datetime.timezone.utc), tz)
 
