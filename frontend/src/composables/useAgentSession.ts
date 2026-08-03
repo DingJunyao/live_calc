@@ -25,7 +25,6 @@ import { api } from '@/api'
 import {
   executeAgentRun,
   resolveAgentConfig,
-  buildPrompt,
   type RenderMessage as SRenderMessage,
 } from '@/api/local/agent/sessionRunner'
 
@@ -278,6 +277,7 @@ export function useAgentSession() {
   // ============================================================
   const isLocalMode = import.meta.env.VITE_STORAGE_MODE === 'local'
   let localAbort: AbortController | null = null
+  let localPollTimer: ReturnType<typeof setInterval> | null = null
   let localRenders: RenderMessage[] = []
   let localAiMessages: any[] = []
   let localSid: number | null = null
@@ -300,6 +300,13 @@ export function useAgentSession() {
     }
   }
 
+  function clearLocalPoll() {
+    if (localPollTimer) {
+      clearInterval(localPollTimer)
+      localPollTimer = null
+    }
+  }
+
   /** 运行本地 Agent（可传 initialMessages 续跑） */
   async function runLocalTask(
     sid: number,
@@ -310,6 +317,7 @@ export function useAgentSession() {
     localSid = sid
     localAbort?.abort()
     localAbort = new AbortController()
+    clearLocalPoll()
     localProvider = provider === 'claude_code' ? null : provider
     connected.value = true
     // 初始消息：续跑用传入历史，否则用任务提示
@@ -320,12 +328,17 @@ export function useAgentSession() {
     try {
       const config = await resolveAgentConfig(provider)
       // executeAgentRun 把 runner 进度累积到 localRenders（原地修改）
+      const persistRunProgress = async () => {
+        messages.value = [...localRenders]
+        await persistLocal()
+      }
       const { status: finalStatus, error: errMsg } = await executeAgentRun(
         config,
         prompt,
         localRenders,
         localAiMessages,
         localAbort.signal,
+        persistRunProgress,
       )
       messages.value = [...localRenders]
       status.value = finalStatus
@@ -352,7 +365,29 @@ export function useAgentSession() {
       localAiMessages = (session.ai_messages || []).map((m: any) => JSON.parse(JSON.stringify(m)))
       messages.value = [...localRenders]
       status.value = session.status || 'completed'
+      error.value = session.error || (session.status === 'failed' ? '会话执行失败' : '')
       maxSeqSeen = localRenders.length
+      if (status.value === 'running' || status.value === 'pending') {
+        connected.value = true
+        localPollTimer = setInterval(async () => {
+          try {
+            const next: any = await api.get(`/agent/sessions/${sid}`)
+            localRenders = (next.renders || []).map((m: any) => ({ ...m }))
+            localAiMessages = (next.ai_messages || []).map((m: any) => JSON.parse(JSON.stringify(m)))
+            messages.value = [...localRenders]
+            status.value = next.status || status.value
+            error.value = next.error || (next.status === 'failed' ? '会话执行失败' : '')
+            maxSeqSeen = localRenders.length
+            if (['success', 'completed', 'failed', 'cancelled'].includes(status.value)) {
+              clearLocalPoll()
+              connected.value = false
+            }
+          } catch {
+            clearLocalPoll()
+            connected.value = false
+          }
+        }, 1000)
+      }
     } catch (e: any) {
       error.value = e?.message || '加载会话失败'
       status.value = 'failed'
@@ -369,6 +404,7 @@ export function useAgentSession() {
     // 本地模式状态清理
     localAbort?.abort()
     localAbort = null
+    clearLocalPoll()
     localRenders = []
     localAiMessages = []
     localSid = null
@@ -424,6 +460,7 @@ export function useAgentSession() {
     if (isLocalMode) {
       localAbort?.abort()
       localAbort = null
+      clearLocalPoll()
       connected.value = false
       return
     }
@@ -445,7 +482,7 @@ export function useAgentSession() {
     const { session_id } = await apiCreateSession(taskType, false, provider)
     status.value = 'running'
     if (isLocalMode) {
-      await runLocalTask(session_id, provider, buildPrompt(taskType))
+      await connectLocal(session_id)
     } else {
       await connect(session_id)
     }

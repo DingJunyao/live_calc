@@ -523,7 +523,7 @@ import {
   getUsdaTasks,
   getUsdaTaskById,
 } from '@/api/usda'
-import { createSession, getSession, listSessions, cancelSession } from '@/api/agent'
+import { createSession, getSession, listSessions, cancelSession, type AgentProvider } from '@/api/agent'
 import { api } from '@/api'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
@@ -770,29 +770,32 @@ async function uploadImport() {
 }
 
 async function fillPieceWeight() {
-    submitting.aiPieceWeight = true
-    try {
-      const { session_id } = await createSession('fill_piece_weight', aiForce.value)
-      agentTasks.value.unshift({
-        session_id,
-        task_type: 'fill_piece_weight',
-        label: TASK_LABELS.fill_piece_weight + (aiForce.value ? ' (强制)' : ''),
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      })
-      await refreshSessions()
-    } finally {
-      submitting.aiPieceWeight = false
-    }
+  submitting.aiPieceWeight = true
+  try {
+    const provider = (aiInferProvider.value || 'claude_code') as AgentProvider
+    const { session_id } = await createSession('fill_piece_weight', aiForce.value, provider)
+    agentTasks.value.unshift({
+      session_id,
+      task_type: 'fill_piece_weight',
+      label: TASK_LABELS.fill_piece_weight + (aiForce.value ? ' (强制)' : ''),
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    })
+    startAgentPolling(session_id)
+  } catch (e: any) {
+    errorMessage.value = e?.response?.data?.detail || e?.message || '自定义单位校准任务启动失败'
+  } finally {
+    submitting.aiPieceWeight = false
   }
+}
 
 async function inferDensities() {
   submitting.aiDensities = true
   try {
-   const provider = aiInferProvider.value || 'claude_code'
+    const provider = aiInferProvider.value || 'claude_code'
     // 本地模式：后端任务端点不存在，统一走 Agent 会话（runner 驱动）
     if (provider === 'claude_code' || isLocalMode.value) {
-      const { session_id } = await createSession('infer_densities', aiForce.value)
+      const { session_id } = await createSession('infer_densities', aiForce.value, provider as AgentProvider)
       agentTasks.value.unshift({
         session_id,
         task_type: 'infer_densities',
@@ -818,10 +821,10 @@ async function inferDensities() {
 async function onTranslateFoods() {
   submitting.translateFoods = true
   try {
-   const provider = translateProvider.value || 'claude_code'
+    const provider = translateProvider.value || 'claude_code'
     // 本地模式：后端任务端点不存在，统一走 Agent 会话（runner 驱动）
-    if (provider === 'claude_code' || isLocalMode.value) {
-      const { session_id } = await createSession('usda_translate', aiForce.value)
+    if (provider === 'claude_code' || (isLocalMode.value && (provider === 'openai' || provider === 'anthropic'))) {
+      const { session_id } = await createSession('usda_translate', aiForce.value, provider as AgentProvider)
       agentTasks.value.unshift({
         session_id,
         task_type: 'usda_translate',
@@ -830,6 +833,8 @@ async function onTranslateFoods() {
         created_at: new Date().toISOString(),
       })
       startAgentPolling(session_id)
+    } else if (isLocalMode.value) {
+      errorMessage.value = '本地模式暂不支持机翻后端，请选择 OpenAI 或 Anthropic'
     } else {
       const taskId = await startTask('/import/translate/foods', {
         params: { provider, force: aiForce.value },
@@ -849,10 +854,10 @@ async function onTranslateFoods() {
 async function onTranslateNutrients() {
   submitting.translateNutrients = true
   try {
-   const provider = translateProvider.value || 'claude_code'
+    const provider = translateProvider.value || 'claude_code'
     // 本地模式：后端任务端点不存在，统一走 Agent 会话（runner 驱动）
-    if (provider === 'claude_code' || isLocalMode.value) {
-      const { session_id } = await createSession('unmapped_nutrient_translate', aiForce.value)
+    if (provider === 'claude_code' || (isLocalMode.value && (provider === 'openai' || provider === 'anthropic'))) {
+      const { session_id } = await createSession('unmapped_nutrient_translate', aiForce.value, provider as AgentProvider)
       agentTasks.value.unshift({
         session_id,
         task_type: 'unmapped_nutrient_translate',
@@ -861,6 +866,8 @@ async function onTranslateNutrients() {
         created_at: new Date().toISOString(),
       })
       startAgentPolling(session_id)
+    } else if (isLocalMode.value) {
+      errorMessage.value = '本地模式暂不支持机翻后端，请选择 OpenAI 或 Anthropic'
     } else {
       const taskId = await startTask('/import/translate/nutrients', {
         params: { provider, force: aiForce.value },

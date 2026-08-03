@@ -145,6 +145,10 @@
 
           <!-- 对话流 -->
           <div ref="streamEl" class="stream-area">
+            <div v-if="!messages.length && isRunning" class="text-center text-medium-emphasis pa-8">
+              <v-progress-circular indeterminate size="32" color="primary" class="mb-2" />
+              <div class="text-body-2">任务运行中，等待 Agent 输出</div>
+            </div>
             <div v-if="!messages.length && !isRunning" class="text-center text-medium-emphasis pa-8">
               <v-icon size="48" class="mb-2">mdi-robot-outline</v-icon>
               <div class="text-body-2">从左侧选择一个任务类型开始，或查看历史会话</div>

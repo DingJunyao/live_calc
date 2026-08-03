@@ -16,13 +16,13 @@ export interface RenderMessage {
 
 export const TASK_PROMPTS: Record<string, string> = {
   data_analysis: '请分析本地数据：用工具查询商品、食材、菜谱的价格与营养信息，给出整体情况与值得关注的发现。',
-  nutrition_audit: '请审核食材营养数据：逐个检查食材的营养信息是否完整，找出缺失关键营养素的数据；如需补充可调用 update_nutrition 工具。',
+  nutrition_audit: '请审核食材营养数据：逐个检查食材的营养信息是否完整，找出缺失关键营养素的数据；任务明确要求补充时，直接用 update_nutrition 写入，不要等待用户确认。',
   price_analysis: '请分析商品价格：用工具查询商品与价格记录，找出价格异常或更优购买方案。',
   inventory_check: '请检查数据完整性：用 read_statistics 等工具统计各表数据量，发现缺失或不一致的数据并报告。',
-  fill_piece_weight: '请为商品补充规格/件重信息：用 read_products 查询商品，结合原料、价格等数据推测并补全 piece_weight（每件重量）；可调用 batch_update 更新。',
-  infer_densities: '请推测食材密度：用 read_ingredients、read_nutrition 查询食材，结合常识推测密度（g/ml），并写入；可调用 batch_update 更新。',
-  usda_translate: '请翻译食材名为英文：用 read_ingredients 查询食材，把食材的中文名翻译成对应的英文 USDA 食物名；可调用 batch_update 更新 name_en 字段。',
-  unmapped_nutrient_translate: '请翻译营养素名：查询现有营养数据中的 nutrient_name，把中文营养素名翻译成 USDA 标准英文名；可调用 batch_update 更新。',
+  fill_piece_weight: '请完成「自定义单位校准」：先用 read_entity_units 查询 entity_unit_overrides，找出 weight_per_unit 为空或等于 100 的占位项；再用 read_units 确认克、个等单位的 ID，用 read_ingredients、read_products 关联实体名称，找出使用计数单位但尚未建档的食材/商品。已存在的记录用 batch_update 修正 weight_per_unit，缺失记录用 batch_insert 补建。所有估值直接执行，不要等待用户确认；每处理完一批就继续查询剩余项，直到没有待处理记录，最后用中文总结本轮修正了多少条。',
+  infer_densities: '请完成「密度推测」：先用 read_densities 查询 entity_densities，找出缺失密度记录的食材；再用 read_units 确认密度单位 ID，用 read_ingredients、read_nutrition 获取食材上下文，结合常识估算密度（kg/m³）。已有记录用 batch_update 修正，缺失记录用 batch_insert 补建。直接写入、不要等待用户确认；分批处理直到没有缺失记录，最后总结修正数量。',
+  usda_translate: '请完成「食材名翻译」：用 read_ingredients 分批查询食材，把中文名翻译成对应的英文 USDA 食物名，通过 batch_update 写入 name_en。直接写入、不要等待用户确认；分批处理全部食材，最后总结翻译数量。',
+  unmapped_nutrient_translate: '请完成「营养素翻译」：查询 nutrition_data 中的中文营养素名，翻译成 USDA 标准英文名。由于 nutrition_data 需要用 update_nutrition 整组替换，请分批对每个食材调用 update_nutrition 写入翻译后的营养素列表；直接执行、不要等待用户确认，处理完所有未映射营养素后总结。',
 }
 
 export function buildPrompt(taskType: string): string {
@@ -96,12 +96,23 @@ export async function executeAgentRun(
   renders: RenderMessage[],
   aiMessages: any[],
   signal?: AbortSignal,
+  onProgress?: (renders: RenderMessage[], aiMessages: any[]) => void | Promise<void>,
 ): Promise<{ status: 'success' | 'failed'; error?: string }> {
   const prompt = buildPrompt(taskType)
+  if (!aiMessages.length) {
+    aiMessages.push({ role: 'user', content: prompt })
+  }
   try {
     const gen = runAgent(config as any, prompt, signal, aiMessages)
     for await (const p of gen) {
       applyProgress(p, renders)
+      if (onProgress) {
+        try {
+          await onProgress(renders, aiMessages)
+        } catch {
+          // 中间快照落盘失败不阻断 Agent 继续执行。
+        }
+      }
     }
     return { status: 'success' }
   } catch (e: any) {

@@ -4,6 +4,7 @@
 // listSessions 返回数组；额外提供 PUT 更新用于持久化对话渲染与 AI 消息历史。
 
 import { getAll, addOne, putOne } from '../database'
+import { getTranslationConfig } from './admin'
 import {
   executeAgentRun,
   resolveAgentConfig,
@@ -36,6 +37,26 @@ const TASK_TYPES = [
     name: '库存检查',
     description: '检查各类数据的完整性，发现缺失或不一致的数据',
   },
+  {
+    id: 'fill_piece_weight',
+    name: '自定义单位校准',
+    description: '校准 entity_unit_overrides 中缺失或占位的自定义单位克重',
+  },
+  {
+    id: 'infer_densities',
+    name: '密度推测',
+    description: '为食材补充 entity_densities 密度记录',
+  },
+  {
+    id: 'usda_translate',
+    name: '食材名翻译',
+    description: '把食材中文名翻译为英文 USDA 食物名',
+  },
+  {
+    id: 'unmapped_nutrient_translate',
+    name: '营养素翻译',
+    description: '把中文营养素名翻译为 USDA 标准英文名',
+  },
 ]
 
 // ============================================================
@@ -51,6 +72,22 @@ async function nextId(): Promise<number> {
     if (Number.isFinite(n) && n > max) max = n
   }
   return Math.max(Date.now(), max + 1)
+}
+
+/** 本地模式不支持 claude_code；未显式传 AI provider 时退回已启用的第一个 AI provider。 */
+async function resolveLocalProvider(requested?: string): Promise<string> {
+  if (requested && requested !== 'claude_code') return requested
+  try {
+    const cfg = await getTranslationConfig()
+    const ai = cfg?.ai?.providers || {}
+    const enabled = Object.keys(ai).filter(
+      (key) => key !== 'claude_code' && ai[key]?.enabled,
+    )
+    if (enabled.length) return enabled[0]
+  } catch {
+    // 配置读取失败时退回默认值，后续 runner 会给出可读错误。
+  }
+  return 'anthropic'
 }
 
 function nowISO(): string {
@@ -82,12 +119,13 @@ export async function createSession(_params: Record<string, string>, data?: any)
   const taskType = data?.task_type || 'data_analysis'
   const meta = TASK_TYPES.find((t) => t.id === taskType)
   const now = nowISO()
+  const provider = await resolveLocalProvider(data?.provider)
   const session = {
     id: await nextId(),
     task_type: taskType,
     title: data?.title || meta?.name || '新对话',
    status: 'running' as const,
-   provider: data?.provider || 'anthropic',
+   provider,
    error: null as string | null,
    created_at: now,
     updated_at: now,
@@ -111,6 +149,18 @@ async function runSessionInBackground(
 ) {
   const renders: RenderMessage[] = []
   const aiMessages: any[] = []
+  async function persistProgress() {
+    try {
+      await updateSession({ id: String(sid) }, {
+        renders: JSON.parse(JSON.stringify(renders)),
+        ai_messages: JSON.parse(JSON.stringify(aiMessages)),
+        status: 'running',
+        error: null,
+      })
+    } catch {
+      // 运行中快照落盘失败不阻塞任务，最终态仍会再写一次。
+    }
+  }
   try {
     const config = await resolveAgentConfig(providerKey as AgentProviderLike)
     const { status: finalStatus, error: errMsg } = await executeAgentRun(
@@ -118,6 +168,8 @@ async function runSessionInBackground(
       taskType,
       renders,
       aiMessages,
+      undefined,
+      persistProgress,
     )
     await updateSession({ id: String(sid) }, {
       renders,

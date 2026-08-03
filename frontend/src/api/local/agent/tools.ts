@@ -1,7 +1,7 @@
-// Browser Agent 工具定义 — 7 个 IndexedDB 工具。
+﻿// Browser Agent 工具定义 — 10 个 IndexedDB 工具。
 // 每个工具包含名称、中文描述、JSON Schema 参数和 execute 执行函数。
 
-import { getAll, getById, getByIndex, countAll, getDb } from '../database'
+import { getAll, getById, getByIndex, countAll, getDb, batchAdd } from '../database'
 
 // ============================================================
 // 类型定义
@@ -51,7 +51,10 @@ const read_products: ToolDefinition = {
       return true
     })
 
-    return filtered.slice(0, limit)
+    return filtered.slice(0, limit).map((p: any) => ({
+      id: p.id, name: p.name, ingredient_id: p.ingredient_id,
+      piece_weight: p.piece_weight, piece_weight_unit_id: p.piece_weight_unit_id,
+    }))
   },
 }
 
@@ -92,7 +95,135 @@ const read_ingredients: ToolDefinition = {
       return true
     })
 
-    return filtered.slice(0, limit)
+    return filtered.slice(0, limit).map((i: any) => ({
+      id: i.id, name: i.name, category_id: i.category_id,
+      piece_weight: i.piece_weight, piece_weight_unit_id: i.piece_weight_unit_id,
+      density: i.density, name_en: i.name_en,
+    }))
+  },
+}
+
+// ============================================================
+// 工具 2.5：read_entity_units
+// ============================================================
+
+const read_entity_units: ToolDefinition = {
+  name: 'read_entity_units',
+  description: '查询实体自定义单位覆盖表（entity_unit_overrides）。返回记录包含 id、entity_type、entity_id、unit_name、unit_id、weight_per_unit、weight_unit_id、source 等字段。',
+  parameters: {
+    type: 'object',
+    properties: {
+      entity_type: {
+        type: 'string',
+        description: '实体类型，如 ingredient 或 product',
+      },
+      entity_id: {
+        type: 'integer',
+        description: '实体 ID',
+      },
+      limit: {
+        type: 'integer',
+        description: '最大返回数量，默认 100，最大 500',
+        default: 100,
+      },
+    },
+  },
+  async execute(args: Record<string, any>) {
+    let all: any[] = await getAll('entity_unit_overrides')
+    if (args.entity_type) {
+      all = all.filter((o: any) => o.entity_type === args.entity_type)
+    }
+    if (args.entity_id != null) {
+      all = all.filter((o: any) => Number(o.entity_id) === Number(args.entity_id))
+    }
+    const limit = Math.min(args.limit ?? 100, 500)
+    return all.slice(0, limit).map((o: any) => ({
+      id: o.id, entity_type: o.entity_type, entity_id: o.entity_id,
+      entity_name: o.entity_name, unit_name: o.unit_name, unit_id: o.unit_id,
+      weight_per_unit: o.weight_per_unit, weight_unit_id: o.weight_unit_id,
+      weight_unit_name: o.weight_unit_name, is_default: o.is_default,
+      source: o.source,
+    }))
+  },
+}
+
+// ============================================================
+// 工具 2.6：read_units
+// ============================================================
+
+const read_units: ToolDefinition = {
+  name: 'read_units',
+  description: '查询单位表（units）。返回记录包含 id、name、abbreviation、unit_type、unit_system、si_factor 等字段，可用于确认克、个、毫升等单位的 ID。',
+  parameters: {
+    type: 'object',
+    properties: {
+      unit_type: {
+        type: 'string',
+        description: '单位类型，如 mass、volume、count',
+      },
+      unit_system: {
+        type: 'string',
+        description: '单位体系，如 metric、market、count',
+      },
+      limit: {
+        type: 'integer',
+        description: '最大返回数量，默认 100，最大 500',
+        default: 100,
+      },
+    },
+  },
+  async execute(args: Record<string, any>) {
+    let all: any[] = await getAll('units')
+    if (args.unit_type) {
+      all = all.filter((u: any) => u.unit_type === args.unit_type)
+    }
+    if (args.unit_system) {
+      all = all.filter((u: any) => u.unit_system === args.unit_system)
+    }
+    const limit = Math.min(args.limit ?? 100, 500)
+    return all.slice(0, limit)
+  },
+}
+
+// ============================================================
+// 工具 2.7：read_densities
+// ============================================================
+
+const read_densities: ToolDefinition = {
+  name: 'read_densities',
+  description: '查询实体密度表（entity_densities，密度单位为 kg/m³）。返回记录包含 id、entity_type、entity_id、density、unit_id、condition、source 等字段。',
+  parameters: {
+    type: 'object',
+    properties: {
+      entity_type: {
+        type: 'string',
+        description: '实体类型，如 ingredient 或 product',
+      },
+      entity_id: {
+        type: 'integer',
+        description: '实体 ID',
+      },
+      limit: {
+        type: 'integer',
+        description: '最大返回数量，默认 100，最大 500',
+        default: 100,
+      },
+    },
+  },
+  async execute(args: Record<string, any>) {
+    let all: any[] = await getAll('entity_densities')
+    if (args.entity_type) {
+      all = all.filter((o: any) => o.entity_type === args.entity_type)
+    }
+    if (args.entity_id != null) {
+      all = all.filter((o: any) => Number(o.entity_id) === Number(args.entity_id))
+    }
+    const limit = Math.min(args.limit ?? 100, 500)
+    return all.slice(0, limit).map((o: any) => ({
+      id: o.id, entity_type: o.entity_type, entity_id: o.entity_id,
+      density: o.density, unit_id: o.unit_id, condition: o.condition,
+      source: o.source,
+    }))
   },
 }
 
@@ -361,17 +492,83 @@ const batch_update: ToolDefinition = {
 }
 
 // ============================================================
+// 工具 8：batch_insert
+// ============================================================
+
+const batch_insert: ToolDefinition = {
+  name: 'batch_insert',
+  description: '批量新增记录到指定数据表（不能新增 nutrition_data、system_config、agent_sessions、import_tasks、images）。每次最多 50 条，用于为 entity_unit_overrides、entity_densities 等维护表补建缺失记录。',
+  parameters: {
+    type: 'object',
+    properties: {
+      store: {
+        type: 'string',
+        description: '数据表名称，如 entity_unit_overrides、entity_densities、ingredients、products 等',
+      },
+      items: {
+        type: 'array',
+        description: '新增记录列表，每项为要写入的字段对象',
+        items: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+    },
+    required: ['store', 'items'],
+  },
+  async execute(args: Record<string, any>) {
+    const storeName = args.store
+    const items: any[] = args.items || []
+    const FORBIDDEN = new Set([
+      'nutrition_data',
+      'system_config',
+      'agent_sessions',
+      'import_tasks',
+      'images',
+    ])
+    if (FORBIDDEN.has(storeName)) {
+      return { error: `不允许通过 batch_insert 写入 ${storeName}` }
+    }
+    if (items.length > 50) {
+      return { error: `新增条数 ${items.length} 超过最大限制 50` }
+    }
+    try {
+      const now = new Date().toISOString()
+      const keys = await batchAdd(
+        storeName,
+        items.map((item: any) => ({
+          ...item,
+          created_at: item.created_at || now,
+          updated_at: now,
+        })),
+      )
+      return {
+        store: storeName,
+        inserted: keys.length,
+        ids: keys,
+      }
+    } catch (e: any) {
+      return { error: `写入失败: ${e?.message || String(e)}` }
+    }
+  },
+}
+
+// ============================================================
 // 工具注册表
 // ============================================================
 
 export const TOOLS: ToolDefinition[] = [
   read_products,
   read_ingredients,
+  read_entity_units,
+  read_units,
+  read_densities,
   read_recipes,
   read_nutrition,
   update_nutrition,
   read_statistics,
   batch_update,
+  batch_insert,
 ]
 
 /** 按名称查找工具定义 */

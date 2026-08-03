@@ -1,4 +1,4 @@
-// Browser Agent 运行器 — 直接调用 Anthropic/OpenAI API，驱动 Agent 与 IndexedDB 交互。
+﻿// Browser Agent 运行器 — 直接调用 Anthropic/OpenAI API，驱动 Agent 与 IndexedDB 交互。
 // 基于 AsyncGenerator 逐步产生事件，支持 AbortSignal 取消。
 
 import { TOOLS, getToolByName, type ToolDefinition } from './tools'
@@ -62,25 +62,30 @@ const SYSTEM_PROMPT = `你是一个生活成本计算器（「生计」App）的
 你有以下工具可用：
 - read_products: 查询商品
 - read_ingredients: 查询食材
+- read_entity_units: 查询实体自定义单位覆盖（entity_unit_overrides）
+- read_units: 查询单位表（units）
+- read_densities: 查询实体密度（entity_densities）
 - read_recipes: 查询菜谱
 - read_nutrition: 查询营养数据
 - update_nutrition: 更新营养数据（批量）
 - read_statistics: 统计数据量
 - batch_update: 批量更新字段
+- batch_insert: 批量新增记录
 
 请用中文与用户交流。在回答用户问题前，先思考需要调用哪些工具来获取数据。可以同时调用多个工具。
 
 工具使用规则：
 1. 优先使用查询工具获取数据，再基于数据进行分析
-2. 修改数据的操作（update_nutrition、batch_update）经过用户确认后再执行
+2. 修改数据的操作（update_nutrition、batch_update）在任务明确要求时直接执行，本地模式没有人工审批；不要执行删除或不可逆的破坏性操作
 3. 如果一次调用无法获取足够信息，继续调用更多工具
-4. 用自然语言总结分析结果，不要只是罗列原始数据`
+4. 数据维护任务要分批处理全部待办项，处理完并复核后再总结，不要中途停下来等用户确认
+5. 用自然语言总结分析结果，不要只是罗列原始数据`
 
 // ============================================================
 // 运行器
 // ============================================================
 
-const MAX_ITERATIONS = 10
+const MAX_ITERATIONS = 30
 
 export async function* runAgent(
   config: AgentConfig,
@@ -147,6 +152,15 @@ export async function* runAgent(
           input: JSON.parse(tc.function.arguments),
         }))
       }
+    }
+
+    // ---- 响应被 max_tokens 截断 → 报错而非静默完成 ----
+    const finishReason = config.provider === 'anthropic'
+      ? response.stop_reason
+      : response.choices?.[0]?.finish_reason
+    if (finishReason === 'length' && toolCalls.length === 0) {
+      yield { type: 'error', message: 'AI 响应被 max_tokens 截断（finish_reason=length），请减少单次查询的数据量或检查模型配置。' }
+      return
     }
 
     // ---- 没有工具调用 → 完成 ----
@@ -258,7 +272,7 @@ async function callAnthropic(
 ): Promise<any> {
   const body: any = {
     model: config.model,
-    max_tokens: 4096,
+    max_tokens: 16384,
     system: systemPrompt,
     messages,
     tools,
@@ -306,7 +320,7 @@ async function callOpenAI(
 
   const body: any = {
     model: config.model,
-    max_tokens: 4096,
+    max_tokens: 16384,
     messages: [
       { role: 'system', content: systemPrompt },
       ...messages,
