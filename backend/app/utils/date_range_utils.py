@@ -5,13 +5,30 @@
 数据库存储 naive UTC datetime。
 """
 from datetime import datetime, date, timezone
+from datetime import timedelta
 from typing import Tuple
 from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfoNotFoundError
+import re
+
+_OFFSET_PATTERN = re.compile(r'^UTC([+-])(\d{2}):(\d{2})$')
 
 
 def _zone(tz: str):
-    """解析 IANA 时区名，空值回落 UTC。"""
-    return ZoneInfo(tz if tz else "UTC")
+    """解析 IANA 时区名或 UTC+HH:mm 偏移格式，空值回落 UTC。"""
+    if not tz:
+        return ZoneInfo("UTC")
+    try:
+        return ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        pass
+    match = _OFFSET_PATTERN.match(tz)
+    if match:
+        sign = 1 if match.group(1) == '+' else -1
+        hours = int(match.group(2))
+        minutes = int(match.group(3))
+        return timezone(timedelta(hours=sign * hours, minutes=sign * minutes))
+    return ZoneInfo("UTC")
 
 
 def local_date_to_utc_range(local_date: date, tz: str = "UTC") -> Tuple[datetime, datetime]:
