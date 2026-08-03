@@ -1,9 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_client.dart';
-import '../../auth/repositories/auth_repository.dart';
+import '../../../core/services/server_connection_checker.dart';
+import '../providers/auth_provider.dart';
 import '../providers/server_provider.dart';
 
 class ServerConfigScreen extends ConsumerStatefulWidget {
@@ -38,17 +39,22 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
 
   Future<void> _connect() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final url = _urlController.text.trim();
       ApiClient.instance.updateBaseUrl(url);
-      final repo = AuthRepository();
-      await repo.getConfig();
+      final connected = await ServerConnectionChecker.verify();
+      if (!connected) {
+        setState(() => _error = '无法连接服务器，请检查地址或网络后重试');
+        return;
+      }
       await ref.read(serverConfigProvider.notifier).setUrl(url);
+      ref.read(authProvider.notifier).clearConnectionError();
       if (mounted) context.go('/login');
-    } on Exception catch (e) {
-      setState(() => _error = 'Connection failed: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -57,6 +63,9 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final authState = ref.watch(authProvider);
+    final effectiveError =
+        _error ?? (authState.serverUnreachable ? authState.errorMessage : null);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -69,17 +78,21 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: SizedBox(
-                        width: 80,
-                        height: 80,
-                        child: SvgPicture.asset('assets/images/logo.svg'),
-                      ),
+                    borderRadius: BorderRadius.circular(16),
+                    child: SizedBox(
+                      width: 80,
+                      height: 80,
+                      child: SvgPicture.asset('assets/images/logo.svg'),
                     ),
+                  ),
                   const SizedBox(height: 16),
-                  Text('生计', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('生计',
+                      style: theme.textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Text('生活成本计算器', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outline)),
+                  Text('生活成本计算器',
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(color: theme.colorScheme.outline)),
                   const SizedBox(height: 48),
                   TextFormField(
                     controller: _urlController,
@@ -91,17 +104,33 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
                     keyboardType: TextInputType.url,
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return '请输入服务器地址';
-                      if (!v.trim().startsWith('http')) return '必须以 http:// 或 https:// 开头';
+                      if (!v.trim().startsWith('http')) {
+                        return '必须以 http:// 或 https:// 开头';
+                      }
                       return null;
                     },
                   ),
                   const SizedBox(height: 8),
-                  if (_error != null) Column(children: [Text('连接失败：', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)), Text(_error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12))],),
+                  if (effectiveError != null)
+                    Column(
+                      children: [
+                        Text('连接失败：',
+                            style: TextStyle(
+                                color: theme.colorScheme.error,
+                                fontWeight: FontWeight.bold)),
+                        Text(effectiveError,
+                            style: TextStyle(
+                                color: theme.colorScheme.error, fontSize: 12))
+                      ],
+                    ),
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _loading ? null : _connect,
                     child: _loading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
                         : const Text('连接'),
                   ),
                 ],
@@ -113,4 +142,3 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen> {
     );
   }
 }
-

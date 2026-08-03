@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
@@ -18,30 +18,63 @@ import '../../features/profile/screens/profile_screen.dart';
 import '../../features/profile/screens/my_proposals_screen.dart';
 import '../../features/profile/screens/my_places_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../../features/auth/providers/server_provider.dart';
 import '../../features/auth/screens/server_config_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
+import '../../features/auth/screens/splash_screen.dart';
 import 'route_names.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-GoRouter createAppRouter(WidgetRef ref) {
-  final authState = ref.watch(authProvider);
-
+GoRouter createAppRouter(WidgetRef ref, Listenable refreshListenable) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/home',
+    initialLocation: '/splash',
+    refreshListenable: refreshListenable,
     redirect: (context, state) {
-      final isLoggedIn = authState.status == AuthStatus.authenticated;
+      // Read fresh values on every redirect evaluation so auth/server state
+      // changes are reflected immediately (driven by refreshListenable).
+      final authState = ref.read(authProvider);
+      final serverUrl = ref.read(serverConfigProvider);
+      final status = authState.status;
       final location = state.matchedLocation;
-      final isAuthRoute = location == '/login' || location == '/register' || location == '/server-config';
+      final isAuthRoute = location == '/login' ||
+          location == '/register' ||
+          location == '/server-config';
+      final isSplash = location == '/splash';
 
-      if (!isLoggedIn && !isAuthRoute) return '/server-config';
-      if (isLoggedIn && isAuthRoute) return '/home';
-      return null;
+      // While the session is being restored (incl. the startup connectivity
+      // check), hold on the splash screen so we never flash the server-config
+      // or login pages before we know where to land.
+      if (status == AuthStatus.initial || status == AuthStatus.loading) {
+        return isSplash ? null : '/splash';
+      }
+
+      if (status == AuthStatus.authenticated) {
+        return (isAuthRoute || isSplash) ? '/home' : null;
+      }
+
+      // The server was unreachable: send the user back to server setup to
+      // start over, keeping the saved address pre-filled for an easy retry.
+      if (authState.serverUnreachable) {
+        return location == '/server-config' ? null : '/server-config';
+      }
+
+      // unauthenticated / error
+      final hasServer = serverUrl != null && serverUrl.isNotEmpty;
+      if (!hasServer) {
+        return location == '/server-config' ? null : '/server-config';
+      }
+      return isAuthRoute ? null : '/login';
     },
     routes: [
+      GoRoute(
+        path: '/splash',
+        name: RouteNames.splash,
+        builder: (_, __) => const SplashScreen(),
+      ),
       GoRoute(
         path: '/server-config',
         name: RouteNames.serverConfig,
@@ -212,9 +245,3 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
     context.go(_tabRoutes[index]);
   }
 }
-
-
-
-
-
-

@@ -1,4 +1,5 @@
 class RouteNames {
+  static const splash = 'splash';
   static const serverConfig = 'server-config';
   static const login = 'login';
   static const register = 'register';

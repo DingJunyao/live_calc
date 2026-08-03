@@ -7,6 +7,8 @@ class AuthInterceptor extends Interceptor {
 
   static const _tokenKey = 'auth_token';
   static const _refreshTokenKey = 'refresh_token';
+  static const _usernameKey = 'saved_username';
+  static const _passwordKey = 'saved_password';
 
   AuthInterceptor(this._dio);
 
@@ -71,4 +73,25 @@ class AuthInterceptor extends Interceptor {
   }
 
   static Future<String?> get accessToken => const FlutterSecureStorage().read(key: _tokenKey);
+  static Future<void> saveCredentials(String username, String password) async {
+    final storage = const FlutterSecureStorage();
+    await storage.write(key: _usernameKey, value: username);
+    await storage.write(key: _passwordKey, value: password);
+  }
+
+  /// Persisted last successful login so the next launch can sign in
+  /// automatically without re-typing server/account/password.
+  static Future<MapEntry<String, String>?> get savedCredentials async {
+    final storage = const FlutterSecureStorage();
+    final username = await storage.read(key: _usernameKey);
+    final password = await storage.read(key: _passwordKey);
+    if (username == null || password == null) return null;
+    return MapEntry(username, password);
+  }
+
+  static Future<void> clearCredentials() async {
+    final storage = const FlutterSecureStorage();
+    await storage.delete(key: _usernameKey);
+    await storage.delete(key: _passwordKey);
+  }
 }
