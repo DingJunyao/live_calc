@@ -224,10 +224,10 @@ export async function getRecipeCost(params: Record<string, string>, _query?: any
 }
 
 export async function batchCost(_params: Record<string, string>, data?: any): Promise<any> {
-  const recipeIds: number[] = data?.recipe_ids || data?.recipeIds || []
-  if (recipeIds.length === 0) return { items: [], total: 0 }
+  const recipeIds: number[] = data?.ids || data?.recipe_ids || data?.recipeIds || []
+  if (recipeIds.length === 0) return {}
 
-  // 预加载所有相关数据
+  // 预加载所有相关数据（成本 + 营养）
   const allRecipes = await getAll('recipes')
   const allIngredients = await getAll('ingredients')
   const allRecipeIngredients = await getAll('recipe_ingredients')
@@ -237,81 +237,139 @@ export async function batchCost(_params: Record<string, string>, data?: any): Pr
   const allOverrides = await getAll('entity_unit_overrides')
   const allDensities = await getAll('entity_densities')
   const allHierarchies = await getAll('ingredient_hierarchy')
+  const allNutrition = await getAll('nutrition_data')
 
-  const results: any[] = []
+  // 复用同一份活跃商品/价格记录，避免每个菜谱重复过滤
+  const activeProducts = allProducts.filter((p: any) => p.is_active !== false)
+  const activeProductIds = new Set(activeProducts.map((p: any) => p.id))
+  const activeRecords = allRecords.filter((r: any) => activeProductIds.has(r.product_id))
+
+  // 与云端 /recipes/batch-cost 对齐：返回 { [recipeId]: { estimated_cost, calories } }
+  const result: Record<string, { estimated_cost: number | null; calories: number | null }> = {}
+
   for (const rid of recipeIds) {
     const recipe = allRecipes.find((r: any) => r.id === rid)
     if (!recipe || recipe.is_active === false) continue
 
     const recipeIngredients = allRecipeIngredients.filter((ri: any) => ri.recipe_id === rid)
-    const ries = recipeIngredients.map((ri: any) => ({
-      recipe_ingredient_id: ri.id,
-      ingredient_id: ri.ingredient_id,
-      ingredient_name: '',
-      quantity: ri.quantity,
-      quantity_range: ri.quantity_range,
-      unit_id: ri.unit_id,
-      is_optional: ri.is_optional,
-    }))
 
-    // 填充食材名
-    for (const ri of ries) {
-      if (ri.ingredient_id == null) {
-        ri.ingredient_name = ri.ingredient_name || '未知原料'
-        continue
-      }
-      const ing = allIngredients.find((i: any) => i.id === ri.ingredient_id) || await getById('ingredients', ri.ingredient_id)
-      ri.ingredient_name = ing?.name || `#${ri.ingredient_id}`
-    }
-
-    const ingredientIds = [...new Set(ries.map((ri: any) => ri.ingredient_id))]
-    const products = allProducts.filter((p: any) => p.is_active !== false)
-    const productIds = products.map((p: any) => p.id)
-    const records = allRecords.filter((r: any) => productIds.includes(r.product_id))
-
-    const input: CostInput = {
-      recipe_id: rid,
-      servings: recipe.servings || 1,
-      ingredients: ries.map((ri: any) => ({
-        recipe_ingredient_id: ri.recipe_ingredient_id,
+    // --- 成本 ---
+    let estimatedCost: number | null = null
+    try {
+      const ries = recipeIngredients.map((ri: any) => ({
+        recipe_ingredient_id: ri.id,
         ingredient_id: ri.ingredient_id,
-        ingredient_name: ri.ingredient_name,
+        ingredient_name: ri.ingredient_id == null
+          ? '未知原料'
+          : (allIngredients.find((i: any) => i.id === ri.ingredient_id)?.name || `#${ri.ingredient_id}`),
         quantity: ri.quantity,
         quantity_range: ri.quantity_range,
         unit_id: ri.unit_id,
         is_optional: ri.is_optional,
-      })),
-      products: products.map((p: any) => ({
-        id: p.id,
-        ingredient_id: p.ingredient_id,
-        name: p.name,
-        price_weight: p.price_weight ?? 50,
-      })),
-      price_records: records.map((r: any) => ({
-        product_id: r.product_id,
-        price: r.price,
-        quantity: r.quantity,
-        unit_id: r.unit_id,
-        standard_quantity: r.standard_quantity,
-        standard_unit_id: r.standard_unit_id,
-        recorded_at: r.recorded_at,
-      })),
-      units: allUnits,
-      overrides: allOverrides,
-      densities: allDensities,
-      hierarchies: allHierarchies,
+        original_quantity: ri.original_quantity,
+      }))
+
+      const costInput: CostInput = {
+        recipe_id: rid,
+        servings: recipe.servings || 1,
+        ingredients: ries,
+        products: activeProducts.map((p: any) => ({
+          id: p.id,
+          ingredient_id: p.ingredient_id,
+          name: p.name,
+          price_weight: p.price_weight ?? 50,
+        })),
+        price_records: activeRecords.map((r: any) => ({
+          product_id: r.product_id,
+          price: r.price,
+          quantity: r.quantity,
+          unit_id: r.unit_id,
+          standard_quantity: r.standard_quantity,
+          standard_unit_id: r.standard_unit_id,
+          recorded_at: r.recorded_at,
+        })),
+        units: allUnits,
+        overrides: allOverrides,
+        densities: allDensities,
+        hierarchies: allHierarchies,
+      }
+
+      estimatedCost = calculateCost(costInput).total_cost
+    } catch (e) {
+      console.error('[batchCost] 成本计算失败', rid, e)
     }
 
-    const result = calculateCost(input)
-    results.push({
-      recipe_id: rid,
-      total_cost: result.total_cost,
-      cost_per_serving: result.cost_per_serving,
-      currency: result.currency,
+    // --- 能量（卡路里）---
+    const calories = computeBatchCalories(recipeIngredients, allNutrition, allUnits, allOverrides, allDensities)
+
+    result[String(rid)] = { estimated_cost: estimatedCost, calories }
+  }
+
+  return result
+}
+
+/** 批量场景下计算单个菜谱的能量（kcal）。复用预加载数据，避免逐条 IO。 */
+function computeBatchCalories(
+  recipeIngredients: any[],
+  allNutrition: any[],
+  units: any[],
+  overrides: any[],
+  densities: any[],
+): number | null {
+  const aggInputs: AggregationInput[] = []
+  for (const ri of recipeIngredients) {
+    if (ri.is_optional) continue
+    const nutritionData = allNutrition.filter((n: any) => n.ingredient_id === ri.ingredient_id)
+    if (!nutritionData.length) continue
+
+    const quantityG = convertToGramsWith(ri.quantity, ri.unit_id, ri.ingredient_id, units, overrides, densities)
+    if (quantityG == null || quantityG <= 0) continue
+
+    aggInputs.push({
+      ingredient_id: ri.ingredient_id,
+      quantity_g: quantityG,
+      nutrition_data: nutritionData.map((n: any) => ({
+        ingredient_id: n.ingredient_id,
+        nutrient_name: n.nutrient_name || n.name || '',
+        amount_per_100g: n.value_per_100g ?? n.amount_per_100g ?? n.value ?? 0,
+        unit: n.unit || 'g',
+      })),
     })
   }
 
-  return { items: results, total: results.length }
+  if (!aggInputs.length) return null
+  const items = aggregateIngredients({ items: aggInputs })
+  const energy = items.find(n => n.nutrient_name === '能量' || n.nutrient_name === '热量')
+  const amount = energy?.amount
+  return amount != null && Number.isFinite(amount) && amount > 0 ? Math.round(amount) : null
+}
+
+/** convertToGrams 的同步版本：使用预加载的单位/覆盖/密度数据。 */
+function convertToGramsWith(
+  quantity: number | null,
+  unitId: number | null,
+  ingredientId: number,
+  units: any[],
+  overrides: any[],
+  densities: any[],
+): number | null {
+  if (quantity == null || quantity <= 0 || unitId == null) return null
+  if (unitId === GRAM_UNIT_ID) return quantity
+  try {
+    const r = convert({
+      value: quantity,
+      from_unit_id: unitId,
+      to_unit_id: GRAM_UNIT_ID,
+      entity_type: 'ingredient',
+      entity_id: ingredientId,
+      units,
+      overrides,
+      densities,
+    })
+    return r.value
+  } catch {
+    return null
+  }
 }
 
 // ============================================================
