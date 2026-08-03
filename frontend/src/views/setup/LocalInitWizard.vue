@@ -158,17 +158,14 @@ async function importFromRepo() {
     const files: Array<{ name: string; type: string; download_url: string }> = await listResp.json()
 
     // 分类数据文件
-    const dataFiles = ['ingredients.json', 'nutritions.json', 'units.json', 'ingredients_raw.json', 'matched_ingredients.json']
-    const allRecipeFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.json') && !dataFiles.includes(f.name))
+   const dataFiles = ['ingredients.json', 'nutritions.json', 'units.json', 'ingredients_raw.json', 'matched_ingredients.json']
+   const allRecipeFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.json') && !dataFiles.includes(f.name))
 
-    // 测试期只导入指定菜谱，避免 GitHub 限流
-    const TEST_RECIPES = ['上汤娃娃菜', '农家一碗香', '黄焖鸡']
-    const recipeFiles = allRecipeFiles.filter((f: any) =>
-      TEST_RECIPES.some(name => f.name === `${name}.json` || f.name.startsWith(name))
-    )
+   // 全量导入所有菜谱
+   const recipeFiles = allRecipeFiles
 
-    importMessage.value = `发现 ${allRecipeFiles.length} 个菜谱文件，仅导入 ${recipeFiles.length} 个测试菜谱`
-    importProgress.value = 10
+   importMessage.value = `发现 ${recipeFiles.length} 个菜谱文件，准备全量导入`
+   importProgress.value = 10
 
     const { getDb } = await import('@/api/local/database')
     const db = await getDb()
