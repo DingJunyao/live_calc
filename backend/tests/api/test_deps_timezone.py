@@ -24,6 +24,18 @@ def test_utc_timezone():
     assert r.status_code == 200
 
 
+def test_utc_offset_format_timezone():
+    # Mobile clients send UTC+08:00 offset format
+    r = client.get("/probe", headers={"X-Timezone": "UTC+08:00"})
+    assert r.status_code == 200
+    assert r.json() == {"tz": "UTC+08:00"}
+
+
+def test_utc_negative_offset_format_timezone():
+    r = client.get("/probe", headers={"X-Timezone": "UTC-05:30"})
+    assert r.status_code == 200
+
+
 def test_missing_timezone_header_returns_400():
     r = client.get("/probe")
     assert r.status_code == 400
