@@ -192,16 +192,19 @@ const taskCache = new Map<number, any>()
  *  4. recipes/xxx.json 拆分为 recipes + recipe_ingredients
  *  5. 营养数据做字段归一化
  *  6. 创建 import_tasks 记录供前端轮询
+ * onProgress 可选，用于本地初始化等直接调用场景的实时进度反馈。
  */
 export async function uploadImport(
   _params: Record<string, string>,
   data?: any,
+  onProgress?: (message: string, percent: number) => void,
 ): Promise<{ task_id: number }> {
   const file: File | null = data?.get?.('file') ?? null
   if (!file) {
     throw { status: 400, message: '缺少文件：未上传 ZIP 包' }
   }
 
+  onProgress?.('正在读取 ZIP 文件', 2)
   const db = await getDb()
   const arrayBuffer = await file.arrayBuffer()
   const zip = await JSZip.loadAsync(arrayBuffer)
@@ -214,6 +217,7 @@ export async function uploadImport(
     manifest = JSON.parse(text)
   }
 
+  onProgress?.('正在读取本地单位映射', 5)
   const stats: Record<string, number> = {}
   const errors: string[] = []
 
@@ -242,10 +246,17 @@ export async function uploadImport(
   const SKIP_REFERENCE_STORES = new Set(['units', 'unit_conversions', 'ingredient_categories'])
 
   // ---- 第 1 步：按 FILE_STORE_MAP 导入 flat JSON 文件 ----
-  for (const [fileName, storeName] of Object.entries(FILE_STORE_MAP)) {
+  const fileStoreEntries = Object.entries(FILE_STORE_MAP)
+  for (let fi = 0; fi < fileStoreEntries.length; fi++) {
+    const [fileName, storeName] = fileStoreEntries[fi]
     if (SKIP_REFERENCE_STORES.has(storeName)) continue  // 保留本地 seed 数据
     const fileEntry = zip.file(fileName)
     if (!fileEntry) continue
+
+    onProgress?.(
+      `正在导入数据表 ${fileName}（${fi + 1}/${fileStoreEntries.length}）`,
+      8 + Math.round(((fi + 1) / fileStoreEntries.length) * 47),
+    )
 
     try {
       const text = await fileEntry.async('string')
@@ -357,7 +368,13 @@ export async function uploadImport(
     }
   })
 
-  for (const fname of recipeFiles) {
+  for (let ri = 0; ri < recipeFiles.length; ri++) {
+    const fname = recipeFiles[ri]
+    onProgress?.(
+      `正在导入菜谱 ${ri + 1}/${recipeFiles.length}`,
+      56 + Math.round(((ri + 1) / recipeFiles.length) * 30),
+    )
+
     try {
       const entry = zip.file(fname)
       if (!entry) continue
@@ -399,6 +416,11 @@ export async function uploadImport(
 
   if (zipImageFiles.size > 0) {
     let imageCount = 0
+    const totalImageRefs = allRecipeImages.reduce(
+      (sum, { imagePaths }) => sum + imagePaths.filter((p: string) => !!p && !p.startsWith('http')).length,
+      0,
+    )
+    let imageRefIndex = 0
     // 逐菜谱匹配图片
     for (const { recipeId, imagePaths } of allRecipeImages) {
       for (const imgPath of imagePaths) {
@@ -406,6 +428,11 @@ export async function uploadImport(
         // 云导出格式：images/recipes/xxx.jpg（convert_image_path 已去 /static/）
         // 远程 http(s) URL 不处理（浏览器直访）
         if (imgPath.startsWith('http')) continue
+        imageRefIndex++
+        onProgress?.(
+          `正在导入图片 ${imageRefIndex}/${totalImageRefs}`,
+          87 + Math.round((imageRefIndex / totalImageRefs) * 11),
+        )
 
         // 尝试直接匹配（imgPath 可能是 images/recipes/xxx.jpg）
         // 也尝试匹配去掉 /static/ 前缀的变体
@@ -438,6 +465,7 @@ export async function uploadImport(
     stats.recipe_ingredients = ingredientCount
   }
 
+  onProgress?.('正在写入导入记录', 99)
   // ---- 写入导入任务记录 ----
   const taskRecord = {
     task_type: 'upload_import',
@@ -454,6 +482,7 @@ export async function uploadImport(
   const fullRecord = { id: taskId, ...taskRecord }
   taskCache.set(taskId, fullRecord)
 
+  onProgress?.('导入完成', 100)
   return { task_id: taskId }
 }
 

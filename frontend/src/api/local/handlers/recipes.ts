@@ -216,6 +216,8 @@ export async function getRecipeCost(params: Record<string, string>, _query?: any
 
   const input = await buildCostInput(id, recipe)
   const result = calculateCost(input)
+  const allIngredients = await getAll('ingredients')
+  const ingredientNameById = new Map(allIngredients.map((i: any) => [i.id, i.name]))
 
   return {
     total_cost: result.total_cost,
@@ -229,7 +231,9 @@ export async function getRecipeCost(params: Record<string, string>, _query?: any
       unit_price: pi.unit_price,
       cost: pi.cost,
       cost_source: pi.source,
-      fallback_chain: pi.source_ingredient_id ? [{ source_ingredient_id: pi.source_ingredient_id, relation: 'fallback' }] : null,
+      fallback_chain: pi.source_ingredient_id
+        ? `${pi.ingredient_name || ingredientNameById.get(pi.ingredient_id) || `#${pi.ingredient_id}`} → ${ingredientNameById.get(pi.source_ingredient_id) || `#${pi.source_ingredient_id}`}`
+        : null,
     })),
   }
 }
