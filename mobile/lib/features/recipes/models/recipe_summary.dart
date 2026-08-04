@@ -26,6 +26,7 @@ class RecipeSummary {
   final String name;
   final String? description;
   final double? estimatedCost;
+  final int? calories;
   final String? imageUrl;
   final int servings;
   final bool isPublic;
@@ -35,6 +36,7 @@ class RecipeSummary {
     required this.name,
     this.description,
     this.estimatedCost,
+    this.calories,
     this.imageUrl,
     this.servings = 1,
     this.isPublic = false,
@@ -46,9 +48,27 @@ class RecipeSummary {
       name: json['name'] as String? ?? '',
       description: json['description'] as String?,
       estimatedCost: _toDoubleOrNull(json['estimated_cost']),
+      calories: (json['calories'] as num?)?.toInt(),
       imageUrl: _firstImageUrl(json),
       servings: (json['servings'] as num?)?.toInt() ?? 1,
       isPublic: json['is_public'] as bool? ?? false,
+    );
+  }
+
+  /// 合并 batch-cost 懒加载结果（与 Web 端列表页一致）
+  RecipeSummary copyWith({
+    double? estimatedCost,
+    int? calories,
+  }) {
+    return RecipeSummary(
+      id: id,
+      name: name,
+      description: description,
+      estimatedCost: estimatedCost ?? this.estimatedCost,
+      calories: calories ?? this.calories,
+      imageUrl: imageUrl,
+      servings: servings,
+      isPublic: isPublic,
     );
   }
 }

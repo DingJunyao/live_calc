@@ -24,7 +24,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final state = ref.watch(homeProvider);
+   final state = ref.watch(homeProvider);
+
+    ref.listen(homeProvider, (previous, next) {
+      if (next.lastError != null && next.lastError != previous?.lastError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.lastError!)),
+        );
+        ref.read(homeProvider.notifier).clearLastError();
+      }
+    });
 
     Widget recArea;
     if (state.loading) {
@@ -55,11 +64,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ...state.recommendation!.meals.map((meal) => Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: MealCard(
-                  meal: meal,
+               child: MealCard(
+                 meal: meal,
+                  isRefreshing: state.refreshLoading[meal.mealType] ?? false,
                   onTap: meal.recipeId != null
                       ? () => context.push('/recipes/${meal.recipeId}')
                       : null,
+                  onRefresh: () =>
+                      ref.read(homeProvider.notifier).refreshMeal(meal.mealType),
                 ),
               )),
         ],
@@ -79,8 +91,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         title: const Text('\u751f\u8ba1'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: state.generating
+           icon: const Icon(Icons.refresh),
+            onPressed: (state.generating ||
+                    state.refreshLoading.values.any((v) => v))
                 ? null
                 : () => ref.read(homeProvider.notifier).refresh(),
             tooltip: '\u6362\u4e00\u6362',

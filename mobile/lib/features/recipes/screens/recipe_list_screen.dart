@@ -1,8 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/recipe_provider.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+import '../models/recipe_summary.dart';
 import '../../../shared/widgets/error_display.dart';
 import '../../../shared/widgets/empty_state.dart';
 
@@ -57,7 +58,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                       )
                     : null,
               ),
-              onSubmitted: (v) => ref.read(recipeListProvider.notifier).loadRecipes(search: v),
+              onSubmitted: (v) =>
+                  ref.read(recipeListProvider.notifier).loadRecipes(search: v),
             ),
           ),
 
@@ -90,55 +92,118 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
     return RefreshIndicator(
       onRefresh: () => ref.read(recipeListProvider.notifier).loadRecipes(),
-      child: GridView.builder(
-        padding: const EdgeInsets.all(12),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.8,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: state.recipes.length,
-        itemBuilder: (ctx, i) {
-          final r = state.recipes[i];
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () => context.push('/recipes/${r.id}'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Image placeholder or icon
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-                      child: r.imageUrl != null
-                          ? Image.network(r.imageUrl!, fit: BoxFit.cover, width: double.infinity)
-                          : Icon(Icons.restaurant, size: 48, color: theme.colorScheme.primary.withValues(alpha: 0.5)),
+      // 用 Wrap + 固定宽度卡片：高度由内容决定，彻底消除单元格固定高度导致的溢出
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const padding = 12.0;
+          const spacing = 12.0;
+          final cardWidth = (constraints.maxWidth - padding * 2 - spacing) / 2;
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(padding),
+            child: Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: state.recipes.map((r) {
+                return SizedBox(
+                  width: cardWidth,
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => context.push('/recipes/${r.id}'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 4 / 3,
+                            child: Container(
+                              width: double.infinity,
+                              color: theme.colorScheme.primaryContainer
+                                  .withValues(alpha: 0.3),
+                              child: r.imageUrl != null
+                                  ? Image.network(r.imageUrl!,
+                                      fit: BoxFit.cover, width: double.infinity)
+                                  : Icon(Icons.restaurant,
+                                      size: 48,
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.5)),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(r.name,
+                                    style: theme.textTheme.titleSmall,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 4),
+                                _buildPriceCalories(
+                                    theme, r, state.loadingCosts),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(r.name, style: theme.textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 4),
-                        if (r.estimatedCost != null)
-                          Text('¥${r.estimatedCost!.toStringAsFixed(1)}',
-                            style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.primary)),
-                        Text('${r.servings} 人份',
-                            style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                );
+              }).toList(),
             ),
           );
         },
-      ),
+      ), // 关闭 LayoutBuilder
+    ); // 关闭 RefreshIndicator
+  }
+
+  Widget _buildPriceCalories(ThemeData theme, RecipeSummary r, bool loading) {
+    final servings = r.servings > 0 ? r.servings : 1;
+    final hasCost = r.estimatedCost != null;
+    final hasCal = r.calories != null;
+    // 价格/热量懒加载中：显示占位，避免跳变
+    if (!hasCost && !hasCal) {
+      return Text(
+        loading ? '--' : '${r.servings} 人份',
+        style: theme.textTheme.labelSmall
+            ?.copyWith(color: theme.colorScheme.outline),
+      );
+    }
+    final children = <Widget>[];
+    if (hasCost) {
+      children.add(
+        Text(
+          '¥${r.estimatedCost!.toStringAsFixed(2)}/$servings人份',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    }
+    if (hasCost && hasCal) {
+      children.add(Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text('·',
+            style: theme.textTheme.labelSmall
+                ?.copyWith(color: theme.colorScheme.outline)),
+      ));
+    }
+    if (hasCal) {
+      final perServing = (r.calories! / servings).round();
+      children.add(
+        Text(
+          '$perServing kcal/份',
+          style: theme.textTheme.labelSmall
+              ?.copyWith(color: theme.colorScheme.outline),
+        ),
+      );
+    }
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: children,
     );
   }
 }

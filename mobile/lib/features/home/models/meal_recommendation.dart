@@ -2,12 +2,13 @@ class MealRecommendation {
   final String mealType; // breakfast, lunch, dinner
   final int? recipeId;
   final String? recipeName;
- final double? estimatedCost;
- final String? imageUrl;
+  final double? estimatedCost;
+  final String? imageUrl;
   final double? calories;
   final double? proteinG;
   final double? carbsG;
   final double? fatG;
+  final bool isCurrentMeal;
 
   const MealRecommendation({
     required this.mealType,
@@ -19,6 +20,7 @@ class MealRecommendation {
     this.proteinG,
     this.carbsG,
     this.fatG,
+    this.isCurrentMeal = false,
   });
 
   factory MealRecommendation.fromJson(Map<String, dynamic> json) {
@@ -34,6 +36,7 @@ class MealRecommendation {
       proteinG: (nutrition?['protein_g'] as num?)?.toDouble(),
       carbsG: (nutrition?['carbs_g'] as num?)?.toDouble(),
       fatG: (nutrition?['fat_g'] as num?)?.toDouble(),
+      isCurrentMeal: json['is_current_meal'] as bool? ?? false,
     );
   }
 }
@@ -42,8 +45,16 @@ class DailyRecommendation {
   final String date;
   final String status;
   final List<MealRecommendation> meals;
+  final List<String> refreshingMeals;
+  final Map<String, dynamic>? totals;
 
-  const DailyRecommendation({required this.date, this.status = 'ready', this.meals = const []});
+  const DailyRecommendation({
+    required this.date,
+    this.status = 'ready',
+    this.meals = const [],
+    this.refreshingMeals = const [],
+    this.totals,
+  });
 
   factory DailyRecommendation.fromJson(Map<String, dynamic> json) {
     return DailyRecommendation(
@@ -52,7 +63,12 @@ class DailyRecommendation {
       meals: (json['recommendations'] as List<dynamic>?)
               ?.map((e) => MealRecommendation.fromJson(e as Map<String, dynamic>))
               .toList() ??
-          [],
+          const [],
+      refreshingMeals: (json['refreshing_meals'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      totals: json['totals'] as Map<String, dynamic>?,
     );
   }
 }

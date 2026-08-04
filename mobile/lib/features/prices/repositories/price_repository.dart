@@ -1,42 +1,60 @@
 import '../../../core/api/api_client.dart';
 import '../models/price_record.dart';
 
+/// Result of a paginated price-records query.
+class PriceRecordsResult {
+  final List<PriceRecord> records;
+  final int total;
+
+  const PriceRecordsResult({required this.records, this.total = 0});
+}
+
 class PriceRepository {
   final ApiClient _client;
   ApiClient get client => _client;
   PriceRepository({ApiClient? client}) : _client = client ?? ApiClient.instance;
 
   /// 获取价格记录列表。
-  /// 后端 GET /products 使用 skip/limit 分页、merchant_ids（逗号分隔）筛选，
-  /// 这里把外部的 page/pageSize 转成 skip/limit，并兼容 List 与 {items} 两种返回。
-  Future<List<PriceRecord>> getRecords({
+  /// 后端 GET /products 使用 skip/limit 分页，支持 search / merchant_ids /
+  /// record_types / start_date / end_date 筛选。
+  Future<PriceRecordsResult> getRecords({
+    String? search,
     int? merchantId,
+    String? recordTypes,
     String? startDate,
     String? endDate,
     int page = 1,
-    int pageSize = 50,
+    int pageSize = 20,
   }) async {
     final skip = (page - 1) * pageSize;
     final params = <String, dynamic>{
       'skip': skip,
       'limit': pageSize,
     };
+    if (search != null && search.isNotEmpty) params['search'] = search;
     if (merchantId != null) params['merchant_ids'] = merchantId.toString();
+    if (recordTypes != null) params['record_types'] = recordTypes;
     if (startDate != null) params['start_date'] = startDate;
     if (endDate != null) params['end_date'] = endDate;
 
     final response = await _client.dio.get('/products', queryParameters: params);
-    final list = (response.data is List)
-        ? response.data as List
-        : (response.data['items'] as List);
-    return list
+    final data = response.data;
+    List<dynamic> list;
+    int total;
+    if (data is List) {
+      list = data;
+      total = data.length;
+    } else {
+      list = (data['items'] as List?) ?? [];
+      total = (data['total'] as num?)?.toInt() ?? 0;
+    }
+    final records = list
         .map((e) => PriceRecord.fromJson(e as Map<String, dynamic>))
         .toList();
+    return PriceRecordsResult(records: records, total: total);
   }
 
   /// 新建价格记录。
-  /// 后端 POST /products 需要 price/original_quantity/original_unit，
-  /// 并通过 product_id 或 product_name 关联商品。
   Future<PriceRecord> createRecord({
     int? productId,
     String? productName,

@@ -18,4 +18,12 @@ class HomeRepository {
     final response = await _client.dio.post('/meals/recommendations/generate');
     return DailyRecommendation.fromJson(response.data as Map<String, dynamic>);
   }
+
+  Future<DailyRecommendation> refreshMeal(String mealType) async {
+    final response = await _client.dio.post(
+      '/meals/recommendations/refresh',
+      data: {'meal_type': mealType},
+    );
+    return DailyRecommendation.fromJson(response.data as Map<String, dynamic>);
+  }
 }

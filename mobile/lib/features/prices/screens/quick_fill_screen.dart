@@ -74,9 +74,10 @@ class _QuickFillScreenState extends ConsumerState<QuickFillScreen> {
   }
 
   Future<void> _loadHistoryProducts() async {
-    setState(() => _loading = true);
-    try {
-      final records = await _repo.getRecords(merchantId: _selectedMerchantId, pageSize: 20);
+   setState(() => _loading = true);
+   try {
+      final result = await _repo.getRecords(merchantId: _selectedMerchantId, pageSize: 20);
+      final records = result.records;
       final seen = <String>{};
       final products = <Map<String, dynamic>>[];
       for (final r in records) {
