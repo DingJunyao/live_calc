@@ -13,7 +13,6 @@ import '../../features/products/screens/product_list_screen.dart';
 import '../../features/products/screens/product_detail_screen.dart';
 import '../../features/merchants/screens/merchant_list_screen.dart';
 import '../../features/merchants/screens/merchant_detail_screen.dart';
-import '../../features/merchants/screens/merchant_map_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/profile/screens/my_proposals_screen.dart';
 import '../../features/profile/screens/my_places_screen.dart';
@@ -216,10 +215,22 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
               onDestinationSelected: (i) => _onTabSelected(context, i),
               labelType: NavigationRailLabelType.all,
               destinations: const [
-                NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('\u9996\u9875')),
-                NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('\u8bb0\u4ef7')),
-                NavigationRailDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: Text('\u83dc\u8c31')),
-                NavigationRailDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: Text('\u6211\u7684')),
+                NavigationRailDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home),
+                    label: Text('\u9996\u9875')),
+                NavigationRailDestination(
+                    icon: Icon(Icons.receipt_long_outlined),
+                    selectedIcon: Icon(Icons.receipt_long),
+                    label: Text('\u8bb0\u4ef7')),
+                NavigationRailDestination(
+                    icon: Icon(Icons.restaurant_outlined),
+                    selectedIcon: Icon(Icons.restaurant),
+                    label: Text('\u83dc\u8c31')),
+                NavigationRailDestination(
+                    icon: Icon(Icons.person_outline),
+                    selectedIcon: Icon(Icons.person),
+                    label: Text('\u6211\u7684')),
               ],
             ),
           Expanded(child: widget.child),
@@ -230,10 +241,22 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
               selectedIndex: _selectedIndex,
               onDestinationSelected: (i) => _onTabSelected(context, i),
               destinations: const [
-                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: '\u9996\u9875'),
-                NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: '\u8bb0\u4ef7'),
-                NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: '\u83dc\u8c31'),
-                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '\u6211\u7684'),
+                NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home),
+                    label: '\u9996\u9875'),
+                NavigationDestination(
+                    icon: Icon(Icons.receipt_long_outlined),
+                    selectedIcon: Icon(Icons.receipt_long),
+                    label: '\u8bb0\u4ef7'),
+                NavigationDestination(
+                    icon: Icon(Icons.restaurant_outlined),
+                    selectedIcon: Icon(Icons.restaurant),
+                    label: '\u83dc\u8c31'),
+                NavigationDestination(
+                    icon: Icon(Icons.person_outline),
+                    selectedIcon: Icon(Icons.person),
+                    label: '\u6211\u7684'),
               ],
             )
           : null,

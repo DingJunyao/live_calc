@@ -13,7 +13,8 @@ class AuthInterceptor extends Interceptor {
   AuthInterceptor(this._dio);
 
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+  void onRequest(
+      RequestOptions options, RequestInterceptorHandler handler) async {
     options.headers['X-Timezone'] = _formatUtcOffset();
     try {
       final token = await _storage.read(key: _tokenKey);
@@ -57,24 +58,26 @@ class AuthInterceptor extends Interceptor {
     final minutes = absMinutes % 60;
     final hh = hours.toString().padLeft(2, '0');
     final mm = minutes.toString().padLeft(2, '0');
-    return 'UTC' + sign + hh + ':' + mm;
+    return 'UTC$sign$hh:$mm';
   }
 
-  static Future<void> saveTokens(String accessToken, String refreshToken) async {
-    final storage = const FlutterSecureStorage();
+  static Future<void> saveTokens(
+      String accessToken, String refreshToken) async {
+    const storage = FlutterSecureStorage();
     await storage.write(key: _tokenKey, value: accessToken);
     await storage.write(key: _refreshTokenKey, value: refreshToken);
   }
 
   static Future<void> clearTokens() async {
-    final storage = const FlutterSecureStorage();
+    const storage = FlutterSecureStorage();
     await storage.delete(key: _tokenKey);
     await storage.delete(key: _refreshTokenKey);
   }
 
-  static Future<String?> get accessToken => const FlutterSecureStorage().read(key: _tokenKey);
+  static Future<String?> get accessToken =>
+      const FlutterSecureStorage().read(key: _tokenKey);
   static Future<void> saveCredentials(String username, String password) async {
-    final storage = const FlutterSecureStorage();
+    const storage = FlutterSecureStorage();
     await storage.write(key: _usernameKey, value: username);
     await storage.write(key: _passwordKey, value: password);
   }
@@ -82,7 +85,7 @@ class AuthInterceptor extends Interceptor {
   /// Persisted last successful login so the next launch can sign in
   /// automatically without re-typing server/account/password.
   static Future<MapEntry<String, String>?> get savedCredentials async {
-    final storage = const FlutterSecureStorage();
+    const storage = FlutterSecureStorage();
     final username = await storage.read(key: _usernameKey);
     final password = await storage.read(key: _passwordKey);
     if (username == null || password == null) return null;
@@ -90,7 +93,7 @@ class AuthInterceptor extends Interceptor {
   }
 
   static Future<void> clearCredentials() async {
-    final storage = const FlutterSecureStorage();
+    const storage = FlutterSecureStorage();
     await storage.delete(key: _usernameKey);
     await storage.delete(key: _passwordKey);
   }

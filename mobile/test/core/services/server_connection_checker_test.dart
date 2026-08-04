@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import '../../../lib/core/services/server_connection_checker.dart';
+import 'package:com_a4ding_livecalc/core/services/server_connection_checker.dart';
 
 class MockDio extends Mock implements Dio {}
 

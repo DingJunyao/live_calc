@@ -18,8 +18,8 @@ class MerchantMapScreen extends ConsumerWidget {
       body: state.loading
           ? const LoadingIndicator()
           : FlutterMap(
-              options: MapOptions(
-                initialCenter: const LatLng(39.9042, 116.4074),
+              options: const MapOptions(
+                initialCenter: LatLng(39.9042, 116.4074),
                 initialZoom: 11.0,
               ),
               children: [

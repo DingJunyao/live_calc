@@ -1,4 +1,6 @@
 /// Home repository: calls backend api to fetch today's meal recommendations.
+library;
+
 import '../../../core/api/api_client.dart';
 import '../models/meal_recommendation.dart';
 

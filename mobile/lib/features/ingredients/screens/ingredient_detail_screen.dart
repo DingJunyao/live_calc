@@ -1,6 +1,5 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/ingredient_provider.dart';
 import '../models/ingredient.dart';
 import '../repositories/ingredient_repository.dart';
 import '../../../shared/widgets/loading_indicator.dart';

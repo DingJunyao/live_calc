@@ -35,7 +35,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else if (state.generating) {
       recArea = const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),
-        child: LoadingIndicator(message: '\u6b63\u5728\u751f\u6210\u4eca\u65e5\u63a8\u8350\uff0cAI \u6b63\u5728\u4e3a\u4f60\u642d\u914d\u98df\u8c31\u2026'),
+        child: LoadingIndicator(
+            message:
+                '\u6b63\u5728\u751f\u6210\u4eca\u65e5\u63a8\u8350\uff0cAI \u6b63\u5728\u4e3a\u4f60\u642d\u914d\u98df\u8c31\u2026'),
       );
     } else if (state.error != null) {
       recArea = Padding(
@@ -45,33 +47,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onRetry: () => ref.read(homeProvider.notifier).loadToday(),
         ),
       );
-    } else if (state.recommendation != null && state.recommendation!.meals.isNotEmpty) {
+    } else if (state.recommendation != null &&
+        state.recommendation!.meals.isNotEmpty) {
       recArea = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ...state.recommendation!.meals.map((meal) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: MealCard(
-              meal: meal,
-              onTap: meal.recipeId != null
-                  ? () => context.push('/recipes/' + meal.recipeId.toString())
-                  : null,
-            ),
-          )),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: MealCard(
+                  meal: meal,
+                  onTap: meal.recipeId != null
+                      ? () => context.push('/recipes/${meal.recipeId}')
+                      : null,
+                ),
+              )),
         ],
       );
     } else {
       recArea = const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),
         child: Center(
-          child: Text('\u6682\u65e0\u63a8\u8350\uff0c\u70b9\u51fb\u5237\u65b0\u6309\u94ae\u751f\u6210\u4eca\u65e5\u63a8\u8350'),
+          child: Text(
+              '\u6682\u65e0\u63a8\u8350\uff0c\u70b9\u51fb\u5237\u65b0\u6309\u94ae\u751f\u6210\u4eca\u65e5\u63a8\u8350'),
         ),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-       title: const Text('\u751f\u8ba1'),
+        title: const Text('\u751f\u8ba1'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -96,7 +101,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: [
                     Icon(Icons.today, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text('\u4eca\u65e5\u63a8\u8350', style: theme.textTheme.titleLarge),
+                    Text('\u4eca\u65e5\u63a8\u8350',
+                        style: theme.textTheme.titleLarge),
                   ],
                 ),
               ),

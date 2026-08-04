@@ -207,14 +207,14 @@ class _QuickFillScreenState extends ConsumerState<QuickFillScreen> {
                       : Column(
                           children: [
                             // Price rows header
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               child: Row(
                                 children: [
-                                  const Text('商品', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  const Spacer(),
-                                  const Text('单价', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 80),
+                                  Text('商品', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Spacer(),
+                                  Text('单价', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  SizedBox(width: 80),
                                 ],
                               ),
                             ),

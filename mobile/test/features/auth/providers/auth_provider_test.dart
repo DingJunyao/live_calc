@@ -2,12 +2,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:flutter/services.dart';
-import '../../../../lib/core/api/api_client.dart';
-import '../../../../lib/core/api/auth_interceptor.dart';
-import '../../../../lib/features/auth/providers/auth_provider.dart';
-import '../../../../lib/features/auth/repositories/auth_repository.dart';
-import '../../../../lib/features/auth/models/login_request.dart';
-import '../../../../lib/features/auth/models/user.dart';
+import 'package:com_a4ding_livecalc/core/api/api_client.dart';
+import 'package:com_a4ding_livecalc/core/api/auth_interceptor.dart';
+import 'package:com_a4ding_livecalc/features/auth/providers/auth_provider.dart';
+import 'package:com_a4ding_livecalc/features/auth/repositories/auth_repository.dart';
+import 'package:com_a4ding_livecalc/features/auth/models/login_request.dart';
+import 'package:com_a4ding_livecalc/features/auth/models/user.dart';
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 
@@ -16,7 +16,7 @@ void main() {
   // In-memory backing store for the mocked FlutterSecureStorage channels.
   final Map<String, String> secureStore = {};
 
-  Future<dynamic> _secureStorageHandler(MethodCall call) async {
+  Future<dynamic> secureStorageHandler(MethodCall call) async {
     final args = call.arguments is Map
         ? Map<String, dynamic>.from(call.arguments as Map)
         : <String, dynamic>{};
@@ -61,7 +61,7 @@ void main() {
     ]) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-              MethodChannel(channel), _secureStorageHandler);
+              MethodChannel(channel), secureStorageHandler);
     }
   });
 
@@ -80,9 +80,9 @@ void main() {
     });
 
     test('登录成功更新状态', () async {
-      when(() => mockRepo.login(any())).thenAnswer(
-          (_) async => LoginResponse(accessToken: 'tok', refreshToken: 'ref'));
-      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => User(
+      when(() => mockRepo.login(any())).thenAnswer((_) async =>
+          const LoginResponse(accessToken: 'tok', refreshToken: 'ref'));
+      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => const User(
             id: 1,
             username: 'test',
             email: 'test@test.com',
@@ -116,9 +116,9 @@ void main() {
     });
 
     test('登录成功后保存凭据与 token，便于下次自动登录', () async {
-      when(() => mockRepo.login(any())).thenAnswer(
-          (_) async => LoginResponse(accessToken: 'tok', refreshToken: 'ref'));
-      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => User(
+      when(() => mockRepo.login(any())).thenAnswer((_) async =>
+          const LoginResponse(accessToken: 'tok', refreshToken: 'ref'));
+      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => const User(
             id: 1,
             username: 'test',
             email: 'test@test.com',
@@ -137,8 +137,8 @@ void main() {
     test('checkAuth 用保存的凭据自动登录', () async {
       await AuthInterceptor.saveCredentials('remembered', 'secret');
       when(() => mockRepo.login(any())).thenAnswer((_) async =>
-          LoginResponse(accessToken: 'tok2', refreshToken: 'ref2'));
-      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => User(
+          const LoginResponse(accessToken: 'tok2', refreshToken: 'ref2'));
+      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => const User(
             id: 2,
             username: 'remembered',
             email: 'r@r.com',
@@ -164,7 +164,7 @@ void main() {
 
     test('checkAuth 用有效 token 恢复会话', () async {
       await AuthInterceptor.saveTokens('valid', 'refresh');
-      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => User(
+      when(() => mockRepo.getCurrentUser()).thenAnswer((_) async => const User(
             id: 3,
             username: 'tokenuser',
             email: 't@t.com',
@@ -182,11 +182,11 @@ void main() {
       await AuthInterceptor.saveTokens('stale', 'refresh');
       await AuthInterceptor.saveCredentials('fallback', 'secret');
       when(() => mockRepo.login(any())).thenAnswer((_) async =>
-          LoginResponse(accessToken: 'fresh', refreshToken: 'ref3'));
+          const LoginResponse(accessToken: 'fresh', refreshToken: 'ref3'));
       // First getCurrentUser (token check) fails, the second (after re-login) succeeds.
       final answers = [
         Exception('unauthorized'),
-        User(id: 4, username: 'fallback', email: 'f@f.com'),
+        const User(id: 4, username: 'fallback', email: 'f@f.com'),
       ];
       var i = 0;
       when(() => mockRepo.getCurrentUser()).thenAnswer((_) async {

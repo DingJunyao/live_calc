@@ -20,9 +20,10 @@ class QuickEntryGrid extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('快捷入口', style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: Theme.of(context).colorScheme.outline,
-          )),
+          child: Text('快捷入口',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  )),
         ),
         const SizedBox(height: 12),
         Padding(
@@ -40,7 +41,7 @@ class QuickEntryGrid extends StatelessWidget {
             itemBuilder: (ctx, i) {
               final e = _entries[i];
               return Material(
-                color: e.color.withOpacity(0.1),
+                color: e.color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),

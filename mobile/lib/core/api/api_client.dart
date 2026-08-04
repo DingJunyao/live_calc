@@ -1,7 +1,5 @@
 ﻿import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'auth_interceptor.dart';
-
 
 class ApiClient {
   static ApiClient? _instance;
@@ -30,13 +28,11 @@ class ApiClient {
 
   void updateBaseUrl(String baseUrl) {
     if (_baseUrl == baseUrl) return;
-    _baseUrl = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    _baseUrl = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     dio.options.baseUrl = '$_baseUrl/api/v1';
   }
 
   String get baseUrl => _baseUrl;
 }
-
-
-
-

@@ -51,14 +51,17 @@ class _MyProposalsScreenState extends ConsumerState<MyProposalsScreen> {
       body: state.loading && state.items.isEmpty
           ? const LoadingIndicator()
           : state.error != null && state.items.isEmpty
-              ? ErrorDisplay(message: state.error!, onRetry: () => ref.read(proposalListProvider.notifier).load())
+              ? ErrorDisplay(
+                  message: state.error!,
+                  onRetry: () => ref.read(proposalListProvider.notifier).load())
               : state.items.isEmpty
                   ? const EmptyState(
                       icon: Icons.rate_review_outlined,
                       title: 'No Proposals',
                       subtitle: 'Changes to shared data will appear here')
                   : RefreshIndicator(
-                      onRefresh: () => ref.read(proposalListProvider.notifier).load(),
+                      onRefresh: () =>
+                          ref.read(proposalListProvider.notifier).load(),
                       child: ListView.separated(
                         padding: const EdgeInsets.all(12),
                         itemCount: state.items.length,
@@ -67,11 +70,14 @@ class _MyProposalsScreenState extends ConsumerState<MyProposalsScreen> {
                           final p = state.items[i];
                           return ListTile(
                             title: Text(p.title),
-                            subtitle: Text(p.createdAt, style: theme.textTheme.bodySmall),
+                            subtitle: Text(p.createdAt,
+                                style: theme.textTheme.bodySmall),
                             trailing: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: _statusColor(p.status).withOpacity(0.1),
+                                color: _statusColor(p.status)
+                                    .withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
