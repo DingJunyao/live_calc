@@ -6,7 +6,7 @@ export async function listIngredients(_params: Record<string, string>, query?: a
   const name = query?.name || query?.search
   const lower = name?.toLowerCase()
   const categoryId = query?.category_id ? parseInt(query.category_id) : undefined
-  return paginate('ingredients', { page: query?.page, page_size: query?.page_size }, (i: any) => {
+  return paginate('ingredients', query, (i: any) => {
     if (i.is_active === false) return false
     if (lower && !i.name?.toLowerCase().includes(lower)) return false
     if (categoryId && i.category_id !== categoryId) return false

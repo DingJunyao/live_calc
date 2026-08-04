@@ -2,7 +2,7 @@
 // ???????????????? system_config?key: local_user_profile??
 // ????????????????
 
-import { getDb } from '../database'
+import { getDb, resolvePagination } from '../database'
 
 const DEFAULT_USER = {
   id: 1,
@@ -95,9 +95,9 @@ export async function getPersonalStats(): Promise<any> {
 }
 
 export async function listUsers(_params: Record<string, string>, query?: any): Promise<any> {
-  const page = parseInt(query?.page) || 1
-  const pageSize = parseInt(query?.page_size) || 20
-  return { items: [await loadUserProfile()], total: 1, page, page_size: pageSize }
+  const all = [await loadUserProfile()]
+  const { skip, limit: pageSize, page, page_size } = resolvePagination(query)
+  return { items: all.slice(skip, skip + pageSize), total: all.length, page, page_size }
 }
 
 export async function getUser(): Promise<any> {

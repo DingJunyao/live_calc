@@ -4,12 +4,22 @@ import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from
 import { calculateCost, type CostInput, type CostCalcIngredient, type CostCalcProduct, type CostCalcPriceRecord, type CostCalcUnit, type CostCalcHierarchy } from '../business/costCalculator'
 import { aggregateIngredients, calcNRV, type AggregationInput, type AggregationInputMulti } from '../business/nutritionAggregator'
 import { convert, type UnitInfo, type EntityOverride, type DensityInfo } from '../business/unitConverter'
+import { resolveImageUrl } from '@/utils/image'
 
 // ============================================================
 // 辅助函数
 // ============================================================
 
 const GRAM_UNIT_ID = 2
+
+/** Attach resolved image URLs so local mode also serves S3/repo URLs, not just blobs. */
+function withImageUrls<T extends Record<string, any>>(recipe: T): T & { image_urls: string[] | null } {
+  return {
+    ...recipe,
+    image_urls: Array.isArray(recipe.images) ? recipe.images.map(resolveImageUrl) : null,
+  }
+}
+
 /** 模糊量关键词 → 默认克数（与云端 VAGUE_QUANTITY_GRAM_MAP 对齐） */
 const VAGUE_GRAM_MAP: Record<string, number> = { '适量': 100, '少许': 5 }
 function resolveVagueQty(original?: string | null): number {
@@ -71,13 +81,14 @@ export async function listRecipes(_params: Record<string, string>, query?: any):
   const category = query?.category || query?.categories
   const difficulty = query?.difficulty || query?.difficulties
 
-  return paginate('recipes', { page: query?.page, page_size: query?.page_size || query?.limit || 20 }, (r: any) => {
+  const result = await paginate('recipes', query, (r: any) => {
     if (r.is_active === false) return false
     if (lower && !r.name?.toLowerCase().includes(lower)) return false
     if (category && r.category !== category) return false
     if (difficulty && r.difficulty !== difficulty) return false
     return true
   })
+  return { ...result, items: result.items.map(withImageUrls) }
 }
 
 export async function createRecipe(_params: Record<string, string>, data?: any): Promise<any> {
@@ -133,7 +144,7 @@ export async function getRecipe(params: Record<string, string>, _query?: any): P
   }
 
   const ingredients = await getRecipeIngredients(id)
-  return { ...recipe, ingredients }
+  return withImageUrls({ ...recipe, ingredients })
 }
 
 export async function updateRecipe(params: Record<string, string>, data?: any): Promise<any> {

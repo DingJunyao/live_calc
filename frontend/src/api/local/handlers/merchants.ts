@@ -1,17 +1,13 @@
 // Merchants handler — CRUD, favorites, coordinates, prices.
 
-import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
+import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate, resolvePagination } from '../database'
 
 export async function listMerchants(_params: Record<string, string>, query?: any): Promise<any> {
   const name = query?.name || query?.search
   const lower = name?.toLowerCase()
   // 默认隐藏已关闭（is_open === false）的商家；仅当 include_closed 为真时才显示。
   const includeClosed = query?.include_closed === true || query?.include_closed === 'true'
-  // 前端按 offset/limit 风格传参（skip/limit），兼容 page/page_size。
-  const limit = query?.limit != null ? Number(query.limit) : Number(query?.page_size) || 20
-  const skip = query?.skip != null ? Number(query.skip) : (Number(query?.page || 1) - 1) * limit
-  const page = Math.floor(skip / limit) + 1
-  return paginate('merchants', { page, page_size: limit }, (m: any) => {
+  return paginate('merchants', query, (m: any) => {
     if (m.is_active === false) return false
     if (!includeClosed && m.is_open === false) return false
     if (lower && !m.name?.toLowerCase().includes(lower)) return false
@@ -99,13 +95,11 @@ export async function getCoordinates(_params: Record<string, string>, query?: an
 export async function getMerchantPrices(params: Record<string, string>, query?: any): Promise<any> {
   const merchantId = parseInt(params.id)
   const all = await getByIndex('product_records', 'by_merchant_id', merchantId)
-  const page = parseInt(query?.page) || 1
-  const pageSize = parseInt(query?.page_size) || 20
-  const start = (page - 1) * pageSize
-  return { items: all.slice(start, start + pageSize), total: all.length, page, page_size: pageSize }
+  const { skip, limit: pageSize, page, page_size } = resolvePagination(query)
+  return { items: all.slice(skip, skip + pageSize), total: all.length, page, page_size }
 }
 
-export async function getMerchantProductPrices(params: Record<string, string>): Promise<any> {
+export async function getMerchantProductPrices(params: Record<string, string>, query?: any): Promise<any> {
   const merchantId = parseInt(params.id)
   const all = await getByIndex('product_records', 'by_merchant_id', merchantId)
   // Return the latest price for each product at this merchant
@@ -117,7 +111,10 @@ export async function getMerchantProductPrices(params: Record<string, string>): 
     }
   }
   const records = Object.values(latestByProduct)
-  if (records.length === 0) return { items: [], total: 0 }
+  const total = records.length
+  const { skip, limit, page, page_size } = resolvePagination(query)
+  const pagedRecords = records.slice(skip, skip + limit)
+  if (total === 0) return { items: [], total: 0, page, page_size }
 
   // Join products -> ingredients -> ingredient_categories so the Quick Fill
   // page can sort/group exactly like cloud mode (category sort_order, then
@@ -138,7 +135,7 @@ export async function getMerchantProductPrices(params: Record<string, string>): 
 
   const customScores = computeCustomSortScores(orderRecords, merchantId)
 
-  const items = records.map((rec: any) => {
+  const items = pagedRecords.map((rec: any) => {
     const product = productMap.get(rec.product_id)
     const ingredient = product?.ingredient_id ? ingredientMap.get(product.ingredient_id) : undefined
     const category = ingredient?.category_id != null ? categoryMap.get(ingredient.category_id) : undefined
@@ -152,7 +149,7 @@ export async function getMerchantProductPrices(params: Record<string, string>): 
     }
   })
 
-  return { items, total: items.length }
+  return { items, total, page, page_size }
 }
 
 /** Read a store that may not exist yet; return [] on failure (DB not upgraded). */

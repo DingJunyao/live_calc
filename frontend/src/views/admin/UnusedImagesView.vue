@@ -114,10 +114,10 @@
                       </div>
                     </template>
                   </v-img>
-                  <v-card-text class="pa-1 text-caption text-center">
-                    <div class="text-truncate">{{ img.filename }}</div>
-                    <div class="text-medium-emphasis">{{ formatSize(img.file_size) }}</div>
-                  </v-card-text>
+                 <v-card-text class="pa-1 text-caption text-center">
+                   <div class="text-truncate">{{ img.filename }}</div>
+                   <div class="text-medium-emphasis">{{ formatSize(img.file_size) }}</div>
+                 </v-card-text>
                 </v-card>
               </v-col>
             </v-row>

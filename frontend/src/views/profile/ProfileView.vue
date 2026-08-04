@@ -224,6 +224,27 @@
             <template #append>
               <v-icon>mdi-chevron-right</v-icon>
             </template>
+         </v-list-item>
+          <v-list-subheader>图片管理</v-list-subheader>
+          <v-list-item @click="router.push('/admin/storage')">
+            <template #prepend>
+              <v-icon>mdi-cloud-outline</v-icon>
+            </template>
+            <v-list-item-title>图片存储配置</v-list-item-title>
+            <v-list-item-subtitle>IndexedDB 与 S3/OSS 存储切换</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/images-unused')">
+            <template #prepend>
+              <v-icon>mdi-image-multiple-outline</v-icon>
+            </template>
+            <v-list-item-title>未使用图片清理</v-list-item-title>
+            <v-list-item-subtitle>扫描并清理无引用的图片</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
           </v-list-item>
           <v-list-subheader>数据维护</v-list-subheader>
           <v-list-item @click="router.push('/admin/data-maintenance')">

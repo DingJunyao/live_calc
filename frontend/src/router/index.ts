@@ -223,6 +223,10 @@ router.beforeEach(async (to, from, next) => {
 
   // ---- Local mode: simplified auth ----
   if (import.meta.env.VITE_STORAGE_MODE === 'local') {
+    // Make sure synchronous image URL resolution sees the active S3 config.
+    const { preloadStorageConfig } = await import('@/utils/image')
+    await preloadStorageConfig()
+
     // Redirect logged-in users away from login/register
     if ((to.name === 'login' || to.name === 'register') && userStore.isLoggedIn) {
       next('/')
@@ -233,11 +237,9 @@ router.beforeEach(async (to, from, next) => {
       'admin',
       'admin-proposals',
       'admin-users',
-      'admin-invite-codes',
-      'admin-storage',
-      'admin-email-config',
-      'admin-images-unused',
-      'profile-proposals',
+    'admin-invite-codes',
+    'admin-email-config',
+    'profile-proposals',
     ]
     if (blockedInLocal.includes(to.name as string)) {
       next('/profile')

@@ -3,6 +3,7 @@
 import { getDb, getAll, getByIndex, addOne, putOne, deleteOne, getById } from '../database'
 import { recommend, type MealRecipe, type MealRecommendation } from '../business/mealRecommender'
 import { resolveHierarchy } from '../business/hierarchyResolver'
+import { resolveImageUrl } from '@/utils/image'
 import * as recipes from './recipes'
 
 // ============================================================
@@ -260,7 +261,7 @@ async function buildRecipeBrief(recipeId: number): Promise<any | null> {
     name: recipe.name || '',
     category: recipe.category || undefined,
     images: recipe.images || [],
-    image_urls: [],
+    image_urls: (recipe.images || []).map(resolveImageUrl),
     servings,
     cost_estimate,
     nutrition_per_serving,

@@ -1,6 +1,6 @@
 // Products handler — product entities, price records, barcodes, weights.
 
-import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
+import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate, resolvePagination } from '../database'
 import { aggregatePrices } from '../business/priceNormalize'
 import type { UnitInfo, EntityOverride, DensityInfo } from '../business/unitConverter'
 
@@ -12,7 +12,7 @@ export async function listEntity(_params: Record<string, string>, query?: any): 
   const name = query?.name || query?.search
   const lower = name?.toLowerCase()
   const ingredientId = query?.ingredient_id ? parseInt(query.ingredient_id) : undefined
-  return paginate('products', { page: query?.page, page_size: query?.page_size || query?.pageSize }, (p: any) => {
+  return paginate('products', query, (p: any) => {
     if (p.is_active === false) return false
     if (lower && !p.name?.toLowerCase().includes(lower)) return false
     if (ingredientId && p.ingredient_id !== ingredientId) return false
@@ -97,10 +97,10 @@ export async function deleteEntity(params: Record<string, string>): Promise<any>
 
 export async function autocomplete(_params: Record<string, string>, query?: any): Promise<any> {
   const q = query?.q || query?.name || ''
-  if (!q) return { items: [], total: 0 }
+  if (!q) return []
 
   const lower = q.toLowerCase()
-  return paginate('products', { page: query?.page, page_size: query?.page_size }, (p: any) => {
+  const result = await paginate('products', query, (p: any) => {
     if (p.is_active === false) return false
     if (!p.name?.toLowerCase().includes(lower) &&
         !(Array.isArray(p.aliases) && p.aliases.some((a: string) => a.toLowerCase().includes(lower)))) {
@@ -108,6 +108,7 @@ export async function autocomplete(_params: Record<string, string>, query?: any)
     }
     return true
   })
+  return result.items
 }
 
 // ============================================================
@@ -152,10 +153,8 @@ export async function listRecords(_params: Record<string, string>, query?: any):
   // Sort by recorded_at descending
   all.sort((a: any, b: any) => ((b.recorded_at || '') > (a.recorded_at || '') ? 1 : -1))
 
-  const page = parseInt(query?.page) || 1
-  const pageSize = parseInt(query?.page_size) || parseInt(query?.pageSize) || 20
-  const start = (page - 1) * pageSize
-  return { items: all.slice(start, start + pageSize), total: all.length, page, page_size: pageSize }
+  const { skip, limit: pageSize, page, page_size } = resolvePagination(query)
+  return { items: all.slice(skip, skip + pageSize), total: all.length, page, page_size }
 }
 
 export async function createRecord(_params: Record<string, string>, data?: any): Promise<any> {

@@ -1,6 +1,8 @@
 // Admin handler — system configuration and statistics.
 
-import { getDb, countAll } from '../database'
+import { getDb, countAll, addOne } from '../database'
+import { fixBlobMime } from '@/utils/image'
+import CryptoJS from 'crypto-js'
 
 async function getConfigValue(key: string): Promise<any> {
   const db = await getDb()
@@ -90,17 +92,381 @@ export async function getStats(): Promise<any> {
 }
 
 export async function getStorageConfig(): Promise<any> {
-  const config = await getConfigValue('storage_config')
-  return config || {
-    provider: 'local',
-    base_path: '/static',
-    config: {},
+  const raw = await getConfigValue('storage_config')
+  if (!raw) {
+    return {
+      backend: 'local',
+      storage_base_url: null,
+      s3_endpoint: null,
+      s3_bucket: null,
+      s3_region: null,
+      s3_access_key: null,
+      has_access_key: false,
+      s3_secret_key: null,
+      has_secret_key: false,
+      s3_base_path: null,
+      s3_custom_domain: null,
+      s3_url_suffix: null,
+      s3_url_style: 'path',
+      sources: {},
+    }
+  }
+  return {
+    backend: raw.backend || 'local',
+    storage_base_url: raw.storage_base_url || null,
+    s3_endpoint: raw.s3_endpoint || null,
+    s3_bucket: raw.s3_bucket || null,
+    s3_region: raw.s3_region || null,
+    s3_access_key: raw.s3_access_key ? '***' : null,
+    has_access_key: !!raw.s3_access_key,
+    s3_secret_key: raw.s3_secret_key ? '***' : null,
+    has_secret_key: !!raw.s3_secret_key,
+    s3_base_path: raw.s3_base_path || null,
+    s3_custom_domain: raw.s3_custom_domain || null,
+    s3_url_suffix: raw.s3_url_suffix || null,
+    s3_url_style: raw.s3_url_style || 'path',
+    sources: {},
   }
 }
 
 export async function updateStorageConfig(_params: Record<string, string>, data?: any): Promise<any> {
-  await setConfigValue('storage_config', data)
-  return data
+  const existing = (await getConfigValue('storage_config')) || {}
+  const merged: Record<string, any> = { ...existing }
+  const fields = [
+    'backend', 'storage_base_url', 's3_endpoint', 's3_bucket', 's3_region',
+    's3_base_path', 's3_custom_domain', 's3_url_suffix', 's3_url_style',
+  ]
+  for (const f of fields) {
+    if (data?.[f] !== undefined) merged[f] = data[f] || null
+  }
+  for (const cred of ['s3_access_key', 's3_secret_key']) {
+    if (data?.[cred] && data[cred] !== '***') {
+      merged[cred] = data[cred]
+    }
+  }
+  await setConfigValue('storage_config', merged)
+  return { ok: true }
+}
+
+/** Build an S3 object URL from a storage key and config. */
+export function buildS3Url(key: string, cfg: {
+  s3_endpoint?: string | null
+  s3_bucket?: string | null
+  s3_base_path?: string | null
+  s3_custom_domain?: string | null
+  s3_url_suffix?: string | null
+  s3_url_style?: string | null
+}): string {
+  const basePath = cfg.s3_base_path || ''
+  const suffix = cfg.s3_url_suffix || ''
+  const fullKey = (basePath ? `${basePath}/` : '') + key.split('/').map(s => encodeURIComponent(s)).join('/')
+  if (cfg.s3_custom_domain) {
+    return `${cfg.s3_custom_domain.replace(/\/$/, '')}/${fullKey}${suffix}`
+  }
+  const endpoint = (cfg.s3_endpoint || '').replace(/\/$/, '')
+  const bucket = cfg.s3_bucket || ''
+  if (cfg.s3_url_style === 'virtual') {
+    try {
+      const u = new URL(endpoint)
+      return `${u.protocol}//${bucket}.${u.host}/${fullKey}${suffix}`
+    } catch { /* fall through to path style */ }
+  }
+  return `${endpoint}/${bucket}/${fullKey}${suffix}`
+}
+
+/** Normalize an image path to the S3 logical key used by the app. */
+function normalizeStorageKey(path: string): string {
+  return path.replace(/^\/static\/images\//, '').replace(/^\/+/, '')
+}
+
+/** RFC 3986 path-segment encoding used by AWS SigV4. */
+function awsUriEncode(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) => (
+    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
+  ))
+}
+
+/** Build the endpoint URL used for S3 API calls (never the read-only CDN domain). */
+function buildS3ApiTarget(key: string, cfg: {
+  s3_endpoint?: string | null
+  s3_bucket?: string | null
+  s3_base_path?: string | null
+  s3_url_style?: string | null
+}): { url: string; host: string; canonicalUri: string } {
+  const rawEndpoint = (cfg.s3_endpoint || '').trim()
+  const bucket = (cfg.s3_bucket || '').trim()
+  if (!rawEndpoint) throw new Error('S3 endpoint 不能为空')
+  if (!bucket) throw new Error('S3 bucket 不能为空')
+  const endpoint = rawEndpoint.includes('://') ? rawEndpoint : `https://${rawEndpoint}`
+  const basePath = (cfg.s3_base_path || '').replace(/^\/+|\/+$/g, '')
+  const logicalKey = normalizeStorageKey(key)
+  const rawPath = [basePath, ...logicalKey.split('/')].filter(Boolean).join('/')
+  const encodedPath = rawPath.split('/').map(awsUriEncode).join('/')
+
+  if (cfg.s3_url_style === 'virtual') {
+    const u = new URL(endpoint)
+    const canonicalUri = `/${encodedPath}`
+    const url = `${u.protocol}//${bucket}.${u.host}${canonicalUri}`
+    return { url, host: new URL(url).host, canonicalUri }
+  }
+
+  const u = new URL(endpoint)
+  const endpointPath = u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '')
+  const canonicalUri = `/${awsUriEncode(bucket)}/${encodedPath}`
+  const url = `${u.origin}${endpointPath}${canonicalUri}`
+  return { url, host: new URL(url).host, canonicalUri }
+}
+
+/** SHA-256 of a Blob using crypto-js (works on non-HTTPS LAN hosts too). */
+async function sha256Blob(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const words: number[] = []
+  for (let i = 0; i < bytes.length; i++) {
+    words[i >>> 2] = (words[i >>> 2] || 0) | (bytes[i] << (24 - (i % 4) * 8))
+  }
+  return CryptoJS.SHA256(CryptoJS.lib.WordArray.create(words, bytes.length)).toString()
+}
+
+/** Build and execute an AWS SigV4-signed S3 request from the browser. */
+async function signedS3Fetch(
+  method: 'PUT' | 'GET' | 'HEAD',
+  key: string,
+  cfg: {
+    s3_endpoint?: string | null
+    s3_bucket?: string | null
+    s3_access_key?: string | null
+    s3_secret_key?: string | null
+    s3_region?: string | null
+    s3_base_path?: string | null
+    s3_url_style?: string | null
+  },
+  body?: Blob | null,
+  contentType?: string,
+): Promise<Response> {
+  const { url, host, canonicalUri } = buildS3ApiTarget(key, cfg)
+  const accessKey = (cfg.s3_access_key || '').trim()
+  const secretKey = (cfg.s3_secret_key || '').trim()
+  if (!accessKey || !secretKey) throw new Error('S3 access key / secret key 不能为空')
+  const region = (cfg.s3_region || 'us-east-1').trim()
+  const payloadHash = body ? await sha256Blob(body) : CryptoJS.SHA256('').toString()
+  const now = new Date()
+  const amzDate = now.toISOString().replace(/[-:]|\.\d{3}/g, '')
+  const dateStamp = amzDate.slice(0, 8)
+  const scope = `${dateStamp}/${region}/s3/aws4_request`
+
+  const signedHeaders = contentType
+    ? 'content-type;host;x-amz-content-sha256;x-amz-date'
+    : 'host;x-amz-content-sha256;x-amz-date'
+  const canonicalHeaders = [
+    contentType ? `content-type:${contentType}` : '',
+    `host:${host}`,
+    `x-amz-content-sha256:${payloadHash}`,
+    `x-amz-date:${amzDate}`,
+  ].filter(Boolean).join('\n') + '\n'
+
+  const canonicalRequest = [
+    method,
+    canonicalUri,
+    '',
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join('\n')
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    scope,
+    CryptoJS.SHA256(canonicalRequest).toString(),
+  ].join('\n')
+
+  const kDate = CryptoJS.HmacSHA256(dateStamp, `AWS4${secretKey}`)
+  const kRegion = CryptoJS.HmacSHA256(region, kDate)
+  const kService = CryptoJS.HmacSHA256('s3', kRegion)
+  const kSigning = CryptoJS.HmacSHA256('aws4_request', kService)
+  const signature = CryptoJS.HmacSHA256(stringToSign, kSigning).toString()
+  const authorization =
+    `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${signature}`
+
+  const headers: Record<string, string> = {
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+    Authorization: authorization,
+  }
+  if (contentType) headers['Content-Type'] = contentType
+  return fetchWithTimeout(url, { method, headers, body: body ?? undefined }, 60000)
+}
+
+/** Merge blank wizard credentials with the saved raw config (secret sentinel support). */
+async function mergeSavedS3Config(data: any): Promise<any> {
+  const saved = (await getConfigValue('storage_config')) || {}
+  const merged: Record<string, any> = { ...saved }
+  for (const [key, value] of Object.entries(data || {})) {
+    if (value && value !== '***') merged[key] = value
+  }
+  return merged
+}
+
+export async function testStorageConfig(_params: Record<string, string>, data?: any): Promise<any> {
+  if (data?.backend !== 's3') return { ok: true, error: null }
+  const cfg = await mergeSavedS3Config(data)
+  if (!cfg.s3_endpoint || !cfg.s3_bucket) return { ok: false, error: 'endpoint 和 bucket 不能为空' }
+  if (!cfg.s3_access_key || !cfg.s3_secret_key) return { ok: false, error: 'access key / secret key 不能为空' }
+  try {
+    const resp = await signedS3Fetch('HEAD', '_storage_probe_test', cfg)
+    // 200 = object exists, 404 = credentials valid but probe key missing. Both mean the config works.
+    if (resp.status === 200 || resp.status === 404) return { ok: true, error: null }
+    return { ok: false, error: `S3 返回 ${resp.status}，请检查密钥/权限/CORS 配置` }
+  } catch (e: any) {
+    return { ok: false, error: friendlyErr(e) }
+  }
+}
+
+export async function migrateStorage(_params: Record<string, string>, data?: any): Promise<any> {
+  const direction = data?.direction
+  if (direction !== 'to_s3' && direction !== 'to_local') {
+    throw { status: 400, message: '无效的迁移方向' }
+  }
+  const db = await getDb()
+  const total = await db.count('images')
+  const taskId = await addOne('import_tasks', {
+    task_type: 'storage_migrate',
+    status: 'running',
+    progress: { stage: '准备中', current: 0, total, uploaded: 0, skipped: 0, failed: 0 },
+    stats: { uploaded: 0, skipped: 0, failed: 0 },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })
+
+  // 本地模式没有后台线程：把迁移循环放到独立异步任务里，先返回 task_id，
+  // 前端轮询 import/task/:id 才能看到实时进度。
+  setTimeout(() => {
+    void runStorageMigration(db, taskId, direction, data?.s3_config, total)
+  }, 0)
+  return { task_id: taskId }
+}
+
+async function updateMigrationTask(
+  db: any,
+  taskId: number | string,
+  stage: string,
+  current: number,
+  total: number,
+  stats: { uploaded: number; skipped: number; failed: number },
+  status?: string,
+  error?: string | null,
+): Promise<void> {
+  const task = await db.get('import_tasks', taskId)
+  if (!task || task.status === 'cancelled') return
+  await db.put('import_tasks', {
+    ...task,
+    ...(status ? { status } : {}),
+    ...(error !== undefined ? { error } : {}),
+    progress: { stage, current, total, ...stats },
+    stats,
+    updated_at: new Date().toISOString(),
+  })
+}
+
+async function runStorageMigration(
+  db: any,
+  taskId: number | string,
+  direction: string,
+  s3Config: any,
+  total: number,
+): Promise<void> {
+  let uploaded = 0
+  let skipped = 0
+  let failed = 0
+  try {
+    const allImages = await db.getAll('images')
+    const targetS3Config = direction === 'to_s3'
+      ? await mergeSavedS3Config(s3Config)
+      : await mergeSavedS3Config(null)
+    if (direction === 'to_s3' && !targetS3Config.s3_endpoint) {
+      throw new Error('S3 endpoint 不能为空')
+    }
+    if (direction === 'to_local' && (!targetS3Config.s3_endpoint || !targetS3Config.s3_bucket)) {
+      throw new Error('当前存储不是有效的 S3 配置')
+    }
+
+    const CHUNK_SIZE = 5
+    for (let i = 0; i < allImages.length; i += CHUNK_SIZE) {
+      const current = await db.get('import_tasks', taskId)
+      if (current?.status === 'cancelled') return
+
+      const chunk = allImages.slice(i, i + CHUNK_SIZE)
+      for (const img of chunk) {
+        const key = normalizeStorageKey(img.path || `images/${img.id}`)
+        try {
+          if (direction === 'to_s3' && img.blob) {
+            const resp = await signedS3Fetch(
+              'PUT',
+              key,
+              targetS3Config,
+              img.blob,
+              img.mime_type || 'application/octet-stream',
+            )
+            if (resp.ok) uploaded++
+            else {
+              failed++
+              console.warn(`[migrate] PUT ${img.path} -> ${resp.status}`)
+            }
+          } else if (direction === 'to_local') {
+            const resp = await signedS3Fetch('GET', key, targetS3Config)
+            if (!resp.ok) {
+              skipped++
+              console.warn(`[migrate] GET ${img.path} -> ${resp.status}`)
+              continue
+            }
+            const blob = await resp.blob()
+            await db.put('images', { ...img, blob, mime_type: blob.type || img.mime_type })
+            uploaded++
+          } else {
+            skipped++
+          }
+        } catch (e: any) {
+          failed++
+          console.warn(`[migrate] ${img.path}: ${e?.message || e}`)
+        }
+      }
+      await updateMigrationTask(
+        db,
+        taskId,
+        `迁移中 ${Math.min(i + CHUNK_SIZE, allImages.length)}/${allImages.length}`,
+        Math.min(i + CHUNK_SIZE, allImages.length),
+        allImages.length,
+        { uploaded, skipped, failed },
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    await updateMigrationTask(
+      db,
+      taskId,
+      '完成',
+      total,
+      total,
+      { uploaded, skipped, failed },
+      'success',
+      failed > 0 ? `${failed} 张图片迁移失败` : null,
+    )
+  } catch (e: any) {
+    console.error('[migrate] 迁移任务失败:', e)
+    const current = await db.get('import_tasks', taskId).catch(() => null)
+    if (current && current.status !== 'cancelled') {
+      await updateMigrationTask(
+        db,
+        taskId,
+        '失败',
+        total,
+        total,
+        { uploaded, skipped, failed },
+        'failed',
+        e?.message || String(e),
+      )
+    }
+  }
 }
 
 export async function listEmailTemplates(): Promise<any> {
@@ -126,17 +492,33 @@ export async function updateMapApiKeys(_params: Record<string, string>, data?: a
 // ============================================================
 
 export async function scanImages(): Promise<any> {
-  return {
-    stats: { total_images: 0, used_images: 0, unused_images: 0, used_size: 0, unused_size: 0 },
-    message: '扫描完成',
-  }
+  const stats = await computeImageStats()
+  return { stats, message: '扫描完成' }
 }
 
 export async function getUnusedImages(): Promise<any> {
-  return {
-    stats: { total_images: 0, used_images: 0, unused_images: 0, used_size: 0, unused_size: 0 },
-    groups: { never_used: [], '180d': [], '90d': [], '60d': [], '30d': [], recent: [] },
+  return computeUnusedImages()
+}
+
+export async function deleteUnusedImages(_params: Record<string, string>, data?: any): Promise<any> {
+  const keys: string[] = data?.keys || []
+  if (!keys.length) throw { status: 400, message: '缺少 keys' }
+  const db = await getDb()
+  const allImages = await db.getAll('images')
+  const deleted: string[] = []
+  const errors: string[] = []
+  for (const img of allImages) {
+    const imgKey = img.path || String(img.id)
+    if (keys.includes(imgKey)) {
+      try {
+        await db.delete('images', img.id)
+        deleted.push(imgKey)
+      } catch (e: any) {
+        errors.push(`${imgKey}: ${e?.message || e}`)
+      }
+    }
   }
+  return { deleted, errors }
 }
 
 // ============================================================
@@ -309,4 +691,99 @@ export async function testTranslationConnection(_params: Record<string, string>,
   }
 
   return { provider, ok: false, detail: '未知的 provider' }
+}
+
+// ============================================================
+// Image scanning helpers (IndexedDB-based unused image detection)
+// ============================================================
+
+/** Collect all image keys referenced by entities (recipes, products, etc.). */
+async function collectUsedImageKeys(): Promise<Set<string>> {
+  const db = await getDb()
+  const used = new Set<string>()
+  const recipes = await db.getAll('recipes')
+  for (const recipe of recipes) {
+    if (Array.isArray(recipe.images)) {
+      for (const img of recipe.images) {
+        if (typeof img === 'string' && img) used.add(normalizeStorageKey(img))
+      }
+    }
+  }
+  const products = await db.getAll('products')
+  for (const p of products) {
+    if (typeof p.image_url === 'string' && p.image_url && !p.image_url.startsWith('http')) {
+      used.add(normalizeStorageKey(p.image_url))
+    }
+  }
+  return used
+}
+
+async function computeImageStats(): Promise<{
+  total_images: number; used_images: number; unused_images: number
+  used_size: number; unused_size: number
+}> {
+  const db = await getDb()
+  const allImages = await db.getAll('images')
+  const usedKeys = await collectUsedImageKeys()
+  let usedCount = 0, unusedCount = 0, usedSize = 0, unusedSize = 0
+  for (const img of allImages) {
+    const key = normalizeStorageKey(img.path || String(img.id))
+    const size = img.blob?.size || 0
+    if (usedKeys.has(key)) { usedCount++; usedSize += size }
+    else { unusedCount++; unusedSize += size }
+  }
+  return {
+    total_images: allImages.length, used_images: usedCount,
+    unused_images: unusedCount, used_size: usedSize, unused_size: unusedSize,
+  }
+}
+
+async function computeUnusedImages(): Promise<{
+  stats: any; groups: any[]
+}> {
+  const db = await getDb()
+  const allImages = await db.getAll('images')
+  const usedKeys = await collectUsedImageKeys()
+  const now = Date.now()
+  const DAY_MS = 86400000
+  const groupDefs = [
+    { key: 'never_used', label: '从未引用', test: () => true },
+    { key: '180d', label: '创建超过 180 天', test: (t: number) => (now - t) / DAY_MS >= 180 },
+    { key: '90d', label: '创建 90~180 天', test: (t: number) => { const d = (now - t) / DAY_MS; return d >= 90 && d < 180 } },
+    { key: '60d', label: '创建 60~90 天', test: (t: number) => { const d = (now - t) / DAY_MS; return d >= 60 && d < 90 } },
+    { key: '30d', label: '创建 30~60 天', test: (t: number) => { const d = (now - t) / DAY_MS; return d >= 30 && d < 60 } },
+    { key: 'recent', label: '创建 30 天内', test: (t: number) => (now - t) / DAY_MS < 30 },
+  ]
+  const groups = groupDefs.map(g => ({ ...g, images: [] as any[], count: 0, total_size: 0 }))
+  let totalImages = 0, usedImages = 0, unusedImages = 0
+  let usedSize = 0, unusedSize = 0
+  for (const img of allImages) {
+    const key = normalizeStorageKey(img.path || String(img.id))
+    const size = img.blob?.size || 0
+    totalImages++
+    if (usedKeys.has(key)) { usedImages++; usedSize += size; continue }
+    unusedImages++; unusedSize += size
+    let url = ''
+    try { if (img.blob) url = URL.createObjectURL(await fixBlobMime(img.blob, img.path)) } catch { /* ignore */ }
+    const item = {
+      key, filename: key.split('/').pop() || key, url,
+      file_size: size,
+      last_used_at: img.created_at || null,
+    }
+    const created = img.created_at ? new Date(img.created_at).getTime() : 0
+    for (const g of groups) {
+      if (g.test(created)) {
+        g.images.push(item); g.count++; g.total_size += size; break
+      }
+    }
+  }
+  const cleanGroups = groups.map(({ key, label, images, count, total_size }) =>
+    ({ key, label, images, count, total_size }))
+  return {
+    stats: {
+      total_images: totalImages, used_images: usedImages, unused_images: unusedImages,
+      used_size: usedSize, unused_size: unusedSize,
+    },
+    groups: cleanGroups,
+  }
 }

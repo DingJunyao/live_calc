@@ -39,9 +39,15 @@ const handleProtocolUri = () => {
 onMounted(async () => {
   // 本地模式启动检测：检查基础数据是否已初始化，未初始化则重定向到向导页
   if (import.meta.env.VITE_STORAGE_MODE === 'local' && window.location.pathname !== '/setup') {
-    const { isInitialized } = await import('@/api/local/seed')
-    const ready = await isInitialized()
-    if (!ready) {
+    // Preload S3 storage config for synchronous image URL resolution
+    const { preloadStorageConfig } = await import('@/utils/image')
+    await preloadStorageConfig()
+    const { migrateImageMimes } = await import('@/utils/image')
+    migrateImageMimes()
+
+   const { isInitialized } = await import('@/api/local/seed')
+   const ready = await isInitialized()
+   if (!ready) {
       router.replace('/setup')
       return
     }

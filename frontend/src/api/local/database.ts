@@ -396,8 +396,12 @@ export async function batchAdd(storeName: any, items: any[]): Promise<any[]> {
 // ============================================================
 
 export interface PaginationParams {
-  page?: number
-  page_size?: number
+  page?: number | string
+  page_size?: number | string
+  skip?: number | string
+  limit?: number | string
+  pageSize?: number | string
+  per_page?: number | string
 }
 
 export interface PaginatedResult<T> {
@@ -407,19 +411,32 @@ export interface PaginatedResult<T> {
   page_size: number
 }
 
+/** Normalize the pagination params used by cloud mode (skip/limit) and page/page_size callers. */
+export function resolvePagination(query: PaginationParams = {}): {
+  page: number
+  page_size: number
+  skip: number
+  limit: number
+} {
+  const rawLimit = query.limit ?? query.per_page ?? query.pageSize ?? query.page_size ?? 20
+  const limit = Math.max(1, Number(rawLimit) || 20)
+  const rawSkip = query.skip != null ? query.skip : ((Number(query.page) || 1) - 1) * limit
+  const skip = Math.max(0, Number(rawSkip) || 0)
+  const page = Math.floor(skip / limit) + 1
+  return { page, page_size: limit, skip, limit }
+}
+
 export async function paginate<T>(
   storeName: any,
   options: PaginationParams = {},
   filter?: (item: T) => boolean,
 ): Promise<PaginatedResult<T>> {
   const db = await getDb()
-  const page = options.page || 1
-  const pageSize = options.page_size || 20
+  const { page, page_size: pageSize, skip } = resolvePagination(options)
   let all: T[] = await (db as any).getAll(storeName)
   if (filter) all = all.filter(filter)
   const total = all.length
-  const start = (page - 1) * pageSize
-  const items = all.slice(start, start + pageSize)
+  const items = all.slice(skip, skip + pageSize)
   return { items, total, page, page_size: pageSize }
 }
 

@@ -4,11 +4,12 @@ import { getAll, getById, putOne, getByIndex, getDb, paginate } from '../databas
 import { calcNRV } from '../business/nutritionAggregator'
 import { aggregatePrices } from '../business/priceNormalize'
 import type { UnitInfo, EntityOverride, DensityInfo } from '../business/unitConverter'
+import { resolveImageUrl } from '@/utils/image'
 
 export async function listNutritionIngredients(_params: Record<string, string>, query?: any): Promise<any> {
   const name = query?.name || query?.search
   const lower = name?.toLowerCase()
-  return paginate('ingredients', { page: query?.page, page_size: query?.page_size }, (i: any) => {
+  return paginate('ingredients', query, (i: any) => {
     if (i.is_active === false) return false
     if (lower && !i.name?.toLowerCase().includes(lower)) return false
     return true
@@ -326,6 +327,7 @@ export async function getIngredientRecipes(params: Record<string, string>, query
       id: rec.id,
       name: rec.name,
       images: rec.images || [],
+      image_urls: (rec.images || []).map(resolveImageUrl),
       category: rec.category,
       difficulty: rec.difficulty,
       servings: rec.servings,

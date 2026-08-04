@@ -97,6 +97,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { seedBasicData, BASE_UNITS } from '@/api/local/seed'
+import { fixBlobMime } from '@/utils/image'
 
 const router = useRouter()
 const step = ref(1)
@@ -435,7 +436,7 @@ async function importFromRepo() {
               : `${IMG_BASE}/${encodedPath}`
             const imgResp = await fetch(imgUrl)
             if (!imgResp.ok) continue
-            const blob = await imgResp.blob()
+            const blob = await fixBlobMime(await imgResp.blob(), imagePath)
             // 每个图片单独事务
             const singleTx = db.transaction('images', 'readwrite')
             await singleTx.store.add({
