@@ -3,21 +3,86 @@
 import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate, resolvePagination } from '../database'
 import { aggregatePrices } from '../business/priceNormalize'
 import type { UnitInfo, EntityOverride, DensityInfo } from '../business/unitConverter'
+import {
+  parseIdList,
+  parseStringList,
+  isTruthy,
+  listIncludes,
+  buildProductRecordStats,
+} from './_filter'
 
 // ============================================================
 // Product Entity CRUD
 // ============================================================
 
 export async function listEntity(_params: Record<string, string>, query?: any): Promise<any> {
-  const name = query?.name || query?.search
-  const lower = name?.toLowerCase()
-  const ingredientId = query?.ingredient_id ? parseInt(query.ingredient_id) : undefined
-  return paginate('products', query, (p: any) => {
+  const lower = (query?.search || query?.name || query?.q)?.toLowerCase()
+  const ingredientIds = parseIdList(query?.ingredient_ids ?? query?.ingredient_id)
+  const ingredientCategoryIds = parseIdList(query?.ingredient_category_ids)
+  const brandList = parseStringList(query?.brands)
+  const brandSet = brandList.length ? new Set(brandList) : null
+  const noPrice = isTruthy(query?.no_price)
+  const singlePrice = isTruthy(query?.single_price)
+  const singleMerchant = isTruthy(query?.single_merchant)
+  const sortBy = query?.sort_by
+
+  const needStats = noPrice || singlePrice || singleMerchant || sortBy === 'price_records'
+  const needIngredients = !!lower || ingredientCategoryIds.length > 0
+  const stats = needStats ? await buildProductRecordStats() : null
+
+  const ingredientById = new Map<number, any>()
+  if (needIngredients) {
+    const allIngredients = await getAll('ingredients')
+    for (const ing of allIngredients) ingredientById.set(ing.id, ing)
+  }
+
+  // ingredient_ids filter (direct) and ingredient_category_ids (resolved)
+  const directIngredientIds = ingredientIds.length ? new Set(ingredientIds) : null
+  let categoryIngredientIds: Set<number> | null = null
+  if (ingredientCategoryIds.length) {
+    const catSet = new Set(ingredientCategoryIds)
+    categoryIngredientIds = new Set(
+      [...ingredientById.values()]
+        .filter((i) => catSet.has(i.category_id))
+        .map((i) => i.id),
+    )
+  }
+
+  const allProducts = stats ? stats.products : await getAll('products')
+  let filtered = allProducts.filter((p: any) => {
     if (p.is_active === false) return false
-    if (lower && !p.name?.toLowerCase().includes(lower)) return false
-    if (ingredientId && p.ingredient_id !== ingredientId) return false
+    if (lower) {
+      const selfMatch = p.name?.toLowerCase().includes(lower) || listIncludes(p.aliases, lower)
+      if (!selfMatch) {
+        const ing = ingredientById.get(p.ingredient_id)
+        const ingMatch =
+          ing && (ing.name?.toLowerCase().includes(lower) || listIncludes(ing.aliases, lower))
+        if (!ingMatch) return false
+      }
+    }
+    if (directIngredientIds && !directIngredientIds.has(p.ingredient_id)) return false
+    if (categoryIngredientIds && !categoryIngredientIds.has(p.ingredient_id)) return false
+    if (brandSet && !(p.brand && brandSet.has(p.brand))) return false
+    if (noPrice && (stats!.recordCountByProduct.get(p.id) ?? 0) > 0) return false
+    if (singlePrice && (stats!.recordCountByProduct.get(p.id) ?? 0) !== 1) return false
+    if (singleMerchant && (stats!.merchantCountByProduct.get(p.id) ?? 0) !== 1) return false
     return true
   })
+
+  if (sortBy === 'price_records' && stats) {
+    filtered.sort(
+      (a, b) =>
+        (stats.recordCountByProduct.get(b.id) ?? 0) -
+          (stats.recordCountByProduct.get(a.id) ?? 0) || a.id - b.id,
+    )
+  } else if (sortBy === 'updated_at') {
+    filtered.sort((a, b) => ((b.updated_at || '') > (a.updated_at || '') ? 1 : -1))
+  } else {
+    filtered.sort((a, b) => ((b.created_at || '') > (a.created_at || '') ? 1 : -1))
+  }
+
+  const { skip, limit: pageSize, page, page_size } = resolvePagination(query)
+  return { items: filtered.slice(skip, skip + pageSize), total: filtered.length, page, page_size }
 }
 
 export async function getEntity(params: Record<string, string>): Promise<any> {
@@ -116,38 +181,91 @@ export async function autocomplete(_params: Record<string, string>, query?: any)
 // ============================================================
 
 export async function listRecords(_params: Record<string, string>, query?: any): Promise<any> {
-  let all = await getAll('product_records')
-
-  // 按原料过滤：查出该原料下所有商品 id，再筛价格记录（原料详情页用）
+  const lower = (query?.search || query?.product_name || query?.q)?.toLowerCase()
+  const merchantIds = parseIdList(query?.merchant_ids ?? query?.merchant_id)
+  const merchantIdSet = merchantIds.length ? new Set(merchantIds) : null
+  const recordTypes = parseStringList(query?.record_types ?? query?.record_type)
+  const recordTypeSet = recordTypes.length ? new Set(recordTypes) : null
+  const categoryIds = parseIdList(query?.ingredient_category_ids)
+  const catSet = categoryIds.length ? new Set(categoryIds) : null
   const ingredientId = query?.ingredient_id
-  if (ingredientId) {
-    const products = await getByIndex('products', 'by_ingredient_id', parseInt(ingredientId))
-    const productIds = products.map((p: any) => p.id)
-    all = all.filter((r: any) => productIds.includes(r.product_id))
-  }
-
   const productId = query?.product_id
-  if (productId) {
-    all = all.filter((r: any) => r.product_id === parseInt(productId))
-  }
-  const merchantId = query?.merchant_id
-  if (merchantId) {
-    all = all.filter((r: any) => r.merchant_id === parseInt(merchantId))
-  }
   const startDate = query?.start_date || query?.startDate
-  if (startDate) {
-    all = all.filter((r: any) => (r.recorded_at || '') >= startDate)
-  }
   const endDate = query?.end_date || query?.endDate
-  if (endDate) {
-    all = all.filter((r: any) => (r.recorded_at || '') <= endDate)
+
+  // Search and category/ingredient joins need product + ingredient lookups;
+  // merchants are always needed to attach merchant_name for display.
+  const needJoin = !!lower || !!catSet || !!ingredientId
+  const products = needJoin ? await getAll('products') : null
+  const merchants = await getAll('merchants')
+  const ingredients = needJoin ? await getAll('ingredients') : null
+
+  const productMap = new Map<number, any>()
+  if (products) for (const p of products) productMap.set(p.id, p)
+  const merchantMap = new Map<number, any>()
+  for (const m of merchants) merchantMap.set(m.id, m)
+  const ingredientMap = new Map<number, any>()
+  if (ingredients) for (const i of ingredients) ingredientMap.set(i.id, i)
+
+  // ingredient_id -> product ids (ingredient detail page)
+  let ingredientProductIds: Set<number> | null = null
+  if (ingredientId) {
+    ingredientProductIds = new Set(
+      (products || [])
+        .filter((p: any) => p.ingredient_id === parseInt(ingredientId))
+        .map((p: any) => p.id),
+    )
+  }
+  // ingredient_category_ids -> product ids via product.ingredient.category_id
+  let categoryProductIds: Set<number> | null = null
+  if (catSet) {
+    categoryProductIds = new Set(
+      (products || [])
+        .filter((p: any) => {
+          const ing = ingredientMap.get(p.ingredient_id)
+          return ing && catSet.has(ing.category_id)
+        })
+        .map((p: any) => p.id),
+    )
   }
 
-  // 运行时空缺字段兜底（兼容旧导入数据）
+  const all = (await getAll('product_records')).filter((r: any) => {
+    if (ingredientProductIds && !ingredientProductIds.has(r.product_id)) return false
+    if (productId && r.product_id !== parseInt(productId)) return false
+    if (merchantIdSet && !(r.merchant_id != null && merchantIdSet.has(r.merchant_id))) return false
+    if (recordTypeSet && !recordTypeSet.has(r.record_type)) return false
+    if (categoryProductIds && !categoryProductIds.has(r.product_id)) return false
+    if (startDate && (r.recorded_at || '') < startDate) return false
+    if (endDate && (r.recorded_at || '') > endDate) return false
+    if (lower) {
+      const prod = productMap.get(r.product_id)
+      const nameMatch =
+        r.product_name?.toLowerCase().includes(lower) ||
+        (prod && (prod.name?.toLowerCase().includes(lower) || listIncludes(prod.aliases, lower)))
+      if (!nameMatch) {
+        const ing = ingredientMap.get(prod?.ingredient_id)
+        const ingMatch =
+          ing && (ing.name?.toLowerCase().includes(lower) || listIncludes(ing.aliases, lower))
+        if (!ingMatch) return false
+      }
+    }
+    return true
+  })
+
+  // Backfill missing fields (legacy import data) and attach product/merchant
+  // names so the list (and its filters) behave like cloud mode.
   for (const r of all) {
     if (r.original_unit == null) r.original_unit = r.original_unit_name || ''
     if (r.unit_name == null) r.unit_name = r.standard_unit_name || ''
     if (r.original_quantity == null) r.original_quantity = r.quantity ?? 1
+    if (!r.product_name) {
+      const prod = productMap.get(r.product_id)
+      if (prod) r.product_name = prod.name
+    }
+    if (r.merchant_name === undefined && r.merchant_id != null) {
+      const m = merchantMap.get(r.merchant_id)
+      if (m) r.merchant_name = m.name
+    }
   }
 
   // Sort by recorded_at descending

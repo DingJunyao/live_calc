@@ -1,6 +1,14 @@
 // Recipes handler — CRUD, cost calculation, nutrition aggregation, trends, merchant costs.
 
-import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate } from '../database'
+import { getAll, getById, addOne, putOne, deleteOne, getByIndex, resolvePagination } from '../database'
+import {
+  parseIdList,
+  parseStringList,
+  isTruthy,
+  buildProductRecordStats,
+  unpricedIngredientIds,
+  ingredientsWithTrustedNutrition,
+} from './_filter'
 import { calculateCost, type CostInput, type CostCalcIngredient, type CostCalcProduct, type CostCalcPriceRecord, type CostCalcUnit, type CostCalcHierarchy } from '../business/costCalculator'
 import { aggregateIngredients, calcNRV, type AggregationInput, type AggregationInputMulti } from '../business/nutritionAggregator'
 import { convert, type UnitInfo, type EntityOverride, type DensityInfo } from '../business/unitConverter'
@@ -78,17 +86,62 @@ async function getRecipeIngredients(recipeId: number): Promise<any[]> {
 export async function listRecipes(_params: Record<string, string>, query?: any): Promise<any> {
   const search = query?.search || query?.name
   const lower = search?.toLowerCase()
-  const category = query?.category || query?.categories
-  const difficulty = query?.difficulty || query?.difficulties
+  const categories = parseStringList(query?.categories ?? query?.category)
+  const catSet = categories.length ? new Set(categories) : null
+  const difficulties = parseStringList(query?.difficulties ?? query?.difficulty)
+  const diffSet = difficulties.length ? new Set(difficulties) : null
+  const ingredientIds = parseIdList(query?.ingredient_ids)
+  const hasUnpriced = isTruthy(query?.has_unpriced_ingredient)
+  const hasUnnourished = isTruthy(query?.has_unnourished_ingredient)
 
-  const result = await paginate('recipes', query, (r: any) => {
+  // ingredient_ids filter and special conditions need recipe_ingredients lookup
+  const needRecipeIngredients = ingredientIds.length > 0 || hasUnpriced || hasUnnourished
+  let recipeIngredientMap: Map<number, number[]> | null = null
+  if (needRecipeIngredients) {
+    const allRI = await getAll('recipe_ingredients')
+    recipeIngredientMap = new Map()
+    for (const ri of allRI) {
+      if (ri.ingredient_id == null) continue
+      const arr = recipeIngredientMap.get(ri.recipe_id)
+      if (arr) arr.push(ri.ingredient_id)
+      else recipeIngredientMap.set(ri.recipe_id, [ri.ingredient_id])
+    }
+  }
+
+  // unpriced ingredient ids (active product exists but no price records)
+  let unpricedIds: Set<number> | null = null
+  if (hasUnpriced) {
+    const stats = await buildProductRecordStats()
+    unpricedIds = await unpricedIngredientIds(stats)
+  }
+
+  // trusted nutrition ingredient ids (for has_unnourished_ingredient)
+  let trustedNutritionIds: Set<number> | null = null
+  if (hasUnnourished) {
+    trustedNutritionIds = await ingredientsWithTrustedNutrition()
+  }
+
+  const all = await getAll('recipes')
+  const filtered = all.filter((r: any) => {
     if (r.is_active === false) return false
     if (lower && !r.name?.toLowerCase().includes(lower)) return false
-    if (category && r.category !== category) return false
-    if (difficulty && r.difficulty !== difficulty) return false
+    if (catSet && !catSet.has(r.category)) return false
+    if (diffSet && !diffSet.has(r.difficulty)) return false
+    if (needRecipeIngredients) {
+      const ings = recipeIngredientMap!.get(r.id) || []
+      // ingredient_ids: recipe must contain ALL specified ingredients
+      if (ingredientIds.length && !ingredientIds.every((id) => ings.includes(id))) return false
+      // has_unpriced_ingredient: at least one recipe ingredient is unpriced
+      if (hasUnpriced && !ings.some((id) => unpricedIds!.has(id))) return false
+      // has_unnourished_ingredient: at least one recipe ingredient lacks trusted nutrition
+      if (hasUnnourished && !ings.some((id) => !trustedNutritionIds!.has(id))) return false
+    }
     return true
   })
-  return { ...result, items: result.items.map(withImageUrls) }
+
+  filtered.sort((a: any, b: any) => ((b.created_at || '') > (a.created_at || '') ? 1 : -1))
+  const { skip, limit: pageSize, page, page_size } = resolvePagination(query)
+  return { items: filtered.slice(skip, skip + pageSize).map(withImageUrls), total: filtered.length, page, page_size }
 }
 
 export async function createRecipe(_params: Record<string, string>, data?: any): Promise<any> {

@@ -1,18 +1,30 @@
 // Merchants handler — CRUD, favorites, coordinates, prices.
 
-import { getAll, getById, addOne, putOne, deleteOne, getByIndex, paginate, resolvePagination } from '../database'
+import { getAll, getById, addOne, putOne, deleteOne, getByIndex, resolvePagination } from '../database'
 
 export async function listMerchants(_params: Record<string, string>, query?: any): Promise<any> {
-  const name = query?.name || query?.search
-  const lower = name?.toLowerCase()
-  // 默认隐藏已关闭（is_open === false）的商家；仅当 include_closed 为真时才显示。
+  const search = query?.search || query?.name
+  const lower = search?.toLowerCase()
   const includeClosed = query?.include_closed === true || query?.include_closed === 'true'
-  return paginate('merchants', query, (m: any) => {
+  const noPrice = query?.no_price === true || query?.no_price === 'true'
+
+  let merchantsWithRecords: Set<number> | null = null
+  if (noPrice) {
+    const records = await getAll('product_records')
+    merchantsWithRecords = new Set(records.map((r: any) => r.merchant_id).filter((id: any) => id != null))
+  }
+
+  const all = await getAll('merchants')
+  const filtered = all.filter((m: any) => {
     if (m.is_active === false) return false
     if (!includeClosed && m.is_open === false) return false
-    if (lower && !m.name?.toLowerCase().includes(lower)) return false
+    if (lower && !(m.name?.toLowerCase().includes(lower) || m.address?.toLowerCase().includes(lower))) return false
+    if (noPrice && merchantsWithRecords!.has(m.id)) return false
     return true
   })
+  filtered.sort((a: any, b: any) => ((b.created_at || '') > (a.created_at || '') ? 1 : -1))
+  const { skip, limit: pageSize, page, page_size } = resolvePagination(query)
+  return { items: filtered.slice(skip, skip + pageSize), total: filtered.length, page, page_size }
 }
 
 export async function getMerchant(params: Record<string, string>): Promise<any> {
@@ -49,8 +61,14 @@ export async function deleteMerchant(params: Record<string, string>): Promise<an
 }
 
 export async function listFavorites(_params: Record<string, string>): Promise<any> {
-  const all = await getAll('merchant_favorites')
-  return { items: all, total: all.length }
+  const [favorites, allMerchants] = await Promise.all([
+    getAll('merchant_favorites'),
+    getAll('merchants'),
+  ])
+  const merchantMap = new Map(allMerchants.map((m: any) => [m.id, m]))
+  return favorites
+    .map((f: any) => merchantMap.get(f.merchant_id))
+    .filter((m: any) => m != null && m.is_active !== false)
 }
 
 export async function addFavorite(params: Record<string, string>): Promise<any> {

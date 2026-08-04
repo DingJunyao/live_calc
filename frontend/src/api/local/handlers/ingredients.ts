@@ -1,17 +1,99 @@
 // Ingredients handler — CRUD, categories, search, merge, batch product creation.
 
-import { getAll, getById, addOne, putOne, getByIndex, paginate } from '../database'
+import { getAll, getById, addOne, putOne, getByIndex, resolvePagination } from '../database'
+import {
+  parseIdList,
+  isTruthy,
+  listIncludes,
+  buildProductRecordStats,
+  ingredientsWithTrustedNutrition,
+  recipeIngredientIdSet,
+} from './_filter'
 
 export async function listIngredients(_params: Record<string, string>, query?: any): Promise<any> {
-  const name = query?.name || query?.search
-  const lower = name?.toLowerCase()
-  const categoryId = query?.category_id ? parseInt(query.category_id) : undefined
-  return paginate('ingredients', query, (i: any) => {
+  const lower = (query?.q || query?.search || query?.name)?.toLowerCase()
+  const categoryIds = parseIdList(query?.category_ids ?? query?.category_id)
+  const catSet = categoryIds.length ? new Set(categoryIds) : null
+
+  const noNutrition = isTruthy(query?.no_nutrition)
+  const noPrice = isTruthy(query?.no_price)
+  const singlePrice = isTruthy(query?.single_price)
+  const singleMerchant = isTruthy(query?.single_merchant)
+  const noRecipe = isTruthy(query?.no_recipe)
+  const noProduct = isTruthy(query?.no_product)
+  const sortBy = query?.sort_by
+
+  // Products/records are needed for search-by-product-name, the price-related
+  // special conditions, and price_records sort.
+  const needProducts =
+    !!lower || noPrice || singlePrice || singleMerchant || noProduct || sortBy === 'price_records'
+  const stats = needProducts ? await buildProductRecordStats() : null
+
+  // ingredient_id -> active products (and derived price/merchant counts)
+  const productsByIngredient = new Map<number, any[]>()
+  const recordCountByIngredient = new Map<number, number>()
+  const merchantCountByIngredient = new Map<number, number>()
+  if (stats) {
+    for (const p of stats.products) {
+      if (p.is_active === false) continue
+      const arr = productsByIngredient.get(p.ingredient_id)
+      if (arr) arr.push(p)
+      else productsByIngredient.set(p.ingredient_id, [p])
+    }
+    for (const [ingId, prods] of productsByIngredient) {
+      let count = 0
+      const merchants = new Set<number>()
+      for (const p of prods) {
+        const recs = stats.recordsByProduct.get(p.id) || []
+        count += recs.length
+        for (const r of recs) if (r.merchant_id != null) merchants.add(r.merchant_id)
+      }
+      recordCountByIngredient.set(ingId, count)
+      merchantCountByIngredient.set(ingId, merchants.size)
+    }
+  }
+
+  const trustedNutrition = noNutrition ? await ingredientsWithTrustedNutrition() : null
+  const recipeIngIds = noRecipe ? await recipeIngredientIdSet() : null
+
+  const all = await getAll('ingredients')
+  let filtered = all.filter((i: any) => {
     if (i.is_active === false) return false
-    if (lower && !i.name?.toLowerCase().includes(lower)) return false
-    if (categoryId && i.category_id !== categoryId) return false
+    if (catSet && !catSet.has(i.category_id)) return false
+    if (lower) {
+      const selfMatch = i.name?.toLowerCase().includes(lower) || listIncludes(i.aliases, lower)
+      if (!selfMatch) {
+        const prods = productsByIngredient.get(i.id) || []
+        const prodMatch = prods.some(
+          (p) => p.name?.toLowerCase().includes(lower) || listIncludes(p.aliases, lower),
+        )
+        if (!prodMatch) return false
+      }
+    }
+    if (noNutrition && trustedNutrition!.has(i.id)) return false
+    if (noProduct && productsByIngredient.has(i.id)) return false
+    if (noPrice && (recordCountByIngredient.get(i.id) ?? 0) > 0) return false
+    if (singlePrice && (recordCountByIngredient.get(i.id) ?? 0) !== 1) return false
+    if (singleMerchant && (merchantCountByIngredient.get(i.id) ?? 0) !== 1) return false
+    if (noRecipe && recipeIngIds!.has(i.id)) return false
     return true
   })
+
+  if (sortBy === 'price_records') {
+    filtered.sort(
+      (a, b) =>
+        (recordCountByIngredient.get(b.id) ?? 0) - (recordCountByIngredient.get(a.id) ?? 0) ||
+        a.id - b.id,
+    )
+  } else if (sortBy === 'name') {
+    filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  } else {
+    filtered.sort((a, b) => ((b.created_at || '') > (a.created_at || '') ? 1 : -1))
+  }
+
+  const { skip, limit: pageSize, page, page_size } = resolvePagination(query)
+  const items = filtered.slice(skip, skip + pageSize)
+  return { items, total: filtered.length, page, page_size }
 }
 
 export async function getIngredient(params: Record<string, string>): Promise<any> {
