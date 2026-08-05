@@ -11,8 +11,16 @@
 
 import { type UnitInfo, type EntityOverride, type DensityInfo } from './unitConverter'
 
-const JIN_UNIT_ID = 3
 const JIN_GRAMS = 500
+
+// ?????????????/???????? si_factor?0.5 ???
+// ?? ID ?????????????? ?=7??=3?????? ID?
+function findJinUnit(units: UnitInfo[]): UnitInfo | undefined {
+  return (
+    units.find(u => u.unit_type === 'mass' && (u.name === '?' || u.abbreviation === '?')) ||
+    units.find(u => u.unit_type === 'mass' && u.si_factor != null && Math.abs(u.si_factor - 0.5) < 1e-9)
+  )
+}
 
 export interface PriceRecordLike {
   price: number
@@ -81,7 +89,7 @@ export function normalizeRecordToJin(
   }
 
  if (unit.unit_type === 'mass') {
-   const jin = units.find(u => u.id === JIN_UNIT_ID)
+   const jin = findJinUnit(units)
    if (jin?.si_factor) {
       // rawUnitPrice 为 [price/unit]，1斤 = jin.si_factor/unit.si_factor 个 unit
       // （克：0.5/0.001 = 500，即 1斤=500克）。方向与 si 比值相反。
@@ -179,4 +187,4 @@ export function aggregatePrices(
   return { average_price: null, unit: '斤', records: 0, min_price: null, max_price: null }
 }
 
-export { JIN_UNIT_ID, JIN_GRAMS }
+export { JIN_GRAMS }
