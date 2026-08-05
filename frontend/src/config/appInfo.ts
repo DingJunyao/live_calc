@@ -1,7 +1,4 @@
-/// <reference types="vite/client" />
-/// <reference types="vite-plugin-pwa/vue" />
-
-declare const __APP_INFO__: {
+export interface AppInfo {
   name: string
   shortName: string
   version: string
@@ -11,3 +8,5 @@ declare const __APP_INFO__: {
   homepage: string
   authorHomepage: string
 }
+
+export const appInfo: AppInfo = __APP_INFO__

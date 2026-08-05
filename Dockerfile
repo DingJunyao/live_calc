@@ -22,6 +22,9 @@ WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
+# 应用身份与版本统一来源（前端 Vite 构建时读取）
+COPY app-info.json /app-info.json
+
 # 构建期参数：VITE_* 行为配置（编译进 JS，不随部署环境变）
 # 注意：VITE_API_URL 必须是相对路径 /api/v1，由 nginx 反代决定真正后端地址
 ARG VITE_API_URL=/api/v1
@@ -61,6 +64,7 @@ COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 拷应用代码
+COPY app-info.json ./
 COPY backend/app ./app
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini ./

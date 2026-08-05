@@ -2,6 +2,8 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import { VitePWA } from 'vite-plugin-pwa'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 // import eruda from 'vite-plugin-eruda'
 
 export default defineConfig(({ mode }) => {
@@ -18,7 +20,24 @@ export default defineConfig(({ mode }) => {
   const devPort = Number(env.VITE_DEV_PORT) || 5173
   const devBackendUrl = env.VITE_DEV_BACKEND_URL || 'http://localhost:8000'
 
+  // 应用身份与版本统一来自仓库根目录的 app-info.json
+  const appInfo = JSON.parse(
+    readFileSync(fileURLToPath(new URL('../app-info.json', import.meta.url)), 'utf-8'),
+  ) as {
+    name: string
+    shortName: string
+    version: string
+    description: string
+    copyright: string
+    repository: string
+    homepage: string
+    authorHomepage: string
+  }
+
   return {
+  define: {
+    __APP_INFO__: JSON.stringify(appInfo),
+  },
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
@@ -41,9 +60,9 @@ export default defineConfig(({ mode }) => {
      },
       includeAssets: ['favicon.ico', 'logo.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
-        name: '生计 - 生活成本计算器',
-        short_name: '生计',
-        description: '记录商品价格、计算烹饪与生活成本',
+        name: appInfo.name,
+        short_name: appInfo.shortName,
+        description: appInfo.description,
         lang: 'zh-CN',
         dir: 'ltr',
         // 显式应用身份，避免依赖 start_url 推导（与当前 '/' 一致，无破坏性）

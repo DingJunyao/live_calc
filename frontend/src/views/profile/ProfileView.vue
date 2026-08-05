@@ -269,12 +269,12 @@
           </v-list-item>
         </template>
 
-        <v-list-item>
+        <v-list-item @click="aboutDialog = true">
           <template #prepend>
             <v-icon>mdi-information</v-icon>
           </template>
           <v-list-item-title>关于</v-list-item-title>
-          <v-list-item-subtitle>版本 0.2.0</v-list-item-subtitle>
+          <v-list-item-subtitle>版本 {{ appInfo.version }}</v-list-item-subtitle>
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>
           </template>
@@ -674,6 +674,43 @@
       </v-card>
     </v-dialog>
 
+    <!-- 关于对话框 -->
+    <v-dialog v-model="aboutDialog" max-width="420">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          关于
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="aboutDialog = false" />
+        </v-card-title>
+        <v-card-text class="text-center">
+          <v-avatar size="72" rounded="lg" class="mx-auto mb-3">
+            <v-img src="/logo.svg" :alt="appInfo.name" cover />
+          </v-avatar>
+          <div class="text-h6 font-weight-bold">{{ appInfo.name }}</div>
+          <div class="text-caption text-medium-emphasis mb-2">版本 {{ appInfo.version }}</div>
+          <div class="text-body-2 text-medium-emphasis mb-3">{{ appInfo.description }}</div>
+          <div class="text-caption text-medium-emphasis mb-2">{{ appInfo.copyright }}</div>
+          <v-divider class="mb-2" />
+          <v-list density="compact" class="bg-transparent text-left">
+            <v-list-item :href="appInfo.homepage" target="_blank" rel="noopener">
+              <template #prepend>
+                <v-icon>mdi-github</v-icon>
+              </template>
+              <v-list-item-title>项目主页</v-list-item-title>
+              <v-list-item-subtitle class="text-truncate">{{ appInfo.homepage }}</v-list-item-subtitle>
+            </v-list-item>
+            <v-list-item :href="appInfo.authorHomepage" target="_blank" rel="noopener">
+              <template #prepend>
+                <v-icon>mdi-web</v-icon>
+              </template>
+              <v-list-item-title>作者主页</v-list-item-title>
+              <v-list-item-subtitle class="text-truncate">{{ appInfo.authorHomepage }}</v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
     <!-- 导出进度遮罩 -->
     <v-overlay v-model="exporting" class="align-center justify-center" persistent>
       <div class="text-center">
@@ -699,6 +736,7 @@ import { useThemeToggle } from '@/composables/useTheme'
 import { useMapConfig } from '@/composables/useMapConfig'
 import { hashPassword } from '@/utils/crypto'
 import { resolveImageUrl } from '@/utils/image'
+import { appInfo } from '@/config/appInfo'
 
 const { notify } = useGlobalSnackbar()
 const { energyUnit, toDisplayCalorie, fromDisplayCalorie } = useUserUnits()
@@ -730,6 +768,7 @@ const search = ref('')
 // 数据导入与导出
 const importDialog = ref(false)
 const exportDialog = ref(false)
+const aboutDialog = ref(false)
 const exportScope = ref<'full' | 'mine'>('full')
 const exporting = ref(false)
 

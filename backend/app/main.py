@@ -41,6 +41,7 @@ from app.core.database import Base, engine, get_db
 from app.core.exceptions import AppException
 from app.core.logging_config import setup_logging
 from app.config import settings
+from app import __version__
 
 
 logger = logging.getLogger("app.main")
@@ -353,7 +354,7 @@ _docs_enabled = getattr(settings, "debug", True)
 app = FastAPI(
     title="生计 - 生活成本计算器 API",
     description="生活成本计算器后端 API",
-    version="1.0.0",
+    version=__version__,
     lifespan=lifespan,
     redirect_slashes=False,  # 禁用自动斜杠重定向，避免 307 重定向丢失 Authorization header
     docs_url="/docs" if getattr(settings, "debug", True) else None,
