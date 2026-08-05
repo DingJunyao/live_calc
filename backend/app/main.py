@@ -40,6 +40,7 @@ from app.api import storage_config  # 图片存储配置 API
 from app.core.database import Base, engine, get_db
 from app.core.exceptions import AppException
 from app.core.logging_config import setup_logging
+from app.config import settings
 
 
 logger = logging.getLogger("app.main")
