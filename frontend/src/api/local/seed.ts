@@ -2,7 +2,7 @@
 // 提供基础单位、单位换算、食材分类等系统运行必需的最简种子数据。
 // 调用方在首次启动向导中调用 seedBasicData() 填充这些数据。
 
-import { batchAdd, hasData } from './database'
+import { batchAdd, getDb, hasData } from './database'
 
 /**
  * 基础单位列表（ID 固定，确保后续代码按 ID 引用正确）
@@ -50,6 +50,47 @@ export const BASE_UNIT_CONVERSIONS = [
 ]
 
 /**
+ * 常见计数单位。云端菜谱常用这些单位，而本地旧 seed 只有 个/份/包。
+ * 这里不写死 id，由 ensureCommonUnits() 在已存在的本地库里按名称补漏，
+ * 避免覆盖用户自建单位。
+ */
+export const COMMON_COUNT_UNITS = [
+  '只', '条', '片', '根', '块', '勺', '瓣', '段', '滴', '把',
+  '张', '袋', '叶', '圈', '头', '小块', '小把', '小片', '小碗', '撮',
+  '朵', '枚', '株', '棵', '盒', '碗', '粒', '罐', '节', '颗',
+  '小段', '桶', '瓶',
+]
+
+/**
+ * 为已初始化的本地库补齐常见计数单位。按名称去重，只新增不覆盖。
+ */
+export async function ensureCommonUnits(): Promise<void> {
+  const db = await getDb()
+  const tx = db.transaction('units', 'readwrite')
+  const store = tx.store
+  const existing = await store.getAll() as Array<{ id: number; name?: string }>
+  const existingNames = new Set(existing.map(u => u.name).filter(Boolean))
+  let displayOrder = 100
+
+  for (const name of COMMON_COUNT_UNITS) {
+    if (existingNames.has(name)) continue
+    await store.add({
+      name,
+      abbreviation: name,
+      unit_type: 'count',
+      unit_system: 'count',
+      si_factor: 1,
+      is_si_base: false,
+      is_common: true,
+      display_order: displayOrder++,
+      plural_form: null,
+    })
+    existingNames.add(name)
+  }
+  await tx.done
+}
+
+/**
  * 基础食材分类列表。
  * name 为英文标识符（与后端 seed 数据对齐），display_name 为中文展示名。
  */
@@ -71,19 +112,17 @@ export const BASE_CATEGORIES = [
 
 /**
  * 种子数据全量导入。
- * 幂等：检查 units 表是否有数据，已存在则跳过。
+ * 幂等：检查 units 表是否有数据，已存在则只补齐常见计数单位。
  */
 export async function seedBasicData(): Promise<void> {
-  if (await hasData('units')) {
-    console.log('[seed] units already exist, skipping')
-    return
+  if (!(await hasData('units'))) {
+    console.log('[seed] importing basic units and categories...')
+    await batchAdd('units', BASE_UNITS)
+    await batchAdd('unit_conversions', BASE_UNIT_CONVERSIONS)
+    await batchAdd('ingredient_categories', BASE_CATEGORIES)
   }
-  console.log('[seed] importing basic units and categories...')
 
-  await batchAdd('units', BASE_UNITS)
-  await batchAdd('unit_conversions', BASE_UNIT_CONVERSIONS)
-  await batchAdd('ingredient_categories', BASE_CATEGORIES)
-
+  await ensureCommonUnits()
   console.log('[seed] basic data imported successfully')
 }
 
@@ -92,5 +131,7 @@ export async function seedBasicData(): Promise<void> {
  * 以 units 表是否有数据为判据。
  */
 export async function isInitialized(): Promise<boolean> {
-  return hasData('units')
+  const ready = await hasData('units')
+  if (ready) await ensureCommonUnits()
+  return ready
 }

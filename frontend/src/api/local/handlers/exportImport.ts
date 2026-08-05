@@ -6,6 +6,7 @@
 
 import { getDb, clearStore, batchAdd, addOne, getAll } from '../database'
 import JSZip from 'jszip'
+import { ensureCommonUnits } from '../seed'
 
 /** 导出数据类型白名单 (IndexedDB store 名称列表) */
 const EXPORT_STORES = [
@@ -59,6 +60,28 @@ const FILE_STORE_MAP: Record<string, string> = {
 }
 
 /**
+ * 云端单位 ID 和本地 seed ID 并不一致，不能把云 ID 直接当作本地 ID。
+ * 这里只列出名称无法覆盖时仍可安全对应的常见单位；其余返回 null，
+ * 由 recipe_ingredients.unit/unit_name 或后续换算兜底。
+ */
+const CLOUD_ID_TO_LOCAL_ID: Record<number, number> = {
+  2: 1,   // 千克
+  3: 2,   // 克
+  4: 4,   // 升
+  5: 5,   // 毫升
+  7: 3,   // 斤
+  8: 7,   // 两
+  9: 8,   // 英磅/lb
+  10: 9,  // 盎司
+  11: 13, // 杯
+  12: 12, // 汤匙
+  13: 11, // 茶匙
+  18: 6,  // 个
+  31: 14, // 份
+  50: 15, // 包
+}
+
+/**
  * 从 recipe JSON（云模式下 recipes/xxx.json 的内容）中分离
  * recipe 本体与 recipe_ingredients，分别写入。
  * 一条 recipe JSON 结构：
@@ -106,13 +129,21 @@ async function importRecipe(
   if (Array.isArray(ingList)) {
     for (let i = 0; i < ingList.length; i++) {
       const ing = ingList[i]
+      const rawUnitName = ing.unit ?? ing.unit_name
+      const isVague = typeof ing.original_quantity === 'string'
+        && (ing.original_quantity.includes('适量') || ing.original_quantity.includes('少许'))
+      const unitName = isVague && ing.quantity == null && ing.quantity_range == null
+        ? '克'
+        : rawUnitName
       const ri = {
         recipe_id: recipeId,
         ingredient_id: ing.ingredient_id ?? null,
         ingredient_name: ing.ingredient_name || '',
         quantity: ing.quantity ?? null,
         quantity_range: ing.quantity_range ?? null,
-        unit_id: resolveUnitId ? resolveUnitId(ing.unit_id, ing.unit) : (ing.unit_id ?? null),
+        unit_id: resolveUnitId ? resolveUnitId(ing.unit_id, unitName) : (ing.unit_id ?? null),
+        unit: unitName ?? null,
+        unit_name: unitName ?? null,
         is_optional: ing.is_optional ?? false,
         note: ing.note ?? '',
         original_quantity: ing.original_quantity ?? null,
@@ -221,6 +252,8 @@ export async function uploadImport(
   const stats: Record<string, number> = {}
   const errors: string[] = []
 
+  await ensureCommonUnits()
+
   // ---- 预加载本地单位映射（云导出 ID ≠ 本地 seed ID，须按名称匹配）----
   const localUnits = await db.getAll('units')
   const unitNameToId: Record<string, number> = {}
@@ -235,10 +268,8 @@ export async function uploadImport(
       const byName = unitNameToId[name] || unitAbbrToId[name]
       if (byName) return byName
     }
-    // 如果 cloudId 落在本地 seed 范围内（1-15），保持原样（可能碰巧一致）
-    if (cloudId != null && cloudId >= 1 && cloudId <= 15) return cloudId
-    // 否则无法映射，置 null（后续由消费方兜底）
-    return null
+    // 名称缺失时才用显式映射，避免云 ID 15（厘米）被误映射成本地 15（包）
+    return cloudId != null ? (CLOUD_ID_TO_LOCAL_ID[cloudId] ?? null) : null
   }
 
   // 这些「参考数据表」的 ID 与本地 seed 固定值耦合（如 千克=1, 克=2, 斤=3），

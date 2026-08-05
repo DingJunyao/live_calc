@@ -6,7 +6,7 @@ export interface CostCalcIngredient {
   ingredient_id: number
   ingredient_name?: string
   quantity: number | null
-  quantity_range: [number, number] | null  // [min, max]
+  quantity_range: { min: number; max: number } | [number, number] | null
   unit_id: number
   is_optional: boolean
   original_quantity?: string | null
@@ -66,6 +66,7 @@ export interface CostPerIngredient {
   unit_price: number
   source: 'direct' | 'fallback' | 'substitute' | 'contains' | 'zero'
   source_ingredient_id?: number
+  source_ingredient_ids?: number[]
   product_id?: number
 }
 
@@ -133,8 +134,14 @@ export function calculateCost(input: CostInput): CostResult {
     const rawQty = ing.quantity
     if (rawQty != null && Number.isFinite(Number(rawQty)) && Number(rawQty) > 0) {
       effectiveQty = Number(rawQty)
-    } else if (ing.quantity_range && ing.quantity_range[0] != null && ing.quantity_range[1] != null) {
-      effectiveQty = (ing.quantity_range[0] + ing.quantity_range[1]) / 2
+    } else if (ing.quantity_range) {
+      // Support both {min,max} (DB/UI format) and [min,max] (legacy)
+      const qr = ing.quantity_range as any
+      const qMin = Array.isArray(qr) ? qr[0] : qr.min
+      const qMax = Array.isArray(qr) ? qr[1] : qr.max
+      if (qMin != null && qMax != null) {
+        effectiveQty = (Number(qMin) + Number(qMax)) / 2
+      }
     } else {
       // 模糊量回退：检查 original_quantity 中的关键词（适量→100g, 少许→5g）
       const vague = resolveVagueQuantity(ing.original_quantity)
@@ -167,32 +174,13 @@ export function calculateCost(input: CostInput): CostResult {
       const weightedPrice = calculateWeightedPrice(ingredientProducts, input.price_records, input.weight_overrides)
 
       if (weightedPrice != null) {
-        // 单位转换：将食材用量从 ing.unit_id 转换为 weightedPrice.unit_id
+        // 单位转换：将食材用量从 effectiveUnitId 转换为 weightedPrice.unit_id
         let convertedQty = effectiveQty
-        const recipeUnit = input.units.find(u => u.id === ing.unit_id)
+        const recipeUnit = input.units.find(u => u.id === effectiveUnitId)
         const priceUnit = input.units.find(u => u.id === weightedPrice.unit_id)
 
-        if (recipeUnit && priceUnit && ing.unit_id !== weightedPrice.unit_id) {
-          if (recipeUnit.unit_type === priceUnit.unit_type && recipeUnit.si_factor != null && priceUnit.si_factor != null) {
-            // 同类型：si_factor 比值
-            convertedQty = effectiveQty * (recipeUnit.si_factor / priceUnit.si_factor)
-          } else {
-            // 跨类型：查密度
-            const density = findCostDensity(ing.ingredient_id, effectiveUnitId, weightedPrice.unit_id, input)
-            if (density != null) {
-              if (isCostMass(recipeUnit.unit_type) && isCostVolume(priceUnit.unit_type)) {
-                // mass→volume: mass / density
-                const kg = effectiveQty * (recipeUnit.si_factor ?? 1)
-                const liters = kg / density
-                convertedQty = liters / (priceUnit.si_factor ?? 1)
-              } else if (isCostVolume(recipeUnit.unit_type) && isCostMass(priceUnit.unit_type)) {
-                // volume→mass: volume * density
-                const liters = effectiveQty * (recipeUnit.si_factor ?? 1)
-                const kg = liters * density
-                convertedQty = kg / (priceUnit.si_factor ?? 1)
-              }
-            }
-          }
+        if (recipeUnit && priceUnit && effectiveUnitId !== weightedPrice.unit_id) {
+          convertedQty = convertQtyToPriceUnit(effectiveQty, recipeUnit, priceUnit, ing.ingredient_id, input)
         }
 
         const ingredientCost = convertedQty * weightedPrice.pricePerUnit
@@ -215,30 +203,13 @@ export function calculateCost(input: CostInput): CostResult {
     // 无直接商品价格，尝试层级回退
     const fallback = findFallbackPrice(ing.ingredient_id, input)
     if (fallback != null) {
-      // 单位转换：将食材用量从 ing.unit_id 转换为回退价格的单位
+      // 单位转换：将食材用量从 effectiveUnitId 转换为回退价格的单位
       let convertedQty = effectiveQty
       const recipeUnit = input.units.find(u => u.id === effectiveUnitId)
       const priceUnit = input.units.find(u => u.id === fallback.unit_id)
 
-      if (recipeUnit && priceUnit && ing.unit_id !== fallback.unit_id) {
-        if (recipeUnit.unit_type === priceUnit.unit_type && recipeUnit.si_factor != null && priceUnit.si_factor != null) {
-          // 同类型：si_factor 比值
-          convertedQty = effectiveQty * (recipeUnit.si_factor / priceUnit.si_factor)
-        } else {
-          // 跨类型：查密度
-          const density = findCostDensity(ing.ingredient_id, effectiveUnitId, fallback.unit_id, input)
-          if (density != null) {
-            if (isCostMass(recipeUnit.unit_type) && isCostVolume(priceUnit.unit_type)) {
-              const kg = effectiveQty * (recipeUnit.si_factor ?? 1)
-              const liters = kg / density
-              convertedQty = liters / (priceUnit.si_factor ?? 1)
-            } else if (isCostVolume(recipeUnit.unit_type) && isCostMass(priceUnit.unit_type)) {
-              const liters = effectiveQty * (recipeUnit.si_factor ?? 1)
-              const kg = liters * density
-              convertedQty = kg / (priceUnit.si_factor ?? 1)
-            }
-          }
-        }
+      if (recipeUnit && priceUnit && effectiveUnitId !== fallback.unit_id) {
+        convertedQty = convertQtyToPriceUnit(effectiveQty, recipeUnit, priceUnit, ing.ingredient_id, input)
       }
 
       const fallbackCost = convertedQty * fallback.pricePerUnit
@@ -281,6 +252,7 @@ export function calculateCost(input: CostInput): CostResult {
         cost: containsCost,
         quantity: String(convertedQty),
         unit_price: containsResult.pricePerGram,
+        source_ingredient_ids: containsResult.childIngredientIds,
         source: 'contains',
       })
       totalCost += containsCost
@@ -400,7 +372,7 @@ function findFallbackPrice(
 function findContainsPrice(
   ingredientId: number,
   input: CostInput,
-): { pricePerGram: number } | null {
+): { pricePerGram: number; childIngredientIds: number[] } | null {
   // Find all CONTAINS children of this ingredient, sorted by strength desc
   const hierarchies = input.hierarchies
     .filter(h => h.parent_id === ingredientId && (h.relation_type || '').toUpperCase() === 'CONTAINS')
@@ -411,7 +383,7 @@ function findContainsPrice(
   const gramUnit = input.units.find(u => u.name === '\u514B')
   if (!gramUnit || gramUnit.si_factor == null) return null
 
-  const childPrices: { pricePerGram: number; strength: number }[] = []
+  const childPrices: { pricePerGram: number; strength: number; ingredientId: number }[] = []
   let totalStrength = 0
 
   for (const h of hierarchies) {
@@ -436,7 +408,7 @@ function findContainsPrice(
     if (!Number.isFinite(pricePerGram) || pricePerGram <= 0) continue
 
     const strength = h.strength ?? 50
-    childPrices.push({ pricePerGram, strength })
+    childPrices.push({ pricePerGram, strength, ingredientId: h.child_id })
     totalStrength += strength
   }
 
@@ -450,7 +422,7 @@ function findContainsPrice(
     weightedAvg = childPrices.reduce((sum, p) => sum + p.pricePerGram, 0) / childPrices.length
   }
 
-  return { pricePerGram: weightedAvg }
+  return { pricePerGram: weightedAvg, childIngredientIds: childPrices.map(p => p.ingredientId) }
 }
 function isCostMass(type: string): boolean {
   return type === 'mass'
@@ -458,6 +430,75 @@ function isCostMass(type: string): boolean {
 
 function isCostVolume(type: string): boolean {
   return type === 'volume'
+}
+
+/** Resolve grams-per-count for an ingredient via entity_unit_overrides (weight_per_unit).
+ *  Matches the override by unit name first because one ingredient can have several
+ *  count units (蒜: 瓣/片/粒/颗). Mirrors priceNormalize.resolveWeightGrams for the
+ *  legacy off-by-one where weight_unit_id points at a non-gram unit but
+ *  weight_unit_name is "克". */
+function findCostCountGrams(ingredientId: number, recipeUnit: any, input: CostInput): number | null {
+  const candidates = input.overrides?.filter(
+    (o: any) => o.entity_type === 'ingredient'
+      && o.entity_id === ingredientId
+      && (o.is_active === undefined || o.is_active === true || o.is_active === 1),
+  ) ?? []
+  if (candidates.length === 0) return null
+
+  const unitName = recipeUnit?.name as string | undefined
+  const matched = unitName
+    ? candidates.find((o: any) => o.unit_name === unitName || o.name === unitName) ?? candidates[0]
+    : candidates[0]
+
+  if (!matched || matched.weight_per_unit == null) return null
+  const wpu = Number(matched.weight_per_unit)
+  if (!Number.isFinite(wpu) || wpu <= 0) return null
+
+  const wname = (matched as any).weight_unit_name as string | undefined
+  if (wname) {
+    const byName = input.units.find((u: any) => u.name === wname || u.abbreviation === wname)
+    if (byName?.si_factor != null && byName.si_factor > 0) return wpu * byName.si_factor * 1000
+  }
+
+  const byId = input.units.find((u: any) => u.id === matched.weight_unit_id)
+  if (byId?.si_factor != null && byId.si_factor > 0) return wpu * byId.si_factor * 1000
+  return null
+}
+
+/** Convert an effective quantity from the recipe unit to the price unit.
+ *  Handles same-type (si_factor), count->mass (weight_per_unit override) and
+ *  mass<->volume (density). Returns the original qty when no rule applies. */
+function convertQtyToPriceUnit(
+  qty: number,
+  recipeUnit: any,
+  priceUnit: any,
+  ingredientId: number,
+  input: CostInput,
+): number {
+  if (!recipeUnit || !priceUnit) return qty
+  if (recipeUnit.unit_type === priceUnit.unit_type
+      && recipeUnit.si_factor != null && priceUnit.si_factor != null) {
+    return qty * (recipeUnit.si_factor / priceUnit.si_factor)
+  }
+  // count -> mass: weigh each piece, then express in the price (mass) unit
+  if (recipeUnit.unit_type === 'count' && priceUnit.unit_type === 'mass' && priceUnit.si_factor != null) {
+    const gramsPerCount = findCostCountGrams(ingredientId, recipeUnit, input)
+    if (gramsPerCount != null && gramsPerCount > 0) {
+      return (qty * gramsPerCount / 1000) / priceUnit.si_factor
+    }
+    return qty
+  }
+  // mass <-> volume: via density
+  const density = findCostDensity(ingredientId, recipeUnit.id, priceUnit.id, input)
+  if (density != null) {
+    if (isCostMass(recipeUnit.unit_type) && isCostVolume(priceUnit.unit_type)) {
+      return (qty * (recipeUnit.si_factor ?? 1) / density) / (priceUnit.si_factor ?? 1)
+    }
+    if (isCostVolume(recipeUnit.unit_type) && isCostMass(priceUnit.unit_type)) {
+      return (qty * (recipeUnit.si_factor ?? 1) * density) / (priceUnit.si_factor ?? 1)
+    }
+  }
+  return qty
 }
 
 function findCostDensity(

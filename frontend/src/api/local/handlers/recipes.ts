@@ -67,14 +67,14 @@ async function getRecipeIngredients(recipeId: number): Promise<any[]> {
       ri.ingredient_name = ri.ingredient_name || '未知原料'
       ri.ingredient = null
       ri.name = ri.ingredient_name  // 组件模板用 ingredient.name
-      ri.unit = ri.unit || unitIdToName[ri.unit_id] || ''
+      ri.unit = ri.unit || ri.unit_name || unitIdToName[ri.unit_id] || ''
       continue
     }
     const ing = await getById('ingredients', ri.ingredient_id)
     ri.ingredient_name = ing?.name || ri.ingredient_name || `#${ri.ingredient_id}`
     ri.name = ri.ingredient_name  // 组件模板用 ingredient.name
     ri.ingredient = ing || null
-    ri.unit = ri.unit || unitIdToName[ri.unit_id] || ''
+    ri.unit = ri.unit || ri.unit_name || unitIdToName[ri.unit_id] || ''
   }
   return ingredients.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 }
@@ -172,6 +172,8 @@ export async function createRecipe(_params: Record<string, string>, data?: any):
         quantity: ing.quantity ?? null,
         quantity_range: ing.quantity_range ?? null,
         unit_id: ing.unit_id,
+        unit: ing.unit ?? ing.unit_name ?? null,
+        unit_name: ing.unit_name ?? ing.unit ?? null,
         is_optional: ing.is_optional ?? false,
         note: ing.note ?? null,
         original_quantity: ing.original_quantity ?? null,
@@ -238,6 +240,8 @@ export async function updateRecipe(params: Record<string, string>, data?: any): 
         quantity: ing.quantity ?? null,
         quantity_range: ing.quantity_range ?? null,
         unit_id: ing.unit_id,
+        unit: ing.unit ?? ing.unit_name ?? null,
+        unit_name: ing.unit_name ?? ing.unit ?? null,
         is_optional: ing.is_optional ?? false,
         note: ing.note ?? null,
         original_quantity: ing.original_quantity ?? null,
@@ -284,6 +288,9 @@ export async function getRecipeCost(params: Record<string, string>, _query?: any
       unit_price: pi.unit_price,
       cost: pi.cost,
       cost_source: pi.source,
+      aggregation_chain: pi.source_ingredient_ids && pi.source_ingredient_ids.length > 0
+        ? `${pi.ingredient_name || ingredientNameById.get(pi.ingredient_id) || `#${pi.ingredient_id}`} \u2192 \u5b50\u98df\u6750(${pi.source_ingredient_ids.map((id: number) => ingredientNameById.get(id) || `#${id}`).join(', ')})`
+        : null,
       fallback_chain: pi.source_ingredient_id
         ? `${pi.ingredient_name || ingredientNameById.get(pi.ingredient_id) || `#${pi.ingredient_id}`} → ${ingredientNameById.get(pi.source_ingredient_id) || `#${pi.source_ingredient_id}`}`
         : null,
@@ -660,8 +667,11 @@ export async function getCostHistoryRange(params: Record<string, string>, query?
       let effQty
       if (ing.quantity != null && Number.isFinite(Number(ing.quantity)) && Number(ing.quantity) > 0) {
         effQty = Number(ing.quantity)
-      } else if (ing.quantity_range && ing.quantity_range[0] != null && ing.quantity_range[1] != null) {
-        effQty = (ing.quantity_range[0] + ing.quantity_range[1]) / 2
+      } else if (ing.quantity_range) {
+        const _qr = ing.quantity_range as any
+        const _qMin = Array.isArray(_qr) ? _qr[0] : _qr.min
+        const _qMax = Array.isArray(_qr) ? _qr[1] : _qr.max
+        effQty = (_qMin != null && _qMax != null) ? (Number(_qMin) + Number(_qMax)) / 2 : 0
       } else {
         // 模糊量回退
         effQty = resolveVagueQty(ing.original_quantity)
@@ -730,7 +740,10 @@ export async function getMerchantCosts(params: Record<string, string>, _query?: 
 
   for (const ri of recipeIngredients) {
     if (ri.is_optional) continue
-    const effQty = ri.quantity ?? (ri.quantity_range ? (ri.quantity_range[0] + ri.quantity_range[1]) / 2 : 0)
+    const _qr = ri.quantity_range as any
+    const _qMin = _qr ? (Array.isArray(_qr) ? _qr[0] : _qr.min) : null
+    const _qMax = _qr ? (Array.isArray(_qr) ? _qr[1] : _qr.max) : null
+    const effQty = (ri.quantity != null ? Number(ri.quantity) : null) ?? (_qMin != null && _qMax != null ? (Number(_qMin) + Number(_qMax)) / 2 : 0)
     if (!effQty || effQty <= 0) continue
 
     const ingProducts = allProducts.filter((p: any) => p.is_active !== false && p.ingredient_id === ri.ingredient_id)
@@ -903,6 +916,17 @@ async function buildCostInput(recipeId: number, recipe: any): Promise<CostInput>
   const allDensities = await getAll('entity_densities')
   const allHierarchies = await getAll('ingredient_hierarchy')
 
+  const unitByName = new Map<string, number>()
+  for (const u of allUnits) {
+    if (u.name) unitByName.set(u.name, u.id)
+  }
+  const resolveIngredientUnit = (ri: any): number | null => {
+    if (ri.unit_id != null) return ri.unit_id
+    const unitName = ri.unit_name ?? ri.unit
+    if (unitName) return unitByName.get(unitName) ?? null
+    return null
+  }
+
   // 收集食材 ID（过滤掉 null）
   const ingredientIds = [...new Set(recipeIngredients.map((ri: any) => ri.ingredient_id).filter((id: any) => id != null))]
 
@@ -929,7 +953,7 @@ async function buildCostInput(recipeId: number, recipe: any): Promise<CostInput>
     ingredient_name: ingredientNames[ri.ingredient_id] || '',
     quantity: ri.quantity,
     quantity_range: ri.quantity_range,
-    unit_id: ri.unit_id,
+    unit_id: resolveIngredientUnit(ri),
     is_optional: ri.is_optional,
     original_quantity: ri.original_quantity,
   }))

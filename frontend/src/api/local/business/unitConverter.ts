@@ -3,6 +3,7 @@
 
 export interface UnitInfo {
   id: number
+  name?: string
   unit_type: string     // 'mass' | 'volume' | 'count' | 'length' | 'time'
   si_factor: number | null
   abbreviation?: string
@@ -11,6 +12,7 @@ export interface UnitInfo {
 export interface EntityOverride {
   entity_type: string
   entity_id: number
+  unit_name?: string | null
   base_unit_id: number | null
   conversion_factor: number | null
   weight_per_unit: number | null
@@ -106,7 +108,7 @@ export function convert(input: ConvertInput): ConvertResult {
 
   // 计数单位回退：查实体单位覆盖中的 weight_per_unit
   if (fromUnit.unit_type === 'count' || toUnit.unit_type === 'count') {
-    const override = findOverride(entity_type, entity_id, overrides)
+    const override = findOverride(entity_type, entity_id, overrides, fromUnit.name)
     if (override?.weight_per_unit != null && override?.weight_unit_id != null) {
       // Resolve the weight unit: prefer name match over ID, because cloud-exported
       // override records carry cloud DB unit IDs that may not align with local seed IDs
@@ -201,8 +203,16 @@ function resolveWeightUnit(override: EntityOverride, units: UnitInfo[]): UnitInf
 }
 function findOverride(
   entityType?: string, entityId?: number,
-  overrides?: EntityOverride[],
+  overrides?: EntityOverride[], unitName?: string,
 ): EntityOverride | null {
   if (!entityType || !entityId || !overrides) return null
-  return overrides.find(o => o.entity_type === entityType && o.entity_id === entityId) || null
+  const candidates = overrides.filter(o => o.entity_type === entityType
+    && o.entity_id === entityId
+    && (o.is_active === undefined || o.is_active === true || o.is_active === 1))
+  if (candidates.length === 0) return null
+  if (unitName) {
+    const byName = candidates.find(o => o.unit_name === unitName || (o as any).name === unitName)
+    if (byName) return byName
+  }
+  return candidates[0] || null
 }
