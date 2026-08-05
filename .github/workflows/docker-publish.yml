@@ -1,0 +1,140 @@
+name: 构建并发布 Docker 镜像
+
+# 发布 Docker 镜像（GHCR + Docker Hub）：
+# - release 发布（或手动触发）时构建 frontend / backend / all-in-one / local 四种类别
+# - 双架构 linux/amd64 + linux/arm64，版本标签取 release 版本
+# - GHCR 默认推送（无需配置）；Docker Hub 可选，配置后同时推送
+# Docker Hub 配置（仓库 Settings → Secrets and variables → Actions）：
+#   Secrets（两者都设置才会启用 Docker Hub 推送）：
+#     DOCKERHUB_USERNAME —— Docker Hub 用户名
+#     DOCKERHUB_TOKEN    —— Docker Hub 访问令牌（Access Token，推荐而非密码）
+#   Variables（可选，不设则取默认）：
+#     DOCKERHUB_NAMESPACE —— 镜像命名空间（用户名/组织），默认取 DOCKERHUB_USERNAME
+#     DOCKERHUB_REPO      —— 仓库名，默认取 GitHub 仓库名（小写）
+
+on:
+  # release 发布（含重新发布）时自动构建全部类别并按版本打标签
+  release:
+    types: [published]
+  # 手动触发（默认 all-in-one，可选 all 全量重发 latest）
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 手动构建的镜像类别（release 会自动构建全部；默认 all-in-one）
+        type: choice
+        required: true
+        default: all-in-one
+        options:
+          - all-in-one
+          - frontend
+          - backend
+          - local
+          - all
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # 决定要构建的类别：release 构建全部；手动触发按输入（默认 all-in-one）
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.variant }}" != "all" ]; then
+            echo "matrix=[\"${{ github.event.inputs.variant }}\"]" >> "$GITHUB_OUTPUT"
+          else
+            echo 'matrix=["all-in-one","frontend","backend","local"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 解析 Dockerfile target 与镜像名
+        id: config
+        shell: bash
+        run: |
+          case "${{ matrix.variant }}" in
+            all-in-one) target="all-in-one"; suffix="" ;;
+            frontend)   target="frontend";   suffix="-frontend" ;;
+            backend)    target="backend";    suffix="-backend" ;;
+            local)      target="local";      suffix="-local" ;;
+            *) echo "未知变体: ${{ matrix.variant }}"; exit 1 ;;
+          esac
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          # GHCR 镜像名（必须小写）
+          image="ghcr.io/${GITHUB_REPOSITORY}${suffix}"
+          echo "image=${image,,}" >> "$GITHUB_OUTPUT"
+          # Docker Hub 镜像名：配置了 DOCKERHUB_USERNAME 才启用
+          hub_user="${{ secrets.DOCKERHUB_USERNAME }}"
+          if [ -n "$hub_user" ]; then
+            hub_ns="${{ vars.DOCKERHUB_NAMESPACE }}"
+            hub_repo="${{ vars.DOCKERHUB_REPO }}"
+            [ -z "$hub_ns" ] && hub_ns="$hub_user"
+            if [ -z "$hub_repo" ]; then
+              hub_repo="${GITHUB_REPOSITORY##*/}"
+              hub_repo="${hub_repo,,}"
+            fi
+            echo "hub_image=docker.io/${hub_ns}/${hub_repo}${suffix}" >> "$GITHUB_OUTPUT"
+          else
+            echo "hub_image=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 设置 QEMU（arm64 构建）
+        uses: docker/setup-qemu-action@v3
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 登录 Docker Hub（可选）
+        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 提取元数据（版本标签）
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ steps.config.outputs.image }}
+            ${{ steps.config.outputs.hub_image }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: 构建并推送镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ steps.config.outputs.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}

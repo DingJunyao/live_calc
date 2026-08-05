@@ -46,13 +46,23 @@ npm run build
 
 ### 3. Docker 构建
 
-在 Dockerfile 的构建阶段传入 `VITE_STORAGE_MODE`：
+项目提供专门的 `local` target（参照 frontend，纯前端 nginx 镜像，无 `/api` 反代），构建产物即本地模式，无需额外传参：
+
+```bash
+docker build --target local -t live_calc:local .
+```
+
+若要在 `frontend` target 上临时指定本地模式，也可以传入 `VITE_STORAGE_MODE`：
 
 ```bash
 docker build --target frontend \
   --build-arg VITE_STORAGE_MODE=local \
   -t livecalc:local .
 ```
+
+发布 release 时，GitHub Actions（`.github/workflows/docker-publish.yml`）会自动为
+`local`、`frontend`、`backend`、`all-in-one` 四种类别构建并推送
+`linux/amd64` + `linux/arm64` 多架构镜像（镜像 tag 取 release 版本）。
 
 ---
 
@@ -266,7 +276,8 @@ ZIP 文件结构应包含各数据表的 JSON 文件和 `recipes/` 目录下的�
 3. **清除浏览器数据**：清除浏览器缓存/数据可能删除 IndexedDB，导致数据丢失。请定期导出备份。
 4. **网络依赖**：首次初始化（从 GitHub 导入）和地图、AI、USDA 数据下载需要网络连接。导入完成后核心功能可离线使用。
 5. **隐私模式**：浏览器的隐私/无痕模式下 IndexedDB 可能被关闭时清除，不建议在隐私模式中使用。
-6. **HTTPS 要求**：PWA 安装和 Service Worker 需要 HTTPS 环境（localhost 除外）。
+6. **HTTPS 要求**：PWA 安装和 Service Worker 需要 HTTPS 环境（localhost 除外）。
+
 7. **API Key 与敏感凭据的数据安全**：本地模式下，你在「设置」中填入的 AI 服务商 API Key、地图 Key、S3/OSS 凭据等会以**明文**存储在当前浏览器的 IndexedDB 中，且 AI 请求、S3 签名等操作均在浏览器内直接使用这些密钥。请知悉并自行承担以下风险：
    - 任何能在本应用同源运行的脚本（页面 XSS 漏洞、被污染的依赖、恶意浏览器扩展）都可能读取到这些长效凭据；
    - 建议为 S3/OSS 配置**最小权限的专用 IAM 子账户/STS 临时凭证**，而非主账户长效密钥，并设置用量/额度告警；
