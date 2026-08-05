@@ -75,14 +75,6 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
-class UserUpdate(BaseModel):
-    username: str
-    email: str
-    phone: Optional[str]
-    is_admin: bool
-    email_verified: bool
-
-
 class UserAdminCreate(BaseModel):
     """管理员创建用户。密码为前端 SHA256 后的值。"""
     username: str = Field(..., min_length=3, max_length=50)

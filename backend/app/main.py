@@ -348,16 +348,38 @@ async def lifespan(app: FastAPI):
 
 
 # 创建 FastAPI 应用
+_docs_enabled = getattr(settings, "debug", True)
 app = FastAPI(
     title="生计 - 生活成本计算器 API",
     description="生活成本计算器后端 API",
     version="1.0.0",
     lifespan=lifespan,
-    redirect_slashes=False  # 禁用自动斜杠重定向，避免 307 重定向丢失 Authorization header
+    redirect_slashes=False,  # 禁用自动斜杠重定向，避免 307 重定向丢失 Authorization header
+    docs_url="/docs" if getattr(settings, "debug", True) else None,
+    redoc_url="/redoc" if getattr(settings, "debug", True) else None,
+    openapi_url="/openapi.json" if getattr(settings, "debug", True) else None,
 )
 
 
 # === 请求/响应日志中间件 ===
+_SENSITIVE_BODY_KEYS = {"password", "password_hash", "current_password", "invite_code", "api_key", "apikey", "token", "secret", "access_token", "refresh_token", "smtp_password"}
+_SENSITIVE_BODY_KEY_PARTS = ("password", "secret", "_key", "token", "invite_code")
+
+def _redact_sensitive_body(value):
+    """递归脱敏请求体中的敏感字段，避免把可重放凭据（password_hash 等）写入日志。"""
+    if isinstance(value, dict):
+        redacted = {}
+        for k, v in value.items():
+            key_l = str(k).lower()
+            if key_l in _SENSITIVE_BODY_KEYS or any(part in key_l for part in _SENSITIVE_BODY_KEY_PARTS):
+                redacted[k] = "***REDACTED***"
+            else:
+                redacted[k] = _redact_sensitive_body(v)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive_body(item) for item in value]
+    return value
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """
@@ -377,7 +399,7 @@ async def log_requests(request: Request, call_next):
             body_bytes = await request.body()
             if body_bytes:
                 try:
-                    request_body = json.loads(body_bytes.decode("utf-8"))
+                    request_body = _redact_sensitive_body(json.loads(body_bytes.decode("utf-8")))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     request_body = f"<binary/non-JSON body: {len(body_bytes)} bytes>"
             # Starlette 的 Request.body() 已内置缓存机制（_body），下游代码
@@ -464,7 +486,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             body_bytes = await request.body()
             if body_bytes:
                 try:
-                    request_body = json.loads(body_bytes.decode("utf-8"))
+                    request_body = _redact_sensitive_body(json.loads(body_bytes.decode("utf-8")))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     request_body = f"<binary: {len(body_bytes)} bytes>"
         except Exception:
@@ -507,7 +529,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         body_bytes = await request.body()
         if body_bytes:
             try:
-                request_body = json.loads(body_bytes.decode("utf-8"))
+                request_body = _redact_sensitive_body(json.loads(body_bytes.decode("utf-8")))
             except (json.JSONDecodeError, UnicodeDecodeError):
                 request_body = f"<binary: {len(body_bytes)} bytes>"
     except Exception:
@@ -541,7 +563,7 @@ async def general_exception_handler(request: Request, exc: Exception):
             body_bytes = await request.body()
             if body_bytes:
                 try:
-                    request_body = json.loads(body_bytes.decode("utf-8"))
+                    request_body = _redact_sensitive_body(json.loads(body_bytes.decode("utf-8")))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     request_body = f"<binary: {len(body_bytes)} bytes>"
         except Exception:
@@ -563,7 +585,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
     return JSONResponse(
         status_code=500,
-        content={"detail": f"服务器内部错误: {str(exc)}" if str(exc) else "服务器内部错误"},
+        content={"detail": "服务器内部错误"},
     )
 
 # 配置静态文件目录
@@ -597,7 +619,7 @@ app.mount("/api/v1/static", StaticFiles(directory=str(static_dir)), name="static
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制具体域名
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()] or ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

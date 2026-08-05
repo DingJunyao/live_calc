@@ -3643,6 +3643,8 @@ const getRelationDirectionText = (
 }
 
 // 获取关系列表显示文本（用于关系列表）
+const escapeHtml = (s: any): string => String(s ?? '').replace(/[&<>"']/g, (c: string) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+
 const getRelationListDisplayText = (rel: any, direction: 'child' | 'parent') => {
   const currentName = ingredient.value?.name || '当前原料'
   const currentShort = '当前'
@@ -3652,15 +3654,15 @@ const getRelationListDisplayText = (rel: any, direction: 'child' | 'parent') => 
     const otherName = rel.child_name
     switch (rel.relation_type) {
       case 'contains':
-        return `<span class="text-medium-emphasis">${otherName}</span> <span class="text-caption text-primary font-weight-bold">属于${currentShort}</span>`
+        return `<span class="text-medium-emphasis">${escapeHtml(otherName)}</span> <span class="text-caption text-primary font-weight-bold">属于${currentShort}</span>`
       case 'fallback':
         // 对于 fallback，parent 是具体原料，child 是抽象原料
         // 在当前原料(parent)的详情中，显示"抽象原料 可回退到 当前原料"
-        return `<span class="text-medium-emphasis">${otherName}</span> <span class="text-caption text-primary font-weight-bold">可回退到${currentShort}</span>`
+        return `<span class="text-medium-emphasis">${escapeHtml(otherName)}</span> <span class="text-caption text-primary font-weight-bold">可回退到${currentShort}</span>`
       case 'substitutable':
-        return `<span class="text-medium-emphasis">${otherName}</span> <span class="text-caption text-primary font-weight-bold">可替代${currentShort}</span>`
+        return `<span class="text-medium-emphasis">${escapeHtml(otherName)}</span> <span class="text-caption text-primary font-weight-bold">可替代${currentShort}</span>`
       default:
-        return otherName
+        return escapeHtml(otherName)
     }
   }
 
@@ -3669,15 +3671,15 @@ const getRelationListDisplayText = (rel: any, direction: 'child' | 'parent') => 
     const otherName = rel.parent_name
     switch (rel.relation_type) {
       case 'contains':
-        return `<span class="text-caption text-primary font-weight-bold">${currentShort}属于</span> <span class="text-medium-emphasis ml-1">${otherName}</span>`
+        return `<span class="text-caption text-primary font-weight-bold">${currentShort}属于</span> <span class="text-medium-emphasis ml-1">${escapeHtml(otherName)}</span>`
       case 'fallback':
         // 对于 fallback，parent 是具体原料，child 是抽象原料
         // 在当前原料(child)的详情中，显示"当前原料 可回退到 具体原料"
-        return `<span class="text-caption text-primary font-weight-bold">${currentShort}可回退到</span> <span class="text-medium-emphasis ml-1">${otherName}</span>`
+        return `<span class="text-caption text-primary font-weight-bold">${currentShort}可回退到</span> <span class="text-medium-emphasis ml-1">${escapeHtml(otherName)}</span>`
       case 'substitutable':
-        return `<span class="text-caption text-primary font-weight-bold">可替代${currentShort}</span> <span class="text-medium-emphasis ml-1">${otherName}</span>`
+        return `<span class="text-caption text-primary font-weight-bold">可替代${currentShort}</span> <span class="text-medium-emphasis ml-1">${escapeHtml(otherName)}</span>`
       default:
-        return otherName
+        return escapeHtml(otherName)
     }
   }
 
