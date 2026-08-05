@@ -33,6 +33,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  # secrets 上下文不能用于 if 条件，先折算成 env（env 中允许 secrets）
+  DOCKERHUB_ENABLED: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
 
 jobs:
   # 决定要构建的类别：release 构建全部；手动触发按输入（默认 all-in-one）
@@ -108,7 +110,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 登录 Docker Hub（可选）
-        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        if: env.DOCKERHUB_ENABLED == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
