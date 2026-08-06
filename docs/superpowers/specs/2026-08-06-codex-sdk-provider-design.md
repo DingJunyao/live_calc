@@ -33,13 +33,14 @@
 5. **顺序**：所有相关下拉统一为 `Claude Code`、`Codex`、`OpenAI 兼容`、`Anthropic 兼容`，机器翻译按配置顺序追加。
 6. **会话锚点**：数据库和 API 用 `external_session_id` 彻底替换 `claude_session_id`，不做兼容字段。
 7. **黑名单入口**：新增 provider 下拉，默认 Claude Code，可切换其他已启用 AI provider。
+8. **黑名单全部匹配**：新增“AI 匹配全部”操作，所有启用分组共用一个 AgentSession 处理。
 
 ## 4. 整体架构
 
 新增 `CodexRunner`，与 `ClaudeCodeRunner` 平级实现 [AgentRunner 协议](../../../backend/app/services/agent/runner.py)。`run_agent_loop` 只依赖该协议，因此现有多轮 SQL 提取、审批、SSE、插话逻辑不变。
 
 ```
-任务台 / 黑名单 / USDA 维护入口
+任务台 / 黑名单（单组 + 全部） / USDA 维护入口
         │
         ▼
 runner_factory.build_runner(provider=...)
@@ -184,7 +185,9 @@ claude_code, codex, openai, anthropic
 
 ## 8. 黑名单 AI 匹配
 
-后端 [blacklist_groups.py](../../../backend/app/api/blacklist_groups.py) 的 `ai-match` 接口新增请求体：
+### 8.1 单分组匹配
+
+现有 `POST /blacklist-groups/{group_id}/ai-match` 保留，新增请求体：
 
 ```python
 class AiMatchRequest(BaseModel):
@@ -197,7 +200,22 @@ class AiMatchRequest(BaseModel):
 - 传给 `runner_factory.build_runner(..., provider=provider)`。
 - 默认仍为 `claude_code`。
 
-前端黑名单分组页新增 provider 下拉，默认 Claude Code，可选其他已启用 AI provider。
+### 8.2 全部启用分组匹配
+
+新增 `POST /blacklist-groups/ai-match-all`，请求体同样包含 `provider`，返回单个 `agent_session_id`。
+
+实现：
+
+- 后端只取当前 `is_active = true` 的分组。
+- 新增内部任务模板 `blacklist_group_match_all`，prompt 包含所有分组 `id / name / admin_id`，要求 Agent 逐组搜索并输出批量 INSERT。
+- 新增 `trigger_blacklist_group_match_all`：创建一个 AgentSession，`task_type = "blacklist_group_match_all"`，标题如“原料黑名单匹配: 全部启用分组（N 个）”，prompt 由服务端生成。
+- `blacklist_group_match_all` 不展示在 Agent 任务台的任务类型列表里，只由黑名单页“AI 匹配全部”入口触发。
+- 前端黑名单分组页新增“AI 匹配全部”按钮，使用同一 provider 下拉，默认 Claude Code，可选其他已启用 AI provider。
+- 本地代理增加对应路由，继续返回“本地模式暂不支持 AI 匹配”。
+
+### 8.3 前端
+
+黑名单分组页的 provider 下拉默认 Claude Code，可选其他已启用 AI provider；单组按钮和“AI 匹配全部”按钮都使用当前选中的 provider。
 
 ## 9. 数据库与 API 迁移
 
@@ -230,13 +248,15 @@ API 不再返回 `claude_session_id`；插话校验改为“缺少外部会话 I
 
 [task_templates.py](../../../backend/app/services/agent/task_templates.py) 中“Claude Code 环境下使用 MCP”的表述改为“Claude Code / Codex 环境下使用 MCP 只读工具”。SQL 输出、只读工具、审批流程不变。
 
+新增内部模板 `blacklist_group_match_all`，复用只读工具白名单，prompt 描述多分组搜索和多分组 INSERT 输出；该模板不进入任务台可见任务类型。
+
 ## 11. 测试策略
 
 - `CodexRunner`：协议满足、事件映射、resume、取消、idle/total timeout、SDK 启动失败。
 - `runner_factory`：`provider="codex"` 返回 `CodexRunner`，MCP overrides 注入正确。
 - 翻译 registry：`codex` 在 Claude Code 之后，`get_translator` 返回 `CodexTranslator`。
 - `CodexTranslator`：mock SDK 调用，验证批处理与 timeout。
-- 黑名单：`ai-match` 接收 provider，创建会话和 runner 使用该 provider。
+- 黑名单：单组 `ai-match` 接收 provider；`ai-match-all` 创建一个 AgentSession、prompt 包含全部启用分组、runner 使用该 provider。
 - API：`external_session_id` 替换后列表、详情、插话、取消仍正确。
 - Alembic：旧 `claude_session_id` 数据迁移到 `external_session_id`。
 - 前端：`npm run build` 通过，下拉只显示已启用 provider，顺序正确。
@@ -251,6 +271,7 @@ API 不再返回 `claude_session_id`；插话校验改为“缺少外部会话 I
 - `backend/alembic/versions/20260806_0001_add_external_session_id.py`
 - `frontend/src/utils/agentProviders.ts`
 - `backend/tests/agent/test_codex_runner.py`
+- `backend/tests/agent/test_blacklist_group_task.py`
 - `backend/tests/services/test_translate_codex.py`
 
 **修改**
@@ -278,6 +299,8 @@ API 不再返回 `claude_session_id`；插话校验改为“缺少外部会话 I
 - `frontend/src/views/admin/RecipeImportView.vue`
 - `frontend/src/api/local/agent/sessionRunner.ts`
 - `frontend/src/api/local/handlers/agents.ts`
+- `frontend/src/api/local/handlers/blacklistGroups.ts`
+- `frontend/src/api/local/proxy.ts`
 - `frontend/src/composables/useAgentSession.ts`
 
 ## 13. 风险与后续注意
