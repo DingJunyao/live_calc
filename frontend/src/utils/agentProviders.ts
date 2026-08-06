@@ -32,6 +32,7 @@ export function enabledProviderOptions(
       if (!value || value.enabled !== true) continue
       if (localMode && (key === 'claude_code' || key === 'codex')) continue
       if (localMode && region === 'machine') continue
+      if (localMode && (key === 'openai' || key === 'anthropic') && !value.api_key) continue
       if (seen.has(key)) continue
       seen.add(key)
       options.push({ value: key, label: PROVIDER_LABELS[key] || key })

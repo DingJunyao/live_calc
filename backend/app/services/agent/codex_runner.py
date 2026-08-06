@@ -42,7 +42,7 @@ def build_config_overrides(
         f'mcp_servers.{server_name}.command="{python_toml}"',
         f'mcp_servers.{server_name}.args=["-m", "app.services.agent.controlled_db_mcp"]',
         f'mcp_servers.{server_name}.cwd="{cwd_toml}"',
-        f'mcp_servers.{server_name}.env={{"LIVECALC_DB_URL": "{db_url}"}}',
+        f'mcp_servers.{server_name}.env={{"LIVECALC_DB_URL"="{db_url}"}}',
         f'mcp_servers.{server_name}.enabled_tools=["db_read", "describe", "list_tables"]',
     )
 
@@ -216,14 +216,29 @@ class CodexRunner:
             threading.Thread(target=_pump, daemon=True).start()
             done = False
             while not done:
-                try:
-                    item = event_q.get(timeout=self.idle_timeout)
-                except queue.Empty:
+                elapsed = time.monotonic() - start_time
+                remaining = self.total_timeout - elapsed
+                if remaining <= 0:
                     self._interrupt(client, thread_id, turn_id)
                     yield AgentEvent(
                         kind="error",
-                        error=f"Codex 超时（{self.idle_timeout}s 无输出）",
+                        error=f"Codex 超过总超时 {self.total_timeout}s",
                     )
+                    return
+                try:
+                    item = event_q.get(timeout=min(self.idle_timeout, remaining))
+                except queue.Empty:
+                    self._interrupt(client, thread_id, turn_id)
+                    if remaining <= self.idle_timeout:
+                        yield AgentEvent(
+                            kind="error",
+                            error=f"Codex 超过总超时 {self.total_timeout}s",
+                        )
+                    else:
+                        yield AgentEvent(
+                            kind="error",
+                            error=f"Codex 超时（{self.idle_timeout}s 无输出）",
+                        )
                     return
                 if isinstance(item, BaseException):
                     yield AgentEvent(

@@ -37,6 +37,7 @@ def test_build_config_overrides_includes_mcp_env():
     assert "mcp_servers.controlled_db.enabled=true" in joined
     assert "controlled_db_mcp" in joined
     assert "LIVECALC_DB_URL" in joined
+    assert 'mcp_servers.controlled_db.env={"LIVECALC_DB_URL"="sqlite:///data/livecalc.db"}' in joined
 
 
 def test_translate_agent_message_delta():
