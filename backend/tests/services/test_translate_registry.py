@@ -15,9 +15,14 @@ def test_unknown_raises():
         get_translator("nope", {}, timeout=10)
 
 
-def test_lists_all_six():
+def test_lists_all_providers():
     names = set(list_provider_names())
-    assert names == {"claude_code", "openai", "anthropic", "baidu", "aliyun", "deepl"}
+    assert names == {"claude_code", "codex", "openai", "anthropic", "baidu", "aliyun", "deepl"}
+
+
+def test_list_provider_names_has_codex_after_claude():
+    names = list_provider_names()
+    assert names.index("codex") == names.index("claude_code") + 1
 
 
 def test_find_provider_section():

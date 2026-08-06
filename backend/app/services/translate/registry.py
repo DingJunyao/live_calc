@@ -30,7 +30,7 @@ def get_translator(provider: str, cfg: dict, timeout: int) -> Translator:
 
 
 def list_provider_names() -> list[str]:
-    return ["claude_code", "openai", "anthropic", "baidu", "aliyun", "deepl"]
+    return ["claude_code", "codex", "openai", "anthropic", "baidu", "aliyun", "deepl"]
 
 
 def find_provider_section(config_dict: dict, provider: str) -> dict | None:

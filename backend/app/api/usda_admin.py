@@ -28,6 +28,7 @@ router = APIRouter()
 DEFAULT_TRANSLATION_CONFIG = {
     "ai": {"providers": {
         "claude_code": {"enabled": False},
+        "codex": {"enabled": False},
         "openai": {"enabled": False, "base_url": "https://api.openai.com/v1", "api_key": "", "model": "gpt-4o-mini"},
         "anthropic": {"enabled": False, "base_url": "https://api.anthropic.com", "api_key": "", "model": "claude-sonnet-4-6"},
     }},
@@ -39,12 +40,28 @@ DEFAULT_TRANSLATION_CONFIG = {
 }
 
 
+def _merge_default_config(stored: dict) -> dict:
+    """把默认 provider 条目补齐进已存储配置，不覆盖已有字段。"""
+    import copy
+
+    merged = copy.deepcopy(DEFAULT_TRANSLATION_CONFIG)
+    for region in ("ai", "machine"):
+        stored_providers = (stored.get(region) or {}).get("providers") or {}
+        for key, value in stored_providers.items():
+            merged[region]["providers"][key] = value
+    return merged
+
+
 def get_stored_translation_config(db: Session) -> TranslationConfig:
     """获取翻译配置，不存在则创建默认。"""
     cfg = db.query(TranslationConfig).first()
     if not cfg:
         cfg = TranslationConfig(config=DEFAULT_TRANSLATION_CONFIG)
         db.add(cfg); db.commit(); db.refresh(cfg)
+    else:
+        cfg.config = _merge_default_config(cfg.to_dict())
+        db.commit()
+        db.refresh(cfg)
     return cfg
 
 
