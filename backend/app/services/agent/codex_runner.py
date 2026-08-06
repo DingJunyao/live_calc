@@ -63,6 +63,15 @@ def _queue_wait_timeout(
     return min(idle_timeout, remaining)
 
 
+def _with_goal_override(
+    overrides: tuple[str, ...],
+    use_goal: bool,
+) -> tuple[str, ...]:
+    if not use_goal:
+        return overrides
+    return (*overrides, "features.goals=true")
+
+
 def _coerce_mcp_result(result: Any) -> Any:
     if result is None:
         return ""
@@ -164,10 +173,11 @@ class CodexRunner:
         self, prompt: str, *, resume_session_id: str | None = None
     ) -> Iterator[AgentEvent]:
         self._last_session_id = None
+        config_overrides = _with_goal_override(self.config_overrides, self.use_goal)
         client = CodexClient(
             config=CodexConfig(
                 cwd=self.cwd,
-                config_overrides=self.config_overrides,
+                config_overrides=config_overrides,
                 env=self.env,
                 client_name="livecalc_codex",
                 client_title="LiveCalc Codex Agent",

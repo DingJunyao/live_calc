@@ -18,6 +18,7 @@ from app.services.agent.codex_runner import (
     build_config_overrides,
     translate_notification,
     _queue_wait_timeout,
+    _with_goal_override,
 )
 from app.services.agent.runner import AgentEvent, AgentRunner
 
@@ -51,6 +52,11 @@ def test_queue_wait_timeout_caps_total_timeout():
     assert _queue_wait_timeout(0.1, 1.0, 0.05) == 0.0
     assert _queue_wait_timeout(2.0, 1.0, 5.0) == 1.0
     assert _queue_wait_timeout(4.5, 1.0, 5.0) == 0.5
+
+
+def test_goal_override_enables_goals_feature():
+    assert _with_goal_override(("a=b",), True) == ("a=b", "features.goals=true")
+    assert _with_goal_override(("a=b",), False) == ("a=b",)
 
 
 def test_translate_agent_message_delta():
