@@ -15,6 +15,7 @@ import pytest
 from app.services.agent.claude_code_runner import (
     ClaudeCodeRunner,
     _coerce_tool_result_content,
+    _enrich_done_error,
     build_cmd,
     build_env,
     translate_event,
@@ -312,6 +313,18 @@ def test_translate_result_is_error_never_uses_success_text():
     assert out[0].is_error is True
     assert out[0].error != "success"
     assert "is_error" in out[0].error
+
+
+def test_enrich_done_error_adds_raw_result_and_stderr():
+    ev = AgentEvent(kind="done", is_error=True, error="Agent 终态 is_error")
+    _enrich_done_error(
+        ev,
+        {"type": "result", "is_error": True, "detail": "boom"},
+        "stderr-line",
+    )
+    assert "raw_result" in ev.error
+    assert "boom" in ev.error
+    assert "stderr-line" in ev.error
 
 
 def test_translate_result_error_with_denials():

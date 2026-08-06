@@ -313,6 +313,21 @@ def translate_event(evt: dict) -> list[AgentEvent]:
     return out
 
 
+def _enrich_done_error(
+    agent_ev: AgentEvent,
+    evt: dict,
+    stderr_tail: str,
+) -> None:
+    """给 done.is_error 补上 raw result / stderr，避免只有空泛错误。"""
+    if agent_ev.kind != "done" or not agent_ev.is_error:
+        return
+    if not agent_ev.error or agent_ev.error in ("Agent 终态 is_error", "success"):
+        raw = json.dumps(evt, ensure_ascii=False, default=str)[:500]
+        agent_ev.error = f"Agent 终态 is_error；raw_result={raw}"
+    if stderr_tail:
+        agent_ev.error += f"；stderr={stderr_tail[:500]}"
+
+
 class ClaudeCodeRunner:
     """用 subprocess 驱动 claude code CLI 的 AgentRunner 实现。
 
@@ -495,6 +510,12 @@ class ClaudeCodeRunner:
                 for agent_ev in translate_event(evt):
                     if agent_ev.kind == "done":
                         done_emitted = True
+                        if agent_ev.is_error:
+                            _enrich_done_error(
+                                agent_ev,
+                                evt,
+                                self._drain(stderr_q),
+                            )
                     yield agent_ev
 
                 # 墙钟超时检查（每次取到新行后检查）。

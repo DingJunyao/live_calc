@@ -9,6 +9,7 @@ from openai_codex.generated.v2_all import (
     ThreadItem,
     Turn,
     TurnCompletedNotification,
+    TurnError,
     TurnStatus,
 )
 from openai_codex.models import Notification
@@ -111,3 +112,24 @@ def test_translate_turn_completed_done():
     )
     assert events[0].kind == "done"
     assert events[0].is_error is False
+
+
+def test_translate_turn_completed_failed_keeps_details():
+    payload = TurnCompletedNotification(
+        threadId="thr_1",
+        turn=Turn(
+            id="turn_1",
+            status=TurnStatus.failed,
+            items=[],
+            error=TurnError(
+                message="provider boom",
+                additionalDetails="additional detail",
+            ),
+        ),
+    )
+    events = translate_notification(
+        Notification(method="turn/completed", payload=payload)
+    )
+    assert events[0].is_error is True
+    assert "provider boom" in events[0].error
+    assert "additional detail" in events[0].error

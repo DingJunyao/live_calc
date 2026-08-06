@@ -125,11 +125,22 @@ def translate_notification(notification: Notification) -> list[AgentEvent]:
     if isinstance(payload, TurnCompletedNotification):
         turn = payload.turn
         is_error = turn.status.value == "failed"
+        error = ""
+        if is_error:
+            err = turn.error
+            if err and err.message:
+                error = err.message
+                if err.additional_details:
+                    error += f"；additional_details={err.additional_details}"
+                if err.codex_error_info:
+                    error += f"；codex_error_info={err.codex_error_info}"
+            else:
+                error = "Agent 终态 is_error"
         return [
             AgentEvent(
                 kind="done",
                 is_error=is_error,
-                error=turn.error.message if is_error and turn.error else "",
+                error=error,
             )
         ]
     return []
