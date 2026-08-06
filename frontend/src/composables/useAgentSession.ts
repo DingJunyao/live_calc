@@ -318,7 +318,7 @@ export function useAgentSession() {
     localAbort?.abort()
     localAbort = new AbortController()
     clearLocalPoll()
-    localProvider = provider === 'claude_code' ? null : provider
+    localProvider = provider === 'claude_code' || provider === 'codex' ? null : provider
     connected.value = true
     // 初始消息：续跑用传入历史，否则用任务提示
     localAiMessages =

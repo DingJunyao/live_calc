@@ -131,6 +131,10 @@ export async function aiMatch(): Promise<any> {
   return { agent_session_id: 0, message: '本地模式暂不支持 AI 匹配' }
 }
 
+export async function aiMatchAll(): Promise<any> {
+  return { agent_session_id: 0, message: '本地模式暂不支持 AI 匹配' }
+}
+
 export async function allergensStatus(): Promise<any> {
   return { needed: false, missing_groups: [], empty_groups: [] }
 }

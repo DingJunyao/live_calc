@@ -76,12 +76,12 @@ async function nextId(): Promise<number> {
 
 /** 本地模式不支持 claude_code；未显式传 AI provider 时退回已启用的第一个 AI provider。 */
 async function resolveLocalProvider(requested?: string): Promise<string> {
-  if (requested && requested !== 'claude_code') return requested
+  if (requested && requested !== 'claude_code' && requested !== 'codex') return requested
   try {
     const cfg = await getTranslationConfig()
     const ai = cfg?.ai?.providers || {}
     const enabled = Object.keys(ai).filter(
-      (key) => key !== 'claude_code' && ai[key]?.enabled,
+      (key) => key !== 'claude_code' && key !== 'codex' && ai[key]?.enabled,
     )
     if (enabled.length) return enabled[0]
   } catch {

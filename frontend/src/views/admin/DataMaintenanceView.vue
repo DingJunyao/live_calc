@@ -284,7 +284,9 @@
             <!-- AI 推断后端选择 -->
             <v-select
               v-model="aiInferProvider"
-              :items="enabledAiProviders"
+              :items="aiProviderOptions"
+              item-title="label"
+              item-value="value"
               label="AI 推断后端"
               variant="outlined"
               prepend-icon="mdi-robot"
@@ -297,7 +299,9 @@
             <!-- 翻译后端选择 -->
             <v-select
               v-model="translateProvider"
-              :items="enabledTranslateProviders"
+              :items="translateProviderOptions"
+              item-title="label"
+              item-value="value"
               label="翻译后端"
               variant="outlined"
               prepend-icon="mdi-translate"
@@ -525,6 +529,7 @@ import {
 } from '@/api/usda'
 import { createSession, getSession, listSessions, cancelSession, type AgentProvider } from '@/api/agent'
 import { api } from '@/api'
+import { enabledProviderOptions, type ProviderOption } from '@/utils/agentProviders'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { tasks, fetchTasks, startTask, startUploadTask } = useImportTask()
@@ -606,17 +611,16 @@ const TASK_LABELS: Record<string, string> = {
   unmapped_nutrient_translate: 'Agent 营养素翻译',
 }
 
-function enabledIn(region: string): string[] {
-  const cfg = translationConfig.value
-  if (!cfg) return []
-  const provs = cfg[region]?.providers || {}
-  return Object.entries(provs)
-    .filter(([, v]: any) => v.enabled !== false)
-    .map(([k]) => k)
-}
-
-const enabledAiProviders = computed<string[]>(() => enabledIn('ai'))
-const enabledTranslateProviders = computed<string[]>(() => [...enabledIn('ai'), ...enabledIn('machine')])
+const aiProviderOptions = computed<ProviderOption[]>(() =>
+  enabledProviderOptions(translationConfig.value, ['ai'], isLocalMode.value),
+)
+const translateProviderOptions = computed<ProviderOption[]>(() =>
+  enabledProviderOptions(translationConfig.value, ['ai', 'machine'], isLocalMode.value),
+)
+const enabledAiProviders = computed<string[]>(() => aiProviderOptions.value.map((o) => o.value))
+const enabledTranslateProviders = computed<string[]>(() =>
+  translateProviderOptions.value.map((o) => o.value),
+)
 
 onMounted(async () => {
   // 加载近期任务列表，恢复对运行中任务的轮询

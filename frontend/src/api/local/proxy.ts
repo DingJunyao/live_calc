@@ -264,6 +264,7 @@ addRoute('/admin/blacklist-groups/allergens-status', { get: blGroups.allergensSt
 addRoute('/admin/blacklist-groups/seed-allergens', { post: blGroups.seedAllergens })
 addRoute('/admin/blacklist-groups/:id/ingredients/:ingredientId', { delete: blGroups.removeIngredient })
 addRoute('/admin/blacklist-groups/:id/ingredients', { post: blGroups.addIngredients })
+addRoute('/admin/blacklist-groups/ai-match-all', { post: blGroups.aiMatchAll })
 addRoute('/admin/blacklist-groups/:id/ai-match', { post: blGroups.aiMatch })
 addRoute('/admin/blacklist-groups/:id', { put: blGroups.updateGroup, delete: blGroups.deleteGroup })
 addRoute('/admin/blacklist-groups', { get: blGroups.listGroups, post: blGroups.createGroup })
