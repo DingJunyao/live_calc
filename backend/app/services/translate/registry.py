@@ -16,6 +16,10 @@ def get_translator(provider: str, cfg: dict, timeout: int) -> Translator:
         return AnthropicTranslator(cfg["base_url"], cfg["api_key"], cfg["model"], timeout)
     if provider == "claude_code":
         return ClaudeCodeTranslator(timeout)
+    if provider == "codex":
+        from app.services.translate.codex import CodexTranslator
+
+        return CodexTranslator(timeout)
     if provider == "baidu":
         return BaiduTranslator(cfg["appid"], cfg["secret"], timeout)
     if provider == "aliyun":

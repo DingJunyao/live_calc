@@ -28,3 +28,11 @@ def test_find_provider_section():
     assert find_provider_section(config_dict, "openai") == {"enabled": True}
     assert find_provider_section(config_dict, "baidu") == {"enabled": True}
     assert find_provider_section(config_dict, "deepl") is None
+
+
+def test_get_translator_codex():
+    from app.services.translate.codex import CodexTranslator
+    from app.services.translate.registry import get_translator
+
+    translator = get_translator("codex", {"enabled": True}, timeout=10)
+    assert isinstance(translator, CodexTranslator)
