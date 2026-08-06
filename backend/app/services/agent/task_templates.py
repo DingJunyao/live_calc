@@ -45,7 +45,7 @@ _FILL_PIECE_WEIGHT_PROMPT = """你是「生计」应用的食材数据维护助�
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -164,7 +164,7 @@ _INFER_QUANTITIES_PROMPT = """你是「生计」应用的菜谱数据维护助�
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -381,7 +381,7 @@ _INFER_DENSITIES_PROMPT = """你是「生计」应用的食材密度维护助手
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -521,7 +521,7 @@ _USDA_TRANSLATE_PROMPT = """你是「生计」应用的 USDA 食材名翻译助�
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -622,7 +622,7 @@ _UNMAPPED_NUTRIENT_TRANSLATE_PROMPT = """你是「生计」应用 USDA 营养素
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
