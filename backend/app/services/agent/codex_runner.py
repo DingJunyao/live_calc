@@ -51,6 +51,17 @@ def _tool_name(server: str, tool: str) -> str:
     return f"mcp__{server}__{tool}"
 
 
+def _queue_wait_timeout(
+    elapsed: float,
+    idle_timeout: float,
+    total_timeout: float,
+) -> float:
+    remaining = total_timeout - elapsed
+    if remaining <= 0:
+        return 0.0
+    return min(idle_timeout, remaining)
+
+
 def _coerce_mcp_result(result: Any) -> Any:
     if result is None:
         return ""
@@ -226,7 +237,13 @@ class CodexRunner:
                     )
                     return
                 try:
-                    item = event_q.get(timeout=min(self.idle_timeout, remaining))
+                    item = event_q.get(
+                        timeout=_queue_wait_timeout(
+                            elapsed,
+                            self.idle_timeout,
+                            self.total_timeout,
+                        )
+                    )
                 except queue.Empty:
                     self._interrupt(client, thread_id, turn_id)
                     if remaining <= self.idle_timeout:

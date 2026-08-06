@@ -17,6 +17,7 @@ from app.services.agent.codex_runner import (
     CodexRunner,
     build_config_overrides,
     translate_notification,
+    _queue_wait_timeout,
 )
 from app.services.agent.runner import AgentEvent, AgentRunner
 
@@ -38,6 +39,12 @@ def test_build_config_overrides_includes_mcp_env():
     assert "controlled_db_mcp" in joined
     assert "LIVECALC_DB_URL" in joined
     assert 'mcp_servers.controlled_db.env={"LIVECALC_DB_URL"="sqlite:///data/livecalc.db"}' in joined
+
+
+def test_queue_wait_timeout_caps_total_timeout():
+    assert _queue_wait_timeout(0.1, 1.0, 0.05) == 0.0
+    assert _queue_wait_timeout(2.0, 1.0, 5.0) == 1.0
+    assert _queue_wait_timeout(4.5, 1.0, 5.0) == 0.5
 
 
 def test_translate_agent_message_delta():
