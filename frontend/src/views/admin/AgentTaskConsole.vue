@@ -303,6 +303,7 @@ const {
   interject,
   approve,
   reset,
+  loadHistory,
 } = useAgentSession()
 
 // ---------- 元数据 ----------
@@ -493,6 +494,7 @@ async function onSelectSession(sid: number) {
   try {
     reset()
     currentSid.value = sid
+    await loadHistory(sid)
     await connect(sid)
     await router.replace({ query: { ...route.query, session_id: String(sid) } })
     await scrollToBottom()
