@@ -265,6 +265,9 @@ def _build_codex_runner(
     kwargs: dict[str, Any] = {
         "cwd": cwd,
         "config_overrides": overrides,
+        # 应用侧需要“执行 SQL → 回喂结果 → 下一轮”，goal 自动续跑会在等待
+        # 应用回喂时形成死锁；保持逐轮模式，超时由 CodexRunner 兜底。
+        "use_goal": False,
     }
     if idle_timeout is not None:
         kwargs["idle_timeout"] = idle_timeout

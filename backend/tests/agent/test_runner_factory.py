@@ -79,6 +79,7 @@ def test_build_runner_codex_returns_codex_runner(monkeypatch):
         provider="codex",
     )
     assert isinstance(runner, CodexRunner)
+    assert runner.use_goal is False
 
 
 # --------------------------------------------------------------------------- #
