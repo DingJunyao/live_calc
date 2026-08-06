@@ -301,6 +301,19 @@ def test_translate_result_success():
     assert done.permission_denials == []
 
 
+def test_translate_result_is_error_never_uses_success_text():
+    """is_error=True + subtype=success 时不能把 'success' 当作错误文本。"""
+    evt = {
+        "type": "result",
+        "subtype": "success",
+        "is_error": True,
+    }
+    out = translate_event(evt)
+    assert out[0].is_error is True
+    assert out[0].error != "success"
+    assert "is_error" in out[0].error
+
+
 def test_translate_result_error_with_denials():
     evt = {
         "type": "result",

@@ -292,6 +292,10 @@ def translate_event(evt: dict) -> list[AgentEvent]:
 
     if t == "result":
         is_error = bool(evt.get("is_error")) or evt.get("subtype") == "error"
+        subtype = evt.get("subtype") or ""
+        error_text = evt.get("error") or (
+            "" if subtype == "error" else "Agent 终态 is_error"
+        )
         cost = evt.get("total_cost_usd")
         cost_f = float(cost) if isinstance(cost, (int, float)) else None
         denials = evt.get("permission_denials") or []
@@ -301,7 +305,7 @@ def translate_event(evt: dict) -> list[AgentEvent]:
                 is_error=is_error,
                 cost_usd=cost_f,
                 permission_denials=list(denials) if isinstance(denials, list) else [],
-                error=str(evt.get("subtype") or "") if is_error else "",
+                error=str(error_text or subtype) if is_error else "",
             )
         )
         return out

@@ -137,6 +137,15 @@ export function useAgentSession() {
       0,
     )
     status.value = detail.session.status
+    if (detail.session.status === 'failed') {
+      const rawError = detail.session.error
+      error.value =
+        rawError && rawError !== 'success'
+          ? rawError
+          : '任务执行失败，未产生可用输出'
+    } else {
+      error.value = ''
+    }
     historyLoaded = true
   }
 
