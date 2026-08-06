@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.agent.claude_code_runner import ClaudeCodeRunner
+from app.services.agent.codex_runner import CodexRunner, build_config_overrides
 
 __all__ = [
     "make_mcp_config_path",
@@ -202,6 +203,14 @@ def build_runner(
     # 分流：openai/anthropic 走 LangChainRunner，其余（含 claude_code）走原分支。
     if provider in ("openai", "anthropic"):
         return _build_langchain_runner(task_type, provider=provider)
+    if provider == "codex":
+        return _build_codex_runner(
+            task_type,
+            db_url,
+            idle_timeout=idle_timeout,
+            total_timeout=total_timeout,
+            use_mcp=use_mcp,
+        )
 
     resolved_url = resolve_db_url(db_url)
     cwd = str(_backend_root())
@@ -231,6 +240,37 @@ def build_runner(
         kwargs["total_timeout"] = total_timeout
 
     return ClaudeCodeRunner(**kwargs)
+
+
+def _build_codex_runner(
+    task_type: str,
+    db_url: str,
+    *,
+    idle_timeout: "float | None" = None,
+    total_timeout: "float | None" = None,
+    use_mcp: "bool | None" = None,
+) -> CodexRunner:
+    """构造 CodexRunner，并通过 config_overrides 注入受控只读 MCP。"""
+    del task_type
+    resolved_url = resolve_db_url(db_url)
+    cwd = str(_backend_root())
+    overrides: tuple[str, ...] = ()
+    mcp_enabled = _mcp_available() if use_mcp is None else use_mcp
+    if mcp_enabled:
+        overrides = build_config_overrides(
+            python=_root_venv_python(),
+            cwd=cwd,
+            db_url=resolved_url,
+        )
+    kwargs: dict[str, Any] = {
+        "cwd": cwd,
+        "config_overrides": overrides,
+    }
+    if idle_timeout is not None:
+        kwargs["idle_timeout"] = idle_timeout
+    if total_timeout is not None:
+        kwargs["total_timeout"] = total_timeout
+    return CodexRunner(**kwargs)
 
 
 def _build_langchain_runner(task_type: str, *, provider: str):
