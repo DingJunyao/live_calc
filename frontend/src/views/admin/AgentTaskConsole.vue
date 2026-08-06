@@ -117,10 +117,16 @@
       <!-- 右栏：对话流 + 插话 -->
       <v-col cols="12" md="9" class="agent-main">
         <!-- 移动端：返回侧栏的按钮 -->
-        <div v-if="!$vuetify.display.mdAndUp && !currentSid" class="pa-3 text-center">
-          <v-btn variant="tonal" color="primary" @click="mobileShowSidebar = true">
-            <v-icon start>mdi-menu</v-icon>选择任务或历史会话
-          </v-btn>
+        <div v-if="!currentSid" class="pa-3 text-center">
+          <template v-if="!$vuetify.display.mdAndUp">
+            <v-btn variant="tonal" color="primary" @click="mobileShowSidebar = true">
+              <v-icon start>mdi-menu</v-icon>选择任务或历史会话
+            </v-btn>
+          </template>
+          <div v-else class="text-medium-emphasis pa-8">
+            <v-icon size="48" class="mb-2">mdi-robot-outline</v-icon>
+            <div>从左侧选择一个任务类型开始，或查看历史会话</div>
+          </div>
         </div>
 
         <template v-else>
@@ -326,7 +332,9 @@ const errorMsg = computed(() => error.value)
 const TERMINAL = new Set(['success', 'completed', 'failed', 'cancelled'])
 
 const isRunning = computed(
-  () => status.value === 'running' || status.value === 'pending',
+  () =>
+    !!currentSid.value &&
+    (status.value === 'running' || status.value === 'pending'),
 )
 
 const canInterject = computed(() => {
