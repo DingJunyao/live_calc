@@ -197,7 +197,7 @@ class AiMatchRequest(BaseModel):
 
 @blacklist_group_admin_router.post("/blacklist-groups/ai-match-all", response_model=AiMatchResponse)
 @blacklist_group_admin_router.post("/blacklist-groups/ai-match-all/", response_model=AiMatchResponse)
-def trigger_ai_match_all(
+async def trigger_ai_match_all(
     body: AiMatchRequest,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
@@ -230,7 +230,7 @@ def trigger_ai_match_all(
 
 @blacklist_group_admin_router.post("/blacklist-groups/{group_id}/ai-match", response_model=AiMatchResponse)
 @blacklist_group_admin_router.post("/blacklist-groups/{group_id}/ai-match/", response_model=AiMatchResponse)
-def trigger_ai_match(
+async def trigger_ai_match(
     group_id: int,
     body: AiMatchRequest,
     db: Session = Depends(get_db),

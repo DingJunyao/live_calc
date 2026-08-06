@@ -1,7 +1,16 @@
+import inspect
 from unittest.mock import MagicMock, patch
 
 from app.models.agent_session import AgentSession
 from app.services.agent.blacklist_group_task import trigger_blacklist_group_match_all
+
+
+def test_ai_match_endpoints_are_async():
+    """同步端点无法调用 asyncio.get_running_loop，必须保持 async。"""
+    from app.api.blacklist_groups import trigger_ai_match, trigger_ai_match_all
+
+    assert inspect.iscoroutinefunction(trigger_ai_match)
+    assert inspect.iscoroutinefunction(trigger_ai_match_all)
 
 
 def test_trigger_all_creates_one_session_with_all_groups():
