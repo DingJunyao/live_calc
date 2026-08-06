@@ -189,6 +189,7 @@ import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { enabledProviderOptions, type ProviderOption } from '@/utils/agentProviders'
 const { toggleSidebar, isDesktop } = useMobileDrawerControl()
 const router = useRouter()
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 
 const goBack = () => {
   router.back()
