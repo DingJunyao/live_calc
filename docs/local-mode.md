@@ -153,7 +153,7 @@ ZIP 文件结构应包含各数据表的 JSON 文件和 `recipes/` 目录下的�
 | 邀请码 | 无多用户需求 |
 | 提议审核流程 | 单用户直接修改，无需审核 |
 | SMTP/邮件配置 | 无邮件通知需求 |
-| Claude Code Agent | 依赖服务器端 CLI，本地模式不可用 |
+| Claude Code / Codex | 依赖服务器端 CLI，本地模式不可用 |
 
 ---
 
@@ -228,7 +228,7 @@ ZIP 文件结构应包含各数据表的 JSON 文件和 `recipes/` 目录下的�
 本地模式内置浏览器原生 Agent，无需服务器进程：
 
 1. 在「设置 → AI 与机翻配置」中填入 API Key
-   - 支持 OpenAI 兼容接口和 Anthropic 兼容接口（不支持 Claude Code）
+   - 支持 OpenAI 兼容接口和 Anthropic 兼容接口（不支持 Claude Code、Codex）
 2. 在「设置 → Agent 任务台」中发起任务
 3. Agent 通过预设的 IndexedDB 工具集操作数据（查询商品、菜谱、原料、更新营养等）
 4. 大批量修改（>50 条）会弹出审批对话框，确认后执行
