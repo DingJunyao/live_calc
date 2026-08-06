@@ -132,7 +132,7 @@ def test_text_delta_aggregated_and_tool_events_persisted(mem_db):
 
     # last_session_id 记录。
     assert last_sid == "fake-sid-xyz"
-    assert sess.claude_session_id == "fake-sid-xyz"
+    assert sess.external_session_id == "fake-sid-xyz"
     assert sess.status == "success"
 
     # 消息结构：
@@ -414,7 +414,7 @@ def test_tool_use_id_pairing(mem_db):
 
 # --------------------------------------------------------------------------- #
 # C1 回归：LangChainRunner 路径的 resume 锚 = str(session_id)，
-# 多轮不丢历史 + claude_session_id 首轮即写入（插话不再 409）。
+# 多轮不丢历史 + external_session_id 首轮即写入（插话不再 409）。
 # --------------------------------------------------------------------------- #
 def test_c1_langchain_resume_uses_db_pk_each_turn(mem_db):
     """uses_db_pk_resume=True 时，run_agent_loop 每轮 resume_session_id=str(sid)。
@@ -422,7 +422,7 @@ def test_c1_langchain_resume_uses_db_pk_each_turn(mem_db):
     验证：
     1. 第 1 轮（首轮）resume_session_id 非 None（= str(sid)），不是 echo None。
     2. 第 2 轮 resume_session_id 仍是 str(sid)（多轮不丢锚）。
-    3. AgentSession.claude_session_id 被写为 str(sid)（插话 409 放行前提）。
+    3. AgentSession.external_session_id 被写为 str(sid)（插话 409 放行前提）。
     """
     sid = _make_session(mem_db)
     captured_turns: list[tuple[str, "str | None"]] = []
@@ -468,9 +468,9 @@ def test_c1_langchain_resume_uses_db_pk_each_turn(mem_db):
     # 2. 每轮 resume_session_id 都是 str(sid)（首轮非 None 是 C1 核心）。
     assert captured_turns[0][1] == str(sid), captured_turns[0]
     assert captured_turns[1][1] == str(sid), captured_turns[1]
-    # 3. claude_session_id 被写入（插话不再 409）。
+    # 3. external_session_id 被写入（插话不再 409）。
     sess = _session(mem_db, sid)
-    assert sess.claude_session_id == str(sid), sess.claude_session_id
+    assert sess.external_session_id == str(sid), sess.external_session_id
     # 4. 会话以 success 终态。
     assert sess.status == "success"
 
@@ -523,4 +523,4 @@ def test_c1_claude_code_runner_path_unchanged(mem_db):
     # 第 2 轮用 runner.last_session_id（CLI 捕获的 claude session id）。
     assert captured_turns[1][1] == "claude-cli-sid-abc"
     sess = _session(mem_db, sid)
-    assert sess.claude_session_id == "claude-cli-sid-abc"
+    assert sess.external_session_id == "claude-cli-sid-abc"

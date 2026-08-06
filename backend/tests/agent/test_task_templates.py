@@ -164,7 +164,7 @@ def _patch_loop_capture_prompt(mem_env, monkeypatch) -> list[dict]:
             s = db.query(AgentSession).get(session_id)
             if s is not None:
                 s.status = "success"
-                s.claude_session_id = "fake-sid"
+                s.external_session_id = "fake-sid"
                 db.commit()
         finally:
             db.close()

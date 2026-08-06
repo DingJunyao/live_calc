@@ -60,7 +60,7 @@ class AgentSessionOut(BaseModel):
     status: str
     runner_type: str
     user_id: Optional[int] = None
-    claude_session_id: Optional[str] = None
+    external_session_id: Optional[str] = None
     cost_usd: Optional[float] = None
     error: Optional[str] = None
     created_at: Optional[datetime] = None

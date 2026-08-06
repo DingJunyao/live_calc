@@ -11,7 +11,7 @@ export interface AgentSession {
   status: string
   runner_type: string
   user_id: number | null
-  claude_session_id: string | null
+  external_session_id: string | null
   cost_usd: number | null
   error: string | null
   created_at: string | null

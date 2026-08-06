@@ -33,7 +33,7 @@ class AgentSession(Base):
     title = Column(String(128), nullable=True)
     status = Column(String(20), nullable=False, default="pending")
     runner_type = Column(String(20), nullable=False, default="claude_code")
-    claude_session_id = Column(String(128), nullable=True)
+    external_session_id = Column(String(128), nullable=True)
     initial_prompt = Column(Text, nullable=True)
     cost_usd = Column(Numeric(10, 4), nullable=True)
     error = Column(Text, nullable=True)
@@ -53,7 +53,7 @@ class AgentSession(Base):
             "title": self.title,
             "status": self.status,
             "runner_type": self.runner_type,
-            "claude_session_id": self.claude_session_id,
+            "external_session_id": self.external_session_id,
             "error": self.error,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

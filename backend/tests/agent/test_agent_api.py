@@ -197,7 +197,7 @@ def _patch_loop_immediate_success(mem_env, monkeypatch):
             s = db.query(AgentSession).get(session_id)
             if s is not None:
                 s.status = "success"
-                s.claude_session_id = "claude-test-sid"
+                s.external_session_id = "claude-test-sid"
                 db.commit()
         finally:
             db.close()
@@ -461,7 +461,7 @@ def test_decide_approval_admin_only(plain_client, mem_env):
 # POST /sessions/{sid}/messages （插话）
 # --------------------------------------------------------------------------- #
 def test_post_message_resume(admin_client, mem_env, monkeypatch):
-    """插话：终态 session + claude_session_id → resume_session_id 透传。"""
+    """插话：终态 session + external_session_id → resume_session_id 透传。"""
     calls = _patch_loop_immediate_success(mem_env, monkeypatch)
 
     # 建一个已终态的 session
@@ -471,7 +471,7 @@ def test_post_message_resume(admin_client, mem_env, monkeypatch):
             task_type="fill_piece_weight",
             status="success",
             runner_type="claude_code",
-            claude_session_id="claude-abc",
+            external_session_id="claude-abc",
             user_id=mem_env["admin_id"],
         )
         db.add(s)
@@ -503,7 +503,7 @@ def test_post_message_running_session_409(admin_client, mem_env):
     try:
         s = AgentSession(
             task_type="x", status="running",
-            runner_type="claude_code", claude_session_id="c",
+            runner_type="claude_code", external_session_id="c",
             user_id=mem_env["admin_id"],
         )
         db.add(s)
@@ -524,7 +524,7 @@ def test_post_message_no_claude_sid_409(admin_client, mem_env):
     try:
         s = AgentSession(
             task_type="x", status="success",
-            runner_type="claude_code", claude_session_id=None,
+            runner_type="claude_code", external_session_id=None,
             user_id=mem_env["admin_id"],
         )
         db.add(s)
@@ -545,7 +545,7 @@ def test_post_message_admin_only(plain_client, mem_env):
     try:
         s = AgentSession(
             task_type="x", status="success",
-            runner_type="claude_code", claude_session_id="c",
+            runner_type="claude_code", external_session_id="c",
             user_id=mem_env["plain_id"],
         )
         db.add(s)
@@ -830,6 +830,6 @@ def test_end_to_end_real_loop_with_fake_runner(admin_client, mem_env, monkeypatc
         contents = [m.content for m in msgs if m.role == "assistant"]
         assert any("任务完成" in (c or "") for c in contents)
         s = db.query(AgentSession).get(sid)
-        assert s.claude_session_id == "fake-sid"
+        assert s.external_session_id == "fake-sid"
     finally:
         db.close()

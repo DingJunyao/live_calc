@@ -89,7 +89,7 @@ class AgentRunner(Protocol):
           （= AgentSession DB PK）查历史，与外部 session id 无关。
 
         ``run_agent_loop`` 据此分流：True 时每轮 ``current_sid = str(session_id)``，
-        首轮即写 ``claude_session_id`` 使插话不再 409；False 时保持原 ``runner
+        首轮即写 ``external_session_id`` 使插话不再 409；False 时保持原 ``runner
         .last_session_id`` 路径，不改 ClaudeCodeRunner 行为。
         """
         ...
