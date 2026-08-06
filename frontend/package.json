@@ -1,6 +1,6 @@
 {
   "name": "live-calc-frontend",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -11,9 +11,11 @@
   "dependencies": {
     "@mdi/font": "^7.4.47",
     "@vueuse/core": "^11.0.3",
+    "@zip.js/zip.js": "^2.8.34",
     "axios": "^1.6.5",
     "crypto-js": "^4.2.0",
     "echarts": "^6.0.0",
+    "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "leaflet.chinatmsproviders": "^3.0.6",
     "pinia": "^2.1.7",

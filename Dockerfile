@@ -5,6 +5,7 @@
 #   --target frontend   : 前端运行时镜像（分开部署用）
 #   --target backend    : 后端运行时镜像（分开部署用）
 #   --target all-in-one : 统一部署镜像（nginx + uvicorn 同容器，默认 target）
+#   --target local      : 本地模式镜像（纯前端，数据存浏览器 IndexedDB）
 #
 # stage 顺序说明：all-in-one（统一部署，最常用）排在 frontend stage 之前，
 # 这样经典 builder 构 all-in-one 时走到它即止，不必拉 nginx:alpine
@@ -22,16 +23,21 @@ WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
+# 应用身份与版本统一来源（前端 Vite 构建时读取）
+COPY app-info.json /app-info.json
+
 # 构建期参数：VITE_* 行为配置（编译进 JS，不随部署环境变）
 # 注意：VITE_API_URL 必须是相对路径 /api/v1，由 nginx 反代决定真正后端地址
 ARG VITE_API_URL=/api/v1
 ARG VITE_DATA_REPO_IMAGE_BASE=https://raw.githubusercontent.com/DingJunyao/HowToCook_json/corr/out
 ARG VITE_REQUEST_TIMEOUT=10000
 ARG VITE_LONG_REQUEST_TIMEOUT=30000
+ARG VITE_STORAGE_MODE=cloud
 ENV VITE_API_URL=${VITE_API_URL} \
     VITE_DATA_REPO_IMAGE_BASE=${VITE_DATA_REPO_IMAGE_BASE} \
     VITE_REQUEST_TIMEOUT=${VITE_REQUEST_TIMEOUT} \
-    VITE_LONG_REQUEST_TIMEOUT=${VITE_LONG_REQUEST_TIMEOUT}
+    VITE_LONG_REQUEST_TIMEOUT=${VITE_LONG_REQUEST_TIMEOUT} \
+    VITE_STORAGE_MODE=${VITE_STORAGE_MODE}
 
 # 拷源码并构建（.dockerignore 已排除 node_modules，不会覆盖上面装的）
 COPY frontend/ ./
@@ -41,6 +47,20 @@ RUN npm run build \
     # 统一放开读权限（a+r 给文件可读、a+X 只给目录加可遍历位），vite 生成的 assets 本就 644 不受影响。
     && chmod -R a+rX dist
 # 产物：/build/dist
+
+
+# ===========================================================================
+# Stage 1.5: 本地模式前端产物（纯前端；VITE_STORAGE_MODE=local）
+#   在 frontend-builder 基础上覆盖环境变量并重跑 vite build，
+#   使 `docker build --target local` 无需任何构建参数即可得到本地模式产物。
+# ===========================================================================
+FROM frontend-builder AS local-builder
+
+ENV VITE_STORAGE_MODE=local
+
+RUN npm run build \
+    && chmod -R a+rX dist
+# 产物：/build/dist（本地模式）
 
 
 # ===========================================================================
@@ -59,6 +79,7 @@ COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 拷应用代码
+COPY app-info.json ./
 COPY backend/app ./app
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini ./
@@ -138,4 +159,21 @@ ENV BACKEND_URL=http://backend:8000
 EXPOSE 80
 
 ENTRYPOINT ["/frontend-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]
+
+
+# ===========================================================================
+# Stage 5: 本地模式运行时镜像（纯前端、无后端；参照 frontend target）
+#   数据全部存浏览器 IndexedDB，nginx 仅托管静态文件，无 /api 反代。
+# ===========================================================================
+FROM nginx:alpine AS local
+
+# 本地模式前端产物（VITE_STORAGE_MODE=local）
+COPY --from=local-builder /build/dist /usr/share/nginx/html
+
+# 静态 nginx 配置（无 BACKEND_URL 环境变量，不需要 envsubst / entrypoint）
+COPY deploy/nginx/local.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]

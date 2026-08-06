@@ -53,8 +53,8 @@ class InviteCode(Base):
 
 def generate_invite_code(length: int = 8) -> str:
     """生成随机邀请码"""
-    import random
+    import secrets
     import string
 
     chars = string.ascii_uppercase + string.digits
-    return ''.join(random.choice(chars) for _ in range(length))
+    return ''.join(secrets.choice(chars) for _ in range(length))

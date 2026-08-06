@@ -8,9 +8,24 @@
       permanent
       touchless
     >
-      <!-- 用户卡片 -->
+      <!-- 用户卡片 / 本地模式品牌展示 -->
       <v-list v-if="userStore.user" density="compact" nav>
-        <v-list-item class="pa-2">
+        <!-- 本地模式：图标 + 名称 + slogan -->
+        <v-list-item v-if="isLocalMode" class="pa-2">
+          <template #prepend>
+            <v-avatar size="36" color="primary" class="mr-2">
+              <v-img src="/logo.svg" alt="生计" />
+            </v-avatar>
+          </template>
+          <v-list-item-title class="text-body-2 font-weight-medium">
+            生计
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            生活成本计算器
+          </v-list-item-subtitle>
+        </v-list-item>
+        <!-- 云模式：用户信息 -->
+        <v-list-item v-else class="pa-2">
           <template #prepend>
             <v-avatar size="36" color="primary" class="mr-2">
               <v-img v-if="userStore.user.avatar" :src="resolveImageUrl(userStore.user.avatar)" alt="avatar" />
@@ -35,10 +50,10 @@
         <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" />
         <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" />
         <v-list-item prepend-icon="mdi-store" title="商家管理" to="/data/merchants" />
-        <v-list-item prepend-icon="mdi-account" title="个人中心" to="/profile" />
-        <v-divider v-if="userStore.user?.is_admin" class="my-2" />
+        <v-list-item :prepend-icon="isLocalMode ? 'mdi-cog' : 'mdi-account'" :title="isLocalMode ? '设置' : '个人中心'" to="/profile" />
+        <v-divider v-if="userStore.user?.is_admin && !isLocalMode" class="my-2" />
         <v-list-item
-          v-if="userStore.user?.is_admin"
+          v-if="userStore.user?.is_admin && !isLocalMode"
           prepend-icon="mdi-shield-account"
           title="后台管理"
           to="/admin"
@@ -71,6 +86,7 @@
             @click="toggleTheme"
           />
           <v-list-item
+            v-if="!isLocalMode"
             prepend-icon="mdi-logout"
             title="退出登录"
             base-color="error"
@@ -92,9 +108,24 @@
       :z-index="1000"
       @update:model-value="handleMobileDrawerUpdate"
     >
-      <!-- 用户卡片 -->
+      <!-- 用户卡片 / 本地模式品牌展示 -->
       <v-list v-if="userStore.user" density="compact" nav class="pt-4">
-        <v-list-item class="pa-2">
+        <!-- 本地模式：图标 + 名称 + slogan -->
+        <v-list-item v-if="isLocalMode" class="pa-2">
+          <template #prepend>
+            <v-avatar size="40" color="primary" class="mr-2">
+              <v-img src="/logo.svg" alt="生计" />
+            </v-avatar>
+          </template>
+          <v-list-item-title class="text-body-2 font-weight-medium">
+            生计
+          </v-list-item-title>
+          <v-list-item-subtitle class="text-caption">
+            生活成本计算器
+          </v-list-item-subtitle>
+        </v-list-item>
+        <!-- 云模式：用户信息 -->
+        <v-list-item v-else class="pa-2">
           <template #prepend>
             <v-avatar size="40" color="primary" class="mr-2">
               <v-img v-if="userStore.user.avatar" :src="resolveImageUrl(userStore.user.avatar)" alt="avatar" />
@@ -119,10 +150,10 @@
         <v-list-item prepend-icon="mdi-package-variant" title="商品管理" to="/data/products" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-leaf" title="原料管理" to="/data/ingredients" @click="closeDrawer" />
         <v-list-item prepend-icon="mdi-store" title="商家管理" to="/data/merchants" @click="closeDrawer" />
-        <v-list-item prepend-icon="mdi-account" title="个人中心" to="/profile" @click="closeDrawer" />
-        <v-divider v-if="userStore.user?.is_admin" class="my-2" />
+        <v-list-item :prepend-icon="isLocalMode ? 'mdi-cog' : 'mdi-account'" :title="isLocalMode ? '设置' : '个人中心'" to="/profile" @click="closeDrawer" />
+        <v-divider v-if="userStore.user?.is_admin && !isLocalMode" class="my-2" />
         <v-list-item
-          v-if="userStore.user?.is_admin"
+          v-if="userStore.user?.is_admin && !isLocalMode"
           prepend-icon="mdi-shield-account"
           title="后台管理"
           to="/admin"
@@ -149,6 +180,7 @@
             </v-btn-toggle>
           </div>
           <v-list-item
+            v-if="!isLocalMode"
             prepend-icon="mdi-logout"
             title="退出登录"
             base-color="error"
@@ -177,6 +209,8 @@ const userStore = useUserStore()
 const router = useRouter()
 const { mobileDrawer, desktopSidebar, isDesktop, closeDrawer } = useMobileDrawer()
 const { themeMode, toggleTheme } = useThemeToggle()
+
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 
 // rail（侧边栏收起）模式下，主题切换退化为单图标，单击三态循环
 const themeIcon = computed(() => {
@@ -223,6 +257,15 @@ const handleMobileDrawerUpdate = (value: boolean) => {
 :deep(.v-navigation-drawer__content) {
   height: 100%;
   overflow-y: auto;
+}
+
+/* 修复各视图中的 v-app-bar 定位（它们被 router-view 渲染在 v-main 内部，
+   Vuetify 布局系统无法正确为其设置 position:fixed + left 偏移）。
+   改用 CSS 自定义属性从布局系统读取侧边栏偏移量。 */
+:deep(.v-app-bar) {
+  position: fixed !important;
+  left: var(--v-layout-left, 0px) !important;
+  width: calc(100% - var(--v-layout-left, 0px) - var(--v-layout-right, 0px)) !important;
 }
 
 /* 移动端抽屉的遮罩层 */

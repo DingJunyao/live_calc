@@ -266,7 +266,7 @@ import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useUserStore } from '@/stores/user'
-import api from '@/api/client'
+import { api } from '@/api'
 import { formatToLocalDateTimeShort } from '@/utils/timezone'
 import { hashPassword } from '@/utils/crypto'
 

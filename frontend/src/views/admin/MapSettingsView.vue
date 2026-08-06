@@ -255,7 +255,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useMapConfig } from '@/composables/useMapConfig'
-import api from '@/api/client'
+import { api } from '@/api'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()

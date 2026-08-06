@@ -5,9 +5,9 @@
 数据库存储 naive UTC datetime。
 """
 from datetime import datetime, date, timezone
+from datetime import timedelta
 from typing import Tuple
 from zoneinfo import ZoneInfo
-from datetime import timedelta
 from zoneinfo import ZoneInfoNotFoundError
 import re
 
@@ -15,7 +15,7 @@ _OFFSET_PATTERN = re.compile(r'^UTC([+-])(\d{2}):(\d{2})$')
 
 
 def _zone(tz: str):
-    """解析 IANA 时区名或 UTC±HH:mm 偏移格式，空值回落 UTC。"""
+    """解析 IANA 时区名或 UTC+HH:mm 偏移格式，空值回落 UTC。"""
     if not tz:
         return ZoneInfo("UTC")
     try:
@@ -28,7 +28,6 @@ def _zone(tz: str):
         hours = int(match.group(2))
         minutes = int(match.group(3))
         return timezone(timedelta(hours=sign * hours, minutes=sign * minutes))
-    # Fall back to UTC and let downstream handle the error
     return ZoneInfo("UTC")
 
 

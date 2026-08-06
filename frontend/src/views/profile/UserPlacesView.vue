@@ -124,7 +124,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useMapConfig } from '@/composables/useMapConfig'

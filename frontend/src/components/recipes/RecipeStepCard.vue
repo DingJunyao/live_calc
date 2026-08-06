@@ -162,7 +162,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import type { RecipeDetail, StepEditRow } from './types'
 
 const props = defineProps<{

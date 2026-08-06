@@ -4,7 +4,7 @@
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
     <v-app-bar-title class="text-h6">后台管理</v-app-bar-title>
     <template #append>
-      <v-chip color="primary" variant="tonal" size="small">
+      <v-chip v-if="!isLocalMode" color="primary" variant="tonal" size="small">
         <v-icon start size="small">mdi-shield-account</v-icon>
         管理员
       </v-chip>
@@ -14,7 +14,7 @@
   <v-container class="pa-4">
     <!-- 统计卡片 -->
     <v-row class="ma-2 mb-4">
-      <v-col cols="12" sm="6" lg="3">
+      <v-col v-if="!isLocalMode" cols="12" sm="6" lg="3">
         <v-card
           elevation="0"
           class="user-stats-card"
@@ -35,7 +35,7 @@
         </v-card>
       </v-col>
 
-      <v-col cols="12" sm="6" lg="3">
+      <v-col cols="12" sm="6" :lg="isLocalMode ? 4 : 3">
         <v-card elevation="0">
           <v-card-text class="text-center pa-4">
             <v-avatar color="success" variant="tonal" size="48" class="mb-2">
@@ -48,7 +48,7 @@
         </v-card>
       </v-col>
 
-      <v-col cols="12" sm="6" lg="3">
+      <v-col cols="12" sm="6" :lg="isLocalMode ? 4 : 3">
         <v-card elevation="0">
           <v-card-text class="text-center pa-4">
             <v-avatar color="warning" variant="tonal" size="48" class="mb-2">
@@ -61,7 +61,7 @@
         </v-card>
       </v-col>
 
-      <v-col cols="12" sm="6" lg="3">
+      <v-col cols="12" sm="6" :lg="isLocalMode ? 4 : 3">
         <v-card elevation="0">
           <v-card-text class="text-center pa-4">
             <v-avatar color="info" variant="tonal" size="48" class="mb-2">
@@ -78,7 +78,9 @@
     <!-- 管理功能 -->
     <v-card class="ma-4" elevation="0">
       <v-list>
+        <!-- 本地模式隐藏：无多用户功能 -->
         <v-list-item
+          v-if="!isLocalMode"
           prepend-icon="mdi-clipboard-check-multiple"
           title="提议审核台"
           subtitle="审核多用户提议、影响预览、回滚与反垃圾回退"
@@ -93,6 +95,7 @@
         </v-list-item>
 
         <v-list-item
+          v-if="!isLocalMode"
           prepend-icon="mdi-account-cog"
           title="用户管理"
           subtitle="管理用户账户、权限和状态"
@@ -104,6 +107,7 @@
         </v-list-item>
 
         <v-list-item
+          v-if="!isLocalMode"
           prepend-icon="mdi-ticket-outline"
           title="邀请码管理"
           subtitle="管理用户注册邀请码"
@@ -147,7 +151,9 @@
           </template>
         </v-list-item>
 
+        <!-- 本地模式隐藏：图片固定存 IndexedDB Blob -->
         <v-list-item
+          v-if="!isLocalMode"
           prepend-icon="mdi-cloud-outline"
           title="图片存储"
           subtitle="配置本地存储或 S3 对象存储"
@@ -158,7 +164,9 @@
           </template>
         </v-list-item>
 
+        <!-- 本地模式隐藏：无需 SMTP 配置 -->
         <v-list-item
+          v-if="!isLocalMode"
           prepend-icon="mdi-email-sync-outline"
           title="邮件配置"
           subtitle="SMTP 设置与邮件模板管理"
@@ -180,7 +188,9 @@
           </template>
         </v-list-item>
 
+        <!-- 本地模式隐藏：无服务端图片扫描 -->
         <v-list-item
+          v-if="!isLocalMode"
           prepend-icon="mdi-image-off-outline"
           title="未使用图片清理"
           subtitle="扫描并删除服务器上未被任何菜谱引用的图片"
@@ -203,8 +213,9 @@
         </v-list-item>
 
         <v-list-item
-          prepend-icon="mdi-robot-outline"
-          title="Agent 任务台"
+        v-if="!isLocalMode"
+        prepend-icon="mdi-robot-outline"
+        title="Agent 任务台"
           subtitle="发起 Agent 维护任务、审批 SQL、对话流"
           to="/admin/agent-console"
         >
@@ -218,10 +229,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import api from '@/api/client'
+import { api } from '@/api'
 import { listProposals } from '@/api/proposals'
+
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 
 interface AdminStats {
   users: number

@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from sqlalchemy.orm import Session
 
+from app import APP_INFO, __version__
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.nutrition import Ingredient
 from app.models.nutrition_data import NutritionData
@@ -520,8 +521,8 @@ def build_export_zip(db: Session, user, scope: str) -> tuple[bytes, dict]:
     # ---- manifest ----
     manifest = {
         "format_version": "1.0",
-        "app": "生计 - 生活成本计算器",
-        "app_version": "0.2.0",
+        "app": APP_INFO["name"],
+        "app_version": __version__,
         "exported_at": datetime.now().astimezone().isoformat(),
         "scope": scope,
         "exported_by_user_id": getattr(user, "id", None),

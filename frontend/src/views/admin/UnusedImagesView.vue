@@ -114,10 +114,10 @@
                       </div>
                     </template>
                   </v-img>
-                  <v-card-text class="pa-1 text-caption text-center">
-                    <div class="text-truncate">{{ img.filename }}</div>
-                    <div class="text-medium-emphasis">{{ formatSize(img.file_size) }}</div>
-                  </v-card-text>
+                 <v-card-text class="pa-1 text-caption text-center">
+                   <div class="text-truncate">{{ img.filename }}</div>
+                   <div class="text-medium-emphasis">{{ formatSize(img.file_size) }}</div>
+                 </v-card-text>
                 </v-card>
               </v-col>
             </v-row>
@@ -145,7 +145,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { api } from '@/api'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()

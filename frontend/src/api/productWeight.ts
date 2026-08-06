@@ -1,5 +1,5 @@
 // 商品价格权重的用户覆盖 API client
-import api from './client'
+import api from './index'
 
 export interface EffectiveWeight {
   product_id: number

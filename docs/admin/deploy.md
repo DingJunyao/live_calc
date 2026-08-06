@@ -83,7 +83,7 @@ npm run build
 
 项目自带容器化部署，开箱即用。根目录提供：
 
-- `Dockerfile`：multi-stage 构建，三个 target——`frontend`（仅前端 + nginx）、`backend`（仅后端）、`all-in-one`（前后端合一，nginx + uvicorn 由 supervisord 编排）
+- `Dockerfile`：multi-stage 构建，四个 target——`all-in-one`（默认，前后端合一，nginx + uvicorn 由 supervisord 编排）、`frontend`（仅前端 + nginx）、`backend`（仅后端）、`local`（纯前端本地模式，数据存浏览器 IndexedDB）
 - `docker-compose.yml`：统一部署（单容器 all-in-one）
 - `docker-compose.split.yml`：分开部署（前端、后端独立容器，便于横向扩展）
 - `deploy/`：nginx 配置模板、supervisord 配置、entrypoint 脚本
@@ -98,6 +98,42 @@ docker compose up -d --build
 切换数据库改 `backend/.env` 的 `DATABASE_URL`（PG/MySQL 驱动已在镜像内）。生产务必改 `JWT_SECRET_KEY`、设 `DEBUG=false`。前端构建时 `VITE_API_URL` 走相对路径 `/api/v1`，由 nginx 反代后端，部署时不必改。
 
 > Docker 版本未封装 Claude Code（Agent 任务台用到时请自行安装配置）。
+
+### 自动发布镜像（GitHub Actions）
+
+`.github/workflows/docker-publish.yml` 会在 **release 发布**时自动构建并推送 Docker 镜像；也可以在仓库 Actions 页面手动触发（默认构建 `all-in-one`，选 `all` 全量重发 `latest`）：
+
+- **构建类别**：`all-in-one`（默认）、`frontend`、`backend`、`local`
+- **架构**：`linux/amd64` + `linux/arm64` 双架构
+- **镜像标签**：原始 tag（如 `v0.1.0`）、版本号（如 `0.1.0`）、主次版本（如 `0.1`）、`latest`
+- **镜像名**（默认类别不带后缀，其余带 `-frontend` / `-backend` / `-local` 后缀）：
+  - GHCR：`ghcr.io/<GitHub 用户名>/<仓库>`，如 `ghcr.io/dingjunyao/live_calc`
+  - Docker Hub：`docker.io/<用户名/组织>/<仓库>`，如 `docker.io/dingjunyao/live_calc`
+
+#### GHCR（默认，无需配置）
+
+GHCR 使用 `GITHUB_TOKEN` 自动登录，release 发布后镜像即出现在仓库 **Packages** 页，无需额外配置即可拉取。
+
+#### Docker Hub（可选，配置后同时推送）
+
+在仓库 **Settings → Secrets and variables → Actions** 中配置以下内容：
+
+| 类型 | 名称 | 说明 |
+| --- | --- | --- |
+| Secret | `DOCKERHUB_USERNAME` | Docker Hub 用户名。与 `DOCKERHUB_TOKEN` 同时设置才会启用 Docker Hub 推送 |
+| Secret | `DOCKERHUB_TOKEN` | Docker Hub 访问令牌（Account Settings → Security → Access Tokens 生成，推荐使用令牌而非密码） |
+| Variable（可选） | `DOCKERHUB_NAMESPACE` | 镜像命名空间（用户名/组织），默认取 `DOCKERHUB_USERNAME` |
+| Variable（可选） | `DOCKERHUB_REPO` | Docker Hub 仓库名，默认取 GitHub 仓库名（小写） |
+
+配置后，下次 release 发布或手动触发会**同时推送到 GHCR 和 Docker Hub**；未配置则只推 GHCR。Docker Hub 侧需提前创建对应仓库（默认类别 + `-frontend` / `-backend` / `-local` 三个带后缀的仓库）。
+
+拉取示例：
+
+```bash
+docker pull ghcr.io/dingjunyao/live_calc:latest
+docker pull dingjunyao/live_calc:latest
+docker pull dingjunyao/live_calc-local:latest
+```
 
 ## 生产部署建议
 

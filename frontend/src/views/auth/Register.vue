@@ -97,7 +97,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import api from '@/api/client'
+import { api } from '@/api'
 import { hashPassword } from '@/utils/crypto'
 
 const router = useRouter()

@@ -378,7 +378,8 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import api from '@/api/client'
+import { api } from '@/api'
+import { preloadStorageConfig } from '@/utils/image'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const router = useRouter()
@@ -746,6 +747,8 @@ const applyConfig = async () => {
     showSuccess.value = true
     wizardDialog.value = false
     await fetchConfig()
+    // Refresh cached storage config so image URLs resolve from new backend
+    await preloadStorageConfig()
   } catch (error: unknown) {
     showError.value = true
     errorMessage.value = extractErrorMessage(error) || '切换失败'

@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     # 应用配置
     debug: bool = True
+    # CORS 允许来源：开发默认 "*"；生产建议逗号分隔具体域名，如 "https://app.example.com,https://localhost:5173"
+    cors_origins: str = "*"
     app_host: str = "0.0.0.0"  # uvicorn 监听地址（python -m app.main 启动时生效）
     app_port: int = 8000       # uvicorn 监听端口（python -m app.main 启动时生效）
 

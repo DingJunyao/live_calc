@@ -2,7 +2,7 @@
   <!-- 顶部导航栏 - 移到 container 外面以便固定 -->
   <v-app-bar elevation="0" color="background" density="comfortable" fixed>
     <v-app-bar-nav-icon @click="toggleSidebar(isDesktop)" />
-    <v-app-bar-title class="text-h6">个人中心</v-app-bar-title>
+    <v-app-bar-title class="text-h6">{{ isLocalMode ? '设置' : '个人中心' }}</v-app-bar-title>
   </v-app-bar>
 
   <v-container fluid>
@@ -54,7 +54,18 @@
     <!-- 设置列表 -->
     <v-card class="ma-4" elevation="0">
       <v-list>
-        <v-list-item @click="openAccountDialog">
+        <v-list-subheader v-if="isLocalMode">个人偏好</v-list-subheader>
+        <v-list-item v-if="isLocalMode" @click="openRegionDialog">
+          <template #prepend>
+            <v-icon>mdi-map-marker</v-icon>
+          </template>
+          <v-list-item-title>所在地区编辑</v-list-item-title>
+          <v-list-item-subtitle>国家 / 省 / 市 / 区</v-list-item-subtitle>
+          <template #append>
+            <v-icon>mdi-chevron-right</v-icon>
+          </template>
+        </v-list-item>
+        <v-list-item v-if="!isLocalMode" @click="openAccountDialog">
           <template #prepend>
             <v-icon>mdi-account-edit</v-icon>
           </template>
@@ -106,7 +117,7 @@
           </template>
         </v-list-item>
 
-        <v-list-item @click="router.push('/profile/proposals')">
+        <v-list-item v-if="!isLocalMode" @click="router.push('/profile/proposals')">
           <template #prepend>
             <v-icon>mdi-clipboard-text-clock</v-icon>
           </template>
@@ -150,6 +161,7 @@
           </template>
         </v-list-item>
 
+        <v-list-subheader v-if="isLocalMode">数据备份</v-list-subheader>
         <v-list-item @click="exportDialog = true">
           <template #prepend>
             <v-icon>mdi-export</v-icon>
@@ -170,12 +182,99 @@
           </template>
         </v-list-item>
 
-        <v-list-item>
+        <template v-if="isLocalMode">
+          <v-list-subheader>数据规则</v-list-subheader>
+          <v-list-item @click="router.push('/admin/units')">
+            <template #prepend>
+              <v-icon>mdi-ruler</v-icon>
+            </template>
+            <v-list-item-title>单位管理</v-list-item-title>
+            <v-list-item-subtitle>计量单位与换算关系</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/blacklist-groups')">
+            <template #prepend>
+              <v-icon>mdi-shield-alert</v-icon>
+            </template>
+            <v-list-item-title>原料黑名单分组</v-list-item-title>
+            <v-list-item-subtitle>分组管理与原料映射</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-subheader>系统集成</v-list-subheader>
+          <v-list-item @click="router.push('/admin/map-settings')">
+            <template #prepend>
+              <v-icon>mdi-map-marker-path</v-icon>
+            </template>
+            <v-list-item-title>地图配置</v-list-item-title>
+            <v-list-item-subtitle>地图服务 API 密钥</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/ai-config')">
+            <template #prepend>
+              <v-icon>mdi-robot</v-icon>
+            </template>
+            <v-list-item-title>AI 与机翻配置</v-list-item-title>
+            <v-list-item-subtitle>AI 服务与机翻密钥设置</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+         </v-list-item>
+          <v-list-subheader>图片管理</v-list-subheader>
+          <v-list-item @click="router.push('/admin/storage')">
+            <template #prepend>
+              <v-icon>mdi-cloud-outline</v-icon>
+            </template>
+            <v-list-item-title>图片存储配置</v-list-item-title>
+            <v-list-item-subtitle>IndexedDB 与 S3/OSS 存储切换</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/images-unused')">
+            <template #prepend>
+              <v-icon>mdi-image-multiple-outline</v-icon>
+            </template>
+            <v-list-item-title>未使用图片清理</v-list-item-title>
+            <v-list-item-subtitle>扫描并清理无引用的图片</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-subheader>数据维护</v-list-subheader>
+          <v-list-item @click="router.push('/admin/data-maintenance')">
+            <template #prepend>
+              <v-icon>mdi-database-cog</v-icon>
+            </template>
+            <v-list-item-title>数据维护中心</v-list-item-title>
+            <v-list-item-subtitle>菜谱导入、USDA 数据管理</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+          <v-list-item @click="router.push('/admin/agent-console')">
+            <template #prepend>
+              <v-icon>mdi-robot-outline</v-icon>
+            </template>
+            <v-list-item-title>Agent 任务台</v-list-item-title>
+            <v-list-item-subtitle>发起 Agent 维护任务、对话流</v-list-item-subtitle>
+            <template #append>
+              <v-icon>mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+        </template>
+
+        <v-list-item @click="aboutDialog = true">
           <template #prepend>
             <v-icon>mdi-information</v-icon>
           </template>
           <v-list-item-title>关于</v-list-item-title>
-          <v-list-item-subtitle>版本 0.2.0</v-list-item-subtitle>
+          <v-list-item-subtitle>版本 {{ appInfo.version }}</v-list-item-subtitle>
           <template #append>
             <v-icon>mdi-chevron-right</v-icon>
           </template>
@@ -184,7 +283,7 @@
     </v-card>
 
     <!-- 退出登录按钮 -->
-    <v-card class="ma-4" elevation="0">
+    <v-card v-if="!isLocalMode" class="ma-4" elevation="0">
       <v-btn block color="error" variant="text" @click="logout">
         <v-icon start>mdi-logout</v-icon>
         退出登录
@@ -289,6 +388,42 @@
           <v-spacer />
           <v-btn variant="text" :disabled="savingAccount" @click="accountDialog = false">取消</v-btn>
           <v-btn color="primary" :loading="savingAccount" @click="saveAccount">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 所在地区编辑对话框（本地模式） -->
+    <v-dialog v-model="regionDialog" max-width="520">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          所在地区编辑
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="regionDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <div class="text-caption text-medium-emphasis mb-2">选择你所在的地区，用于价格与地图默认定位</div>
+          <div class="d-flex flex-wrap ga-2 mb-2">
+            <v-select v-model="regionSelections[0]" :items="regionItems[0]" item-title="name" item-value="id"
+              label="国家/地区" variant="outlined" density="compact" class="region-select flex-grow-1"
+              :loading="regionLoading[0]" hide-details="auto" clearable @update:model-value="onRegionChange(0)" />
+            <v-select v-if="regionSelections[0] && regionItems[1].length >= 0" v-model="regionSelections[1]"
+              :items="regionItems[1]" item-title="name" item-value="id" label="省/州" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[1]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(1)" />
+            <v-select v-if="regionSelections[1] && regionItems[2].length >= 0" v-model="regionSelections[2]"
+              :items="regionItems[2]" item-title="name" item-value="id" label="城市" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[2]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(2)" />
+            <v-select v-if="regionSelections[2] && regionItems[3].length >= 0" v-model="regionSelections[3]"
+              :items="regionItems[3]" item-title="name" item-value="id" label="区/县" variant="outlined" density="compact"
+              class="region-select flex-grow-1" :loading="regionLoading[3]" hide-details="auto" clearable
+              @update:model-value="onRegionChange(3)" />
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="savingRegion" @click="regionDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="savingRegion" @click="saveRegion">保存</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -539,6 +674,43 @@
       </v-card>
     </v-dialog>
 
+    <!-- 关于对话框 -->
+    <v-dialog v-model="aboutDialog" max-width="420">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          关于
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" size="small" @click="aboutDialog = false" />
+        </v-card-title>
+        <v-card-text class="text-center">
+          <v-avatar size="72" rounded="lg" class="mx-auto mb-3">
+            <v-img src="/logo.svg" :alt="appInfo.name" cover />
+          </v-avatar>
+          <div class="text-h6 font-weight-bold">{{ appInfo.name }}</div>
+          <div class="text-caption text-medium-emphasis mb-2">版本 {{ appInfo.version }}</div>
+          <div class="text-body-2 text-medium-emphasis mb-3">{{ appInfo.description }}</div>
+          <div class="text-caption text-medium-emphasis mb-2">{{ appInfo.copyright }}</div>
+          <v-divider class="mb-2" />
+          <v-list density="compact" class="bg-transparent text-left">
+            <v-list-item :href="appInfo.homepage" target="_blank" rel="noopener">
+              <template #prepend>
+                <v-icon>mdi-github</v-icon>
+              </template>
+              <v-list-item-title>项目主页</v-list-item-title>
+              <v-list-item-subtitle class="text-truncate">{{ appInfo.homepage }}</v-list-item-subtitle>
+            </v-list-item>
+            <v-list-item :href="appInfo.authorHomepage" target="_blank" rel="noopener">
+              <template #prepend>
+                <v-icon>mdi-web</v-icon>
+              </template>
+              <v-list-item-title>作者主页</v-list-item-title>
+              <v-list-item-subtitle class="text-truncate">{{ appInfo.authorHomepage }}</v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
     <!-- 导出进度遮罩 -->
     <v-overlay v-model="exporting" class="align-center justify-center" persistent>
       <div class="text-center">
@@ -554,7 +726,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { ImportUploadDialog } from '@/components/import'
 import BlacklistDialog from '@/components/blacklist/BlacklistDialog.vue'
 import AvatarCropperDialog from '@/components/profile/AvatarCropperDialog.vue'
@@ -564,6 +736,7 @@ import { useThemeToggle } from '@/composables/useTheme'
 import { useMapConfig } from '@/composables/useMapConfig'
 import { hashPassword } from '@/utils/crypto'
 import { resolveImageUrl } from '@/utils/image'
+import { appInfo } from '@/config/appInfo'
 
 const { notify } = useGlobalSnackbar()
 const { energyUnit, toDisplayCalorie, fromDisplayCalorie } = useUserUnits()
@@ -588,16 +761,22 @@ const themeModeLabel = computed(() => {
   }
 })
 
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
+
 const search = ref('')
 
 // 数据导入与导出
 const importDialog = ref(false)
 const exportDialog = ref(false)
+const aboutDialog = ref(false)
 const exportScope = ref<'full' | 'mine'>('full')
 const exporting = ref(false)
 
 // 用户信息编辑
 const accountDialog = ref(false)
+// 所在地区编辑（本地模式专用对话框）
+const regionDialog = ref(false)
+const savingRegion = ref(false)
 const savingAccount = ref(false)
 const accountForm = ref({
   username: '',
@@ -949,6 +1128,80 @@ async function saveAccount() {
     notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
   } finally {
     savingAccount.value = false
+  }
+}
+
+// 所在地区编辑（本地模式）：初始化地区选择器并打开对话框
+async function openRegionDialog() {
+  const u = userStore.user as any
+  currentRegionId.value = u?.region_id ?? null
+  regionSelections.value = [null, null, null, null]
+  regionItems.value = [[], [], [], []]
+  if (regionItems.value[0].length === 0) {
+    await loadRegionLevel(0, null)
+  }
+  if (currentRegionId.value) {
+    try {
+      const detail = await api.get(`/regions/${currentRegionId.value}`)
+      const ancestors: Array<{ id: number; name: string; level: number }> = detail?.ancestors || []
+      regionNames.value[currentRegionId.value] = detail?.name || ''
+      for (const a of ancestors) {
+        regionNames.value[a.id] = a.name
+      }
+      const chain = [...ancestors, { id: currentRegionId.value, name: detail?.name || '', level: ancestors.length }]
+      for (let i = 0; i < chain.length; i++) {
+        if (i > 0) {
+          await loadRegionLevel(i, chain[i - 1].id)
+        }
+        regionSelections.value[i] = chain[i].id
+      }
+      if (chain.length < 4) {
+        const last = chain[chain.length - 1]
+        const lastItem = regionItems.value[chain.length - 1]?.find(r => r.id === last.id)
+        if (lastItem?.has_children) {
+          await loadRegionLevel(chain.length, last.id)
+        }
+      }
+    } catch {
+      currentRegionId.value = null
+    }
+  }
+  regionDialog.value = true
+}
+
+// 所在地区编辑（本地模式）：仅保存 region_id
+async function saveRegion() {
+  savingRegion.value = true
+  try {
+    let newRegionId: number | null = null
+    for (let i = 3; i >= 0; i--) {
+      if (regionSelections.value[i]) {
+        newRegionId = regionSelections.value[i]!
+        break
+      }
+    }
+    if (newRegionId === currentRegionId.value) {
+      regionDialog.value = false
+      return
+    }
+    await api.put('/auth/me/account', { region_id: newRegionId })
+    await userStore.fetchUser()
+    currentRegionId.value = newRegionId
+    if (newRegionId) {
+      for (let i = 0; i < 4; i++) {
+        const id = regionSelections.value[i]
+        if (id) {
+          const item = regionItems.value[i]?.find(r => r.id === id)
+          if (item) regionNames.value[id] = item.name
+        }
+      }
+    }
+    regionDialog.value = false
+    notify('已更新', 'success')
+  } catch (e: any) {
+    notify('保存失败：' + (e?.userMessage || e?.message || '未知错误'), 'error')
+  } finally {
+    savingRegion.value = false
   }
 }
 

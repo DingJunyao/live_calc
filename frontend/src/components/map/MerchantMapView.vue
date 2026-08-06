@@ -106,7 +106,7 @@ import type { MapEngineType, Coordinate, MapConfig } from '@/utils/map/mapTypes'
 import { mapEngineNames, defaultMapConfig } from '@/utils/map/mapTypes'
 import { mapEngineManager } from '@/utils/mapEngineManager'
 import { convertCoordinate, getCoordinateSystem } from '@/utils/coordinateTransform'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import L from 'leaflet'
 
 // Props

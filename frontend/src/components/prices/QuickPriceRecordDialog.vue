@@ -107,7 +107,7 @@
 import { useUserUnits } from '@/composables/useUserUnits'
 const { priceUnitName } = useUserUnits()
 import { ref, computed, watch, nextTick } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { getLocalDateTimeString, formatToLocalDateTimeShort } from '@/utils/timezone'
 

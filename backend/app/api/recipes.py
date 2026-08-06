@@ -820,6 +820,12 @@ async def get_recipe_cost(
 ):
     """计算菜谱成本"""
     try:
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            or_(Recipe.user_id == current_user.id, Recipe.is_public == True)
+        ).first()
+        if not recipe:
+            raise HTTPException(status_code=404, detail="recipe not found")
         result = await calculate_recipe_cost(recipe_id, current_user.id, db=db)
         if not result:
             raise HTTPException(status_code=404, detail="菜谱不存在")
@@ -836,6 +842,12 @@ async def get_recipe_nutrition(
 ):
     """计算菜谱营养"""
     try:
+        recipe = db.query(Recipe).filter(
+            Recipe.id == recipe_id,
+            or_(Recipe.user_id == current_user.id, Recipe.is_public == True)
+        ).first()
+        if not recipe:
+            raise HTTPException(status_code=404, detail="recipe not found")
         result = await calculate_recipe_nutrition(recipe_id, db=db)
         if not result:
             raise HTTPException(status_code=404, detail="菜谱不存在")

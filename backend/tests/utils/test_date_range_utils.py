@@ -48,3 +48,11 @@ def test_default_tz_is_utc():
     # 不传 tz 默认 UTC
     start, end = local_date_to_utc_range(date(2026, 3, 29))
     assert start == datetime(2026, 3, 29, 0, 0, 0)
+
+
+def test_offset_format_same_as_iana():
+    # UTC+08:00 offset should produce the same UTC range as Asia/Shanghai
+    iana_start, iana_end = local_date_to_utc_range(date(2026, 3, 29), "Asia/Shanghai")
+    offset_start, offset_end = local_date_to_utc_range(date(2026, 3, 29), "UTC+08:00")
+    assert offset_start == iana_start
+    assert offset_end == iana_end

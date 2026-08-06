@@ -1,7 +1,7 @@
 // api/proposals.ts
 // 提议-审核台 REST 客户端，复用现有 axios 封装（@/api/client）。
 // 拦截器自动注入 Authorization: Bearer <jwt>（从 localStorage.access_token）。
-import api from './client'
+import api from './index'
 
 /** 提议实体类型（与后端 entity_type 对齐，非穷举）。 */
 export type EntityType =

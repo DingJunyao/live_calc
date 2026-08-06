@@ -272,7 +272,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import api from '@/api/client'
+import { api } from '@/api'
 import { formatToLocalDateTimeShort, getLocalDateTimeString } from '@/utils/timezone'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()

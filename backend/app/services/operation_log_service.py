@@ -74,6 +74,8 @@ class OperationLogService:
             return None
 
         exclude = set(exclude_fields or [])
+        # 默认敏感列黑名单：避免把可重放凭据（password_hash 等）或密钥写入操作日志
+        _SENSITIVE_COL_PARTS = ("password", "secret", "_key", "token", "invite_code")
 
         result = {}
         mapper = inspect(model)
@@ -81,6 +83,9 @@ class OperationLogService:
         for column in mapper.attrs:
             key = column.key
             if key in exclude:
+                continue
+            key_l = key.lower()
+            if any(part in key_l for part in _SENSITIVE_COL_PARTS):
                 continue
 
             value = getattr(model, key)

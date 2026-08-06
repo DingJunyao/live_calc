@@ -301,7 +301,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import type { RecipeDetail, RecipeIngredient, IngredientEditRow, IngredientOption, UnitOption } from './types'
 import { useUserUnits, type UnitPref } from '@/composables/useUserUnits'
 
@@ -459,7 +459,8 @@ const getIngredientFallbackChain = (ingredient: RecipeIngredient): string | null
   return item?.fallback_chain || null
 }
 
-const goToIngredient = (ingredientId: number) => {
+const goToIngredient = (ingredientId: number | null | undefined) => {
+  if (ingredientId == null) return
   router.push(`/data/ingredients/${ingredientId}`)
 }
 

@@ -2,6 +2,7 @@
 <!-- AI 与机翻合并配置页：两个折叠面板（默认全展开），统一保存 -->
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { getTranslationConfig, putTranslationConfig, testTranslationConnection } from '@/api/usda'
@@ -10,6 +11,12 @@ import ProviderCard from '@/components/admin/ProviderCard.vue'
 const router = useRouter()
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const goBack = () => router.back()
+
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
+// claude_code 依赖服务器 PATH 中的 claude CLI，纯前端本地模式不可用，隐藏该 provider
+const aiProviders = computed(() =>
+  isLocalMode.value ? AI_PROVIDERS.filter((p) => p.key !== 'claude_code') : AI_PROVIDERS,
+)
 
 type FieldType = 'text' | 'password' | 'switch'
 interface ProviderField { key: string; label: string; type?: FieldType }
@@ -130,7 +137,7 @@ async function save() {
 
   <v-container v-if="config" class="pa-4">
     <p class="text-caption mb-2">
-      AI 走 Claude Code / OpenAI 兼容 / Anthropic 兼容；机翻走 百度 / 阿里云 / DeepL。
+      AI 走 {{ isLocalMode ? 'OpenAI 兼容 / Anthropic 兼容' : 'Claude Code / OpenAI 兼容 / Anthropic 兼容' }}；机翻走 百度 / 阿里云 / DeepL。
     </p>
 
     <v-expansion-panels multiple v-model="openPanels" class="my-3">
@@ -140,7 +147,7 @@ async function save() {
         </v-expansion-panel-title>
         <v-expansion-panel-text>
           <ProviderCard
-            v-for="p in AI_PROVIDERS"
+            v-for="p in aiProviders"
             :key="p.key"
             :title="p.title"
             :hint="p.hint"

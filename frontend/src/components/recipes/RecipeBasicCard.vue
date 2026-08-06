@@ -153,7 +153,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import ImageManager from './ImageManager.vue'
 import type { RecipeDetail } from './types'
 

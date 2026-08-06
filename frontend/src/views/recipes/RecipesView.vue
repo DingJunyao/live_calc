@@ -62,7 +62,7 @@
           <!-- 菜谱图片或占位符 -->
           <v-img
             v-if="pendingImages(recipe) && pendingImages(recipe).length > 0"
-            :src="recipe.image_urls?.[0] || getImageUrl(pendingImages(recipe)[0])"
+            :src="localImageUrls[recipe.id] || recipe.image_urls?.[0] || getImageUrl(pendingImages(recipe)[0])"
             height="140"
             cover
           />
@@ -239,7 +239,7 @@ const { energyUnit, toDisplayCalorie } = useUserUnits()
 import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { resolveImageUrl } from '@/utils/image'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
@@ -275,6 +275,19 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const recipes = ref<Recipe[]>([])
+const localImageUrls = ref<Record<number, string>>({})
+// 本地模式：从 IndexedDB 加载菜谱图片
+async function loadLocalImages(recipeList: any[]) {
+  if (import.meta.env.VITE_STORAGE_MODE !== 'local') return
+  const { loadLocalImageBlob } = await import('@/utils/image')
+  const map: Record<number, string> = {}
+  await Promise.all(recipeList.map(async (r: any) => {
+    if (!r.images?.length) return
+    const url = await loadLocalImageBlob('recipes', r.id, r.images[0])
+    if (url) map[r.id] = url
+  }))
+  localImageUrls.value = map
+}
 // 待审提议标记（菜谱编辑 entity_type=recipe_edit，发布=recipe，两种都查）
 const { load: loadPendingProposals, has: hasPending, getPayload: getPendingPayload } = usePendingProposals()
 // 待审草稿覆盖：普通用户提交后，列表显示提议中的新值（name/images）
@@ -493,6 +506,8 @@ const loadRecipes = async () => {
     const response = await api.get('/recipes', { params })
     recipes.value = response.items || []
     total.value = response.total || 0
+    // 本地模式：从 IndexedDB 加载图片
+    loadLocalImages(recipes.value)
     // 基础数据渲染后，后台加载成本
     loadCostsForVisibleRecipes()
   } catch (e: any) {

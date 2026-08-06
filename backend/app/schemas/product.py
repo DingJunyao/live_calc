@@ -40,8 +40,10 @@ class ProductRecordResponse(TimeZoneAwareModel):
     currency: str
     original_quantity: Decimal
     original_unit: str  # 单位缩写字符串
+    unit_id: Optional[int] = None
     standard_quantity: Decimal
     standard_unit: str  # 标准单位缩写字符串
+    standard_unit_id: Optional[int] = None
     record_type: Optional[str] = None
     is_owner: Optional[bool] = None
     exchange_rate: Decimal

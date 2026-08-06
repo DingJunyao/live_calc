@@ -6,7 +6,7 @@ import { defaultMapConfig, mapEngineNames } from '@/utils/map/mapTypes'
 import { mapEngineManager } from '@/utils/mapEngineManager'
 import { getUserMapPreference } from '@/utils/mapConfig'
 import { convertCoordinate } from '@/utils/coordinateTransform'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import L from 'leaflet'
 
 const props = defineProps<{ proposal: Proposal }>()

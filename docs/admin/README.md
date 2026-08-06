@@ -7,6 +7,7 @@
 | [部署](deploy.md) | 安装、数据库、Docker、首次启动、生产部署 |
 | [配置与首次启动](config-init.md) | 环境变量逐项详解、首次启动的数据导入 |
 | [升级与备份](upgrade-backup.md) | 升级流程、备份恢复、日志与排障 |
+| [版本管理](versioning.md) | 版本号唯一来源与同步方式 |
 | [后台管理](admin-pages.md) | 后台管理页面的详细介绍 |
 | [提议审核台](review.md) | 共享数据改动的提议-审核机制 |
 | [数据维护中心](data-maintenance.md) | 菜谱/原料导入、USDA、AI 后处理 |

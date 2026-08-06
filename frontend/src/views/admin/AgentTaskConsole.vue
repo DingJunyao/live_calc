@@ -27,7 +27,20 @@
       class="ma-2"
       @click:close="error = ''"
     >
-      {{ errorMsg }}
+     {{ errorMsg }}
+   </v-alert>
+
+    <v-alert
+      v-if="isLocalMode && !localAiReady"
+      type="info"
+      variant="tonal"
+      density="compact"
+      class="ma-2"
+    >
+      本地模式由浏览器直连 AI。请先在「AI 与机翻配置」中填写 OpenAI 或 Anthropic 兼容的 API Key（注意：浏览器直连需端点支持 CORS；OpenAI 官方接口不支持）。
+      <template #append>
+        <v-btn size="small" variant="text" @click="$router.push('/admin/ai-config')">去配置</v-btn>
+      </template>
     </v-alert>
 
     <v-row no-gutters class="agent-row">
@@ -132,6 +145,10 @@
 
           <!-- 对话流 -->
           <div ref="streamEl" class="stream-area">
+            <div v-if="!messages.length && isRunning" class="text-center text-medium-emphasis pa-8">
+              <v-progress-circular indeterminate size="32" color="primary" class="mb-2" />
+              <div class="text-body-2">任务运行中，等待 Agent 输出</div>
+            </div>
             <div v-if="!messages.length && !isRunning" class="text-center text-medium-emphasis pa-8">
               <v-icon size="48" class="mb-2">mdi-robot-outline</v-icon>
               <div class="text-body-2">从左侧选择一个任务类型开始，或查看历史会话</div>
@@ -260,6 +277,13 @@ const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const route = useRoute()
 const router = useRouter()
 
+import { api } from '@/api'
+
+/** 本地模式：使用浏览器端 Agent runner（直连 OpenAI/Anthropic 兼容端点），不走 SSE */
+const isLocalMode = computed(
+  () => import.meta.env.VITE_STORAGE_MODE === 'local',
+)
+
 const {
   messages,
   status,
@@ -284,12 +308,18 @@ const sending = ref(false)
 /** Provider 选择（默认 claude_code，保现有行为）。
  * 三选项前端硬编码（YAGNI，不动后端 /task-types）。
  */
-const provider = ref<AgentProvider>('claude_code')
-const providerOptions: { value: AgentProvider; label: string }[] = [
+const ALL_PROVIDERS: { value: AgentProvider; label: string }[] = [
   { value: 'claude_code', label: 'Claude Code' },
   { value: 'openai', label: 'OpenAI 兼容' },
   { value: 'anthropic', label: 'Anthropic 兼容' },
 ]
+// 本地模式仅保留 OpenAI/Anthropic 兼容（claude_code 依赖服务端 CLI）
+const providerOptions = computed(() =>
+  isLocalMode.value ? ALL_PROVIDERS.filter((o) => o.value !== 'claude_code') : ALL_PROVIDERS,
+)
+const provider = ref<AgentProvider>(isLocalMode.value ? 'anthropic' : 'claude_code')
+/** 本地模式：是否已配置至少一个可用的 AI provider Key */
+const localAiReady = ref(false)
 
 const currentSid = ref<number | null>(null)
 const interjectText = ref('')
@@ -495,6 +525,21 @@ async function onDecide(aid: number, approved: boolean) {
 
 // ---------- 生命周期 ----------
 onMounted(async () => {
+  // 本地模式：加载 AI 配置以判断是否已填写 Key，并预选已配置的 provider
+  if (isLocalMode.value) {
+    try {
+      const cfg: any = await api.get('/admin/translation-config')
+      const ai = cfg?.ai?.providers || {}
+      const hasAnthropic = !!ai.anthropic?.api_key
+      const hasOpenai = !!ai.openai?.api_key
+      localAiReady.value = hasAnthropic || hasOpenai
+      if (provider.value === 'anthropic' && !hasAnthropic && hasOpenai) {
+        provider.value = 'openai'
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   await loadMeta()
   // URL 带 session_id 时自动回放
   const sidParam = route.query.session_id

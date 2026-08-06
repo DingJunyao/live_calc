@@ -57,7 +57,7 @@ import { mapEngineNames, defaultMapConfig } from '@/utils/map/mapTypes'
 import { mapEngineManager } from '@/utils/mapEngineManager'
 import { getUserMapPreference } from '@/utils/mapConfig'
 import { convertCoordinate, getCoordinateSystem } from '@/utils/coordinateTransform'
-import { api } from '@/api/client'
+import { api } from '@/api'
 
 // Props
 interface Props {

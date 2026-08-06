@@ -74,7 +74,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
-import { api, LONG_REQUEST_TIMEOUT } from '@/api/client'
+import { api, LONG_REQUEST_TIMEOUT } from '@/api'
 import CostProportionChart from '@/components/recipes/CostProportionChart.vue'
 import CostTrendAnalysis from '@/components/recipes/CostTrendAnalysis.vue'
 import NutritionSourceGrid from '@/components/recipes/NutritionSourceGrid.vue'

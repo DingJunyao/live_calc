@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import type { Proposal } from '@/api/proposals'
-import { api } from '@/api/client'
+import { api } from '@/api'
 
 const props = defineProps<{ proposal: Proposal }>()
 

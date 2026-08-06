@@ -97,7 +97,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import type { RecipeDetail } from './types'
 
 const props = defineProps<{

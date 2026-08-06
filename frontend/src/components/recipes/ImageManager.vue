@@ -8,7 +8,7 @@
         class="image-thumb-wrapper"
       >
         <v-img
-          :src="imageUrls?.[index] || getImageUrl(img)"
+          :src="localImageUrls[index] || imageUrls?.[index] || getImageUrl(img)"
           width="80"
           height="80"
           cover
@@ -90,9 +90,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { api } from '@/api/client'
-import { resolveImageUrl } from '@/utils/image'
+import { ref, watch, onUnmounted } from 'vue'
+import { api } from '@/api'
+import { resolveImageUrl, loadLocalImageBlob } from '@/utils/image'
 
 const props = defineProps<{
   modelValue: string[]
@@ -110,6 +110,31 @@ const emit = defineEmits<{
 
 const fileInputRef = ref<any>(null)
 const dragIndex = ref<number | null>(null)
+const localImageUrls = ref<string[]>([])
+let objectUrls: string[] = []
+
+async function refreshLocalImages() {
+  for (const url of objectUrls) URL.revokeObjectURL(url)
+  objectUrls = []
+  localImageUrls.value = []
+  if (import.meta.env.VITE_STORAGE_MODE !== 'local' || !props.recipeId) return
+
+  const urls = await Promise.all(
+    props.modelValue.map((key) => loadLocalImageBlob('recipes', props.recipeId!, key)),
+  )
+  objectUrls = urls.filter((url): url is string => !!url)
+  localImageUrls.value = urls.map(url => url || '')
+}
+
+watch(
+  () => [props.recipeId, props.modelValue],
+  refreshLocalImages,
+  { immediate: true, deep: true },
+)
+
+onUnmounted(() => {
+  for (const url of objectUrls) URL.revokeObjectURL(url)
+})
 
 const moveLeft = (index: number) => {
   if (index <= 0) return
