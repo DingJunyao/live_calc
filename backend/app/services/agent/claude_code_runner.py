@@ -234,10 +234,11 @@ def translate_event(evt: dict) -> list[AgentEvent]:
       在主循环统一从顶层 ``evt.get("session_id")`` 捕获。）
     - ``stream_event.content_block_delta`` 且 ``delta.type == text_delta``
       → 一条 ``text_delta``。**这是唯一的文本源**。
-    - ``assistant`` → 遍历 ``message.content``，**只**对每个 tool_use 块产一条
+    - ``assistant`` → 遍历 ``message.content``，**默认只**对每个 tool_use 块产一条
       ``tool_use``。text 块的内容已被 stream_event 的 text_delta 完整覆盖
-      （CLI ``--include-partial-messages`` 让两者都发，且实测 stream 聚合文本
-      == assistant text 块聚合文本，若都产会重复 2 倍）。
+      （CLI ``--include-partial-messages`` 让两者都发，若都产会重复 2 倍）。
+      但当事件是 API 错误（``isApiErrorMessage`` / ``error``）时，text 块必须放出，
+      因为这种错误没有 stream_event text_delta。
     - ``user`` → 遍历 ``message.content``，每个 tool_result 块产一条 ``tool_result``。
     - ``result`` → 一条 ``done``，带 ``is_error`` / ``cost_usd`` /
       ``permission_denials``；``subtype == "error"`` 时 also 标 ``is_error=True``。
@@ -262,8 +263,6 @@ def translate_event(evt: dict) -> list[AgentEvent]:
             if not isinstance(blk, dict):
                 continue
             bt = blk.get("type")
-            # text 块跳过：其内容已被 stream_event 的 text_delta 完整覆盖，
-            # 两者同时产出会导致前端文本重复 2 倍（见模块 docstring）。
             if bt == "tool_use":
                 out.append(
                     AgentEvent(
@@ -273,6 +272,12 @@ def translate_event(evt: dict) -> list[AgentEvent]:
                         tool_use_id=str(blk.get("id", "")),
                     )
                 )
+            elif bt == "text" and (evt.get("isApiErrorMessage") or evt.get("error")):
+                # API 错误没有 stream_event text_delta，必须把 assistant 文本块透出，
+                # 否则 Agent 任务台只显示终态 is_error，看不到 429/限额等真实原因。
+                txt = str(blk.get("text", ""))
+                if txt:
+                    out.append(AgentEvent(kind="text_delta", text=txt))
         return out
 
     if t == "user":

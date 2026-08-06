@@ -13,6 +13,7 @@ from app.core.database import Base
 from app.models.agent_message import AgentMessage
 from app.models.agent_session import AgentSession
 from app.services.agent import session_runner, stream_bridge
+from app.services.agent.claude_code_runner import translate_event
 from app.services.agent.runner import AgentEvent
 
 
@@ -232,6 +233,33 @@ def test_error_path_marks_failed_and_persists_error_message(mem_db):
     assert msgs[0].content == "partial "
     assert msgs[1].role == "assistant"
     assert msgs[1].content == "boom"
+
+
+def test_claude_api_error_text_persists_before_error(mem_db):
+    sid = _make_session(mem_db)
+    raw = {
+        "type": "assistant",
+        "isApiErrorMessage": True,
+        "error": "rate_limit",
+        "message": {
+            "content": [
+                {"type": "text", "text": "API Error: Request rejected (429)"},
+            ]
+        },
+    }
+    events = translate_event(raw)
+    events.append(
+        AgentEvent(kind="error", error="claude CLI rate_limit", is_error=True)
+    )
+    runner = FakeRunner(events)
+    loop = asyncio.new_event_loop()
+    session_runner.run_session(sid, runner, "p", loop)
+
+    msgs = _messages(mem_db, sid)
+    assert len(msgs) == 2
+    assert msgs[0].role == "assistant"
+    assert "API Error: Request rejected" in msgs[0].content
+    assert msgs[1].content == "claude CLI rate_limit"
 
 
 def test_on_event_callback_invoked(mem_db):

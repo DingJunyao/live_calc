@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from unittest.mock import MagicMock, patch
 
@@ -11,6 +12,32 @@ def test_ai_match_endpoints_are_async():
 
     assert inspect.iscoroutinefunction(trigger_ai_match)
     assert inspect.iscoroutinefunction(trigger_ai_match_all)
+
+
+async def test_trigger_ai_match_all_resolves_running_loop():
+    from app.api.blacklist_groups import AiMatchRequest, trigger_ai_match_all
+
+    db = MagicMock()
+    group = MagicMock(id=10, name="坚果")
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [group]
+    admin = MagicMock()
+    admin.id = 88
+
+    with patch(
+        "app.services.agent.blacklist_group_task.trigger_blacklist_group_match_all",
+        return_value=42,
+    ) as trigger:
+        result = await trigger_ai_match_all(
+            AiMatchRequest(provider="codex"),
+            db=db,
+            admin=admin,
+        )
+
+    assert result.agent_session_id == 42
+    trigger.assert_called_once()
+    assert trigger.call_args.kwargs["admin_id"] == 88
+    assert trigger.call_args.kwargs["provider"] == "codex"
+    assert trigger.call_args.kwargs["main_loop"] is asyncio.get_running_loop()
 
 
 def test_trigger_all_creates_one_session_with_all_groups():

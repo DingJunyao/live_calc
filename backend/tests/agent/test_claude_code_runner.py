@@ -242,6 +242,23 @@ def test_translate_assistant_empty_content():
     assert translate_event(evt) == []
 
 
+def test_translate_assistant_api_error_emits_text_delta():
+    evt = {
+        "type": "assistant",
+        "isApiErrorMessage": True,
+        "error": "rate_limit",
+        "message": {
+            "content": [
+                {"type": "text", "text": "API Error: Request rejected (429)"},
+            ]
+        },
+    }
+    out = translate_event(evt)
+    assert len(out) == 1
+    assert out[0].kind == "text_delta"
+    assert "API Error: Request rejected" in out[0].text
+
+
 def test_translate_user_tool_result_string_form():
     # spike events_first.jsonl 实测形态：content 是裸 JSON 字符串。
     evt = {

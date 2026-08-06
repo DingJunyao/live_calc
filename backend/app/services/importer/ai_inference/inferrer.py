@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.entity_density import EntityDensity
 from app.models.nutrition import Ingredient
 from app.models.recipe import RecipeIngredient
+from app.models.unit import Unit
 from app.services.importer.models import ImportResult
 
 logger = logging.getLogger(__name__)
