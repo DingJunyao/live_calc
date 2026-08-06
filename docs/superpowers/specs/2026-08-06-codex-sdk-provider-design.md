@@ -79,8 +79,8 @@ openai-codex==0.144.4
 
 1. 新建会话：`thread_start(...)`。
 2. 续跑：`thread_resume(thread_id, ...)`。
-3. 启动一轮：`turn_start(thread_id, prompt, ...)`。
-4. 消费 `turn_handle.stream()` 事件。
+3. 默认启用 goal 模式：`start_goal_operation(thread_id, objective=prompt)`，让 Codex 在目标完成前自动继续，不因单轮结束提前停止。
+4. 消费 goal 逻辑流事件；仅在显式关闭 goal 模式时使用 `turn_start(thread_id, prompt, ...)` 单轮模式。
 5. 结束后关闭 app-server 进程。
 
 `last_session_id` 返回 Codex `thread.id`，`uses_db_pk_resume = False`，与 Claude Code 的 resume 语义对齐。

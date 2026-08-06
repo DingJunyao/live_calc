@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Any, Iterator
 
+from openai_codex._goal import _GoalNotificationStream
 from openai_codex.client import CodexClient, CodexConfig
 from openai_codex.generated.v2_all import (
     AgentMessageDeltaNotification,
@@ -142,15 +143,18 @@ class CodexRunner:
         env: dict[str, str] | None = None,
         idle_timeout: float = 120.0,
         total_timeout: float = 600.0,
+        use_goal: bool = True,
     ) -> None:
         self.cwd = str(cwd)
         self.config_overrides = tuple(config_overrides)
         self.env = dict(env) if env else None
         self.idle_timeout = float(idle_timeout)
         self.total_timeout = float(total_timeout)
+        self.use_goal = bool(use_goal)
         self._last_session_id: str | None = None
         self._current_client: CodexClient | None = None
         self._current_turn_id: str | None = None
+        self._current_goal_state = None
 
     @property
     def last_session_id(self) -> str | None:
@@ -190,47 +194,75 @@ class CodexRunner:
                 )
             thread_id = started.thread.id
             self._last_session_id = thread_id
-            turn = client.turn_start(
-                thread_id,
-                prompt,
-                params={
-                    "cwd": self.cwd,
-                    "sandboxPolicy": {"type": "readOnly"},
-                    "approvalPolicy": "never",
-                },
-            )
-            turn_id = turn.turn.id
             self._current_client = client
-            self._current_turn_id = turn_id
 
-            event_q: "queue.Queue[Notification | BaseException]" = queue.Queue()
+            event_q: "queue.Queue[Notification | BaseException | None]" = queue.Queue()
 
-            def _pump() -> None:
-                client.register_turn_notifications(turn_id)
-                try:
-                    while True:
-                        notification = client.next_turn_notification(turn_id)
-                        event_q.put(notification)
-                        if (
-                            notification.method == "turn/completed"
-                            and isinstance(
-                                notification.payload, TurnCompletedNotification
-                            )
-                            and notification.payload.turn.id == turn_id
-                        ):
-                            break
-                except BaseException as exc:  # noqa: BLE001
-                    event_q.put(exc)
-                finally:
-                    client.unregister_turn_notifications(turn_id)
+            if self.use_goal:
+                goal_state, logical_turn_id = client.start_goal_operation(
+                    thread_id,
+                    objective=prompt,
+                )
+                self._current_goal_state = goal_state
+                self._current_turn_id = logical_turn_id
+                stream = _GoalNotificationStream(
+                    state=goal_state,
+                    next_notification=lambda: client.next_goal_notification(goal_state),
+                    unregister=lambda: client.unregister_goal_operation(goal_state),
+                    cancel_goal=lambda: client.cancel_goal_operation(goal_state),
+                )
 
-            threading.Thread(target=_pump, daemon=True).start()
+                def _pump_goal() -> None:
+                    try:
+                        for notification in stream:
+                            event_q.put(notification)
+                        event_q.put(None)
+                    except BaseException as exc:  # noqa: BLE001
+                        event_q.put(exc)
+                    finally:
+                        stream.close()
+
+                threading.Thread(target=_pump_goal, daemon=True).start()
+            else:
+                turn = client.turn_start(
+                    thread_id,
+                    prompt,
+                    params={
+                        "cwd": self.cwd,
+                        "sandboxPolicy": {"type": "readOnly"},
+                        "approvalPolicy": "never",
+                    },
+                )
+                turn_id = turn.turn.id
+                self._current_turn_id = turn_id
+
+                def _pump() -> None:
+                    client.register_turn_notifications(turn_id)
+                    try:
+                        while True:
+                            notification = client.next_turn_notification(turn_id)
+                            event_q.put(notification)
+                            if (
+                                notification.method == "turn/completed"
+                                and isinstance(
+                                    notification.payload, TurnCompletedNotification
+                                )
+                                and notification.payload.turn.id == turn_id
+                            ):
+                                break
+                    except BaseException as exc:  # noqa: BLE001
+                        event_q.put(exc)
+                    finally:
+                        client.unregister_turn_notifications(turn_id)
+
+                threading.Thread(target=_pump, daemon=True).start()
+
             done = False
             while not done:
                 elapsed = time.monotonic() - start_time
                 remaining = self.total_timeout - elapsed
                 if remaining <= 0:
-                    self._interrupt(client, thread_id, turn_id)
+                    self._cancel_current(client, thread_id)
                     yield AgentEvent(
                         kind="error",
                         error=f"Codex 超过总超时 {self.total_timeout}s",
@@ -245,7 +277,7 @@ class CodexRunner:
                         )
                     )
                 except queue.Empty:
-                    self._interrupt(client, thread_id, turn_id)
+                    self._cancel_current(client, thread_id)
                     if remaining <= self.idle_timeout:
                         yield AgentEvent(
                             kind="error",
@@ -265,12 +297,19 @@ class CodexRunner:
                         error=f"Codex SDK 异常: {item}",
                     )
                     return
+                if item is None:
+                    yield AgentEvent(
+                        kind="error",
+                        is_error=True,
+                        error="Codex goal 结束但未收到完成事件",
+                    )
+                    return
                 for agent_ev in translate_notification(item):
                     if agent_ev.kind == "done":
                         done = True
                     yield agent_ev
                 if time.monotonic() - start_time > self.total_timeout:
-                    self._interrupt(client, thread_id, turn_id)
+                    self._cancel_current(client, thread_id)
                     yield AgentEvent(
                         kind="error",
                         error=f"Codex 超过总超时 {self.total_timeout}s",
@@ -289,15 +328,26 @@ class CodexRunner:
             finally:
                 self._current_client = None
                 self._current_turn_id = None
+                self._current_goal_state = None
 
     def cancel(self) -> None:
         client = self._current_client
-        if client is not None and self._current_turn_id is not None:
-            self._interrupt(client, self._last_session_id or "", self._current_turn_id)
+        if client is not None:
+            self._cancel_current(client, self._last_session_id or "")
             try:
                 client.close()
             except Exception:
                 pass
+
+    def _cancel_current(self, client: CodexClient, thread_id: str) -> None:
+        if self._current_goal_state is not None:
+            try:
+                client.cancel_goal_operation(self._current_goal_state)
+            except Exception:
+                pass
+            return
+        if self._current_turn_id is not None:
+            self._interrupt(client, thread_id, self._current_turn_id)
 
     @staticmethod
     def _interrupt(client: CodexClient, thread_id: str, turn_id: str) -> None:

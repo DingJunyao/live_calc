@@ -26,6 +26,12 @@ def test_codex_runner_satisfies_protocol():
     runner = CodexRunner()
     assert isinstance(runner, AgentRunner)
     assert runner.last_session_id is None
+    assert runner.use_goal is True
+
+
+def test_codex_runner_goal_mode_can_be_disabled():
+    runner = CodexRunner(use_goal=False)
+    assert runner.use_goal is False
 
 
 def test_build_config_overrides_includes_mcp_env():
