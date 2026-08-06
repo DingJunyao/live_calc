@@ -1,6 +1,7 @@
 """
 每日饮食推荐 API
 """
+import asyncio
 import datetime
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -24,8 +25,13 @@ logger = logging.getLogger("meals")
 router = APIRouter()
 
 
+def _build_response_from_records_sync(*args, **kwargs):
+    """Run the response builder in a fresh event loop on a worker thread."""
+    return asyncio.run(_build_response_from_records(*args, **kwargs))
+
+
 @router.get("/recommendations", response_model=MealRecommendationsResponse)
-async def get_daily_recommendations(
+def get_daily_recommendations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     tz: str = Depends(get_timezone),
@@ -43,7 +49,7 @@ async def get_daily_recommendations(
         status_info = check_today_status(db, current_user.id, tz)
 
         if status_info["status"] == "ready":
-            return await _build_response_from_records(
+            return _build_response_from_records_sync(
                 db, status_info["existing_records"], current_user,
                 refreshing_meals=status_info.get("refreshing_meals", []),
                 tz=tz,
@@ -66,7 +72,7 @@ async def get_daily_recommendations(
 
 
 @router.post("/recommendations/generate", response_model=MealRecommendationsResponse)
-async def trigger_recommendation_generation(
+def trigger_recommendation_generation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     tz: str = Depends(get_timezone),
@@ -82,7 +88,7 @@ async def trigger_recommendation_generation(
         status_info = check_today_status(db, current_user.id, tz)
 
         if status_info["status"] == "ready":
-            return await _build_response_from_records(
+            return _build_response_from_records_sync(
                 db, status_info["existing_records"], current_user,
                 refreshing_meals=status_info.get("refreshing_meals", []),
                 tz=tz,
@@ -106,7 +112,7 @@ async def trigger_recommendation_generation(
 
 
 @router.post("/recommendations/refresh", response_model=MealRecommendationsResponse)
-async def refresh_recommendation(
+def refresh_recommendation(
     request: RefreshMealRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -139,7 +145,7 @@ async def refresh_recommendation(
             # 返回当前推荐，frontend 可以继续轮询
             status_info = check_today_status(db, current_user.id, tz)
             if status_info["status"] == "ready":
-                return await _build_response_from_records(
+                return _build_response_from_records_sync(
                     db, status_info["existing_records"], current_user,
                     refreshing_meals=status_info.get("refreshing_meals", []),
                 )
@@ -169,7 +175,7 @@ async def refresh_recommendation(
             raise HTTPException(status_code=409, detail=error)
 
         # 返回当前推荐 + 刷新中标记
-        return await _build_response_from_records(
+        return _build_response_from_records_sync(
             db, status_info["existing_records"], current_user,
             refreshing_meals=[request.meal_type],
             tz=tz,

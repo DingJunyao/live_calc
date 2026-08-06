@@ -26,9 +26,11 @@ export const useMealsStore = defineStore('meals', () => {
 
   let _pollTimer: ReturnType<typeof setTimeout> | null = null
   let _pollCount = 0
+  let _pollVersion = 0
 
   /** 清理轮询定时器 */
   function _clearPoll() {
+    _pollVersion += 1
     if (_pollTimer != null) {
       clearTimeout(_pollTimer)
       _pollTimer = null
@@ -36,17 +38,28 @@ export const useMealsStore = defineStore('meals', () => {
     _pollCount = 0
   }
 
+  /** 离开今日推荐页时停止所有后台轮询 */
+  function stopPolling() {
+    _clearPoll()
+  }
+
   /** 轮询等待推荐就绪（初始生成用） */
   async function _pollUntilReady() {
     _clearPoll()
     generating.value = true
     _pollCount = 0
+    const version = _pollVersion
 
     return new Promise<void>((resolve, reject) => {
       const poll = async () => {
         try {
           _pollCount++
           const data = await getDailyRecommendations()
+
+          if (version !== _pollVersion) {
+            resolve()
+            return
+          }
 
           if (data.status === 'ready') {
             _clearPoll()
@@ -78,6 +91,11 @@ export const useMealsStore = defineStore('meals', () => {
             await triggerRecommendationGeneration()
           }
 
+          if (version !== _pollVersion) {
+            resolve()
+            return
+          }
+
           // status === 'generating' 或重新触发后继续轮询
           if (_pollCount >= MAX_POLLS) {
             _clearPoll()
@@ -89,6 +107,10 @@ export const useMealsStore = defineStore('meals', () => {
 
           _pollTimer = setTimeout(poll, POLL_INTERVAL)
         } catch (e: any) {
+          if (version !== _pollVersion) {
+            resolve()
+            return
+          }
           _clearPoll()
           generating.value = false
           error.value = e.userMessage || '加载推荐失败'
@@ -104,12 +126,22 @@ export const useMealsStore = defineStore('meals', () => {
   function _pollRefreshMeal(mealType: string): Promise<void> {
     const maxPolls = 30
     let count = 0
+    const version = _pollVersion
 
     return new Promise<void>((resolve, reject) => {
       const poll = async () => {
         try {
+          if (version !== _pollVersion) {
+            resolve()
+            return
+          }
           count++
           const data = await getDailyRecommendations()
+
+          if (version !== _pollVersion) {
+            resolve()
+            return
+          }
 
           if (data.status === 'ready') {
             const stillRefreshing = data.refreshing_meals?.includes(mealType)
@@ -130,6 +162,10 @@ export const useMealsStore = defineStore('meals', () => {
 
           setTimeout(poll, POLL_INTERVAL)
         } catch (e) {
+          if (version !== _pollVersion) {
+            resolve()
+            return
+          }
           reject(e)
         }
       }
@@ -211,5 +247,6 @@ export const useMealsStore = defineStore('meals', () => {
     refreshLoading,
     loadRecommendations,
     refreshMeal,
+    stopPolling,
   }
 })
