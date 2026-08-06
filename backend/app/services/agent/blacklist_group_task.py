@@ -30,6 +30,7 @@ def trigger_blacklist_group_match(
     group_name: str,
     admin_id: int,
     main_loop: asyncio.AbstractEventLoop,
+    provider: str = "claude_code",
 ) -> int:
     """触发原料黑名单分组 AI 匹配任务。
 
@@ -53,7 +54,7 @@ def trigger_blacklist_group_match(
         task_type=_TASK_TYPE,
         title=f"原料黑名单匹配: {group_name}",
         status="pending",
-        runner_type="claude_code",
+        runner_type=provider,
         initial_prompt=prompt,
         user_id=admin_id,
     )
@@ -70,7 +71,7 @@ def trigger_blacklist_group_match(
             runner = runner_factory.build_runner(
                 _TASK_TYPE,
                 db_url,
-                provider="claude_code",
+                provider=provider,
                 idle_timeout=settings.agent_idle_timeout,
                 total_timeout=settings.agent_total_timeout,
             )
@@ -91,6 +92,65 @@ def trigger_blacklist_group_match(
 
     threading.Thread(target=_run_in_thread, daemon=True).start()
 
+    return session_id
+
+
+def trigger_blacklist_group_match_all(
+    db: Session,
+    groups: list[dict],
+    admin_id: int,
+    main_loop: asyncio.AbstractEventLoop,
+    provider: str = "claude_code",
+) -> int:
+    """触发一个覆盖所有启用分组的 AI 匹配 AgentSession。"""
+    tpl = get_template("blacklist_group_match_all")
+    groups_block = "\n".join(
+        f"- id={group['id']}, name={group['name']}" for group in groups
+    )
+    prompt = tpl["prompt"].format(
+        groups_block=groups_block,
+        admin_id=admin_id,
+    )
+    sess = AgentSession(
+        task_type="blacklist_group_match_all",
+        title=f"原料黑名单匹配: 全部启用分组（{len(groups)} 个）",
+        status="pending",
+        runner_type=provider,
+        initial_prompt=prompt,
+        user_id=admin_id,
+    )
+    db.add(sess)
+    db.commit()
+    db.refresh(sess)
+    session_id = sess.id
+    db_url = settings.database_url
+
+    def _run_in_thread() -> None:
+        try:
+            runner = runner_factory.build_runner(
+                "blacklist_group_match_all",
+                db_url,
+                provider=provider,
+                idle_timeout=settings.agent_idle_timeout,
+                total_timeout=settings.agent_total_timeout,
+            )
+            session_runner.run_agent_loop(
+                session_id,
+                runner,
+                prompt,
+                main_loop,
+                db_session_factory=_get_session_factory(),
+                unattended=True,
+                safe_row_threshold=50000,
+                max_turns=30,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "原料黑名单全部匹配 Agent 异常 session=%s", session_id
+            )
+            _mark_session_failed(session_id)
+
+    threading.Thread(target=_run_in_thread, daemon=True).start()
     return session_id
 
 

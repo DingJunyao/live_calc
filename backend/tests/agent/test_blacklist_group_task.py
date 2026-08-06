@@ -1,0 +1,39 @@
+from unittest.mock import MagicMock, patch
+
+from app.models.agent_session import AgentSession
+from app.services.agent.blacklist_group_task import trigger_blacklist_group_match_all
+
+
+def test_trigger_all_creates_one_session_with_all_groups():
+    db = MagicMock()
+    sessions: list[AgentSession] = []
+
+    def fake_add(obj):
+        obj.id = 1
+        sessions.append(obj)
+
+    db.add.side_effect = fake_add
+    groups = [
+        {"id": 1, "name": "坚果"},
+        {"id": 2, "name": "海鲜"},
+    ]
+    with patch(
+        "app.services.agent.blacklist_group_task.runner_factory.build_runner"
+    ) as build_runner, patch(
+        "app.services.agent.blacklist_group_task.session_runner.run_agent_loop"
+    ) as run_agent_loop:
+        sid = trigger_blacklist_group_match_all(
+            db,
+            groups=groups,
+            admin_id=99,
+            main_loop=None,
+            provider="codex",
+        )
+    row = sessions[0]
+    assert sid == 1
+    assert row.runner_type == "codex"
+    assert "坚果" in row.initial_prompt
+    assert "海鲜" in row.initial_prompt
+    build_runner.assert_called_once()
+    assert build_runner.call_args.kwargs["provider"] == "codex"
+    run_agent_loop.assert_called_once()
