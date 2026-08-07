@@ -2,7 +2,7 @@
 
 本项目支持 PWA，能够在手机 / 电脑上像普通 App 一样使用网页端。
 
-![PWA 模式下的页面](img/recipe_detail_mobile.PNG)
+![PWA 模式下的页面](img/recipe_detail_mobile.png)
 
 ## iOS 端的使用方式
 
@@ -12,7 +12,7 @@
 4. 设置主屏幕上的名称。确保“作为网页 App 打开”选项开启
 5. 之后就可以在主屏幕上看到它了。你可以像普通的 App 一样使用、移动，甚至拖动到文件夹里面。
 
-![iOS 端的 PWA 使用方式](img/pwa_add_iphone.PNG)
+![iOS 端的 PWA 使用方式](img/pwa_add_iphone.png)
 
 ## Android 端的使用方式
 
@@ -39,10 +39,10 @@
 2. 继续点击“安装”
 3. 之后就会自动打开它的 PWA 模式
 
-![PC 端的 PWA 使用方式 - 1](img/pwa_add_pc_1.PNG)
+![PC 端的 PWA 使用方式 - 1](img/pwa_add_pc_1.png)
 
-![PC 端的 PWA 使用方式 - 2](img/pwa_add_pc_2.PNG)
+![PC 端的 PWA 使用方式 - 2](img/pwa_add_pc_2.png)
 
 同时会在桌面、开始菜单添加图标。右击可以看到、使用快捷操作。
 
-![PC 端的 PWA 使用方式 - 3](img/pwa_add_pc_3.PNG)
+![PC 端的 PWA 使用方式 - 3](img/pwa_add_pc_3.png)
