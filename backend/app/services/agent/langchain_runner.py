@@ -120,7 +120,7 @@ class LangChainRunner:
     # langchain 路径的 resume 锚是 AgentSession DB PK（_load_history 按
     # AgentMessage.session_id 查历史），不是 CLI 捕获的外部 session id。
     # run_agent_loop 据此把 current_sid 设为 str(session_id)，首轮即写入
-    # claude_session_id 使插话不再 409，且每轮 resume 都能恢复历史。
+    # external_session_id 使插话不再 409，且每轮 resume 都能恢复历史。
     uses_db_pk_resume = True
 
     @property

@@ -455,7 +455,7 @@ async def post_message(
 
     - 仅管理员。
     - session.status 必须是终态（success/failed/cancelled）；运行中 → 409。
-    - 用 claude_session_id 作 resume_session_id，body.text 作下一轮 user prompt。
+    - 用 external_session_id 作 resume_session_id，body.text 作下一轮 user prompt。
     """
     _require_admin(current_user)
     sess = _get_session_or_404(db, sid, current_user)
@@ -466,16 +466,16 @@ async def post_message(
             detail="会话仍在运行，无法插话（请在轮次结束后再追加）",
         )
 
-    if not sess.claude_session_id:
+    if not sess.external_session_id:
         raise HTTPException(
             status_code=409,
-            detail="会话缺少 claude_session_id，无法 resume",
+            detail="会话缺少外部会话 ID，无法 resume",
         )
 
     main_loop = asyncio.get_running_loop()
     db_url = _settings_db_url()
     settings = _settings()
-    resume_sid = sess.claude_session_id
+    resume_sid = sess.external_session_id
     user_text = body.text
     task_type = sess.task_type or "followup"
     # 复用原 session 的 runner_type 作为 provider（与 create_session 对齐）。
@@ -640,7 +640,7 @@ def _session_to_out(s: AgentSession) -> AgentSessionOut:
         status=s.status,
         runner_type=s.runner_type,
         user_id=s.user_id,
-        claude_session_id=s.claude_session_id,
+        external_session_id=s.external_session_id,
         cost_usd=cost,
         error=s.error,
         created_at=s.created_at,

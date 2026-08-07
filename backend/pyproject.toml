@@ -34,6 +34,8 @@ redis = {extras = ["hiredis"], version = "^5.0.1", optional = true}
 	langchain = ">=1.0,<2"
 	langchain-openai = ">=1.0,<2"
 	langchain-anthropic = ">=1.0,<2"
+	# Codex SDK Provider。0.144.4 会固定拉入 openai-codex-cli-bin 0.144.4。
+	openai-codex = "==0.144.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.4"

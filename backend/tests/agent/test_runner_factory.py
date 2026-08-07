@@ -67,6 +67,21 @@ def test_build_runner_claude_code_default_returns_claude_code_runner(
     assert isinstance(r2, ClaudeCodeRunner)
 
 
+def test_build_runner_codex_returns_codex_runner(monkeypatch):
+    """provider=codex → 返回 CodexRunner（MCP 关闭时不注入 config）。"""
+    from app.services.agent import runner_factory
+    from app.services.agent.codex_runner import CodexRunner
+
+    monkeypatch.setattr(runner_factory, "_mcp_available", lambda: False)
+    runner = runner_factory.build_runner(
+        "infer_densities",
+        "sqlite:///./data/livecalc.db",
+        provider="codex",
+    )
+    assert isinstance(runner, CodexRunner)
+    assert runner.use_goal is False
+
+
 # --------------------------------------------------------------------------- #
 # _build_langchain_runner：从 TranslationConfig 取配置 + 装配 LangChainRunner
 # --------------------------------------------------------------------------- #

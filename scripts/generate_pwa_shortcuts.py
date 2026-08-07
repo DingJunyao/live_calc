@@ -8,7 +8,7 @@
 生成 PWA shortcut 图标（96×96 PNG）。
 
 从 @mdi/font 的 ttf 提取侧边栏 7 个图标对应的字形 path，渲染成
-「橄榄绿底 #558B2F + 米白图标 #FDFCF8」的 SVG（与 logo 配色一致），
+「透明底 + 黑色图标 #000」的 SVG，
 再用 sharp（frontend/node_modules）转成 96×96 PNG，落到
 frontend/public/shortcuts/，供 vite.config.ts manifest.shortcuts 引用。
 
@@ -43,8 +43,8 @@ SHORTCUTS = [
     ("profile", "account"),                   # 个人中心
 ]
 
-BG_COLOR = "#558B2F"   # 橄榄绿 primary（对齐 logo / theme_color）
-FG_COLOR = "#FDFCF8"   # 温暖米白（对齐 logo 前景）
+BG_COLOR = "none"     # 透明底
+FG_COLOR = "#000000"   # 黑色图标
 SIZE = 512             # SVG viewBox 边长 = 字体 unitsPerEm，path 坐标直接用字体单位
 
 
@@ -56,23 +56,40 @@ def load_codepoints() -> dict:
 
 
 def glyph_to_svg(font, glyph_set, gname: str) -> str:
-    """提字形 path 并按 bounds 几何居中，生成 SIZE×SIZE 绿底白图标 SVG。"""
+    """提字形 path，统一缩放 + 几何居中，生成 SIZE×SIZE 透明底黑图标 SVG。
+
+    所有图标按最大边缩放到画布 65%，保证透明底下一致的视觉大小；
+    按各自 bounding box 几何中心居中（字体坐标 y-up → SVG y-down 翻 y）。
+    """
     pen = SVGPathPen(glyph_set)
     glyph_set[gname].draw(pen)
     d = pen.getCommands()
 
     g = font["glyf"][gname]
     x_min, y_min, x_max, y_max = g.xMin, g.yMin, g.xMax, g.yMax
-    # 字体坐标 y-up，SVG y-down：scale(1,-1) 翻 y。
-    # 再 translate 让字形几何中心落到 SVG 中心 (SIZE/2, SIZE/2)，
-    # 抵消字体 baseline 偏低导致的整体偏下（各图标 center y 170~190 ≠ 256）。
-    tx = SIZE / 2 - (x_max + x_min) / 2
-    ty = SIZE / 2 + (y_max + y_min) / 2
+
+    glyph_w = x_max - x_min
+    glyph_h = y_max - y_min
+    target = SIZE * 0.65
+    scale = target / max(glyph_w, glyph_h)
+
+    # 几何中心（字体坐标）
+    cx = (x_max + x_min) / 2
+    cy = (y_max + y_min) / 2
+
+    # translate 把缩放后的几何中心落到 SVG 中心 (SIZE/2, SIZE/2)
+    # scale(s, -s)：x' = s*x + tx,  y' = -s*y + ty
+    # 令 x'=SIZE/2 → tx = SIZE/2 - s*cx
+    # 令 y'=SIZE/2 → ty = SIZE/2 + s*cy
+    tx = SIZE / 2 - scale * cx
+    ty = SIZE / 2 + scale * cy
+
+    bg_rect = f'  <rect width="{SIZE}" height="{SIZE}" fill="{BG_COLOR}"/>\n' if BG_COLOR != "none" else ""
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {SIZE} {SIZE}" width="{SIZE}" height="{SIZE}">\n'
-        f'  <rect width="{SIZE}" height="{SIZE}" fill="{BG_COLOR}"/>\n'
-        f'  <path transform="translate({tx:.2f},{ty:.2f}) scale(1,-1)" '
+        f'{bg_rect}'
+        f'  <path transform="translate({tx:.2f},{ty:.2f}) scale({scale:.2f},{-scale:.2f})" '
         f'd="{d}" fill="{FG_COLOR}"/>\n'
         f'</svg>\n'
     )
@@ -112,7 +129,8 @@ def main() -> None:
             if cp is None or cp not in cmap:
                 missing.append(icon)
                 continue
-            svg = glyph_to_svg(font, glyph_set, cmap[cp])
+            gname = cmap[cp]
+            svg = glyph_to_svg(font, glyph_set, gname)
             (tmp_dir / f"{key}.svg").write_text(svg, encoding="utf-8")
         if missing:
             raise SystemExit(f"css/cmap 缺图标：{missing}")

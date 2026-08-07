@@ -45,7 +45,7 @@ _FILL_PIECE_WEIGHT_PROMPT = """你是「生计」应用的食材数据维护助�
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -164,7 +164,7 @@ _INFER_QUANTITIES_PROMPT = """你是「生计」应用的菜谱数据维护助�
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -381,7 +381,7 @@ _INFER_DENSITIES_PROMPT = """你是「生计」应用的食材密度维护助手
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -521,7 +521,7 @@ _USDA_TRANSLATE_PROMPT = """你是「生计」应用的 USDA 食材名翻译助�
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -622,7 +622,7 @@ _UNMAPPED_NUTRIENT_TRANSLATE_PROMPT = """你是「生计」应用 USDA 营养素
    - **db_read(sql)**：执行 SELECT 查询；
    - **describe(table)**：查看表结构；
    - **list_tables()**：列出所有表。
-   （Claude Code 环境下使用 MCP 只读工具；
+   （Claude Code / Codex 环境下使用 MCP 只读工具；
    用 MCP 只读工具查询数据库；langchain 环境
    下为进程内 @tool。）
 
@@ -756,11 +756,55 @@ VALUES
 """
 
 
+_BLACKLIST_GROUP_MATCH_ALL_PROMPT = """你是「生计」应用的食材数据维护助手，负责根据多个原料黑名单分组名称搜索匹配数据库中的原料。
+
+# 任务目标
+以下启用分组都需要匹配：
+{groups_block}
+
+# 搜索策略
+1. 对每个分组，先思考哪些食物属于该类别
+2. 对每个可能的食物名，执行 SQL 搜索：
+   ```sql
+   SELECT id, name, aliases FROM ingredients
+   WHERE is_active = true
+     AND (name LIKE '%关键词%' OR aliases LIKE '%关键词%')
+   ORDER BY name;
+   ```
+3. 用不同关键词多轮搜索，覆盖所有分组
+4. 去重后输出每个分组的 ingredient_id
+
+# 最终输出
+在回复中列出每个分组的结果，格式：
+- group_id: group_name -> ingredient_id: name (匹配依据)
+
+最后按分组输出 INSERT。每个 INSERT 使用对应 group_id，`is_ai_matched = true`，`created_by = {admin_id}`：
+```sql
+INSERT INTO blacklist_group_ingredients (group_id, ingredient_id, is_ai_matched, created_by)
+VALUES
+  (该分组的实际 group_id, <id1>, true, {admin_id}),
+  ...
+;
+```
+
+注意：
+- 只匹配明确属于该类别的原料
+- 不确定的不加入
+- 所有分组都要处理，不要遗漏
+- 安全 SQL 自动执行，你可以放心输出 INSERT
+"""
+
+
 TASK_TEMPLATES: dict[str, dict] = {
     "blacklist_group_match": {
         "title": "原料黑名单分组 AI 匹配",
         "allowed_tools": list(_READ_ONLY_TOOLS),
         "prompt": _BLACKLIST_GROUP_MATCH_PROMPT,
+    },
+    "blacklist_group_match_all": {
+        "title": "原料黑名单分组 AI 匹配（全部）",
+        "allowed_tools": list(_READ_ONLY_TOOLS),
+        "prompt": _BLACKLIST_GROUP_MATCH_ALL_PROMPT,
     },
     "fill_piece_weight": {
         "title": "补单位质量（自定义单位对应克数）",
@@ -807,9 +851,16 @@ def get_template(task_type: str) -> dict:
     return TASK_TEMPLATES[task_type]
 
 
+_INTERNAL_TASK_TYPES = {"blacklist_group_match_all"}
+
+
 def list_task_types() -> list[dict]:
     """返回 ``[{task_type, title}]`` 供前端按钮列表用。
 
     顺序按 TASK_TEMPLATES 的插入序（Python 3.7+ dict 保序）。
     """
-    return [{"task_type": k, "title": v["title"]} for k, v in TASK_TEMPLATES.items()]
+    return [
+        {"task_type": k, "title": v["title"]}
+        for k, v in TASK_TEMPLATES.items()
+        if k not in _INTERNAL_TASK_TYPES
+    ]

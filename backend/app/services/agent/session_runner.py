@@ -322,16 +322,16 @@ def run_session(
         if cost_usd is not None:
             last_cost_usd = cost_usd
 
-        last_claude_sid: str | None
+        last_external_sid: str | None
         try:
-            last_claude_sid = runner.last_session_id
+            last_external_sid = runner.last_session_id
         except Exception:  # noqa: BLE001
-            last_claude_sid = None
+            last_external_sid = None
 
         # 收尾：根据 error/done.is_error 决定终态。
         sess = db.query(AgentSession).get(session_id)
         if sess is not None:
-            sess.claude_session_id = last_claude_sid or sess.claude_session_id
+            sess.external_session_id = last_external_sid or sess.external_session_id
             if last_cost_usd is not None:
                 sess.cost_usd = last_cost_usd
             if is_error:
@@ -348,7 +348,7 @@ def run_session(
                 sess.status = "success"
             db.commit()
 
-        return last_claude_sid
+        return last_external_sid
 
     except Exception as exc:  # noqa: BLE001
         logger.exception("run_session 异常")
@@ -680,7 +680,7 @@ def run_agent_loop(
 
     循环（每轮）：
       1. 跑一轮 Runner（首轮用 initial_prompt + resume_session_id（插话用），
-         后续用上一轮的执行结果摘要 + 本轮捕获的 claude_session_id）。
+         后续用上一轮的执行结果摘要 + 本轮捕获的 external_session_id）。
       2. 捕获本轮 assistant 文本（``_consume_events`` 聚合 text_delta）。
       3. error / done.is_error → session.failed，终止。
          **例外**：若 error 来自 CLI 自身崩溃（``AgentEvent.crash=True``），
@@ -694,7 +694,7 @@ def run_agent_loop(
     终止条件：无 SQL（完成）/ max_turns / error / done.is_error / 审批超时。
 
     Args:
-        resume_session_id: 首轮 resume 的 claude session id（插话场景：在已终态
+        resume_session_id: 首轮 resume 的 external session id（插话场景：在已终态
             会话上起新轮，``initial_prompt`` 作为 user 消息，``--resume`` 续跑）。
             首次创建的会话不传（默认 None）。
         approval_timeout: 单条 dangerous SQL 审批等待秒数；超时则 session.failed，
@@ -719,10 +719,10 @@ def run_agent_loop(
     # resume 锚分流：
     # - uses_db_pk_resume=True（LangChainRunner）：锚恒为 str(session_id)，
     #   因为 _load_history 按 AgentMessage.session_id（= AgentSession DB PK）查历史。
-    #   首轮即设值 → claude_session_id 非 NULL → post_message 插话不再 409；
+    #   首轮即设值 → external_session_id 非 NULL → post_message 插话不再 409；
     #   每轮 resume 都能恢复历史。
-    # - 否则（ClaudeCodeRunner）：首轮用入参 resume_session_id（插话场景），
-    #   后续轮用 runner.last_session_id（CLI 捕获的 claude session id）。
+    # - 否则（ClaudeCodeRunner / CodexRunner）：首轮用入参 resume_session_id（插话场景），
+    #   后续轮用 runner.last_session_id（CLI/SDK 捕获的 external session id）。
     uses_db_pk = bool(getattr(runner, "uses_db_pk_resume", False))
     current_sid: "str | None" = str(session_id) if uses_db_pk else resume_session_id
     next_prompt = initial_prompt
@@ -767,7 +767,7 @@ def run_agent_loop(
                 current_sid = None
             s = db.query(AgentSession).get(session_id)
             if s is not None and current_sid:
-                s.claude_session_id = current_sid
+                s.external_session_id = current_sid
                 db.commit()
 
             # 取消检查：若外部调用了 cancel_session，DB 状态已变，立即终止。

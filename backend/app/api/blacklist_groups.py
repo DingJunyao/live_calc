@@ -191,10 +191,48 @@ class AiMatchResponse(BaseModel):
     message: str
 
 
+class AiMatchRequest(BaseModel):
+    provider: str = "claude_code"
+
+
+@blacklist_group_admin_router.post("/blacklist-groups/ai-match-all", response_model=AiMatchResponse)
+@blacklist_group_admin_router.post("/blacklist-groups/ai-match-all/", response_model=AiMatchResponse)
+async def trigger_ai_match_all(
+    body: AiMatchRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """触发一个覆盖所有启用分组的 AI Agent 匹配任务。"""
+    groups = (
+        db.query(BlacklistGroup)
+        .filter(BlacklistGroup.is_active == True)
+        .order_by(BlacklistGroup.display_order, BlacklistGroup.id)
+        .all()
+    )
+    if not groups:
+        raise HTTPException(status_code=400, detail="没有可匹配的启用分组")
+
+    from app.services.agent.blacklist_group_task import trigger_blacklist_group_match_all
+
+    main_loop = asyncio.get_running_loop()
+    session_id = trigger_blacklist_group_match_all(
+        db,
+        groups=[{"id": g.id, "name": g.name} for g in groups],
+        admin_id=admin.id,
+        main_loop=main_loop,
+        provider=body.provider,
+    )
+    return AiMatchResponse(
+        agent_session_id=session_id,
+        message="已触发全部启用分组 AI 匹配任务，可在 Agent 任务台查看进度",
+    )
+
+
 @blacklist_group_admin_router.post("/blacklist-groups/{group_id}/ai-match", response_model=AiMatchResponse)
 @blacklist_group_admin_router.post("/blacklist-groups/{group_id}/ai-match/", response_model=AiMatchResponse)
-def trigger_ai_match(
+async def trigger_ai_match(
     group_id: int,
+    body: AiMatchRequest,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
@@ -206,7 +244,14 @@ def trigger_ai_match(
     from app.services.agent.blacklist_group_task import trigger_blacklist_group_match
 
     main_loop = asyncio.get_running_loop()
-    session_id = trigger_blacklist_group_match(db, group_id, group.name, admin.id, main_loop)
+    session_id = trigger_blacklist_group_match(
+        db,
+        group_id,
+        group.name,
+        admin.id,
+        main_loop,
+        provider=body.provider,
+    )
 
     return AiMatchResponse(
         agent_session_id=session_id,

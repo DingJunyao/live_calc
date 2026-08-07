@@ -15,7 +15,9 @@ const goBack = () => router.back()
 const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 // claude_code 依赖服务器 PATH 中的 claude CLI，纯前端本地模式不可用，隐藏该 provider
 const aiProviders = computed(() =>
-  isLocalMode.value ? AI_PROVIDERS.filter((p) => p.key !== 'claude_code') : AI_PROVIDERS,
+  isLocalMode.value
+    ? AI_PROVIDERS.filter((p) => p.key !== 'claude_code' && p.key !== 'codex')
+    : AI_PROVIDERS,
 )
 
 type FieldType = 'text' | 'password' | 'switch'
@@ -28,6 +30,12 @@ const AI_PROVIDERS: ProviderDef[] = [
     key: 'claude_code',
     title: 'Claude Code（本机 CLI）',
     hint: '需服务器 PATH 中有 claude CLI。',
+    fields: [{ key: 'enabled', label: '启用', type: 'switch' }],
+  },
+  {
+    key: 'codex',
+    title: 'Codex（本机 SDK）',
+    hint: '需服务器 ~/.codex/config.toml 配置 Codex 模型 provider。',
     fields: [{ key: 'enabled', label: '启用', type: 'switch' }],
   },
   {
@@ -137,7 +145,7 @@ async function save() {
 
   <v-container v-if="config" class="pa-4">
     <p class="text-caption mb-2">
-      AI 走 {{ isLocalMode ? 'OpenAI 兼容 / Anthropic 兼容' : 'Claude Code / OpenAI 兼容 / Anthropic 兼容' }}；机翻走 百度 / 阿里云 / DeepL。
+      AI 走 {{ isLocalMode ? 'OpenAI 兼容 / Anthropic 兼容' : 'Claude Code / Codex / OpenAI 兼容 / Anthropic 兼容' }}；机翻走 百度 / 阿里云 / DeepL。
     </p>
 
     <v-expansion-panels multiple v-model="openPanels" class="my-3">

@@ -10,7 +10,7 @@ import type { AgentSession, SessionDetail, TaskType } from '@/types/agent'
  * - openai → LangChainRunner（OpenAI 兼容端点）
  * - anthropic → LangChainRunner（Anthropic 兼容端点）
  */
-export type AgentProvider = 'claude_code' | 'openai' | 'anthropic'
+export type AgentProvider = 'claude_code' | 'codex' | 'openai' | 'anthropic'
 
 /** 建会话（管理员）。返回 { session_id }。
  * provider: claude_code（默认）/ openai / anthropic，

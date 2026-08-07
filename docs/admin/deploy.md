@@ -97,7 +97,7 @@ docker compose up -d --build
 
 切换数据库改 `backend/.env` 的 `DATABASE_URL`（PG/MySQL 驱动已在镜像内）。生产务必改 `JWT_SECRET_KEY`、设 `DEBUG=false`。前端构建时 `VITE_API_URL` 走相对路径 `/api/v1`，由 nginx 反代后端，部署时不必改。
 
-> Docker 版本未封装 Claude Code（Agent 任务台用到时请自行安装配置）。
+> Docker 版本未封装 Claude Code、Codex（Agent 任务台用到时请自行安装配置）。
 
 ### 自动发布镜像（GitHub Actions）
 

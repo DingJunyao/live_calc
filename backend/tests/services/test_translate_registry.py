@@ -15,9 +15,14 @@ def test_unknown_raises():
         get_translator("nope", {}, timeout=10)
 
 
-def test_lists_all_six():
+def test_lists_all_providers():
     names = set(list_provider_names())
-    assert names == {"claude_code", "openai", "anthropic", "baidu", "aliyun", "deepl"}
+    assert names == {"claude_code", "codex", "openai", "anthropic", "baidu", "aliyun", "deepl"}
+
+
+def test_list_provider_names_has_codex_after_claude():
+    names = list_provider_names()
+    assert names.index("codex") == names.index("claude_code") + 1
 
 
 def test_find_provider_section():
@@ -28,3 +33,11 @@ def test_find_provider_section():
     assert find_provider_section(config_dict, "openai") == {"enabled": True}
     assert find_provider_section(config_dict, "baidu") == {"enabled": True}
     assert find_provider_section(config_dict, "deepl") is None
+
+
+def test_get_translator_codex():
+    from app.services.translate.codex import CodexTranslator
+    from app.services.translate.registry import get_translator
+
+    translator = get_translator("codex", {"enabled": True}, timeout=10)
+    assert isinstance(translator, CodexTranslator)

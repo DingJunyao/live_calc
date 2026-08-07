@@ -117,10 +117,16 @@
       <!-- 右栏：对话流 + 插话 -->
       <v-col cols="12" md="9" class="agent-main">
         <!-- 移动端：返回侧栏的按钮 -->
-        <div v-if="!$vuetify.display.mdAndUp && !currentSid" class="pa-3 text-center">
-          <v-btn variant="tonal" color="primary" @click="mobileShowSidebar = true">
-            <v-icon start>mdi-menu</v-icon>选择任务或历史会话
-          </v-btn>
+        <div v-if="!currentSid" class="pa-3 text-center">
+          <template v-if="!$vuetify.display.mdAndUp">
+            <v-btn variant="tonal" color="primary" @click="mobileShowSidebar = true">
+              <v-icon start>mdi-menu</v-icon>选择任务或历史会话
+            </v-btn>
+          </template>
+          <div v-else class="text-medium-emphasis pa-8">
+            <v-icon size="48" class="mb-2">mdi-robot-outline</v-icon>
+            <div>从左侧选择一个任务类型开始，或查看历史会话</div>
+          </div>
         </div>
 
         <template v-else>
@@ -270,6 +276,7 @@ import { useAgentSession } from '@/composables/useAgentSession'
 import { getTaskTypes, listSessions } from '@/api/agent'
 import type { AgentProvider } from '@/api/agent'
 import type { AgentSession, TaskType } from '@/types/agent'
+import { enabledProviderOptions } from '@/utils/agentProviders'
 import AgentMessageBubble from '@/components/agent/AgentMessageBubble.vue'
 import AgentApprovalCard from '@/components/agent/AgentApprovalCard.vue'
 
@@ -296,6 +303,7 @@ const {
   interject,
   approve,
   reset,
+  loadHistory,
 } = useAgentSession()
 
 // ---------- 元数据 ----------
@@ -305,17 +313,10 @@ const loadingMeta = ref(false)
 const starting = ref(false)
 const sending = ref(false)
 
-/** Provider 选择（默认 claude_code，保现有行为）。
- * 三选项前端硬编码（YAGNI，不动后端 /task-types）。
- */
-const ALL_PROVIDERS: { value: AgentProvider; label: string }[] = [
-  { value: 'claude_code', label: 'Claude Code' },
-  { value: 'openai', label: 'OpenAI 兼容' },
-  { value: 'anthropic', label: 'Anthropic 兼容' },
-]
-// 本地模式仅保留 OpenAI/Anthropic 兼容（claude_code 依赖服务端 CLI）
+/** Provider 选择：从翻译配置读取已启用项。 */
+const translationConfig = ref<any>(null)
 const providerOptions = computed(() =>
-  isLocalMode.value ? ALL_PROVIDERS.filter((o) => o.value !== 'claude_code') : ALL_PROVIDERS,
+  enabledProviderOptions(translationConfig.value, ['ai'], isLocalMode.value),
 )
 const provider = ref<AgentProvider>(isLocalMode.value ? 'anthropic' : 'claude_code')
 /** 本地模式：是否已配置至少一个可用的 AI provider Key */
@@ -332,7 +333,9 @@ const errorMsg = computed(() => error.value)
 const TERMINAL = new Set(['success', 'completed', 'failed', 'cancelled'])
 
 const isRunning = computed(
-  () => status.value === 'running' || status.value === 'pending',
+  () =>
+    !!currentSid.value &&
+    (status.value === 'running' || status.value === 'pending'),
 )
 
 const canInterject = computed(() => {
@@ -491,6 +494,7 @@ async function onSelectSession(sid: number) {
   try {
     reset()
     currentSid.value = sid
+    await loadHistory(sid)
     await connect(sid)
     await router.replace({ query: { ...route.query, session_id: String(sid) } })
     await scrollToBottom()
@@ -525,20 +529,16 @@ async function onDecide(aid: number, approved: boolean) {
 
 // ---------- 生命周期 ----------
 onMounted(async () => {
-  // 本地模式：加载 AI 配置以判断是否已填写 Key，并预选已配置的 provider
-  if (isLocalMode.value) {
-    try {
-      const cfg: any = await api.get('/admin/translation-config')
-      const ai = cfg?.ai?.providers || {}
-      const hasAnthropic = !!ai.anthropic?.api_key
-      const hasOpenai = !!ai.openai?.api_key
-      localAiReady.value = hasAnthropic || hasOpenai
-      if (provider.value === 'anthropic' && !hasAnthropic && hasOpenai) {
-        provider.value = 'openai'
-      }
-    } catch {
-      /* ignore */
+  // 加载 AI 配置，只展示已启用 provider，并预选默认项。
+  try {
+    translationConfig.value = await api.get('/admin/translation-config')
+    const options = providerOptions.value
+    localAiReady.value = options.length > 0
+    if (options.length && !options.some((o) => o.value === provider.value)) {
+      provider.value = options[0].value as AgentProvider
     }
+  } catch {
+    /* ignore */
   }
   await loadMeta()
   // URL 带 session_id 时自动回放

@@ -18,6 +18,7 @@ import type {
 import {
   createSession as apiCreateSession,
   decideApproval as apiDecideApproval,
+  getSession as apiGetSession,
   postMessage as apiPostMessage,
 } from '@/api/agent'
 import type { AgentProvider } from '@/api/agent'
@@ -74,6 +75,8 @@ export function useAgentSession() {
   let es: EventSource | null = null
   /** 已展示过的最大 seq（用于重连去重） */
   let maxSeqSeen = 0
+  /** 是否已通过详情接口显式加载过历史（避免 SSE 回放再次重复追加） */
+  let historyLoaded = false
 
   /** 由 history 事件构造一条 RenderMessage */
   function fromHistory(evt: Extract<AgentEvent, { kind: 'history' }>): RenderMessage {
@@ -102,6 +105,50 @@ export function useAgentSession() {
     }
   }
 
+  /** 显式拉取会话历史，供重新进入时先渲染旧输出，再接实时流。 */
+  async function loadHistory(sid: number): Promise<void> {
+    const detail = await apiGetSession(sid)
+    messages.value = (detail.messages || []).map((m) => {
+      if (m.role === 'assistant') {
+        return {
+          key: nextKey(),
+          role: 'assistant' as const,
+          content: m.content ?? '',
+          toolName: null,
+          toolUseId: null,
+          toolInput: null,
+          toolResult: null,
+          toolDone: false,
+        }
+      }
+      return {
+        key: nextKey(),
+        role: 'tool' as const,
+        content: null,
+        toolName: m.tool_name ?? null,
+        toolUseId: m.tool_use_id ?? null,
+        toolInput: m.tool_input ?? null,
+        toolResult: m.tool_result ?? null,
+        toolDone: m.tool_result != null,
+      }
+    })
+    maxSeqSeen = (detail.messages || []).reduce(
+      (max, m) => Math.max(max, m.seq ?? 0),
+      0,
+    )
+    status.value = detail.session.status
+    if (detail.session.status === 'failed') {
+      const rawError = detail.session.error
+      error.value =
+        rawError && rawError !== 'success'
+          ? rawError
+          : '任务执行失败，未产生可用输出'
+    } else {
+      error.value = ''
+    }
+    historyLoaded = true
+  }
+
   /** 更新或插入一条 approval（按 id 去重）。 */
   function upsertApproval(ap: AgentApproval) {
     const idx = pendingApprovals.value.findIndex((a) => a.id === ap.id)
@@ -115,6 +162,7 @@ export function useAgentSession() {
         if (typeof evt.seq === 'number') {
           maxSeqSeen = Math.max(maxSeqSeen, evt.seq)
         }
+        if (historyLoaded) break
         messages.value.push(fromHistory(evt))
         break
       }
@@ -318,7 +366,7 @@ export function useAgentSession() {
     localAbort?.abort()
     localAbort = new AbortController()
     clearLocalPoll()
-    localProvider = provider === 'claude_code' ? null : provider
+    localProvider = provider === 'claude_code' || provider === 'codex' ? null : provider
     connected.value = true
     // 初始消息：续跑用传入历史，否则用任务提示
     localAiMessages =
@@ -409,6 +457,7 @@ export function useAgentSession() {
     localAiMessages = []
     localSid = null
     localProvider = null
+    historyLoaded = false
   }
 
   /** 建立 SSE 连接（不重置已渲染状态，便于断线重连）。 */
@@ -545,6 +594,7 @@ export function useAgentSession() {
     interject,
     approve,
     reset,
+    loadHistory,
   }
 }
 

@@ -5,6 +5,29 @@
       <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
       <v-app-bar-title>原料黑名单分组管理</v-app-bar-title>
       <template #append>
+        <v-select
+          v-if="providerOptions.length"
+          v-model="aiProvider"
+          :items="providerOptions"
+          item-title="label"
+          item-value="value"
+          label="AI Provider"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="mr-2 provider-select"
+        />
+        <v-btn
+          color="primary"
+          prepend-icon="mdi-robot"
+          size="small"
+          class="mr-2"
+          :loading="aiMatchingAll"
+          :disabled="!providerOptions.length || !groups.length"
+          @click="triggerAiMatchAll"
+        >
+          AI 匹配全部
+        </v-btn>
         <v-btn color="primary" prepend-icon="mdi-plus" size="small" @click="openCreate">新建分组</v-btn>
       </template>
     </v-app-bar>
@@ -159,12 +182,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
+import { enabledProviderOptions, type ProviderOption } from '@/utils/agentProviders'
 const { toggleSidebar, isDesktop } = useMobileDrawerControl()
 const router = useRouter()
+const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 
 const goBack = () => {
   router.back()
@@ -196,6 +221,12 @@ interface AllergenStatus {
 }
 
 const groups = ref<BlacklistGroup[]>([])
+const translationConfig = ref<any>(null)
+const aiProvider = ref('claude_code')
+const aiMatchingAll = ref(false)
+const providerOptions = computed<ProviderOption[]>(() =>
+  enabledProviderOptions(translationConfig.value, ['ai'], isLocalMode.value),
+)
 const allergenStatus = ref<AllergenStatus>({
   needed: false,
   total: 13,
@@ -380,12 +411,28 @@ async function removeIngredient(groupId: number, ingredientId: number) {
 async function triggerAiMatch(group: BlacklistGroup) {
   aiMatchingGroups.value.add(group.id)
   try {
-    const data = await api.post(`/admin/blacklist-groups/${group.id}/ai-match`)
+    const data = await api.post(`/admin/blacklist-groups/${group.id}/ai-match`, {
+      provider: aiProvider.value,
+    })
     showInfo(`AI 匹配任务已触发（任务 ID: ${data.agent_session_id}），可在 Agent 任务台查看进度。完成后请刷新本页。`)
   } catch (e: any) {
     showError('触发失败：' + (e?.userMessage || e?.message || '未知错误'))
   } finally {
     aiMatchingGroups.value.delete(group.id)
+  }
+}
+
+async function triggerAiMatchAll() {
+  aiMatchingAll.value = true
+  try {
+    const data = await api.post('/admin/blacklist-groups/ai-match-all', {
+      provider: aiProvider.value,
+    })
+    showInfo(`全部启用分组 AI 匹配任务已触发（任务 ID: ${data.agent_session_id}），可在 Agent 任务台查看进度。完成后请刷新本页。`)
+  } catch (e: any) {
+    showError('触发失败：' + (e?.userMessage || e?.message || '未知错误'))
+  } finally {
+    aiMatchingAll.value = false
   }
 }
 
@@ -411,7 +458,24 @@ async function seedAllergens() {
   }
 }
 
-onMounted(() => {
-  Promise.all([loadGroups(), loadAllergenStatus()])
+onMounted(async () => {
+  try {
+    translationConfig.value = await api.get('/admin/translation-config')
+    if (
+      providerOptions.value.length &&
+      !providerOptions.value.some((o) => o.value === aiProvider.value)
+    ) {
+      aiProvider.value = providerOptions.value[0].value
+    }
+  } catch {
+    // 保留默认 claude_code
+  }
+  await Promise.all([loadGroups(), loadAllergenStatus()])
 })
 </script>
+
+<style scoped>
+.provider-select {
+  max-width: 180px;
+}
+</style>

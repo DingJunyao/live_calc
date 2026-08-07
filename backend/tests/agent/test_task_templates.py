@@ -76,8 +76,15 @@ def test_list_task_types_contains_fill_piece_weight():
 
 
 def test_list_task_types_matches_registry_keys():
-    """list_task_types 的 task_type 集合与 TASK_TEMPLATES 键一致。"""
-    assert {it["task_type"] for it in list_task_types()} == set(TASK_TEMPLATES.keys())
+    """list_task_types 排除 internal task type，并保留其余模板键。"""
+    from app.services.agent.task_templates import _INTERNAL_TASK_TYPES
+
+    assert {it["task_type"] for it in list_task_types()} == (
+        set(TASK_TEMPLATES.keys()) - _INTERNAL_TASK_TYPES
+    )
+    assert "blacklist_group_match_all" not in {
+        it["task_type"] for it in list_task_types()
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -164,7 +171,7 @@ def _patch_loop_capture_prompt(mem_env, monkeypatch) -> list[dict]:
             s = db.query(AgentSession).get(session_id)
             if s is not None:
                 s.status = "success"
-                s.claude_session_id = "fake-sid"
+                s.external_session_id = "fake-sid"
                 db.commit()
         finally:
             db.close()

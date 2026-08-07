@@ -286,8 +286,12 @@ router.beforeEach(async (to, from, next) => {
 
 // 路由切换后自动设置页面标题
 router.afterEach((to) => {
-  const title = to.meta.title as string | undefined
+  let title = to.meta.title as string | undefined
   if (title) {
+    // 本地模式下「个人中心」改称「设置」
+    if (import.meta.env.VITE_STORAGE_MODE === 'local' && title === '个人中心') {
+      title = '设置'
+    }
     document.title = `${title} - ${SITE_NAME}`
   }
 })

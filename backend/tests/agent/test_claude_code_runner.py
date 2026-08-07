@@ -15,6 +15,7 @@ import pytest
 from app.services.agent.claude_code_runner import (
     ClaudeCodeRunner,
     _coerce_tool_result_content,
+    _enrich_done_error,
     build_cmd,
     build_env,
     translate_event,
@@ -241,6 +242,23 @@ def test_translate_assistant_empty_content():
     assert translate_event(evt) == []
 
 
+def test_translate_assistant_api_error_emits_text_delta():
+    evt = {
+        "type": "assistant",
+        "isApiErrorMessage": True,
+        "error": "rate_limit",
+        "message": {
+            "content": [
+                {"type": "text", "text": "API Error: Request rejected (429)"},
+            ]
+        },
+    }
+    out = translate_event(evt)
+    assert len(out) == 1
+    assert out[0].kind == "text_delta"
+    assert "API Error: Request rejected" in out[0].text
+
+
 def test_translate_user_tool_result_string_form():
     # spike events_first.jsonl 实测形态：content 是裸 JSON 字符串。
     evt = {
@@ -299,6 +317,31 @@ def test_translate_result_success():
     assert done.is_error is False
     assert done.cost_usd == pytest.approx(0.044017799999999996)
     assert done.permission_denials == []
+
+
+def test_translate_result_is_error_never_uses_success_text():
+    """is_error=True + subtype=success 时不能把 'success' 当作错误文本。"""
+    evt = {
+        "type": "result",
+        "subtype": "success",
+        "is_error": True,
+    }
+    out = translate_event(evt)
+    assert out[0].is_error is True
+    assert out[0].error != "success"
+    assert "is_error" in out[0].error
+
+
+def test_enrich_done_error_adds_raw_result_and_stderr():
+    ev = AgentEvent(kind="done", is_error=True, error="Agent 终态 is_error")
+    _enrich_done_error(
+        ev,
+        {"type": "result", "is_error": True, "detail": "boom"},
+        "stderr-line",
+    )
+    assert "raw_result" in ev.error
+    assert "boom" in ev.error
+    assert "stderr-line" in ev.error
 
 
 def test_translate_result_error_with_denials():

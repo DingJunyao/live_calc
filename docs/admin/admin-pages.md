@@ -154,15 +154,15 @@
 
 ## AI 与机翻配置
 
-![AI 与机翻配置](../img/admin_ai.png)
+![AI 与机翻配置](../img/admin_ai.jpeg)
 
 本页面配置系统里面用到 AI Agent 的地方、使用机器翻译平台的地方的 API 等配置。
 
-- **AI provider**：Claude Code / OpenAI 兼容 API / Anthropic 兼容 API（三个面板）
+- **AI provider**：Claude Code / Codex / OpenAI 兼容 API / Anthropic 兼容 API（三个面板）
 - **机翻 provider**：百度 / 阿里云 / DeepL（三个面板）
 - 每个 provider 一张卡片，填 API 密钥等，统一保存。可以测试，以确认配置是否正确。
 
-> 如果使用 Claude Code，则会试图在环境变量的 PATH 中寻找其可执行文件，配置使用你默认给它的配置。请自行配置。Docker 版本并未封装 Claude Code，请自行安装、配置。
+> 如果使用 Claude Code 或 Codex，则会试图在环境变量的 PATH 中寻找其可执行文件，配置使用你默认给它的配置。请自行配置。Docker 版本并未封装 Claude Code 与 Codex，请自行安装、配置。
 
 ## 未使用图片清理
 

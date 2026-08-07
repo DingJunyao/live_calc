@@ -157,7 +157,9 @@
             <!-- AI 提供方选择 -->
             <v-select
               v-model="aiProvider"
-              :items="enabledProviders"
+              :items="providerOptions"
+              item-title="label"
+              item-value="value"
               label="AI 提供方"
               variant="outlined"
               prepend-icon="mdi-robot"
@@ -271,12 +273,14 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMobileDrawerControl } from '@/composables/useMobileDrawer'
 import { useImportTask } from '@/composables/useImportTask'
-import { getTranslationConfig } from '@/api/usda'
-import { createSession, getSession, listSessions } from '@/api/agent'
+  import { getTranslationConfig } from '@/api/usda'
+  import { createSession, getSession, listSessions } from '@/api/agent'
+  import { enabledProviderOptions, type ProviderOption } from '@/utils/agentProviders'
 
 const { isDesktop, toggleSidebar } = useMobileDrawerControl()
 const { tasks, fetchTasks, startTask, startUploadTask } = useImportTask()
-const router = useRouter()
+  const router = useRouter()
+  const isLocalMode = computed(() => import.meta.env.VITE_STORAGE_MODE === 'local')
 
 const goBack = () => router.back()
 
@@ -312,16 +316,10 @@ const aiForce = ref(false)
 const aiProvider = ref('')
 const translationConfig = ref<any>(null)
 
-function enabledIn(region: string): string[] {
-  const cfg = translationConfig.value
-  if (!cfg) return []
-  const provs = cfg[region]?.providers || {}
-  return Object.entries(provs)
-    .filter(([, v]: any) => v.enabled !== false)
-    .map(([k]) => k)
-}
-
-const enabledProviders = computed<string[]>(() => enabledIn('ai'))
+const providerOptions = computed<ProviderOption[]>(() =>
+  enabledProviderOptions(translationConfig.value, ['ai'], isLocalMode.value),
+)
+const enabledProviders = computed<string[]>(() => providerOptions.value.map((o) => o.value))
 
 onMounted(async () => {
   // 加载近期任务列表，恢复对运行中任务的轮询

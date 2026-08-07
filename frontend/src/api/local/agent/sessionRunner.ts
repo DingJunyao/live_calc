@@ -29,7 +29,7 @@ export function buildPrompt(taskType: string): string {
   return TASK_PROMPTS[taskType] || `请执行任务：${taskType}。可调用工具查询本地数据后用中文总结。`
 }
 
-export type AgentProviderLike = 'claude_code' | 'openai' | 'anthropic'
+export type AgentProviderLike = 'claude_code' | 'codex' | 'openai' | 'anthropic'
 
 export interface AgentRunConfig {
   provider: 'anthropic' | 'openai'
@@ -39,8 +39,8 @@ export interface AgentRunConfig {
 }
 
 export async function resolveAgentConfig(provider: AgentProviderLike): Promise<AgentRunConfig> {
-  if (provider === 'claude_code') {
-    throw new Error('本地模式不支持 claude_code，请在 AI 配置中选择 OpenAI 或 Anthropic 兼容。')
+  if (provider === 'claude_code' || provider === 'codex') {
+    throw new Error('本地模式不支持 CLI provider，请在 AI 配置中选择 OpenAI 或 Anthropic 兼容。')
   }
   const cfg: any = await api.get('/admin/translation-config')
   const p = cfg?.ai?.providers?.[provider]
