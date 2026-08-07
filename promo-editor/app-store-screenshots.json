@@ -1,0 +1,616 @@
+{
+  "schemaVersion": 2,
+  "appName": "生计",
+  "themeId": "kitchen-fresh",
+  "connectedCanvas": true,
+  "locales": [
+    "zh"
+  ],
+  "locale": "zh",
+  "device": "ipad",
+  "orientation": "landscape",
+  "appIcon": "",
+  "slidesByDevice": {
+    "iphone": [
+      {
+        "id": "s_hero_1",
+        "layout": "hero",
+        "label": {
+          "zh": "精打细算"
+        },
+        "headline": {
+          "zh": "精打细算\n从每一餐开始"
+        },
+        "screenshot": "/screenshots/apple/iphone/zh/01.png",
+        "transforms": {
+          "device": {
+            "x": 107.9542542763991,
+            "y": 839.0817457333495,
+            "width": 1085,
+            "height": 2211,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "s_price_2",
+        "layout": "device-top",
+        "label": {
+          "zh": "极速记账"
+        },
+        "headline": {
+          "zh": "买菜记账\n一秒钟搞定"
+        },
+        "screenshot": "/screenshots/apple/iphone/zh/02.png",
+        "transforms": {
+          "device": {
+            "x": 116.68925918803279,
+            "y": -714.8729360557397,
+            "width": 1097,
+            "height": 2235,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "s_recipe_3",
+        "layout": "two-devices",
+        "label": {
+          "zh": "菜谱成本"
+        },
+        "headline": {
+          "zh": "每道菜的成本\n清清楚楚"
+        },
+        "screenshot": "/screenshots/apple/iphone/zh/03.png",
+        "screenshotSecondary": "/screenshots/apple/iphone/zh/07.png",
+        "transforms": {
+          "deviceSecondary": {
+            "x": 345.53554075485863,
+            "y": 1142.4961473562842,
+            "width": 915,
+            "height": 1864,
+            "rotation": 0,
+            "zIndex": 2
+          },
+          "device": {
+            "x": 69.30932836684406,
+            "y": 647.1906019930829,
+            "width": 1036,
+            "height": 2110,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "s_map_5",
+        "layout": "device-top",
+        "label": {
+          "zh": "周边商家"
+        },
+        "headline": {
+          "zh": "附近商家\n一图搞定"
+        },
+        "screenshot": "/screenshots/apple/iphone/zh/05.png",
+        "transforms": {
+          "device": {
+            "x": 129.09730066251632,
+            "y": -624.9155828428353,
+            "width": 1071,
+            "height": 2182,
+            "rotation": 0,
+            "zIndex": 3
+          },
+          "caption": {
+            "x": 105.60000000000036,
+            "y": 1864.2,
+            "width": 1108.8,
+            "height": 803.0400000000001,
+            "rotation": 0,
+            "zIndex": 4
+          }
+        }
+      },
+      {
+        "id": "s_trend_6",
+        "layout": "two-devices",
+        "label": {
+          "zh": "价格走势"
+        },
+        "headline": {
+          "zh": "价格涨跌\n心中有数"
+        },
+        "screenshot": "/screenshots/apple/iphone/zh/06.png",
+        "screenshotSecondary": "/screenshots/apple/iphone/zh/08.png",
+        "transforms": {
+          "deviceSecondary": {
+            "x": 370.3512269516423,
+            "y": 1669.8323705607838,
+            "width": 934,
+            "height": 1902,
+            "rotation": 0,
+            "zIndex": 2
+          },
+          "device": {
+            "x": 32.08568378388554,
+            "y": 622.3748116783349,
+            "width": 996,
+            "height": 2029,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "s_analyse_7",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "深度分析"
+        },
+        "headline": {
+          "zh": "营养与成本\n深度剖析"
+        },
+        "screenshot": "/screenshots/apple/iphone/zh/07.png",
+        "inverted": true,
+        "transforms": {
+          "device": {
+            "x": 111.03152573461557,
+            "y": 780.4894622147262,
+            "width": 1104,
+            "height": 2250,
+            "rotation": 0,
+            "zIndex": 3
+          },
+          "caption": {
+            "x": 105.60012518269104,
+            "y": 288.44000430561755,
+            "width": 1109,
+            "height": 347,
+            "rotation": 0,
+            "zIndex": 4
+          }
+        }
+      }
+    ],
+    "android": [
+      {
+        "id": "a_hero_1",
+        "layout": "hero",
+        "label": {
+          "zh": "精打细算"
+        },
+        "headline": {
+          "zh": "精打细算\n从每一餐开始"
+        },
+        "screenshot": "/screenshots/android/phone/zh/01.png",
+        "transforms": {
+          "device": {
+            "x": 201.0133038940457,
+            "y": 677.042167580437,
+            "width": 678.5844380403457,
+            "height": 1470.266282420749,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "a_price_2",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "极速记账"
+        },
+        "headline": {
+          "zh": "买菜记账\n一秒钟搞定"
+        },
+        "screenshot": "/screenshots/android/phone/zh/02.png",
+        "transforms": {
+          "device": {
+            "x": 200.7,
+            "y": 449.7,
+            "width": 678.5844380403457,
+            "height": 1470.266282420749,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "a_recipe_3",
+        "layout": "two-devices",
+        "label": {
+          "zh": "菜谱成本"
+        },
+        "headline": {
+          "zh": "每道菜的成本\n清清楚楚"
+        },
+        "screenshot": "/screenshots/android/phone/zh/03.png",
+        "screenshotSecondary": "/screenshots/android/phone/zh/08.png",
+        "transforms": {
+          "deviceSecondary": {
+            "x": 340.61638361179394,
+            "y": 435.90715550192203,
+            "width": 678.5844380403457,
+            "height": 1470.266282420749,
+            "rotation": 0,
+            "zIndex": 2
+          },
+          "device": {
+            "x": 56.537947452864046,
+            "y": 499.0355091819287,
+            "width": 610.7259942363112,
+            "height": 1323.239654178674,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "a_map_5",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "周边商家"
+        },
+        "headline": {
+          "zh": "附近商家\n一图搞定"
+        },
+        "screenshot": "/screenshots/android/phone/zh/05.png"
+      },
+      {
+        "id": "a_trend_6",
+        "layout": "two-devices",
+        "label": {
+          "zh": "价格走势"
+        },
+        "headline": {
+          "zh": "价格涨跌\n心中有数"
+        },
+        "screenshot": "/screenshots/android/phone/zh/06.png",
+        "screenshotSecondary": "/screenshots/android/phone/zh/08.png",
+        "transforms": {
+          "deviceSecondary": {
+            "x": 105.48429357747045,
+            "y": 718.527071828237,
+            "width": 496.8,
+            "height": 1076.3999999999999,
+            "rotation": 0,
+            "zIndex": 2
+          },
+          "device": {
+            "x": 388.6629518914424,
+            "y": 548.5688082349703,
+            "width": 544.32,
+            "height": 1179.3600000000001,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "a_analyse_7",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "深度分析"
+        },
+        "headline": {
+          "zh": "营养与成本\n深度剖析"
+        },
+        "screenshot": "/screenshots/android/phone/zh/07.png",
+        "inverted": true
+      }
+    ],
+    "ipad": [
+      {
+        "id": "d_hero_1",
+        "layout": "device-top",
+        "label": {
+          "zh": "数据一览"
+        },
+        "headline": {
+          "zh": "大屏幕\n大视野"
+        },
+        "screenshot": "/screenshots/uploaded/1ae66e6fd63c6951.png",
+        "transforms": {
+          "device": {
+            "x": 187.2142640734426,
+            "y": -193.00573937479467,
+            "width": 2385,
+            "height": 1490,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "d_recipe_2",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "菜谱管理"
+        },
+        "headline": {
+          "zh": "菜谱管理\n井井有条"
+        },
+        "screenshot": "/screenshots/uploaded/f3f52ca60ef9bbaf.png",
+        "transforms": {
+          "device": {
+            "x": 162.65800498334374,
+            "y": 775.6030460877533,
+            "width": 2465,
+            "height": 1540,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "s_msic0zuy_j",
+        "layout": "device-top",
+        "label": {
+          "en": "NEW",
+          "zh": "菜谱详情"
+        },
+        "headline": {
+          "en": "Edit this\nheadline.",
+          "zh": "原料步骤\n还有成本"
+        },
+        "screenshot": "/screenshots/uploaded/9bc351e05b6db370.png",
+        "transforms": {
+          "device": {
+            "x": 109.08085565093279,
+            "y": -338.1107459177871,
+            "width": 2567,
+            "height": 1605,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "s_msibzmq7_i",
+        "layout": "device-bottom",
+        "label": {
+          "en": "NEW",
+          "zh": "菜谱分析"
+        },
+        "headline": {
+          "en": "Edit this\nheadline.",
+          "zh": "成本营养\n尽在掌握"
+        },
+        "screenshot": "/screenshots/uploaded/f1a2d71a414564a0.png",
+        "transforms": {
+          "device": {
+            "x": 86.75698646308228,
+            "y": 773.3706520946929,
+            "width": 2563,
+            "height": 1602,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "d_product_4",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "商品管理"
+        },
+        "headline": {
+          "zh": "一站式\n商品管理"
+        },
+        "screenshot": "/screenshots/apple/ipad/zh/04.png",
+        "transforms": {
+          "device": {
+            "x": 126.93978023931413,
+            "y": 768.9058894196162,
+            "width": 2482,
+            "height": 1552,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "d_map_6",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "地图路线"
+        },
+        "headline": {
+          "zh": "商家分布\n一目了然"
+        },
+        "screenshot": "/screenshots/uploaded/257a78759d877f65.png",
+        "transforms": {
+          "device": {
+            "x": 118.01038433412032,
+            "y": 762.2087632690557,
+            "width": 2516,
+            "height": 1572,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      }
+    ],
+    "android-7": [
+      {
+        "id": "s7_hero_1",
+        "layout": "hero",
+        "label": {
+          "zh": "精打细算"
+        },
+        "headline": {
+          "zh": "精打细算\n从每一餐开始"
+        },
+        "screenshot": "/screenshots/android/phone/zh/01.png"
+      },
+      {
+        "id": "s7_price_2",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "极速记账"
+        },
+        "headline": {
+          "zh": "买菜记账\n一秒钟搞定"
+        },
+        "screenshot": "/screenshots/android/phone/zh/02.png"
+      },
+      {
+        "id": "s7_recipe_3",
+        "layout": "device-top",
+        "label": {
+          "zh": "菜谱成本"
+        },
+        "headline": {
+          "zh": "每道菜的成本\n清清楚楚"
+        },
+        "screenshot": "/screenshots/android/phone/zh/03.png"
+      },
+      {
+        "id": "s7_nutrition_4",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "营养分析"
+        },
+        "headline": {
+          "zh": "营养配比\n一眼看透"
+        },
+        "screenshot": "/screenshots/android/phone/zh/04.png"
+      },
+      {
+        "id": "s7_more_5",
+        "layout": "no-device",
+        "label": {
+          "zh": "更多"
+        },
+        "headline": {
+          "zh": "多币种 · 多单位\n数据自由导入导出"
+        },
+        "screenshot": "/screenshots/android/phone/zh/08.png"
+      }
+    ],
+    "android-10": [
+      {
+        "id": "t_hero_1",
+        "layout": "hero",
+        "label": {
+          "zh": "数据一览"
+        },
+        "headline": {
+          "zh": "大屏幕\n大视野"
+        },
+        "screenshot": "/screenshots/uploaded/1ae66e6fd63c6951.png",
+        "transforms": {
+          "device": {
+            "x": 135.04279849748505,
+            "y": 679.9445800078456,
+            "width": 2317,
+            "height": 1448,
+            "rotation": 0,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "t_recipe_2",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "菜谱管理"
+        },
+        "headline": {
+          "zh": "菜谱管理\n井井有条"
+        },
+        "screenshot": "/screenshots/android/tablet-10/portrait/zh/02.png"
+      },
+      {
+        "id": "t_price_3",
+        "layout": "device-top",
+        "label": {
+          "zh": "价格记录"
+        },
+        "headline": {
+          "zh": "批量导入\n效率翻倍"
+        },
+        "screenshot": "/screenshots/android/tablet-10/portrait/zh/03.png",
+        "inverted": true
+      },
+      {
+        "id": "t_product_4",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "商品管理"
+        },
+        "headline": {
+          "zh": "一站式\n商品管理"
+        },
+        "screenshot": "/screenshots/android/tablet-10/portrait/zh/04.png"
+      },
+      {
+        "id": "t_ingredient_5",
+        "layout": "two-devices",
+        "label": {
+          "zh": "原料营养"
+        },
+        "headline": {
+          "zh": "从产地到餐桌\n全程追溯"
+        },
+        "screenshot": "/screenshots/android/tablet-10/portrait/zh/05.png",
+        "screenshotSecondary": "/screenshots/android/tablet-10/portrait/zh/08.png"
+      },
+      {
+        "id": "t_map_6",
+        "layout": "device-bottom",
+        "label": {
+          "zh": "地图路线"
+        },
+        "headline": {
+          "zh": "商家分布\n一目了然"
+        },
+        "screenshot": "/screenshots/android/tablet-10/portrait/zh/06.png"
+      },
+      {
+        "id": "t_export_7",
+        "layout": "device-top",
+        "label": {
+          "zh": "数据自由"
+        },
+        "headline": {
+          "zh": "导入导出\n尽在掌控"
+        },
+        "screenshot": "/screenshots/android/tablet-10/portrait/zh/07.png",
+        "inverted": true
+      },
+      {
+        "id": "t_more_8",
+        "layout": "no-device",
+        "label": {
+          "zh": "更多"
+        },
+        "headline": {
+          "zh": "多币种 · 多单位\n多云存储 · 离线可用"
+        },
+        "screenshot": "/screenshots/android/tablet-10/portrait/zh/08.png"
+      }
+    ],
+    "feature-graphic": [
+      {
+        "id": "fg_1",
+        "layout": "feature-graphic",
+        "label": {},
+        "headline": {
+          "zh": "精打细算，从每一餐开始"
+        },
+        "screenshot": ""
+      }
+    ]
+  },
+  "crossScreenMockupsByDevice": {
+    "iphone": [],
+    "ipad": [],
+    "android": [],
+    "android-7": [],
+    "android-10": [],
+    "feature-graphic": []
+  }
+}
