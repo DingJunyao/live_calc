@@ -38,7 +38,9 @@
             "name": "Flutter",
             "type": "dart",
             "request": "launch",
-            "program": "mobile/lib/main.dart", 
+            "cwd": "${workspaceFolder}/mobile",
+            "program": "lib/main.dart",
+            "deviceId": "windows",
             "debuggerType": "flutter",
             "flutterMode": "debug",
             "openDevTools": "logging"

@@ -1,5 +1,10 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "java.configuration.updateBuildConfiguration": "interactive",
-    "cmake.sourceDirectory": "D:/code/live_calc/mobile/windows"
+    "cmake.sourceDirectory": "D:/code/live_calc/mobile/windows",
+    "dart.offline": true,
+    "dart.env": {
+        "PUB_HOSTED_URL": "https://pub.flutter-io.cn",
+        "FLUTTER_STORAGE_BASE_URL": "https://storage.flutter-io.cn"
+    }
 }
