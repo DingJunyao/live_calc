@@ -46,11 +46,7 @@ export default defineConfig(({ mode }) => {
       registerType: 'autoUpdate',
       injectRegister: 'auto',          // 自动注入 SW 注册脚本
      devOptions: {
-       // 本地模式（VITE_STORAGE_MODE=local）默认开启 PWA：纯前端应用以 PWA 为主要交付形态，
-       // 开发期即可测试安装、离线、更新提示等完整 PWA 体验。
-       // 云端模式开发仍关闭 SW，避免 Workbox NavigationRoute 缓存旧 index.html 导致改代码后刷新跑旧逻辑。
-       // 若在云端开发模式需要测 PWA，手动改为 true 即可。
-       enabled: env.VITE_STORAGE_MODE === 'local',
+       enabled: true,
        type: 'module',
        // dev 模式 dev-dist 仅含 sw.js / workbox-*.js（均被默认 globIgnores 排除），
        // workbox 的 globPatterns（为 build 扫 dist 设计）套用到 dev-dist 必然空匹配 → 控制台警告。
@@ -108,27 +104,97 @@ export default defineConfig(({ mode }) => {
                 icons: [{ src: "shortcuts/merchants.png", sizes: "96x96", type: "image/png" }]
             },
             {
-                name: "个人中心",
+                name: env.VITE_STORAGE_MODE === 'local' ? "设置" : "个人中心",
                 url: "/profile",
                 icons: [{ src: "shortcuts/profile.png", sizes: "96x96", type: "image/png" }]
             }
         ],
-        // 安装弹窗展示应用截图：桌面 wide + 移动 narrow 各一张
+        // 安装弹窗展示应用截图
         screenshots: [
           {
-            src: 'screenshots/desktop-wide.png',
-            sizes: '1280x800',
+            src: 'screenshots/wide/01.png',
+            sizes: '1280x960',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: '桌面端 · 原料详情',
+          },
+          {
+            src: 'screenshots/wide/02.png',
+            sizes: '1280x960',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: '桌面端 · 菜谱管理',
+          },
+          {
+            src: 'screenshots/wide/03.png',
+            sizes: '1280x960',
             type: 'image/png',
             form_factor: 'wide',
             label: '桌面端 · 菜谱详情',
           },
           {
-            src: 'screenshots/mobile-narrow.png',
-            sizes: '590x1280',
+            src: 'screenshots/wide/04.png',
+            sizes: '1280x960',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: '桌面端 · 菜谱分析',
+          },
+          {
+            src: 'screenshots/wide/05.png',
+            sizes: '1280x960',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: '桌面端 · 原料管理',
+          },
+          {
+            src: 'screenshots/wide/06.png',
+            sizes: '1280x960',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: '桌面端 · 商家管理',
+          },
+          {
+            src: 'screenshots/narrow/01.png',
+            sizes: '591x1280',
             type: 'image/png',
             form_factor: 'narrow',
-            label: '移动端 · 菜谱详情',
+            label: '移动端 · 今日推荐',
           },
+          {
+            src: 'screenshots/narrow/02.png',
+            sizes: '591x1280',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: '移动端 · 价格记录',
+          },
+          {
+            src: 'screenshots/narrow/03.png',
+            sizes: '591x1280',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: '移动端 · 菜谱管理',
+          },
+          {
+            src: 'screenshots/narrow/04.png',
+            sizes: '591x1280',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: '移动端 · 商家管理',
+          },
+          {
+            src: 'screenshots/narrow/05.png',
+            sizes: '591x1280',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: '移动端 · 商品详情',
+          },
+          {
+            src: 'screenshots/narrow/06.png',
+            sizes: '591x1280',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: '移动端 · 菜谱分析',
+          }
         ],
         // 注册自定义协议 web+livecalc://type/id，支持菜谱/商品/原料/商家深链接
         // 浏览器以 /?protocol-uri=web+livecalc://recipe/123 形式唤起应用，前端解析后跳转

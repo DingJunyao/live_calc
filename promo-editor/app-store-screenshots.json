@@ -394,12 +394,12 @@
         "id": "d_product_4",
         "layout": "device-bottom",
         "label": {
-          "zh": "商品管理"
+          "zh": "原料管理"
         },
         "headline": {
-          "zh": "一站式\n商品管理"
+          "zh": "价格趋势\n一目了然"
         },
-        "screenshot": "/screenshots/apple/ipad/zh/04.png",
+        "screenshot": "/screenshots/uploaded/90bd735823d7fece.png",
         "transforms": {
           "device": {
             "x": 126.93978023931413,
@@ -415,10 +415,10 @@
         "id": "d_map_6",
         "layout": "device-bottom",
         "label": {
-          "zh": "地图路线"
+          "zh": "商家管理"
         },
         "headline": {
-          "zh": "商家分布\n一目了然"
+          "zh": "多种地图\n随心切换"
         },
         "screenshot": "/screenshots/uploaded/257a78759d877f65.png",
         "transforms": {
