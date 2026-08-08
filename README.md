@@ -17,6 +17,59 @@
 
 移动 APP 正在开发。不过 Web 端适配移动平台，而且 [支持 PWA](docs/pwa.md)，可将网页添加到主页方便使用。
 
+## 使用 Docker 快速开始
+
+> 详情详见 [文档](docs/admin/deploy.md#docker-部署)
+
+先在某个目录（工作目录）下建立好以下目录并赋予正确权限：
+
+- `backend`
+- `data`
+- `static`
+- `logs`
+
+然后复制仓库的 `backend/.env.example` 文件，并改名为 `.env`，填入对应内容。
+
+### 使用 Docker 命令
+
+```bash
+docker pull dingjunyao/livecalc:latest
+docker run -d -p "前端端口:80" \
+    -v "./data:/app/data" \
+    -v "./static:/app/static" \
+    -v "./logs:/app/logs" \
+    --env-file ./.env \
+    dingjunyao/livecalc:latest
+```
+
+### 使用 Docker Compose
+
+工作目录下创建 `docker-compose.yml` ，配置文件如下：
+
+```yaml
+services:
+  livecalc:
+    image: dingjunyao/livecalc:latest
+    container_name: livecalc
+    ports:
+      - "前端端口:80"
+    env_file:
+      - ./.env
+    volumes:
+      - ./data:/app/data
+      - ./static:/app/static
+      - ./logs:/app/logs
+    restart: unless-stopped
+```
+
+运行：
+
+```bash
+docker compose up -d
+```
+
+运行后即可在指定的前端端口访问。
+
 ## 文档
 
 完整文档在 [docs/](docs/)，建议从下面任一篇开始：
