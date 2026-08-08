@@ -136,13 +136,13 @@ class EntityDensity(Base):
 
 - [ ] **Step 3: py_compile 验证模型无语法错误**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/models/entity_unit_override.py app/models/entity_density.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/models/entity_unit_override.py app/models/entity_density.py`
 Expected: 无输出（成功）。
 
 - [ ] **Step 4: 写 alembic 迁移**
 
 先取当前 head：
-Run: `cd /d/code/live_calc/backend && python -m alembic heads`
+Run: `cd /d/code/livecalc/backend && python -m alembic heads`
 Expected: 输出当前 head 的 `<revision>`（记下，填入下方 `down_revision` 与 `revision`）。
 
 新建 `backend/alembic/versions/20260629_<rev>_entity_unit_density_soft_delete.py`（`<rev>` 用 alembic 生成的短 hash，或手写 `c0e1d2f3a4b5` 风格唯一串）：
@@ -292,7 +292,7 @@ CREATE INDEX IF NOT EXISTS ix_entity_densities_is_active
 Run: `cp backend/data/livecalc.db "backend/data/livecalc.db.bak_$(date +%Y%m%d_%H%M%S)""`
 
 **执行 SQLite 脚本**（用项目 venv 的 sqlite 或 sqlite3 CLI）：
-Run: `cd /d/code/live_calc/backend && python -c "import sqlite3; sqlite3.connect('data/livecalc.db').executescript(open('scripts/sql/20260629_entity_unit_density_soft_delete_sqlite.sql').read())"`
+Run: `cd /d/code/livecalc/backend && python -c "import sqlite3; sqlite3.connect('data/livecalc.db').executescript(open('scripts/sql/20260629_entity_unit_density_soft_delete_sqlite.sql').read())"`
 
 **验证列已加**：
 Run: `python -c "import sqlite3; c=sqlite3.connect('backend/data/livecalc.db'); print([r[1] for r in c.execute('PRAGMA table_info(entity_unit_overrides)')]); print([r[1] for r in c.execute('PRAGMA table_info(entity_densities)')])"`
@@ -348,7 +348,7 @@ def test_density_has_is_active_default_true(db_session):
 
 - [ ] **Step 8: 运行模型测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/models/test_entity_soft_delete.py -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/models/test_entity_soft_delete.py -v`
 Expected: 3 passed。
 
 ---
@@ -498,7 +498,7 @@ class EntityDensityExecutor(CrudExecutorBase):
 
 - [ ] **Step 3: py_compile**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/services/proposals/executors/entity_unit_override.py app/services/proposals/executors/entity_density.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/services/proposals/executors/entity_unit_override.py app/services/proposals/executors/entity_density.py`
 Expected: 无输出。
 
 - [ ] **Step 4: 写执行器单元测试**
@@ -598,7 +598,7 @@ def test_density_delete_soft_then_revert(db_session):
 
 - [ ] **Step 5: 运行执行器测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_entity_executors.py -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_entity_executors.py -v`
 Expected: 4 passed。
 
 ---
@@ -629,7 +629,7 @@ from app.services.proposals.executors.entity_density import EntityDensityExecuto
 
 - [ ] **Step 2: py_compile**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/services/proposals/bootstrap.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/services/proposals/bootstrap.py`
 Expected: 无输出。
 
 - [ ] **Step 3: 写注册验证测试**
@@ -649,7 +649,7 @@ def test_executors_registered_manual(db_session):
 
 - [ ] **Step 4: 运行测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_entity_executors.py::test_executors_registered_manual -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_entity_executors.py::test_executors_registered_manual -v`
 Expected: passed。
 
 ---
@@ -724,13 +724,13 @@ L221/227/240/246 的按 entity_id 集合过滤查询，filter 链补 `EntityDens
 
 Run:
 ```
-cd /d/code/live_calc/backend && python -m py_compile app/services/unit_conversion_service.py app/services/recipe_service.py app/services/importer/ai_inference/inferrer.py app/services/export/reachability.py app/services/importer/importers/export.py
+cd /d/code/livecalc/backend && python -m py_compile app/services/unit_conversion_service.py app/services/recipe_service.py app/services/importer/ai_inference/inferrer.py app/services/export/reachability.py app/services/importer/importers/export.py
 ```
 Expected: 无输出。
 
 - [ ] **Step 7: grep 全量比对，确保无遗漏**
 
-Run: `cd /d/code/live_calc/backend && grep -rn "EntityUnitOverride\|EntityDensity" app/services/ --include="*.py" | grep "db.query\|\.filter\|\.all\|\.first" | grep -v "is_active"`
+Run: `cd /d/code/livecalc/backend && grep -rn "EntityUnitOverride\|EntityDensity" app/services/ --include="*.py" | grep "db.query\|\.filter\|\.all\|\.first" | grep -v "is_active"`
 Expected: 输出的每一行都需人工确认——若是查询点且无 is_active 过滤则补；若是 import 语句或非查询则忽略。目标是**所有查询点都带 is_active 过滤**（写入点 add/new 不算）。
 
 - [ ] **Step 8: 写过滤回归测试**
@@ -771,7 +771,7 @@ def test_downstream_density_filter_excludes_soft_deleted(db_session):
 
 - [ ] **Step 9: 运行过滤测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_entity_executors.py::test_downstream_filter_excludes_soft_deleted -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_entity_executors.py::test_downstream_filter_excludes_soft_deleted -v`
 Expected: passed。若 FAIL（读到 99），说明某处过滤遗漏，回 Step 1-5 补。
 
 ---
@@ -1053,7 +1053,7 @@ def delete_entity_density(
 
 - [ ] **Step 6: py_compile**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/api/units.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/api/units.py`
 Expected: 无输出。
 
 - [ ] **Step 7: 写端点分流集成测试**
@@ -1153,7 +1153,7 @@ def test_non_admin_create_density_pending(db_session, as_non_admin):
 
 - [ ] **Step 8: 运行集成测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_entity_unit_density_proposals.py -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_entity_unit_density_proposals.py -v`
 Expected: 4 passed。
 
 > 若 Ingredient 模型字段或 `name` 列名不同，用 `grep -n "class Ingredient" backend/app/models/nutrition.py` 确认必填字段后调整 `_ingredient` 辅助函数。
@@ -1248,14 +1248,14 @@ Expected: 4 passed。
 
 - [ ] **Step 4: 前端构建验证**
 
-Run: `cd /d/code/live_calc/frontend && npm run build`
+Run: `cd /d/code/livecalc/frontend && npm run build`
 Expected: 构建成功，无 TypeScript / 编译错误。
 
 ---
 
 ## 完成验证（全任务结束后）
 
-- [ ] 后端全量回归：`cd /d/code/live_calc/backend && python -m pytest tests/test_entity_executors.py tests/test_entity_unit_density_proposals.py tests/models/test_entity_soft_delete.py tests/test_shared_data.py tests/test_proposals_framework.py tests/test_permissions_p0.py -v`，全部 passed（失败数应不高于已知基线，且新测试全过）。
+- [ ] 后端全量回归：`cd /d/code/livecalc/backend && python -m pytest tests/test_entity_executors.py tests/test_entity_unit_density_proposals.py tests/models/test_entity_soft_delete.py tests/test_shared_data.py tests/test_proposals_framework.py tests/test_permissions_p0.py -v`，全部 passed（失败数应不高于已知基线，且新测试全过）。
 - [ ] grep 复核下游过滤无遗漏（Task 4 Step 7）。
 - [ ] 前端 `npm run build` 通过。
 - [ ] 开发库 `livecalc.db` 两表 `is_active` 列已落地（Task 1 Step 6）。

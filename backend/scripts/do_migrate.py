@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path("d:/code/live_calc")
+PROJECT_ROOT = Path("d:/code/livecalc")
 OLD_DB = PROJECT_ROOT / "backend" / "data" / "livecalc_bak.db"
 NEW_DB = PROJECT_ROOT / "backend" / "data" / "livecalc.db"
 

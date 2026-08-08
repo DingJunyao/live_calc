@@ -49,7 +49,7 @@ npm run build
 项目提供专门的 `local` target（参照 frontend，纯前端 nginx 镜像，无 `/api` 反代），构建产物即本地模式，无需额外传参：
 
 ```bash
-docker build --target local -t live_calc:local .
+docker build --target local -t livecalc:local .
 ```
 
 若要在 `frontend` target 上临时指定本地模式，也可以传入 `VITE_STORAGE_MODE`：

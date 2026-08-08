@@ -4,7 +4,7 @@ import sqlite3
 import json
 from pathlib import Path
 
-PROJECT_ROOT = Path("d:/code/live_calc")
+PROJECT_ROOT = Path("d:/code/livecalc")
 NEW_DB = PROJECT_ROOT / "backend" / "data" / "livecalc.db"
 MAPPING_FILE = PROJECT_ROOT / "backend" / "scripts" / "migration_mapping.json"
 SQL_OUTPUT = PROJECT_ROOT / "backend" / "scripts" / "migration_data.sql"

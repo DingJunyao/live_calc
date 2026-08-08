@@ -11,7 +11,7 @@
 **项目约束（务必遵守）：**
 - **不主动 `git commit` / 开分支**（项目 CLAUDE.md）。每任务以测试通过 + `py_compile` / `npm run build` 为准。
 - 不启动服务、不改数据库（本计划无表结构变更——Product/Ingredient/ProductRecord/IngredientHierarchy 都已有 is_active）。
-- 后端用 `.venv`（uv 管理），命令用 Bash 工具（`cd /d/code/live_calc/backend && ...`）。
+- 后端用 `.venv`（uv 管理），命令用 Bash 工具（`cd /d/code/livecalc/backend && ...`）。
 - 设计依据：[../specs/2026-06-30-ingredient-product-proposals-design.md](../specs/2026-06-30-ingredient-product-proposals-design.md)
 
 ---
@@ -158,7 +158,7 @@ class ProductExecutor(CrudExecutorBase):
 
 - [ ] **Step 2: py_compile**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/services/proposals/executors/product.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/services/proposals/executors/product.py`
 Expected: 无输出。
 
 - [ ] **Step 3: 写 ProductExecutor 单测**
@@ -275,7 +275,7 @@ def test_product_delete_only_product_rejected(db_session):
 
 - [ ] **Step 4: 运行测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_product_ingredient_proposals.py -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_product_ingredient_proposals.py -v`
 Expected: 2 passed（cascade revert + only-product rejected）。
 
 > 若 ProductRecord 必填字段或 Unit/User fixture 不匹配，读模型调整 `_make_product` 辅助函数。`db_session` 是共享内存库，用独立 name/id 避免污染。
@@ -409,7 +409,7 @@ Expected: 2 passed（cascade revert + only-product rejected）。
 
 - [ ] **Step 2: py_compile**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/services/proposals/executors/ingredient.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/services/proposals/executors/ingredient.py`
 Expected: 无输出。
 
 - [ ] **Step 3: 追加 IngredientExecutor delete 级联单测**
@@ -473,7 +473,7 @@ def test_ingredient_delete_with_recipe_rejected(db_session):
 
 - [ ] **Step 4: 运行测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_product_ingredient_proposals.py -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_product_ingredient_proposals.py -v`
 Expected: 4 passed（2 Product + 2 Ingredient）。
 
 ---
@@ -499,7 +499,7 @@ from app.services.proposals.executors.product import ProductExecutor
 
 - [ ] **Step 2: py_compile + 追加注册验证测试**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/services/proposals/bootstrap.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/services/proposals/bootstrap.py`
 
 追加到 `backend/tests/test_product_ingredient_proposals.py`：
 ```python
@@ -512,7 +512,7 @@ def test_product_executor_registered_manual(db_session):
 
 - [ ] **Step 3: 运行测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_product_ingredient_proposals.py::test_product_executor_registered_manual -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_product_ingredient_proposals.py::test_product_executor_registered_manual -v`
 Expected: passed。
 
 ---
@@ -725,7 +725,7 @@ Expected: passed。
 
 - [ ] **Step 5: py_compile 全部端点文件**
 
-Run: `cd /d/code/live_calc/backend && python -m py_compile app/api/ingredient_extended.py app/api/nutrition.py app/api/products_entity.py`
+Run: `cd /d/code/livecalc/backend && python -m py_compile app/api/ingredient_extended.py app/api/nutrition.py app/api/products_entity.py`
 Expected: 无输出。
 
 - [ ] **Step 6: 追加端点分流集成测试**
@@ -794,7 +794,7 @@ def test_non_admin_delete_ingredient_pending(db_session, as_non_admin):
 
 - [ ] **Step 7: 运行端点分流测试**
 
-Run: `cd /d/code/live_calc/backend && python -m pytest tests/test_product_ingredient_proposals.py -v`
+Run: `cd /d/code/livecalc/backend && python -m pytest tests/test_product_ingredient_proposals.py -v`
 Expected: 全部 passed（执行器 4 + 注册 1 + 端点 5 = 10）。
 
 ---
@@ -878,13 +878,13 @@ Expected: 全部 passed（执行器 4 + 注册 1 + 端点 5 = 10）。
 
 - [ ] **Step 3: npm run build**
 
-Run: `cd /d/code/live_calc/frontend && npm run build`
+Run: `cd /d/code/livecalc/frontend && npm run build`
 Expected: 构建成功，无 error。
 
 ---
 
 ## 完成验证（全任务结束后）
 
-- [ ] 后端：`cd /d/code/live_calc/backend && python -m pytest tests/test_product_ingredient_proposals.py tests/test_proposals_framework.py tests/test_shared_data.py tests/test_entity_executors.py tests/test_entity_unit_density_proposals.py -v`，全 passed（失败数不高于已知基线）。
+- [ ] 后端：`cd /d/code/livecalc/backend && python -m pytest tests/test_product_ingredient_proposals.py tests/test_proposals_framework.py tests/test_shared_data.py tests/test_entity_executors.py tests/test_entity_unit_density_proposals.py -v`，全 passed（失败数不高于已知基线）。
 - [ ] 前端 `npm run build` 通过。
 - [ ] 手动验收（已运行的自动重载服务）：管理员改/删原料商品即时生效；普通用户改/删弹「待审核」、审核台能看到 `product`/`ingredient` 类型待审提议、批准后生效（delete 级联生效）；普通用户维护层级关系弹「待审核」。

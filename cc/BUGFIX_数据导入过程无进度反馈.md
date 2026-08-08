@@ -47,5 +47,5 @@
 - **「一直转圈无反馈」要区分「过程无进度」vs「完成后无提示」**：本次是前者（progress 恒空），不是 watch 失效。failed 能弹 alert 是关键判据——证明 watch 链路正常，把怀疑缩到 progress 生成。
 - **多组件系统先在各层加证据**：DB 查任务真实状态（后端未卡）+ 浏览器复现 failed（前端 watch 正常）+ DB 轮询 progress 演变（progress 恒空）三层证据一合，根因自现。
 - **`py_compile` 过 ≠ 依赖装了**：`py_compile` 只编译字节码不执行 import，不触发 `from sqlalchemy import`。要确认 env 装了依赖，得真跑 import。
-- **venv 路径坑**：CLAUDE.md 说「根目录下的 .venv」实为**项目根** `d:\code\live_calc\.venv`（`VIRTUAL_ENV` 指向它，后端服务用、装了 sqlalchemy）；`backend/.venv` 是 `uv` 默认想用的空壳（没装依赖）。后端脚本要用项目根 `.venv` 的 python，不是 `backend/.venv`。
+- **venv 路径坑**：CLAUDE.md 说「根目录下的 .venv」实为**项目根** `d:\code\livecalc\.venv`（`VIRTUAL_ENV` 指向它，后端服务用、装了 sqlalchemy）；`backend/.venv` 是 `uv` 默认想用的空壳（没装依赖）。后端脚本要用项目根 `.venv` 的 python，不是 `backend/.venv`。
 - **测试包要字段完整**：造测试导入包要 mimic 系统导出格式（manifest + 各 json 字段齐全），否则连续踩 NOT NULL / list 绑定坑，干扰验证核心修复。

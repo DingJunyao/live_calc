@@ -46,7 +46,7 @@
 - 无数据库迁移：`expires_at` 列在 [initial 迁移:92](../backend/alembic/versions/20260305_1927_c2c83a3a2304_initial_database_schema_with_all_models.py#L92) 就有，无历史数据（前端一直填不了），无需 SQL 脚本。
 
 ## 验证
-- 后端：`pytest tests/models/test_invite_code.py` → 10 passed（用根 `.venv` 在 backend 目录跑：`& d:\code\live_calc\.venv\Scripts\python.exe -m pytest ...`；勿用 `uv run --directory backend`，会在 backend 误建空 venv）。
+- 后端：`pytest tests/models/test_invite_code.py` → 10 passed（用根 `.venv` 在 backend 目录跑：`& d:\code\livecalc\.venv\Scripts\python.exe -m pytest ...`；勿用 `uv run --directory backend`，会在 backend 误建空 venv）。
 - 前端：`npm run build` 通过（InviteCodesView chunk 正常生成）。
 - UI 闭环：需管理员账号（当前浏览器登录为普通用户 `qwertyu111`，`adminOnly` 路由不可达）。待管理员实测：创建带过期时间 → 列表按本地时间显示（带时分）→ 编辑回填正确 → 用该码注册验证过期校验（过期前成功/过期后拒）。
 

@@ -56,7 +56,7 @@ HowToCook_nutrition_json 是一个独立的数据处理仓库，专注于营养�
 └─────────────────────────────────────────────────────────┘
                     ↓ 复制
 ┌─────────────────────────────────────────────────────────┐
-│  ding/live_calc (主系统)                        │
+│  ding/livecalc (主系统)                        │
 │  职责：生活成本计算应用                           │
 │  导入：nutrition_data.json (固定路径)                │
 └─────────────────────────────────────────────────────────┘
@@ -1552,7 +1552,7 @@ python -m json.tool output/nutrition_data.json
 
 ```bash
 # 方式1: 直接复制文件
-cp output/nutrition_data.json ../live_calc/backend/data/
+cp output/nutrition_data.json ../livecalc/backend/data/
 
 # 方式2: 通过 API 导入 (需要主系统实现)
 curl -X POST http://localhost:8000/api/v1/nutrition/import \

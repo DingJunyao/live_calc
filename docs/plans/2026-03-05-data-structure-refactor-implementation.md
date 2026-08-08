@@ -2433,7 +2433,7 @@ git commit -m "test: add frontend component tests"
 
 **Step 1: 更新主 CLAUDE.md**
 
-在 `/home/ding/code/live_calc/CLAUDE.md` 中添加:
+在 `/home/ding/code/livecalc/CLAUDE.md` 中添加:
 
 ```markdown
 ## 数据模型

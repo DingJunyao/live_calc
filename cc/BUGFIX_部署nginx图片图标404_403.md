@@ -50,7 +50,7 @@ nginx 处理静态文件：`try_files` 用 stat 判定文件存在（stat 不检
 关键对比：`/api/v1/auth/config`（非图片）200 而 `/api/v1/images/*.jpg` 404 —— 证明 `/api/` 前缀对非媒体正常、媒体后缀被正则截走，坐实根因 A。
 
 宿主文件状态（排除「文件没部署」嫌疑）：
-- `/volume1/server/live_calc/backend/static/images/avatars/77cd0ebf6fb04cf5ad8f81ea4772a120.jpg` **存在**（77557B），recipes 下数百张图都在
+- `/volume1/server/livecalc/backend/static/images/avatars/77cd0ebf6fb04cf5ad8f81ea4772a120.jpg` **存在**（77557B），recipes 下数百张图都在
 - DB `storage_configurations`：`backend=local`（虽填了 S3/OSS 参数但 backend 字段仍是 local），所以 `url_for` 返 `/api/v1/static/images/<key>`，serve_image 307 跳这里——文件在本地、配置 local，链路本应通，纯被 nginx 挡在前面
 
 ## 修复
@@ -78,7 +78,7 @@ location ^~ /api/ {
 
 ```bash
 ssh dsm
-cd /volume1/server/live_calc
+cd /volume1/server/livecalc
 # 同步改动（git push+pull 或 scp 两个文件）
 sudo docker compose build app      # 重建（含前端 npm build + chmod + 新 nginx 配置）
 sudo docker compose up -d          # 用新镜像重启

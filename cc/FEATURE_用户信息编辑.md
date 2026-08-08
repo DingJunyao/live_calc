@@ -33,4 +33,4 @@ plan：[docs/superpowers/plans/2026-07-16-用户信息编辑.md](../docs/superpo
 
 ## 测试运行环境备注
 
-后端测试用根 `.venv`（CLAUDE.md 所指），从项目根跑需 `PYTHONPATH=backend` + `DATABASE_URL=sqlite:///D:/code/live_calc/backend/data/livecalc.db` 钉死——否则相对路径 `./data/livecalc.db` 解析到根/data 找不到；同时覆盖 .env 里的 PG，免得测试往开发 PG 写数据。`uv run --directory backend` 会误用 backend/.venv（实际装在根 .venv）导致 `import app` 失败，故直接用根 .venv 的 python。
+后端测试用根 `.venv`（CLAUDE.md 所指），从项目根跑需 `PYTHONPATH=backend` + `DATABASE_URL=sqlite:///D:/code/livecalc/backend/data/livecalc.db` 钉死——否则相对路径 `./data/livecalc.db` 解析到根/data 找不到；同时覆盖 .env 里的 PG，免得测试往开发 PG 写数据。`uv run --directory backend` 会误用 backend/.venv（实际装在根 .venv）导致 `import app` 失败，故直接用根 .venv 的 python。

@@ -318,7 +318,7 @@ export { REQUEST_TIMEOUT, LONG_REQUEST_TIMEOUT }
 - [ ] **Step 2: 更新所有 import 路径**
 
 ```bash
-cd d:/code/live_calc/frontend/src
+cd d:/code/livecalc/frontend/src
 grep -rl "from '@/api/client'" --include="*.ts" --include="*.vue" . | while read f; do
   sed -i "s|from '@/api/client'|from '@/api'|g" "$f"
 done
