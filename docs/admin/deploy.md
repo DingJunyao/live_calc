@@ -81,10 +81,71 @@ npm run build
 
 ## Docker 部署
 
-项目自带容器化部署，开箱即用。根目录提供：
+项目自带容器化部署，开箱即用。
+
+### 从镜像仓库拉取
+
+镜像已上传至 GHCR 与 Docker Hub，覆盖 amd64 和 arm64 架构，可拉取。
+
+下面以 Docker Hub 上的 aio（All in One，包括前端和后端，默认用 SQLite 存储，不包括 Claude Code 和 Codex）镜像为例，如果有其他需求可以查看仓库的 `docker-compose.example.yml` 和 `docker-compose.split.yml`。
+
+先在某个目录（工作目录）下建立好以下目录并赋予正确权限：
+
+- `backend`
+- `data`
+- `static`
+- `logs`
+
+然后复制仓库的 `backend/.env.example` 文件，并改名为 `.env`，填入对应内容。
+
+#### 使用 Docker 命令
+
+```bash
+docker pull dingjunyao/livecalc:latest
+docker run -d -p "前端端口:80" \
+    -v "./data:/app/data" \
+    -v "./static:/app/static" \
+    -v "./logs:/app/logs" \
+    --env-file ./.env \
+    dingjunyao/livecalc:latest
+```
+
+> `aio` 为默认的配置，`latest`、`vX.X.X` 等未注明类别的镜像均为对应版本的 `aio`。镜像标签的含义，见下面的 [自动发布镜像](#自动发布镜像github-actions) 章节。
+
+#### 使用 Docker Compose
+
+工作目录下创建 `docker-compose.yml` ，配置文件如下：
+
+```yaml
+services:
+  livecalc:
+    image: dingjunyao/livecalc:latest
+    container_name: livecalc
+    ports:
+      - "前端端口:80"
+    env_file:
+      - ./.env
+    volumes:
+      - ./data:/app/data
+      - ./static:/app/static
+      - ./logs:/app/logs
+    restart: unless-stopped
+```
+
+运行：
+
+```bash
+docker compose up -d
+```
+
+运行后即可在指定的前端端口访问。
+
+### 通过本仓库构建、运行
+
+根目录提供：
 
 - `Dockerfile`：multi-stage 构建，四个 target——`all-in-one`（默认，前后端合一，nginx + uvicorn 由 supervisord 编排）、`frontend`（仅前端 + nginx）、`backend`（仅后端）、`local`（纯前端本地模式，数据存浏览器 IndexedDB）
-- `docker-compose.yml`：统一部署（单容器 all-in-one）
+- `docker-compose.example.yml`：统一部署（单容器 All in One。考虑到可能要自定义，故请自行复制此文件，并改名成 `docker-compose.yml`，然后编辑）
 - `docker-compose.split.yml`：分开部署（前端、后端独立容器，便于横向扩展）
 - `deploy/`：nginx 配置模板、supervisord 配置、entrypoint 脚本
 
@@ -101,14 +162,30 @@ docker compose up -d --build
 
 ### 自动发布镜像（GitHub Actions）
 
-`.github/workflows/docker-publish.yml` 会在 **release 发布**时自动构建并推送 Docker 镜像；也可以在仓库 Actions 页面手动触发（默认构建 `all-in-one`，选 `all` 全量重发 `latest`）：
+`.github/workflows/docker-publish.yml` 会在 **release 发布**时自动构建并推送 Docker 镜像；也可以在仓库 Actions 页面手动触发（默认构建 `aio`，选 `all` 全量重发，可填版本号）。
 
-- **构建类别**：`all-in-one`（默认）、`frontend`、`backend`、`local`
+**四个类别**共用**同一个镜像名**，靠标签区分：
+
+- **aio**（all-in-one）：前后端合一，nginx + uvicorn 同容器
+- **frontend**：仅前端 + nginx（分开部署用）
+- **backend**：仅后端 uvicorn（分开部署用）
+- **local**：纯前端本地模式（数据存浏览器 IndexedDB，无后端）
+
 - **架构**：`linux/amd64` + `linux/arm64` 双架构
-- **镜像标签**：原始 tag（如 `v0.1.0`）、版本号（如 `0.1.0`）、主次版本（如 `0.1`）、`latest`
-- **镜像名**（默认类别不带后缀，其余带 `-frontend` / `-backend` / `-local` 后缀）：
+- **镜像名**：
   - GHCR：`ghcr.io/<GitHub 用户名>/<仓库>`，如 `ghcr.io/dingjunyao/livecalc`
   - Docker Hub：`docker.io/<用户名/组织>/<仓库>`，如 `docker.io/dingjunyao/livecalc`
+
+**标签规则**（以版本 `v0.1.0` 为例）：
+
+| 类别 | 标签 |
+| --- | --- |
+| aio | `v0.1.0-aio`, `v0.1.0`, `latest-aio`, `aio`, `latest` |
+| frontend | `v0.1.0-frontend`, `latest-frontend`, `frontend` |
+| backend | `v0.1.0-backend`, `latest-backend`, `backend` |
+| local | `v0.1.0-local`, `latest-local`, `local` |
+
+手动触发不填版本号时只推滚动标签（`latest-*` / 短名 / `latest`）。
 
 #### GHCR（默认，无需配置）
 
@@ -125,14 +202,25 @@ GHCR 使用 `GITHUB_TOKEN` 自动登录，release 发布后镜像即出现在仓
 | Variable（可选） | `DOCKERHUB_NAMESPACE` | 镜像命名空间（用户名/组织），默认取 `DOCKERHUB_USERNAME` |
 | Variable（可选） | `DOCKERHUB_REPO` | Docker Hub 仓库名，默认取 GitHub 仓库名（小写） |
 
-配置后，下次 release 发布或手动触发会**同时推送到 GHCR 和 Docker Hub**；未配置则只推 GHCR。Docker Hub 侧需提前创建对应仓库（默认类别 + `-frontend` / `-backend` / `-local` 三个带后缀的仓库）。
+配置后，下次 release 发布或手动触发会**同时推送到 GHCR 和 Docker Hub**；未配置则只推 GHCR。只需在 Docker Hub 创建一个仓库（如 `livecalc`），所有标签自动推到该仓库下。
 
 拉取示例：
 
 ```bash
-docker pull ghcr.io/dingjunyao/livecalc:latest
+# aio（默认，最常用）
 docker pull dingjunyao/livecalc:latest
-docker pull dingjunyao/livecalc-local:latest
+docker pull dingjunyao/livecalc:aio
+
+# 分开部署
+docker pull dingjunyao/livecalc:frontend
+docker pull dingjunyao/livecalc:backend
+
+# 本地模式
+docker pull dingjunyao/livecalc:local
+
+# 指定版本
+docker pull dingjunyao/livecalc:v0.1.0
+docker pull dingjunyao/livecalc:v0.1.0-frontend
 ```
 
 ## 生产部署建议
