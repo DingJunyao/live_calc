@@ -11,6 +11,7 @@ ApplyResult.snapshot 落库到 ChangeProposal.snapshot）。
 from typing import List, Optional
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session
 from app.services.proposals.base import ApplyResult
 from app.services.proposals.executors._crud_base import CrudExecutorBase
 from app.models.nutrition import Ingredient, IngredientNutritionMapping
