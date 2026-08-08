@@ -61,7 +61,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.analytics_outlined),
-                tooltip: '成本分析',
+                tooltip: '菜谱分析',
                 onPressed: () => context.push('/recipes/${widget.id}/analysis'),
               ),
             ],

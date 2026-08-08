@@ -143,6 +143,44 @@ class RecipeRepository {
     }
     return result;
   }
+
+  Future<RecipeMerchantCost> getRecipeMerchantCosts(int id) async {
+    // 商家维度成本聚合较慢，放宽超时（对齐 web 端 LONG_REQUEST_TIMEOUT=35s）
+    final response = await _client.dio.get(
+      '/recipes/$id/merchant-costs',
+      options: Options(receiveTimeout: const Duration(seconds: 35)),
+    );
+    return RecipeMerchantCost.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// 单个食材的商家比价。quantity/quantityUnit 可空（web 端只在有效数量时传参）。
+  /// recipeIngredientId/ingredientName 由调用方提供（后端响应无这些字段）。
+  Future<MerchantPriceItem> getIngredientMerchantPrice(
+    int ingredientId, {
+    int? recipeIngredientId,
+    String? ingredientName,
+    double? quantity,
+    String? quantityUnit,
+  }) async {
+    final params = <String, dynamic>{};
+    if (quantity != null && quantity > 0) {
+      params['quantity'] = quantity;
+      params['quantity_unit'] = quantityUnit ?? '';
+    }
+    final response = await _client.dio.get(
+      '/nutrition/ingredients/$ingredientId/latest-price-by-merchant',
+      queryParameters: params,
+    );
+    final data = response.data as Map<String, dynamic>;
+    final item = MerchantPriceItem.fromJson(data);
+    return item.copyWith(
+      recipeIngredientId: recipeIngredientId ?? item.recipeIngredientId,
+      ingredientId: ingredientId,
+      ingredientName: (ingredientName != null && ingredientName.isNotEmpty)
+          ? ingredientName
+          : item.ingredientName,
+    );
+  }
 }
 
 /// batch-cost 接口返回的单条成本/热量信息
@@ -458,10 +496,12 @@ class MerchantPriceRecord {
     this.isLowest = false,
   });
   factory MerchantPriceRecord.fromJson(Map<String, dynamic> json) {
+    final id = _toIntOrNull(json['merchant_id']) ?? 0;
     return MerchantPriceRecord(
-      merchantId: _toIntOrNull(json['merchant_id']) ?? 0,
-      merchantName: _str(json['merchant_name']) ??
-          'merchant#',
+      merchantId: id,
+      // 缺名回退「商家{id}」（对齐 web _merchantLabel），避免所有缺名行
+      // 都叫无 id 的 'merchant#'
+      merchantName: _str(json['merchant_name']) ?? '商家$id',
       price: _toDouble(json['price']),
       unit: _str(json['unit']),
       totalCost: _toDoubleOrNull(json['total_cost']),
@@ -488,4 +528,36 @@ class MerchantPriceItem {
     this.fallbackChain,
     this.prices = const [],
   });
+
+  /// 覆盖调用方提供的字段（recipeIngredientId/ingredientName/ingredientId
+  /// 来自本地 ingredient 对象；其余字段沿用原值，用于取消的上下文为空时兜底）
+  MerchantPriceItem copyWith({
+    int? recipeIngredientId,
+    int? ingredientId,
+    String? ingredientName,
+  }) =>
+      MerchantPriceItem(
+        recipeIngredientId: recipeIngredientId ?? this.recipeIngredientId,
+        ingredientId: ingredientId ?? this.ingredientId,
+        ingredientName: ingredientName ?? this.ingredientName,
+        qtyDisplay: qtyDisplay,
+        unit: unit,
+        fallbackChain: fallbackChain,
+        prices: prices,
+      );
+
+  factory MerchantPriceItem.fromJson(Map<String, dynamic> json) {
+    return MerchantPriceItem(
+      recipeIngredientId: _toIntOrNull(json['recipe_ingredient_id']) ?? 0,
+      ingredientId: _toIntOrNull(json['ingredient_id']) ?? 0,
+      ingredientName: _str(json['ingredient_name']) ?? '',
+      qtyDisplay: _str(json['qty_display']),
+      unit: _str(json['unit']),
+      fallbackChain:
+          _str(json['fallback_chain']) ?? _str(json['aggregation_chain']),
+      prices: ((json['prices'] as List?) ?? const [])
+          .map((e) => MerchantPriceRecord.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
 }

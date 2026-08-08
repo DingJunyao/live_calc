@@ -43,7 +43,7 @@ class _CostTrendChartState extends State<CostTrendChart> {
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold)),
             const Spacer(),
-            _buildRangeToggle(theme),
+            _buildRangeToggle(),
           ],
         ),
         const SizedBox(height: 8),
@@ -52,20 +52,23 @@ class _CostTrendChartState extends State<CostTrendChart> {
     );
   }
 
-  Widget _buildRangeToggle(ThemeData theme) {
+  // 范围切换用 DropdownButton 而非 SegmentedButton：3 段按钮在窄屏标题行
+  // 会撑爆报 RIGHT OVERFLOWED，下拉宽度自适应当前选中项根治溢出
+  Widget _buildRangeToggle() {
     const labels = {'week': '周', 'month': '月', 'quarter': '季'};
-    return SegmentedButton<_Range>(
-      style: const ButtonStyle(
-        visualDensity: VisualDensity.compact,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      segments: _Range.values
-          .map((r) => ButtonSegment(value: r, label: Text(labels[r.name]!)))
+    return DropdownButton<_Range>(
+      key: const Key('range_dropdown'),
+      value: _selected,
+      isDense: true,
+      underline: const SizedBox.shrink(),
+      items: _Range.values
+          .map((r) =>
+              DropdownMenuItem(value: r, child: Text(labels[r.name]!)))
           .toList(),
-      selected: {_selected},
-      onSelectionChanged: (s) {
-        setState(() => _selected = s.first);
-        final days = switch (_selected) {
+      onChanged: (r) {
+        if (r == null) return;
+        setState(() => _selected = r);
+        final days = switch (r) {
           _Range.week => 7,
           _Range.month => 30,
           _Range.quarter => 90,
@@ -121,6 +124,11 @@ class _Chart extends StatelessWidget {
       builder: (context, constraints) {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
+          // 快速点击（tap）也要出 tooltip——onPanDown 只在拖动手势竞技场获胜后触发，
+          // 单点 tap 永远不触发，用户「点击没提示」的根因
+          // tap 不清空 tooltip（无 onTapUp 清空），tooltip 驻留到下次触摸——
+          // 对齐 web 点击选中点语义，非遗漏
+          onTapDown: (d) => _handleTouch(d.localPosition, constraints.biggest),
           onPanDown: (d) => _handleTouch(d.localPosition, constraints.biggest),
           onPanUpdate: (d) =>
               _handleTouch(d.localPosition, constraints.biggest),

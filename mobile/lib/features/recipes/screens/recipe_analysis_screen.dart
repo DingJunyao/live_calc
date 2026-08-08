@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/recipe_provider.dart';
+import '../widgets/cost_proportion_chart.dart';
+import '../widgets/cost_trend_stacked_chart.dart';
+import '../widgets/nutrition_source_grid.dart';
+import '../widgets/merchant_cost_cards.dart';
+import '../widgets/merchant_price_matrix.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/error_display.dart';
 
+/// 菜谱分析页：对齐 web RecipeAnalysisView.vue
+/// AppBar = 菜谱名 + 「分析」chip；5 模块顺序：
+/// ①成本占比 → ②成本趋势 → ③营养溯源 → ④商家成本卡片 → ⑤商家比价矩阵。
 class RecipeAnalysisScreen extends ConsumerStatefulWidget {
   final int id;
   const RecipeAnalysisScreen({super.key, required this.id});
@@ -16,8 +24,14 @@ class _RecipeAnalysisScreenState extends ConsumerState<RecipeAnalysisScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(
-        () => ref.read(recipeDetailPageProvider(widget.id).notifier).load());
+    Future.microtask(() {
+      final notifier = ref.read(recipeDetailPageProvider(widget.id).notifier);
+      // 趋势初始天数由 load(initialDays: 90) 单次请求传入，对齐 web
+      // loadCostHistory('quarter')；不再额外 reloadHistory，避免与 load()
+      // 内部 _loadHistory 双请求竞态（load 整态重建会清空先写入的 history）。
+      // _loadHistory 默认 30 天保证详情页「月」初始一致。
+      notifier.load(initialDays: 90);
+    });
   }
 
   @override
@@ -28,7 +42,7 @@ class _RecipeAnalysisScreenState extends ConsumerState<RecipeAnalysisScreen> {
 
     if (state.error != null && detail == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('成本分析')),
+        appBar: AppBar(title: const Text('菜谱分析')),
         body: ErrorDisplay(
           message: state.error!,
           onRetry: () =>
@@ -38,164 +52,83 @@ class _RecipeAnalysisScreenState extends ConsumerState<RecipeAnalysisScreen> {
     }
     if (detail == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('成本分析')),
+        appBar: AppBar(title: const Text('菜谱分析')),
         body: const LoadingIndicator(message: '加载中...'),
       );
     }
 
-    final breakdown = state.cost?.breakdown ?? [];
+    final breakdown = state.cost?.breakdown ?? const [];
     final totalCost = state.cost?.totalCost ?? 0;
-    final maxCost = breakdown.isEmpty
-        ? 0.0
-        : breakdown.map((i) => i.cost).reduce((a, b) => a > b ? a : b);
 
     return Scaffold(
-      appBar: AppBar(title: Text('${detail.name} - 成本分析')),
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(detail.name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text('分析',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('成本分布',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
+            // ① 成本占比
+            CostProportionChart(
+              breakdown: breakdown,
+              totalCost: totalCost,
+              loading: state.loadingCost,
+            ),
             const SizedBox(height: 16),
-            if (state.loadingCost)
-              const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator()))
-            else if (breakdown.isEmpty)
-              Text('暂无食材成本数据',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.outline))
-            else
-              ...breakdown.map((item) {
-                final pct = totalCost > 0 ? item.cost / totalCost * 100 : 0.0;
-                final barWidth = maxCost > 0 ? item.cost / maxCost : 0.0;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                              child: Text(item.ingredientName,
-                                  style: theme.textTheme.bodyMedium)),
-                          Text('¥${item.cost.toStringAsFixed(2)}',
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 8),
-                          Text('${pct.toStringAsFixed(1)}%',
-                              style: theme.textTheme.labelSmall
-                                  ?.copyWith(color: theme.colorScheme.outline)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: barWidth,
-                          minHeight: 8,
-                          backgroundColor:
-                              theme.colorScheme.surfaceContainerHighest,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
+            // ② 成本趋势
+            CostTrendStackedChart(
+              points: state.costHistory,
+              loading: state.loadingHistory,
+              onFilterChange: (filter) {
+                final days = costHistoryDays[filter] ?? 90;
+                ref
+                    .read(recipeDetailPageProvider(widget.id).notifier)
+                    .reloadHistory(days);
+              },
+            ),
             const SizedBox(height: 16),
-            if (!state.loadingCost) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8)),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('总成本',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    Text('¥${totalCost.toStringAsFixed(2)}',
-                        style: theme.textTheme.titleLarge
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 32),
-            // 营养信息
-            Text('营养信息（每份）',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            if (state.loadingNutrition)
-              const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator()))
-            else if (state.nutrition == null)
-              Text('暂无营养数据，需 USDA 匹配后显示',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.outline))
-            else
-              _buildNutritionRow(theme, state),
+            // ③ 营养贡献溯源
+            NutritionSourceGrid(
+              nutrition: state.nutrition,
+              loading: state.loadingNutrition,
+            ),
+            const SizedBox(height: 16),
+            // ④ 按商家预估成本
+            MerchantCostCards(
+              merchants: state.merchantCosts?.merchants ?? const [],
+              loading: state.loadingMerchantCosts,
+            ),
+            const SizedBox(height: 16),
+            // ⑤ 商家比价推荐
+            MerchantPriceMatrix(
+              ingredients: detail.ingredients,
+              prices: state.merchantPrices,
+              loading: state.loadingMerchantPrices,
+            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildNutritionRow(ThemeData theme, RecipeDetailPageState state) {
-    final n = state.nutrition!;
-    final servings = state.detail?.servings ?? 1;
-    final core = n.perServingNutrients;
-    final cal =
-        core['能量']?.value ?? core['热量']?.value ?? n.totalCalories / servings;
-    final protein = core['蛋白质']?.value ?? n.totalProtein / servings;
-    final fat = core['脂肪']?.value ?? n.totalFat / servings;
-    final carbs =
-        core['碳水化合物']?.value ?? core['碳水']?.value ?? n.totalCarbs / servings;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _item(theme, Icons.local_fire_department, '热量',
-              cal.toStringAsFixed(0), 'kcal'),
-          _item(theme, Icons.fitness_center, '蛋白质', protein.toStringAsFixed(1),
-              'g'),
-          _item(theme, Icons.grain, '碳水', carbs.toStringAsFixed(1), 'g'),
-          _item(theme, Icons.water_drop_outlined, '脂肪', fat.toStringAsFixed(1),
-              'g'),
-        ],
-      ),
-    );
-  }
-
-  Widget _item(
-      ThemeData theme, IconData icon, String label, String value, String unit) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: theme.colorScheme.primary, size: 24),
-        const SizedBox(height: 4),
-        Text('$value$unit',
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
-        Text(label,
-            style: theme.textTheme.labelSmall
-                ?.copyWith(color: theme.colorScheme.outline)),
-      ],
     );
   }
 }

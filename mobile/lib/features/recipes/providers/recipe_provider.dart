@@ -104,6 +104,10 @@ class RecipeDetailPageState {
   final bool loadingCost;
   final bool loadingNutrition;
   final bool loadingHistory;
+  final RecipeMerchantCost? merchantCosts;
+  final List<MerchantPriceItem> merchantPrices;
+  final bool loadingMerchantCosts;
+  final bool loadingMerchantPrices;
   final int displayServings;
   final String? error;
   const RecipeDetailPageState({
@@ -114,6 +118,10 @@ class RecipeDetailPageState {
     this.loadingCost = false,
     this.loadingNutrition = false,
     this.loadingHistory = false,
+    this.merchantCosts,
+    this.merchantPrices = const [],
+    this.loadingMerchantCosts = false,
+    this.loadingMerchantPrices = false,
     this.displayServings = 1,
     this.error,
   });
@@ -125,6 +133,10 @@ class RecipeDetailPageState {
     bool? loadingCost,
     bool? loadingNutrition,
     bool? loadingHistory,
+    RecipeMerchantCost? merchantCosts,
+    List<MerchantPriceItem>? merchantPrices,
+    bool? loadingMerchantCosts,
+    bool? loadingMerchantPrices,
     int? displayServings,
     String? error,
   }) {
@@ -136,8 +148,17 @@ class RecipeDetailPageState {
       loadingCost: loadingCost ?? this.loadingCost,
       loadingNutrition: loadingNutrition ?? this.loadingNutrition,
       loadingHistory: loadingHistory ?? this.loadingHistory,
+      merchantCosts: merchantCosts ?? this.merchantCosts,
+      merchantPrices: merchantPrices ?? this.merchantPrices,
+      loadingMerchantCosts:
+          loadingMerchantCosts ?? this.loadingMerchantCosts,
+      loadingMerchantPrices:
+          loadingMerchantPrices ?? this.loadingMerchantPrices,
       displayServings: displayServings ?? this.displayServings,
-      error: error,
+      // 与 RecipeListState.copyWith 一致：未显式传 error 时保留原值。
+      // 否则任何子加载完成（如 reloadHistory 的 loadingHistory: false）都会
+      // 把 load() 失败写入的 error 清成 null，错误页闪一下退回无限加载。
+      error: error ?? this.error,
     );
   }
 }
@@ -147,14 +168,20 @@ class RecipeDetailPageNotifier extends StateNotifier<RecipeDetailPageState> {
   final int recipeId;
   RecipeDetailPageNotifier(this._repo, this.recipeId)
       : super(const RecipeDetailPageState());
-  Future<void> load() async {
+  /// [initialDays] 指定趋势图初始天数：分析页传 90 对齐 web
+  /// loadCostHistory('quarter')；详情页无参调用默认 30 保持「月」初始一致。
+  /// 趋势初始由 load 内部单次请求完成，避免外部再发 reloadHistory 造成
+  /// 双请求竞态（load 整态重建会清空先写入的 costHistory）。
+  Future<void> load({int initialDays = 30}) async {
     try {
       final detail = await _repo.getRecipe(recipeId);
       state = RecipeDetailPageState(
           detail: detail, displayServings: detail.servings);
       _loadCost();
       _loadNutrition();
-      _loadHistory();
+      _loadHistory(days: initialDays);
+      _loadMerchantCosts();
+      _loadMerchantPrices();
     } on Exception catch (e) {
       state = state.copyWith(error: e.toString());
     }
@@ -180,13 +207,62 @@ class RecipeDetailPageNotifier extends StateNotifier<RecipeDetailPageState> {
     }
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> _loadHistory({int days = 30}) async {
     state = state.copyWith(loadingHistory: true);
     try {
-      final history = await _repo.getRecipeCostHistory(recipeId, days: 30);
+      final history = await _repo.getRecipeCostHistory(recipeId, days: days);
       state = state.copyWith(costHistory: history, loadingHistory: false);
     } on Exception catch (_) {
       state = state.copyWith(loadingHistory: false);
+    }
+  }
+
+  Future<void> _loadMerchantCosts() async {
+    state = state.copyWith(loadingMerchantCosts: true);
+    try {
+      final costs = await _repo.getRecipeMerchantCosts(recipeId);
+      state = state.copyWith(merchantCosts: costs, loadingMerchantCosts: false);
+    } on Exception catch (_) {
+      state = state.copyWith(loadingMerchantCosts: false);
+    }
+  }
+
+  Future<void> _loadMerchantPrices() async {
+    final detail = state.detail;
+    if (detail == null) return;
+    final ingredients =
+        detail.ingredients.where((i) => i.ingredientId != null).toList();
+    if (ingredients.isEmpty) return;
+    state = state.copyWith(loadingMerchantPrices: true);
+    try {
+      // 并发控制对齐 web：每批 3 个 + 全局 35s 超时，保留已有部分结果
+      final results = <MerchantPriceItem>[];
+      final start = DateTime.now();
+      const concurrency = 3;
+      const globalTimeout = Duration(seconds: 35);
+      for (var i = 0; i < ingredients.length; i += concurrency) {
+        if (DateTime.now().difference(start) > globalTimeout) break;
+        final batch = ingredients.sublist(
+            i, (i + concurrency).clamp(0, ingredients.length));
+        final futures = batch.map((ing) async {
+          final q = resolveIngredientQuantity(ing);
+          try {
+            return await _repo.getIngredientMerchantPrice(ing.ingredientId!,
+                recipeIngredientId: ing.id,
+                ingredientName: ing.name,
+                quantity: q.qty,
+                quantityUnit: q.qtyUnit);
+          } catch (_) {
+            return null;
+          }
+        });
+        final settled = await Future.wait(futures);
+        results.addAll(settled.whereType<MerchantPriceItem>());
+      }
+      state = state.copyWith(
+          merchantPrices: results, loadingMerchantPrices: false);
+    } on Exception catch (_) {
+      state = state.copyWith(loadingMerchantPrices: false);
     }
   }
 
