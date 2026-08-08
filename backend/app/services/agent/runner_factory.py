@@ -60,7 +60,7 @@ def _root_venv_python() -> str:
     最稳）；否则回退到项目根 ``.venv/Scripts/python.exe``（Windows）或
     ``.venv/bin/python``（Linux/macOS）。
 
-    早期实现曾硬编码 ``D:/code/live_calc/.venv``，跨机器/部署不可靠，已废弃：
+    早期实现曾硬编码 ``D:/code/livecalc/.venv``，跨机器/部署不可靠，已废弃：
     只在 ``sys.executable`` 不可用时（理论上不会发生）作为兜底路径。
     """
     if sys.executable:

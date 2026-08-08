@@ -10,8 +10,8 @@ _DEFAULT_APP_INFO = {
     "version": "0.0.0",
     "description": "记录商品价格、计算烹饪与生活成本",
     "copyright": "Copyright © 2026 DingJunyao",
-    "repository": "https://github.com/DingJunyao/live_calc",
-    "homepage": "https://github.com/DingJunyao/live_calc",
+    "repository": "https://github.com/DingJunyao/livecalc",
+    "homepage": "https://github.com/DingJunyao/livecalc",
     "authorHomepage": "https://4ading.com",
 }
 

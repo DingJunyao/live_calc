@@ -8,7 +8,7 @@
 --     default_volume_unit_id / default_price_unit_id）。
 --   * ingredients 删 default_unit_id：SQLite 不支持 DROP COLUMN（3.35 前）
 --     且即使新版对带 FK/索引的列也不稳，这里用「建新表 → 复制 → 删旧 →
---     改名 → 重建索引」的标准表重建流程，列结构按 d:/code/live_calc
+--     改名 → 重建索引」的标准表重建流程，列结构按 d:/code/livecalc
 --     开发库实际 .schema 抄录（仅去掉 default_unit_id 及其 FK/索引）。
 --   * 执行前请先备份：.backup livecalc.db livecalc.db.bak 或 copy。
 -- =====================================================================

@@ -157,7 +157,7 @@ Task 0 spike **5/5 PASS**（stream-json / MCP 挂载 / `--resume` / 第三方代
 
 **全局约束（写入所有后续 Task）**：
 - subprocess 起 claude 前 `env.pop("CLAUDECODE", None)`（嵌套启动陷阱，否则 CLI 拒绝启动）
-- CLI 加 `--strict-mcp-config`（否则合并用户全局 MCP，越权风险——spike 实测 Agent 试图调开发者私人的 `live_calc_sqlite_mcp`）
+- CLI 加 `--strict-mcp-config`（否则合并用户全局 MCP，越权风险——spike 实测 Agent 试图调开发者私人的 `livecalc_sqlite_mcp`）
 - 文本增量解析路径：`stream_event.event.delta.text`（**不是**裸 `content_block_delta`）；事件落盘/传输用 utf-8（Windows 控制台 GBK 乱码）
 - 加 `--max-budget-usd` 成本兜底（智谱 GLM Coding Plan / `glm-5`，$0.04–0.13/次）
 - `mcp` 依赖须正式纳入项目依赖清单（spike 用 `uv pip install` 装入 `.venv`，未入 pyproject）

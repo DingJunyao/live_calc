@@ -50,7 +50,7 @@
                                             │  db_read / db_write / describe     │
                                             │  ├ 安全 → 执行 + source=agent       │
                                             │  └ 危险 → 挂起 → SSE 确认 → 放行    │
-                                            │          ▼ live_calc SQLite         │
+                                            │          ▼ livecalc SQLite         │
                                             └──────────────────────────────────────┘
 ```
 
@@ -93,7 +93,7 @@
 
 ## 6. 受控 DB MCP（只读）+ 写操作文本解析（spike 验证后的方案 B）
 
-**spike 结论（Task 0）**：CLI 的 `--mcp-config` 默认**合并**用户全局 MCP（实测加载了开发者私人的 `live_calc_sqlite_mcp`），有越权风险；让 stdio MCP 子进程经 HTTP 回调主后端审批（方案 A）复杂且未验证。故采用**方案 B**：
+**spike 结论（Task 0）**：CLI 的 `--mcp-config` 默认**合并**用户全局 MCP（实测加载了开发者私人的 `livecalc_sqlite_mcp`），有越权风险；让 stdio MCP 子进程经 HTTP 回调主后端审批（方案 A）复杂且未验证。故采用**方案 B**：
 
 - **受控 MCP 只暴露只读工具**：`db_read(sql)`（SELECT 限行）、`describe(table)`、`list_tables()`。CLI 用 `--strict-mcp-config`（隔离到只此 server、不合并全局）+ `--allowedTools` 白名单锁死。**Agent 没有任何 write 工具**，写库无越权路径。
 - **写操作走文本**：Agent 改库时，按 prompt 约定在 assistant 文本里输出 SQL（` ```sql ... ``` ` 块 + 动作意图）。主后端从 assistant 文本/`result` 解析出 SQL → 过 `sql_guard` 危险判定 → 安全则执行（打 `source=agent`）、危险则写 `AgentApproval` + SSE 弹确认 → 执行结果作为下一轮 user 消息经 `--resume` 喂回 Agent。

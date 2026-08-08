@@ -6,9 +6,9 @@
 数据来源：HowToCook_json_organizer/scripts/build_usda_data.py 中的
 NUTRIENT_TRANSLATIONS 字典（完整复制，保持参考项目的键格式与中文用词）。
 
-注：与 live_calc 核心营养素对应的条目，中文值已对齐到 live_calc 用词
+注：与 livecalc 核心营养素对应的条目，中文值已对齐到 livecalc 用词
 （见 nutrition_import_service.py 的 CORE_DISPLAY_MAP）。主要差异：
-参考项目把 "Energy" 译为「热量」，live_calc 体系统一用「能量」，此处改为「能量」。
+参考项目把 "Energy" 译为「热量」，livecalc 体系统一用「能量」，此处改为「能量」。
 Atwater 通用/特定系数等变体仍保留「热量（...）」字样，作为别名供
 nutrition_import_service 的 CORE_DISPLAY_MAP 归一化到「能量」。
 """

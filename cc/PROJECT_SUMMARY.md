@@ -74,7 +74,7 @@
 ## 系统架构
 
 ```
-live_calc/
+livecalc/
 ├── backend/              # FastAPI 后端
 │   ├── app/
 │   │   ├── api/        # API 路由

@@ -14,7 +14,7 @@
 
 ## 命令约定
 
-- 后端命令用**项目根目录的 venv**（`d:\code\live_calc\.venv`，非 `backend/.venv`——后者是空壳）：在 `backend/` 目录用 `../.venv\Scripts\python.exe -m pytest <path> -v`，或 `uv run pytest <path> -v`（uv 在项目根跑）。
+- 后端命令用**项目根目录的 venv**（`d:\code\livecalc\.venv`，非 `backend/.venv`——后者是空壳）：在 `backend/` 目录用 `../.venv\Scripts\python.exe -m pytest <path> -v`，或 `uv run pytest <path> -v`（uv 在项目根跑）。
 - 后端语法检查：`cd backend && ../.venv\Scripts\python.exe -m py_compile app\<file>.py`。
 - 前端构建：在 `frontend/` 目录，`npm run build`。
 - 不在对话中启动服务（自动重载已开）。

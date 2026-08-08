@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "live-calc"
+name = "livecalc"
 version = "0.1.0"
 description = "生计 - 生活成本计算器"
 authors = ["Your Name <you@example.com>"]

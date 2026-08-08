@@ -40,7 +40,7 @@
 
 2. **生成各平台图标**（需 Node.js + sharp 库）：
    ```bash
-   cd D:\code\live_calc
+   cd D:\code\livecalc
    npm install sharp   # 首次需要
    ```
 

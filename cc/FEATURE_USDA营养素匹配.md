@@ -7,7 +7,7 @@
 ## 架构
 
 - **数据层**：`usda_foods` / `usda_food_nutrients` / `translation_configs` / `usda_tasks` 四表；解析去重（同 description 留最优一条，foundation 优先）；upsert 入库；内存 OR 子串搜索（空格分词、任意命中、精确>前缀>包含打分）。
-- **翻译层**：`Translator` 抽象 + 6 后端（Claude Code CLI / OpenAI 兼容 / Anthropic 兼容 / 百度 / 阿里云 / DeepL）；营养素名走 172 条预设映射表（对齐 live_calc「能量」体系，不耗 AI）；增量翻译（`translate_status` pending/done/error）+ 进度写 `usda_tasks` + 单批重试 3 次；每后端 `health_check` 测试连接。
+- **翻译层**：`Translator` 抽象 + 6 后端（Claude Code CLI / OpenAI 兼容 / Anthropic 兼容 / 百度 / 阿里云 / DeepL）；营养素名走 172 条预设映射表（对齐 livecalc「能量」体系，不耗 AI）；增量翻译（`translate_status` pending/done/error）+ 进度写 `usda_tasks` + 单批重试 3 次；每后端 `health_check` 测试连接。
 - **匹配交互**：原料清空写 USDA；商品清空 → 复制所属原料营养素骨架设 0 → USDA 覆盖（`custom_nutrition_data` 三层结构对齐前端读取）；`source=usda_manual_match`，记录 `usda_id`。
 - **后台三页**：AI 配置 / 机翻配置 / USDA 数据（统计/下载/上传/翻译 6 选 1/任务轮询/未映射清单）。
 

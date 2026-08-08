@@ -3,8 +3,8 @@ from app.services.usda.nutrient_mapping import map_nutrient_name, NUTRIENT_TRANS
 
 
 def test_known_nutrient():
-    # live_calc 核心营养素用「能量」（见 nutrition_import_service.CORE_DISPLAY_MAP），
-    # 参考项目原本用「热量」，此处已对齐到 live_calc 用词。
+    # livecalc 核心营养素用「能量」（见 nutrition_import_service.CORE_DISPLAY_MAP），
+    # 参考项目原本用「热量」，此处已对齐到 livecalc 用词。
     assert map_nutrient_name("Energy") == "能量"
     assert map_nutrient_name("Protein") == "蛋白质"
     assert map_nutrient_name("Fiber, total dietary") == "膳食纤维"

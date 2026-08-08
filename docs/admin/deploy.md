@@ -15,7 +15,7 @@
 ```bash
 # 1. 克隆
 git clone <仓库地址>
-cd live_calc/backend
+cd livecalc/backend
 
 # 2. 配置（从示例复制后编辑）
 cp .env.example .env
@@ -107,8 +107,8 @@ docker compose up -d --build
 - **架构**：`linux/amd64` + `linux/arm64` 双架构
 - **镜像标签**：原始 tag（如 `v0.1.0`）、版本号（如 `0.1.0`）、主次版本（如 `0.1`）、`latest`
 - **镜像名**（默认类别不带后缀，其余带 `-frontend` / `-backend` / `-local` 后缀）：
-  - GHCR：`ghcr.io/<GitHub 用户名>/<仓库>`，如 `ghcr.io/dingjunyao/live_calc`
-  - Docker Hub：`docker.io/<用户名/组织>/<仓库>`，如 `docker.io/dingjunyao/live_calc`
+  - GHCR：`ghcr.io/<GitHub 用户名>/<仓库>`，如 `ghcr.io/dingjunyao/livecalc`
+  - Docker Hub：`docker.io/<用户名/组织>/<仓库>`，如 `docker.io/dingjunyao/livecalc`
 
 #### GHCR（默认，无需配置）
 
@@ -130,9 +130,9 @@ GHCR 使用 `GITHUB_TOKEN` 自动登录，release 发布后镜像即出现在仓
 拉取示例：
 
 ```bash
-docker pull ghcr.io/dingjunyao/live_calc:latest
-docker pull dingjunyao/live_calc:latest
-docker pull dingjunyao/live_calc-local:latest
+docker pull ghcr.io/dingjunyao/livecalc:latest
+docker pull dingjunyao/livecalc:latest
+docker pull dingjunyao/livecalc-local:latest
 ```
 
 ## 生产部署建议

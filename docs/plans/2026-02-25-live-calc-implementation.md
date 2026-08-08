@@ -358,7 +358,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: live_calc_backend
+    container_name: livecalc_backend
     ports:
       - "8000:8000"
     environment:
@@ -380,7 +380,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: live_calc_frontend
+    container_name: livecalc_frontend
     ports:
       - "80:80"
     depends_on:
@@ -390,7 +390,7 @@ services:
 
   db:
     image: postgres:15-alpine
-    container_name: live_calc_db
+    container_name: livecalc_db
     environment:
       - POSTGRES_USER=livecalc
       - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
@@ -407,7 +407,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: live_calc_redis
+    container_name: livecalc_redis
     ports:
       - "6379:6379"
     volumes:
@@ -422,7 +422,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: live_calc_celery
+    container_name: livecalc_celery
     command: celery -A app.worker worker --loglevel=info
     environment:
       - DATABASE_URL=postgresql://livecalc:${DB_PASSWORD:-changeme}@db:5432/livecalc
@@ -3821,8 +3821,8 @@ git commit -m "feat: add dashboard page"
 
 ```bash
 # 克隆代码
-git clone https://github.com/your-repo/live_calc.git
-cd live_calc
+git clone https://github.com/your-repo/livecalc.git
+cd livecalc
 
 # 启动服务
 docker-compose up -d
@@ -3893,8 +3893,8 @@ MIT License
 
 ```bash
 # 1. 克隆代码
-git clone https://github.com/your-repo/live_calc.git
-cd live_calc
+git clone https://github.com/your-repo/livecalc.git
+cd livecalc
 
 # 2. 配置环境变量
 cp .env.example .env

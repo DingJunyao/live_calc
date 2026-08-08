@@ -43,8 +43,8 @@
 
 ```bash
 # 1. 克隆代码
-git clone https://github.com/your-repo/live_calc.git
-cd live_calc
+git clone https://github.com/your-repo/livecalc.git
+cd livecalc
 
 # 2. 复制环境变量配置
 cp backend/.env.example backend/.env
@@ -281,9 +281,9 @@ After=network.target
 [Service]
 Type=notify
 User=www-data
-WorkingDirectory=/path/to/live_calc/backend
-Environment="PATH=/path/to/live_calc/backend/venv/bin"
-ExecStart=/path/to/live_calc/backend/venv/bin/gunicorn \
+WorkingDirectory=/path/to/livecalc/backend
+Environment="PATH=/path/to/livecalc/backend/venv/bin"
+ExecStart=/path/to/livecalc/backend/venv/bin/gunicorn \
     app.main:app \
     --workers 4 \
     --worker-class uvicorn.workers.UvicornWorker \
