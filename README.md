@@ -2,7 +2,7 @@
 
 > 记录商品价格，计算烹饪成本与营养，优化生活开支。
 
-![截图](docs/img/recipe_detail_screen.png)
+![生计](docs/img/main.png)
 
 自己做饭，总是希望尽可能省钱，还能吃好。因此，该项目应运而生。
 

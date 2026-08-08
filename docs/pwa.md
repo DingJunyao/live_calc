@@ -2,7 +2,7 @@
 
 本项目支持 PWA，能够在手机 / 电脑上像普通 App 一样使用网页端。
 
-![PWA 模式下的页面](img/recipe_detail_mobile.png)
+![PWA 模式下的页面](img/pwa_example.png)
 
 ## iOS 端的使用方式
 
