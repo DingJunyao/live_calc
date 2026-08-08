@@ -4,12 +4,13 @@ name: 构建并发布 Docker 镜像
 # - release 发布（或手动触发）时构建 frontend / backend / all-in-one / local 四种
 # - 双架构 linux/amd64 + linux/arm64，版本标签取 release 版本号
 # - GHCR 默认推送（无需配置）；Docker Hub 可选，配置后同时推送
+# - 所有 variant 推送到同一镜像名，靠标签区分
 #
-# 标签规则（以版本 v0.0.1 为例）：
-#   aio 镜像：      v0.0.1-aio, v0.0.1, latest-aio, aio, latest
-#   frontend 镜像： v0.0.1-frontend, latest-frontend, frontend
-#   backend 镜像：  v0.0.1-backend, latest-backend, backend
-#   local 镜像：    v0.0.1-local, latest-local, local
+# 标签规则（以版本 v0.0.1、仓库 DingJunyao/livecalc 为例）：
+#   aio:      DingJunyao/livecalc:v0.0.1-aio, :v0.0.1, :latest-aio, :aio, :latest
+#   frontend: DingJunyao/livecalc:v0.0.1-frontend, :latest-frontend, :frontend
+#   backend:  DingJunyao/livecalc:v0.0.1-backend, :latest-backend, :backend
+#   local:    DingJunyao/livecalc:v0.0.1-local, :latest-local, :local
 #   （手动触发无版本号时，只推 latest-* / 短名 / latest 标签）
 #
 # Docker Hub 配置（仓库 Settings → Secrets and variables → Actions）：
@@ -94,8 +95,8 @@ jobs:
           echo "target=${target}" >> "$GITHUB_OUTPUT"
           echo "short=${short}" >> "$GITHUB_OUTPUT"
 
-          # ── GHCR 镜像名（必须小写） ──
-          ghcr_image="ghcr.io/${GITHUB_REPOSITORY}-${short}"
+          # ── GHCR 镜像名（必须小写；所有 variant 共用同一镜像，靠标签区分） ──
+          ghcr_image="ghcr.io/${GITHUB_REPOSITORY}"
           ghcr_image="${ghcr_image,,}"
           echo "ghcr_image=${ghcr_image}" >> "$GITHUB_OUTPUT"
 
@@ -110,7 +111,7 @@ jobs:
               hub_repo="${GITHUB_REPOSITORY##*/}"
               hub_repo="${hub_repo,,}"
             fi
-            hub_image="docker.io/${hub_ns}/${hub_repo}-${short}"
+            hub_image="docker.io/${hub_ns}/${hub_repo}"
             echo "hub_image=${hub_image}" >> "$GITHUB_OUTPUT"
           else
             echo "hub_image=" >> "$GITHUB_OUTPUT"
