@@ -93,7 +93,7 @@ def test_list_provider_names_has_codex_after_claude():
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/services/test_translate_registry.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/services/test_translate_registry.py -v
 ```
 
 Expected: FAIL，`list_provider_names` 无 `codex`。
@@ -314,7 +314,7 @@ def downgrade() -> None:
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_agent_api.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_agent_api.py -v
 ```
 
 Expected: PASS。
@@ -454,7 +454,7 @@ def test_translate_turn_completed_done():
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_codex_runner.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_codex_runner.py -v
 ```
 
 Expected: FAIL，模块不存在。
@@ -747,7 +747,7 @@ class CodexRunner:
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_codex_runner.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_codex_runner.py -v
 ```
 
 Expected: PASS。
@@ -790,7 +790,7 @@ def test_build_runner_codex_returns_codex_runner(monkeypatch):
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_runner_factory.py::test_build_runner_codex_returns_codex_runner -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_runner_factory.py::test_build_runner_codex_returns_codex_runner -v
 ```
 
 Expected: FAIL，`build_runner` 回退到 ClaudeCodeRunner。
@@ -854,7 +854,7 @@ def _build_codex_runner(
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_runner_factory.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_runner_factory.py -v
 ```
 
 Expected: PASS。
@@ -903,7 +903,7 @@ async def test_translate_batch(monkeypatch):
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/services/test_translate_codex.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/services/test_translate_codex.py -v
 ```
 
 Expected: FAIL，模块不存在。
@@ -1000,7 +1000,7 @@ def test_get_translator_codex():
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/services/test_translate_codex.py tests/services/test_translate_registry.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/services/test_translate_codex.py tests/services/test_translate_registry.py -v
 ```
 
 Expected: PASS。
@@ -1073,7 +1073,7 @@ def test_trigger_all_creates_one_session_with_all_groups():
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_blacklist_group_task.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_blacklist_group_task.py -v
 ```
 
 Expected: FAIL，函数不存在。
@@ -1293,7 +1293,7 @@ def trigger_ai_match_all(
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_blacklist_group_task.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_blacklist_group_task.py -v
 ```
 
 Expected: PASS。
@@ -1797,7 +1797,7 @@ Claude Code / Codex 环境下使用 MCP 只读工具
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m py_compile app/services/agent/task_templates.py
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m py_compile app/services/agent/task_templates.py
 ```
 
 Expected: 无输出。
@@ -1821,7 +1821,7 @@ git commit -m "docs(agent): mention Codex in MCP task prompts"
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m pytest tests/agent/test_codex_runner.py tests/agent/test_runner_factory.py tests/agent/test_agent_api.py tests/agent/test_blacklist_group_task.py tests/services/test_translate_codex.py tests/services/test_translate_registry.py -v
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m pytest tests/agent/test_codex_runner.py tests/agent/test_runner_factory.py tests/agent/test_agent_api.py tests/agent/test_blacklist_group_task.py tests/services/test_translate_codex.py tests/services/test_translate_registry.py -v
 ```
 
 Expected: 全部 PASS。
@@ -1831,7 +1831,7 @@ Expected: 全部 PASS。
 Run:
 
 ```powershell
-Set-Location backend; & 'D:\code\live_calc\.venv\Scripts\python.exe' -m compileall app
+Set-Location backend; & 'D:\code\livecalc\.venv\Scripts\python.exe' -m compileall app
 ```
 
 Expected: 无 syntax error。

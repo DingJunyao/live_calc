@@ -36,14 +36,14 @@
 - [ ] **Step 1: 确认后端虚拟环境有效**
 
 ```bash
-cd d:\code\live_calc\backend && .\.venv\Scripts\python -c "from fastapi import FastAPI; print('OK')"
+cd d:\code\livecalc\backend && .\.venv\Scripts\python -c "from fastapi import FastAPI; print('OK')"
 ```
 Expected: `OK`
 
 - [ ] **Step 2: 确认前端构建可运行**
 
 ```bash
-cd d:\code\live_calc\frontend && npx vue-tsc --noEmit 2>&1 | head -5
+cd d:\code\livecalc\frontend && npx vue-tsc --noEmit 2>&1 | head -5
 ```
 Expected: 无类型错误或少量已知错误
 
@@ -142,14 +142,14 @@ if ingredient_category_ids:
 - [ ] **Step 4: 验证无语法错误**
 
 ```bash
-cd d:\code\live_calc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/products.py').read()); print('OK')"
+cd d:\code\livecalc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/products.py').read()); print('OK')"
 ```
 Expected: `OK`
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:\code\live_calc && git add backend/app/api/products.py
+cd d:\code\livecalc && git add backend/app/api/products.py
 git commit -m "feat(api): 价格记录列表接口支持多选商家/记录类型/原料分类筛选"
 ```
 
@@ -188,14 +188,14 @@ if difficulties:
 - [ ] **Step 3: 验证无语法错误**
 
 ```bash
-cd d:\code\live_calc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/recipes.py').read()); print('OK')"
+cd d:\code\livecalc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/recipes.py').read()); print('OK')"
 ```
 Expected: `OK`
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd d:\code\live_calc && git add backend/app/api/recipes.py
+cd d:\code\livecalc && git add backend/app/api/recipes.py
 git commit -m "feat(api): 菜谱列表接口支持分类和难度多选筛选"
 ```
 
@@ -236,14 +236,14 @@ if category_ids:
 - [ ] **Step 3: 验证无语法错误**
 
 ```bash
-cd d:\code\live_calc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/nutrition.py').read()); print('OK')"
+cd d:\code\livecalc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/nutrition.py').read()); print('OK')"
 ```
 Expected: `OK`
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd d:\code\live_calc && git add backend/app/api/nutrition.py
+cd d:\code\livecalc && git add backend/app/api/nutrition.py
 git commit -m "feat(api): 原料列表接口支持分类多选筛选"
 ```
 
@@ -292,14 +292,14 @@ if brands:
 - [ ] **Step 4: 验证无语法错误**
 
 ```bash
-cd d:\code\live_calc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/products_entity.py').read()); print('OK')"
+cd d:\code\livecalc\backend && .\.venv\Scripts\python -c "import ast; ast.parse(open('app/api/products_entity.py').read()); print('OK')"
 ```
 Expected: `OK`
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:\code\live_calc && git add backend/app/api/products_entity.py
+cd d:\code\livecalc && git add backend/app/api/products_entity.py
 git commit -m "feat(api): 商品列表接口支持原料/原料分类/品牌多选筛选"
 ```
 
@@ -493,14 +493,14 @@ const clearAll = () => {
 - [ ] **Step 2: 验证前端类型检查**
 
 ```bash
-cd d:\code\live_calc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
+cd d:\code\livecalc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
 ```
 Expected: 无新增类型错误
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd d:\code\live_calc && git add frontend/src/components/common/FilterBar.vue
+cd d:\code\livecalc && git add frontend/src/components/common/FilterBar.vue
 git commit -m "feat(ui): 新增通用 FilterBar 筛选器组件"
 ```
 
@@ -640,14 +640,14 @@ onMounted(() => {
 - [ ] **Step 7: 验证类型检查**
 
 ```bash
-cd d:\code\live_calc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
+cd d:\code\livecalc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
 ```
 Expected: 无新增类型错误
 
 - [ ] **Step 8: Commit**
 
 ```bash
-cd d:\code\live_calc && git add frontend/src/views/prices/PricesView.vue
+cd d:\code\livecalc && git add frontend/src/views/prices/PricesView.vue
 git commit -m "feat(ui): 价格记录页面集成筛选器"
 ```
 
@@ -740,14 +740,14 @@ if (requestFilters.value.difficulties?.length) {
 - [ ] **Step 5: 验证类型检查**
 
 ```bash
-cd d:\code\live_calc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
+cd d:\code\livecalc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
 ```
 Expected: 无新增类型错误
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd d:\code\live_calc && git add frontend/src/views/recipes/RecipesView.vue
+cd d:\code\livecalc && git add frontend/src/views/recipes/RecipesView.vue
 git commit -m "feat(ui): 菜谱页面集成筛选器"
 ```
 
@@ -837,14 +837,14 @@ onMounted(() => {
 - [ ] **Step 7: 验证类型检查**
 
 ```bash
-cd d:\code\live_calc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
+cd d:\code\livecalc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
 ```
 Expected: 无新增类型错误
 
 - [ ] **Step 8: Commit**
 
 ```bash
-cd d:\code\live_calc && git add frontend/src/views/data/IngredientsView.vue
+cd d:\code\livecalc && git add frontend/src/views/data/IngredientsView.vue
 git commit -m "feat(ui): 原料页面集成筛选器"
 ```
 
@@ -971,14 +971,14 @@ onMounted(() => {
 - [ ] **Step 7: 验证类型检查**
 
 ```bash
-cd d:\code\live_calc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
+cd d:\code\livecalc\frontend && npx vue-tsc --noEmit 2>&1 | head -20
 ```
 Expected: 无新增类型错误
 
 - [ ] **Step 8: Commit**
 
 ```bash
-cd d:\code\live_calc && git add frontend/src/views/data/ProductsView.vue
+cd d:\code\livecalc && git add frontend/src/views/data/ProductsView.vue
 git commit -m "feat(ui): 商品页面集成筛选器"
 ```
 

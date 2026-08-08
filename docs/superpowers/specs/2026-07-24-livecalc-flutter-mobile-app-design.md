@@ -24,7 +24,7 @@
 ## 3. 项目结构
 
 ```
-live_calc/
+livecalc/
 ├── backend/              # 现有后端（不变）
 ├── frontend/             # 现有 Web 前端（不变）
 └── mobile/               # ✨ 新 Flutter 项目

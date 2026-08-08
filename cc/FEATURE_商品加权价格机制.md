@@ -87,5 +87,5 @@
 ## 环境备注
 
 - **subagent 不可用**：本环境 subagent 底层模型配置坏（两次「模型不存在」API 错误），subagent-driven-development 回退为 inline 执行。
-- **venv 在项目根**（`d:\code\live_calc\.venv`，非 `backend/.venv` 后者是空壳）：后端命令在 backend 目录用 `../.venv\Scripts\python.exe`。
+- **venv 在项目根**（`d:\code\livecalc\.venv`，非 `backend/.venv` 后者是空壳）：后端命令在 backend 目录用 `../.venv\Scripts\python.exe`。
 - 开发库走「直接补」惯例（不走 alembic，参见 CLAUDE.md），操作前已备份。
