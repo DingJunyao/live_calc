@@ -7,8 +7,8 @@
     "zh"
   ],
   "locale": "zh",
-  "device": "ipad",
-  "orientation": "landscape",
+  "device": "feature-graphic",
+  "orientation": "portrait",
   "appIcon": "",
   "slidesByDevice": {
     "iphone": [

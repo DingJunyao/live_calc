@@ -33,6 +33,7 @@ backend/uv.lock
 
 # === 文档 / 规划（不进镜像）===
 docs
+promo-editor
 cc
 plan.md
 todo.md
